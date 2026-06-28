@@ -15,7 +15,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-import java.awt.Color;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -47,11 +46,8 @@ public class MainConfigScreen extends Screen {
     private final Screen parent;
     private String searchText = "";
     private EditBox searchBox;
-    private TaskDefinition editingTask = null;
-    private Color currentColor;
-    private float currentOutlineWidth;
-    private int currentMapFilter;
-    private String mapsText = "";
+    private TaskDetailPanel detailPanel = null;
+    private final List<EditBox> detailBoxes = new java.util.ArrayList<>();
 
     // ====== 滚动 ======
     private double scrollOffset = 0;
@@ -67,11 +63,6 @@ public class MainConfigScreen extends Screen {
     protected void init() {
         super.init();
         rebuildSidebar();
-        currentColor = new Color(200, 200, 200, 180);
-        currentOutlineWidth = 4.0f;
-        currentMapFilter = 0;
-        mapsText = "";
-
         // 搜索框
         int searchX = SIDEBAR_W + PAD;
         int searchY = HEADER_H + 4;
@@ -124,12 +115,10 @@ public class MainConfigScreen extends Screen {
             if (entry.isGameMode() && entry.tag() instanceof GameMode gm) {
                 List<TaskDefinition> tasks = getTasksForGameMode(gm);
 
-                if (editingTask != null) {
+                if (detailPanel != null) {
                     TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
                             SIDEBAR_W, 0, width, height, HEADER_H, mx, my, null);
-                    TaskDetailPanel.render(g, font, editingTask,
-                            currentColor, currentOutlineWidth, currentMapFilter, mapsText,
-                            SIDEBAR_W, 0, width, height);
+                    detailPanel.render(g, font, SIDEBAR_W, 0, width, height);
                 } else {
                     TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
                             SIDEBAR_W, 0, width, height, HEADER_H, mx, my, this::openTaskDetail);
@@ -170,10 +159,8 @@ public class MainConfigScreen extends Screen {
         if (super.mouseClicked(mx, my, btn)) return true;
 
         // 详情面板开启时，优先处理
-        if (editingTask != null && mx > width - DETAIL_PANEL_W) {
-            if (TaskDetailPanel.mouseClicked(this, (int) mx, (int) my, btn, editingTask,
-                    currentColor, currentOutlineWidth, currentMapFilter, mapsText,
-                    SIDEBAR_W, 0, width, height, this::closeTaskDetail)) {
+        if (detailPanel != null && mx > width - DETAIL_PANEL_W) {
+            if (detailPanel.mouseClicked((int) mx, (int) my, btn)) {
                 return true;
             }
         }
@@ -186,7 +173,7 @@ public class MainConfigScreen extends Screen {
             boolean hit = mx >= 4 && mx < SIDEBAR_W - 4 && my >= y && my < y + SIDEBAR_ENTRY_H;
             if (hit) {
                 selectedSidebarIndex = i;
-                editingTask = null;
+                if (detailPanel != null) { detailPanel.dispose(this); detailPanel = null; }
                 scrollOffset = 0;
 
                 if (i == 0) {
@@ -201,7 +188,7 @@ public class MainConfigScreen extends Screen {
         }
 
         // 任务列表点击
-        if (editingTask == null && selectedSidebarIndex > 0 && selectedSidebarIndex < sidebarEntries.size()) {
+        if (detailPanel == null && selectedSidebarIndex > 0 && selectedSidebarIndex < sidebarEntries.size()) {
             SidebarEntry entry = sidebarEntries.get(selectedSidebarIndex);
             if (entry.isGameMode() && entry.tag() instanceof GameMode gm) {
                 List<TaskDefinition> tasks = getTasksForGameMode(gm);
@@ -222,8 +209,8 @@ public class MainConfigScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
-        if (editingTask != null) {
-            return TaskDetailPanel.mouseScrolled(vertical);
+        if (detailPanel != null) {
+            return true; // absorb scroll in detail mode
         }
         if (mx > SIDEBAR_W) {
             scrollOffset = Math.max(0, scrollOffset - vertical * 28);
@@ -235,6 +222,7 @@ public class MainConfigScreen extends Screen {
     @Override
     public boolean keyPressed(int key, int sc, int mod) {
         if (searchBox != null && searchBox.isFocused() && searchBox.keyPressed(key, sc, mod)) return true;
+        if (detailPanel != null && detailPanel.keyPressed(key, sc, mod)) return true;
         if (key == 256) { onClose(); return true; }
         return super.keyPressed(key, sc, mod);
     }
@@ -242,6 +230,7 @@ public class MainConfigScreen extends Screen {
     @Override
     public boolean charTyped(char ch, int mod) {
         if (searchBox != null && searchBox.isFocused() && searchBox.charTyped(ch, mod)) return true;
+        if (detailPanel != null && detailPanel.charTyped(ch, mod)) return true;
         return super.charTyped(ch, mod);
     }
 
@@ -260,23 +249,18 @@ public class MainConfigScreen extends Screen {
     }
 
     private void openTaskDetail(TaskDefinition def) {
-        editingTask = def;
-        TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-        if (cfg != null) {
-            currentColor = cfg.getColor();
-            currentOutlineWidth = cfg.outlineWidth;
-            currentMapFilter = cfg.mapFilterMode;
-            mapsText = cfg.enabledMaps != null ? String.join(",", cfg.enabledMaps) : "";
-        } else {
-            currentColor = def.getInstinctColor() != null ? def.getInstinctColor() : new Color(200, 200, 200, 180);
-            currentOutlineWidth = 4.0f;
-            currentMapFilter = 0;
-            mapsText = "";
+        if (detailPanel != null) {
+            detailPanel.dispose(this);
+            detailPanel = null;
         }
+        detailPanel = new TaskDetailPanel(this, def, this::closeTaskDetail);
     }
 
     private void closeTaskDetail() {
-        editingTask = null;
+        if (detailPanel != null) {
+            detailPanel.dispose(this);
+            detailPanel = null;
+        }
     }
 
     private void toggleTask(TaskDefinition def) {
@@ -294,5 +278,22 @@ public class MainConfigScreen extends Screen {
     public void onClose() {
         ConfigManager.getInstance().save();
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    // ====== TaskDetailPanel widget lifecycle ======
+    public void registerDetailWidgets(List<EditBox> boxes) {
+        detailBoxes.clear();
+        for (EditBox box : boxes) {
+            detailBoxes.add(box);
+            addRenderableWidget(box);
+        }
+    }
+
+    public void unregisterDetailWidgets(List<EditBox> boxes) {
+        for (EditBox box : boxes) {
+            children.remove(box);
+            renderables.remove(box);
+        }
+        detailBoxes.clear();
     }
 }
