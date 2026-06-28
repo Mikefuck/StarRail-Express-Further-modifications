@@ -2,8 +2,8 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.taskapi.impl.config.HabiConfigManager;
-import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.TaskConfigEntry;
 import io.wifi.starrailexpress.api.RoleMethodDispatcher;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
@@ -28,16 +28,16 @@ public class RoleMethodDispatcherMixin {
         throw new AssertionError("Shadowed");
     }
 
-    private static HabiTaskConfigEntry findConfigForQuest(String quest) {
+    private static TaskConfigEntry findConfigForQuest(String quest) {
         if (quest == null) return null;
 
         String fullId = quest.contains(":") ? quest : "habitrain_core:" + quest;
-        HabiTaskConfigEntry config = HabiConfigManager.getInstance().getTaskConfig(fullId);
+        TaskConfigEntry config = ConfigManager.getInstance().getTaskConfig(fullId);
 
         if (config == null) {
             for (TaskDefinition def : TaskRegistry.getAll()) {
                 if (def.getTaskId().equalsIgnoreCase(quest) || def.getDisplayName().equals(quest)) {
-                    config = HabiConfigManager.getInstance().getTaskConfig(def.getFullId());
+                    config = ConfigManager.getInstance().getTaskConfig(def.getFullId());
                     if (config != null) break;
                 }
             }
@@ -56,7 +56,7 @@ public class RoleMethodDispatcherMixin {
                                                           boolean isParallelTask, CallbackInfo ci) {
         if (player == null || player.level() == null || player.level().isClientSide) return;
 
-        HabiTaskConfigEntry config = findConfigForQuest(quest);
+        TaskConfigEntry config = findConfigForQuest(quest);
         if (config == null) return;
 
         if (config.goldReward >= 0) {
@@ -96,7 +96,7 @@ public class RoleMethodDispatcherMixin {
                                                          boolean isParallelTask, CallbackInfo ci) {
         if (player == null || player.level() == null || player.level().isClientSide) return;
 
-        HabiTaskConfigEntry config = findConfigForQuest(quest);
+        TaskConfigEntry config = findConfigForQuest(quest);
         if (config == null) return;
 
         try {

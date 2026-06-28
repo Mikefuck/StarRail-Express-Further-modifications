@@ -1,7 +1,5 @@
 package com.habitrain.core.api;
 
-import com.habitrain.taskapi.api.HabiTaskCategory;
-
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -42,11 +40,11 @@ public class TaskRegistry {
                 .collect(Collectors.toList());
     }
 
-    /** 按 SRE 原版分类查询 */
-    public static List<TaskDefinition> getByOriginalCategory(HabiTaskCategory category) {
+    /** 按分类查询 */
+    public static List<TaskDefinition> getByCategory(TaskCategory category) {
         return REGISTRY.values().stream()
-                .filter(def -> def.getOriginalCategory() == category
-                        || def.getOriginalCategory() == HabiTaskCategory.ALL)
+                .filter(def -> def.getCategory() == category
+                        || def.getCategory() == TaskCategory.ALL)
                 .toList();
     }
 

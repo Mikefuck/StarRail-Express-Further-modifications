@@ -1,5 +1,6 @@
 package com.habitrain.core.client.gui;
 
+import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
@@ -68,7 +69,7 @@ public class TaskEditScreen extends Screen {
     private final Screen parent;
     private final TaskDefinition def;
     private final TaskConfigEntry cfg;
-    private final HabiTaskCategory category;
+    private final TaskCategory category;
     private final String modeDisplayName;
     private final int modeAccentColor;
 
@@ -99,7 +100,7 @@ public class TaskEditScreen extends Screen {
 
     // ====== 构造 ======
     public TaskEditScreen(Screen parent, TaskDefinition def, TaskConfigEntry cfg,
-                              HabiTaskCategory category, String modeDisplayName, int modeAccentColor) {
+                              TaskCategory category, String modeDisplayName, int modeAccentColor) {
         super(Component.literal("§l" + def.getDisplayName() + " - 详细配置"));
         this.parent = parent;
         this.def = def;
@@ -492,7 +493,7 @@ public class TaskEditScreen extends Screen {
                 {"任务名称", def.getDisplayName()},
                 {"完整ID", def.getFullId()},
                 {"模组来源", def.getModId()},
-                {"任务分类", getCategoryName(def.getOriginalCategory())},
+                {"任务分类", getCategoryName(def.getCategory())},
                 {"默认权重", String.format("%.1f", def.getWeight())},
                 {"方块类型ID", def.getBlockTypeId() >= 0 ? String.valueOf(def.getBlockTypeId()) : "无"},
                 {"可直接获胜", def.canDirectlyWin() ? "§a是" : "§c否"},
@@ -584,7 +585,7 @@ public class TaskEditScreen extends Screen {
         if (p != null) p.displayClientMessage(Component.literal(msg), true);
     }
 
-    private String getCategoryName(HabiTaskCategory cat) {
+    private String getCategoryName(TaskCategory cat) {
         return switch (cat) {
             case MURDER -> "谋杀模式";
             case REPAIR -> "修机模式";
