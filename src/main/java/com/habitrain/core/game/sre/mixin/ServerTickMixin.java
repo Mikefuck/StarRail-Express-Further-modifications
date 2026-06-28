@@ -2,7 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.task.TaskManager;
-import com.habitrain.taskapi.impl.network.ActiveCustomTaskPayload;
+import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -37,7 +37,7 @@ public class ServerTickMixin {
                 mgr.removeActiveTask(player.getUUID());
 
                 if (player instanceof ServerPlayer sp) {
-                    ActiveCustomTaskPayload.clearForPlayer(sp);
+                    ActiveTaskPayload.clearForPlayer(sp);
                 }
             }
         }
@@ -56,7 +56,7 @@ public class ServerTickMixin {
                     player.getName().getString());
 
             if (player instanceof ServerPlayer sp) {
-                ActiveCustomTaskPayload.clearForPlayer(sp);
+                ActiveTaskPayload.clearForPlayer(sp);
             }
         }
     }
@@ -81,7 +81,7 @@ public class ServerTickMixin {
             mgr.removeActiveTask(player.getUUID());
 
             if (player instanceof ServerPlayer sp) {
-                ActiveCustomTaskPayload.clearForPlayer(sp);
+                ActiveTaskPayload.clearForPlayer(sp);
             }
         }
     }

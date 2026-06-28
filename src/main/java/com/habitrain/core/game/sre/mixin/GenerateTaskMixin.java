@@ -7,7 +7,7 @@ import com.habitrain.core.task.TaskManager;
 import com.habitrain.taskapi.api.HabiTaskCategory;
 import com.habitrain.taskapi.impl.config.HabiConfigManager;
 import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
-import com.habitrain.taskapi.impl.network.ActiveCustomTaskPayload;
+import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import io.wifi.starrailexpress.game.GameConstants;
@@ -313,7 +313,7 @@ public abstract class GenerateTaskMixin {
         mgr.setActiveTask(player.getUUID(), instance);
 
         if (player instanceof ServerPlayer sp) {
-            ActiveCustomTaskPayload.sendToPlayer(sp, def.getFullId());
+            ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
         }
 
         return instance;
