@@ -2,7 +2,6 @@ package com.habitrain.core.game.sre;
 
 import com.habitrain.core.api.*;
 import com.habitrain.core.game.AbstractGameMode;
-import com.habitrain.taskapi.api.HabiTaskCategory;
 import de.maxhenkel.voicechat.api.Group;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
@@ -51,35 +50,35 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         builtinTasksRegistered = true;
 
         // Murder mode tasks
-        registerBuiltin("sleep", "睡觉", HabiTaskCategory.MURDER, 1.0f, 4);
-        registerBuiltin("eat", "进食", HabiTaskCategory.MURDER, 1.0f, 1);
-        registerBuiltin("drink", "喝水", HabiTaskCategory.MURDER, 1.0f, 2);
-        registerBuiltin("exercise", "锻炼", HabiTaskCategory.MURDER, 1.0f, 5);
-        registerBuiltin("raed_book", "阅读", HabiTaskCategory.MURDER, 1.0f, 6);
-        registerBuiltin("bathe", "洗澡", HabiTaskCategory.MURDER, 1.0f, 3);
-        registerBuiltin("toilet", "上厕所", HabiTaskCategory.MURDER, 1.0f, 8);
-        registerBuiltin("chair", "坐椅子", HabiTaskCategory.MURDER, 1.0f, 9);
-        registerBuiltin("note_block", "音符盒", HabiTaskCategory.MURDER, 1.0f, 10);
-        registerBuiltin("meditate", "冥想", HabiTaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("outside", "外出", HabiTaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("breathe", "呼吸新鲜空气", HabiTaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("be_alone", "一个人静静", HabiTaskCategory.MURDER, 1.0f, -1);
+        registerBuiltin("sleep", "睡觉", TaskCategory.MURDER, 1.0f, 4);
+        registerBuiltin("eat", "进食", TaskCategory.MURDER, 1.0f, 1);
+        registerBuiltin("drink", "喝水", TaskCategory.MURDER, 1.0f, 2);
+        registerBuiltin("exercise", "锻炼", TaskCategory.MURDER, 1.0f, 5);
+        registerBuiltin("raed_book", "阅读", TaskCategory.MURDER, 1.0f, 6);
+        registerBuiltin("bathe", "洗澡", TaskCategory.MURDER, 1.0f, 3);
+        registerBuiltin("toilet", "上厕所", TaskCategory.MURDER, 1.0f, 8);
+        registerBuiltin("chair", "坐椅子", TaskCategory.MURDER, 1.0f, 9);
+        registerBuiltin("note_block", "音符盒", TaskCategory.MURDER, 1.0f, 10);
+        registerBuiltin("meditate", "冥想", TaskCategory.MURDER, 1.0f, -1);
+        registerBuiltin("outside", "外出", TaskCategory.MURDER, 1.0f, -1);
+        registerBuiltin("breathe", "呼吸新鲜空气", TaskCategory.MURDER, 1.0f, -1);
+        registerBuiltin("be_alone", "一个人静静", TaskCategory.MURDER, 1.0f, -1);
 
         // Repair mode tasks
-        registerBuiltin("repair_wire", "修复线路", HabiTaskCategory.REPAIR, 1.0f, -1);
-        registerBuiltin("repair_panel", "修复面板", HabiTaskCategory.REPAIR, 1.0f, -1);
+        registerBuiltin("repair_wire", "修复线路", TaskCategory.REPAIR, 1.0f, -1);
+        registerBuiltin("repair_panel", "修复面板", TaskCategory.REPAIR, 1.0f, -1);
 
         // Shared tasks
-        registerBuiltin("vending_machine", "售货机", HabiTaskCategory.ALL, 0.5f, 11);
+        registerBuiltin("vending_machine", "售货机", TaskCategory.ALL, 0.5f, 11);
 
         LOGGER.info("已注册 {} 个内置SRE任务", TaskRegistry.size());
     }
 
-    private static void registerBuiltin(String id, String displayName, HabiTaskCategory category,
+    private static void registerBuiltin(String id, String displayName, TaskCategory category,
                                          float weight, int blockTypeId) {
         TaskRegistry.register(new TaskDefinition.Builder(CORE_MOD_ID, id)
                 .displayName(displayName)
-                .originalCategory(category)
+                .category(category)
                 .gameMode("sre:base")
                 .weight(weight)
                 .blockTypeId(blockTypeId)
@@ -150,5 +149,19 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             addPlayerToLobbyGroup(server, player.getUUID());
         }
+    }
+
+    // ========== 游戏结束清理 ==========
+
+    @Override
+    public void onEnd(ServerLevel level, WinResult result) {
+        // 游戏结束 → 清空所有活跃 DLC 任务
+        TaskManager.getInstance().clearAllActiveTasks();
+    }
+
+    @Override
+    public void onCleanup(ServerLevel level) {
+        // 清理现场时也确保活跃任务被清空
+        TaskManager.getInstance().clearAllActiveTasks();
     }
 }

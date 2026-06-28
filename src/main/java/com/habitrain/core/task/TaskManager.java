@@ -3,7 +3,6 @@ package com.habitrain.core.task;
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
-import com.habitrain.taskapi.api.HabiTaskCategory;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -36,6 +35,9 @@ public class TaskManager {
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
 
+    /** 清空所有玩家的活跃任务（游戏结束时调用） */
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); }
+
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);
         return existing != null && existing.getFullId().equals(fullId);
@@ -53,22 +55,22 @@ public class TaskManager {
         }
     }
 
-    public HabiTaskCategory getCurrentGameModeCategory(Player player) {
-        if (player == null || player.level() == null) return HabiTaskCategory.ALL;
+    public TaskCategory getCurrentGameModeCategory(Player player) {
+        if (player == null || player.level() == null) return TaskCategory.ALL;
         try {
             SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(player.level());
-            if (gameWorld == null || gameWorld.getGameMode() == null) return HabiTaskCategory.ALL;
+            if (gameWorld == null || gameWorld.getGameMode() == null) return TaskCategory.ALL;
             String modeId = gameWorld.getGameMode().identifier.toString();
             if (modeId.contains("repair_escape") || modeId.contains("repair")) {
-                return HabiTaskCategory.REPAIR;
+                return TaskCategory.REPAIR;
             }
-            return HabiTaskCategory.MURDER;
+            return TaskCategory.MURDER;
         } catch (Exception e) {
-            return HabiTaskCategory.ALL;
+            return TaskCategory.ALL;
         }
     }
 
-    public List<TaskDefinition> getAvailableTasks(String mapName, HabiTaskCategory currentCategory) {
+    public List<TaskDefinition> getAvailableTasks(String mapName, TaskCategory currentCategory) {
         List<TaskDefinition> available = new ArrayList<>();
         ConfigManager config = ConfigManager.getInstance();
 
@@ -77,9 +79,10 @@ public class TaskManager {
             boolean mapEnabled = isTaskEnabledForMap(entry, mapName);
             if (!mapEnabled) continue;
 
-            boolean categoryMatch = (def.getOriginalCategory() == HabiTaskCategory.ALL
-                || def.getOriginalCategory() == HabiTaskCategory.CUSTOM
-                || def.getOriginalCategory() == currentCategory);
+            TaskCategory cat = def.getCategory();
+            boolean categoryMatch = (cat == TaskCategory.ALL
+                || cat == TaskCategory.CUSTOM
+                || cat == currentCategory);
             if (!categoryMatch) continue;
 
             available.add(def);
@@ -119,6 +122,9 @@ public class TaskManager {
         if (def.canDirectlyWin()) {
             triggerDirectWin(player, instance);
         }
+
+        // ★ 任务完成 → 清理活跃任务，防止已完成任务残留在渲染器中
+        removeActiveTask(player.getUUID());
     }
 
     private void triggerDirectWin(ServerPlayer player, TaskInstance instance) {

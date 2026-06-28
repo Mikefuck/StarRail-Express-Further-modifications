@@ -3,10 +3,10 @@ package com.habitrain.core.game.sre.mixin;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.task.TaskManager;
-import com.habitrain.taskapi.api.HabiTaskCategory;
-import com.habitrain.taskapi.impl.config.HabiConfigManager;
-import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
@@ -54,7 +54,7 @@ public abstract class GenerateTaskMixin {
         Set<String> disabledTasks = getDisabledTasks();
         TaskManager mgr = TaskManager.getInstance();
         String mapName = mgr.getCurrentMapName(player);
-        HabiTaskCategory currentCategory = mgr.getCurrentGameModeCategory(player);
+        TaskCategory currentCategory = mgr.getCurrentGameModeCategory(player);
 
         LOGGER.info("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}",
                 mapName, currentMood, disabledTasks, currentCategory);
@@ -127,7 +127,7 @@ public abstract class GenerateTaskMixin {
 
     private float addDlcTasks(List<Map.Entry<Object, Float>> entries,
                               TaskManager mgr, String mapName,
-                              HabiTaskCategory currentCategory, Set<String> disabledTasks) {
+                              TaskCategory currentCategory, Set<String> disabledTasks) {
         if (mgr.getActiveTask(player.getUUID()) != null) {
             LOGGER.info("[HabiDebug] Player already has an active DLC task, skipping DLC pool");
             return 0f;
@@ -192,7 +192,7 @@ public abstract class GenerateTaskMixin {
     }
 
     private float getTargetRatio() {
-        return HabiConfigManager.getInstance().getDlcProbabilityTarget();
+        return ConfigManager.getInstance().getDlcProbabilityTarget();
     }
 
     @Nullable
@@ -254,7 +254,7 @@ public abstract class GenerateTaskMixin {
         return key.toString();
     }
 
-    private List<TaskDefinition> getAvailableDlcTasks(TaskManager mgr, String mapName, HabiTaskCategory currentCategory) {
+    private List<TaskDefinition> getAvailableDlcTasks(TaskManager mgr, String mapName, TaskCategory currentCategory) {
         List<TaskDefinition> tasks = mgr.getAvailableTasks(mapName, currentCategory).stream()
                 .filter(def -> !"habitrain_core".equals(def.getModId()))
                 .collect(Collectors.toList());
@@ -263,8 +263,8 @@ public abstract class GenerateTaskMixin {
             return tasks;
         }
 
-        if (currentCategory != HabiTaskCategory.MURDER) {
-            tasks = mgr.getAvailableTasks(mapName, HabiTaskCategory.MURDER).stream()
+        if (currentCategory != TaskCategory.MURDER) {
+            tasks = mgr.getAvailableTasks(mapName, TaskCategory.MURDER).stream()
                     .filter(def -> !"habitrain_core".equals(def.getModId()))
                     .collect(Collectors.toList());
             if (!tasks.isEmpty()) {
@@ -273,8 +273,8 @@ public abstract class GenerateTaskMixin {
             }
         }
 
-        if (currentCategory != HabiTaskCategory.ALL) {
-            tasks = mgr.getAvailableTasks(mapName, HabiTaskCategory.ALL).stream()
+        if (currentCategory != TaskCategory.ALL) {
+            tasks = mgr.getAvailableTasks(mapName, TaskCategory.ALL).stream()
                     .filter(def -> !"habitrain_core".equals(def.getModId()))
                     .collect(Collectors.toList());
             if (!tasks.isEmpty()) {
@@ -293,7 +293,7 @@ public abstract class GenerateTaskMixin {
     }
 
     private boolean isTaskMapEnabled(String fullId, String mapName) {
-        HabiTaskConfigEntry entry = HabiConfigManager.getInstance().getTaskConfig(fullId);
+        TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);
         if (entry == null) return true;
         if (!entry.enabled) return false;
         if (entry.mapFilterMode == 0) return true;
@@ -320,7 +320,7 @@ public abstract class GenerateTaskMixin {
     }
 
     private float getEffectiveWeight(TaskDefinition def) {
-        var entry = HabiConfigManager.getInstance().getTaskConfig(def.getFullId());
+        var entry = ConfigManager.getInstance().getTaskConfig(def.getFullId());
         if (entry != null && entry.refreshWeight >= 0f) {
             return entry.refreshWeight;
         }
