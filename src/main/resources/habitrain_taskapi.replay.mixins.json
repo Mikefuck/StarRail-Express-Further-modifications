@@ -1,0 +1,11 @@
+{
+    "required": false,
+    "package": "com.habitrain.taskapi.impl.mixin",
+    "compatibilityLevel": "JAVA_21",
+    "mixins": [
+        "ServerReplayRecorderMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

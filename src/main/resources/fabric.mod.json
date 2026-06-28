@@ -1,0 +1,43 @@
+{
+    "schemaVersion": 1,
+    "id": "habitrain_taskapi",
+    "version": "${version}",
+    "name": "Mike任务API",
+    "description": "哈比列车任务系统API模组",
+    "authors": [
+        "HabiTrain"
+    ],
+    "contact": {
+        "homepage": "https://github.com/"
+    },
+    "license": "MIT",
+    "icon": "assets/habitrain_taskapi/icon.png",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "com.habitrain.taskapi.HabiTrainTaskAPI"
+        ],
+        "client": [
+            "com.habitrain.taskapi.client.HabiTrainTaskAPIClient"
+        ],
+        "modmenu": [
+            "com.habitrain.taskapi.client.gui.HabiModMenuIntegration"
+        ]
+    },
+    "mixins": [
+        "habitrain_taskapi.mixins.json",
+        {
+            "config": "habitrain_taskapi.client.mixins.json",
+            "environment": "client"
+        },
+        "habitrain_taskapi.replay.mixins.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.19.2",
+        "minecraft": "~1.21.1",
+        "java": ">=21",
+        "fabric-api": "*",
+        "starrailexpress": "*",
+        "modmenu": "*"
+    }
+}
