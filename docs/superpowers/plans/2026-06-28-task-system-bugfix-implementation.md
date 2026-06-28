@@ -1,3 +1,183 @@
+# 任务系统 Bug 修复 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix 3 task system bugs: HUD display + sync, ModMenu input fields, layout overlap
+
+**Architecture:** Fix `TaskInstance.toNbt()` serialization to include `type` field for SRE client sync; rewrite `TaskDetailPanel` from static rendering to widget-based panel with `EditBox` controls; adjust Y-coordinates in `MainConfigScreen` and `TaskListPanel` to eliminate overlapping.
+
+**Tech Stack:** Fabric 1.21.1, Mixin, SRE 4.2.0 CCA sync, Minecraft GUI widgets
+
+## Global Constraints
+
+- Must not add new HUD elements or modify SRE source code
+- Must not add new config fields or change existing API
+- All GUI classes live under `client/gui/` package
+- ConfigManager save path is `habitrain_core.json`
+- Post-build: copy JAR to `D:\Backup\mc mod\临时\`
+
+---
+
+### Task 1: Fix TaskInstance sync — add `type` field to toNbt()
+
+**Files:**
+- Modify: `src/main/java/com/habitrain/core/api/TaskInstance.java:99-109`
+
+**Interfaces:**
+- Consumes: `TaskEnumHelper.getCustom()` (returns `SREPlayerTaskComponent.Task.CUSTOM` or null)
+- Produces: `toNbt()` now writes `type` ordinal so SRE `readFromSyncNbt()` can deserialize CUSTOM tasks on the client
+
+- [ ] **Step 1: Read TaskInstance.java to verify current state**
+
+```bash
+cat src/main/java/com/habitrain/core/api/TaskInstance.java | head -120
+```
+
+- [ ] **Step 2: Add `type` to toNbt()**
+
+Modify `toNbt()` — add the `type` field using `TaskEnumHelper` before the return:
+
+Edit `api/TaskInstance.java`, replace:
+
+```java
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("customId", definition.getFullId());
+        nbt.putString("customName", definition.getDisplayName());
+        nbt.putBoolean("fulfilled", this.fulfilled);
+        nbt.putBoolean("failed", this.failed);
+        nbt.putInt("progress", this.progress);
+        nbt.putInt("maxProgress", this.maxProgress);
+        nbt.putInt("elapsedTicks", this.elapsedTicks);
+        return nbt;
+    }
+```
+
+With:
+
+```java
+    public CompoundTag toNbt() {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("customId", definition.getFullId());
+        nbt.putString("customName", definition.getDisplayName());
+        nbt.putBoolean("fulfilled", this.fulfilled);
+        nbt.putBoolean("failed", this.failed);
+        nbt.putInt("progress", this.progress);
+        nbt.putInt("maxProgress", this.maxProgress);
+        nbt.putInt("elapsedTicks", this.elapsedTicks);
+        // ★ 关键修复：写入 type 字段，使 SRE 客户端反序列化能正确还原 CUSTOM 任务
+        var customType = com.habitrain.core.game.sre.TaskEnumHelper.getCustom();
+        if (customType != null) {
+            nbt.putInt("type", customType.ordinal());
+        }
+        return nbt;
+    }
+```
+
+- [ ] **Step 3: Verify toNbt() compiles by checking imports**
+
+`TaskEnumHelper` is in `com.habitrain.core.game.sre` — no new import needed since we use FQN inline.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/main/java/com/habitrain/core/api/TaskInstance.java
+git commit -m "fix: add type field to TaskInstance.toNbt() for SRE CUSTOM task sync"
+```
+
+---
+
+### Task 2: Fix center notification — send correct display name
+
+**Files:**
+- Modify: `src/main/java/com/habitrain/core/game/sre/mixin/GenerateTaskMixin.java:308-320`
+
+**Interfaces:**
+- Consumes: `TaskDefinition.getDisplayName()` returns actual display name (e.g. "摸猫猫")
+- Produces: Player receives correct chat notification instead of SRE's `task_`-prefixed message
+
+- [ ] **Step 1: Read createAndTrackDlcTask()**
+
+Read `GenerateTaskMixin.java` to find the `createAndTrackDlcTask` method (around line 308).
+
+- [ ] **Step 2: Add system message with correct display name**
+
+After `ActiveTaskPayload.sendToPlayer(...)` and before `return instance`, add:
+
+Edit `GenerateTaskMixin.java`, replace:
+
+```java
+        if (player instanceof ServerPlayer sp) {
+            ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
+        }
+
+        return instance;
+```
+
+With:
+
+```java
+        if (player instanceof ServerPlayer sp) {
+            ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
+            // ★ 发送正确名称的中心提示，替代 SRE 自带的 task_ 前缀通知
+            sp.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal(
+                    "§a✦ 新任务已派发: §f" + def.getDisplayName()
+                ),
+                false
+            );
+        }
+
+        return instance;
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/main/java/com/habitrain/core/game/sre/mixin/GenerateTaskMixin.java
+git commit -m "fix: send correct display name notification for DLC tasks"
+```
+
+---
+
+### Task 3: Build verify after sync fixes
+
+- [ ] **Step 1: Build the mod**
+
+```bash
+cd D:/Backup/mc\ mod/哈比列车api
+./gradlew clean build
+```
+
+Expected: `BUILD SUCCESSFUL` in output. The JAR is at `build/libs/habitrain_core-*.jar`.
+
+- [ ] **Step 2: Copy JAR to temp directory**
+
+```bash
+cp build/libs/habitrain_core-*.jar "D:/Backup/mc mod/临时/"
+```
+
+- [ ] **Step 3: Commit build artifacts**
+
+Not needed — don't commit build outputs.
+
+---
+
+### Task 4: Rewrite TaskDetailPanel with EditBox widgets
+
+**Files:**
+- Modify: `src/main/java/com/habitrain/core/client/gui/TaskDetailPanel.java` — full rewrite
+- Modify: `src/main/java/com/habitrain/core/client/gui/MainConfigScreen.java` — adapt to non-static TaskDetailPanel
+
+**Interfaces:**
+- Consumes: `TaskDefinition`, `ConfigManager`, `TaskConfigEntry`, `MainConfigScreen` (for widget registration)
+- Produces: Functional EditBox inputs for gold/emotion/weight/maps; corrected color picker; proper save/reset
+
+- [ ] **Step 1: Rewrite TaskDetailPanel.java**
+
+Replace the entire file. New class is non-static, holds EditBox widgets, and has render/click/key methods:
+
+```java
 package com.habitrain.core.client.gui;
 
 import com.habitrain.core.api.TaskDefinition;
@@ -12,6 +192,7 @@ import net.minecraft.network.chat.Component;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 任务详情滑入面板 — 带 EditBox 控件的非静态面板。
@@ -61,7 +242,7 @@ public class TaskDetailPanel {
     private int colorRectX, colorRectY;
     private int outlineDecX, outlineIncX;
     private int mapModeX;
-    private int saveBtnX, resetBtnX;
+    private int saveBtnX, resetBtnX, backBtnX;
     private int btnY;
 
     public TaskDetailPanel(MainConfigScreen screen, TaskDefinition def, Runnable onClose) {
@@ -193,6 +374,7 @@ public class TaskDetailPanel {
         btnY = Math.max(y, panelY + areaH - 50);
         saveBtnX = panelX + PAD + 10;
         resetBtnX = saveBtnX + font.width("§a[保存]  ");
+        backBtnX = resetBtnX + font.width("§7[重置]  ");
         g.drawString(font, Component.literal("§a[保存]  §7[重置]  §c[返回]"),
                 panelX + PAD + 10, btnY, 0, false);
     }
@@ -319,6 +501,7 @@ public class TaskDetailPanel {
     private void resetAll() {
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), new TaskConfigEntry(true));
         // 重载 EditBox
+        TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
         goldBox.setValue("");
         emotionBox.setValue("");
         weightBox.setValue("");
@@ -363,3 +546,260 @@ public class TaskDetailPanel {
         return idx < COLOR_NAMES.length ? COLOR_NAMES[idx] : "自定义";
     }
 }
+```
+
+- [ ] **Step 2: Read MainConfigScreen.java to plan integration points**
+
+```bash
+cat src/main/java/com/habitrain/core/client/gui/MainConfigScreen.java
+```
+
+- [ ] **Step 3: Add widget lifecycle methods to MainConfigScreen**
+
+Add these methods to `MainConfigScreen`:
+
+```java
+    // ====== TaskDetailPanel widget lifecycle ======
+    private final List<EditBox> detailBoxes = new java.util.ArrayList<>();
+
+    public void registerDetailWidgets(List<EditBox> boxes) {
+        detailBoxes.clear();
+        for (EditBox box : boxes) {
+            detailBoxes.add(box);
+            addRenderableWidget(box);
+        }
+    }
+
+    public void unregisterDetailWidgets(List<EditBox> boxes) {
+        for (EditBox box : boxes) {
+            children.remove(box);
+            renderables.remove(box);
+        }
+        detailBoxes.clear();
+    }
+```
+
+Add import for `EditBox` and `java.util.List` if not present.
+
+- [ ] **Step 4: Adapt openTaskDetail/closeTaskDetail**
+
+Replace `openTaskDetail()` and `closeTaskDetail()` in MainConfigScreen:
+
+```java
+    private TaskDetailPanel detailPanel = null;
+
+    private void openTaskDetail(TaskDefinition def) {
+        if (detailPanel != null) {
+            detailPanel.dispose(this);
+            detailPanel = null;
+        }
+        detailPanel = new TaskDetailPanel(this, def, this::closeTaskDetail);
+    }
+
+    private void closeTaskDetail() {
+        if (detailPanel != null) {
+            detailPanel.dispose(this);
+            detailPanel = null;
+        }
+    }
+```
+
+Remove the old `editingTask`, `currentColor`, `currentOutlineWidth`, `currentMapFilter`, `mapsText` fields since they're now managed by `TaskDetailPanel`.
+
+- [ ] **Step 5: Replace detail rendering in MainConfigScreen.render()**
+
+In `render()` method (around line 126-137), replace:
+
+```java
+                if (editingTask != null) {
+                    TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
+                            SIDEBAR_W, 0, width, height, HEADER_H, mx, my, null);
+                    TaskDetailPanel.render(g, font, editingTask,
+                            currentColor, currentOutlineWidth, currentMapFilter, mapsText,
+                            SIDEBAR_W, 0, width, height);
+                } else {
+                    TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
+                            SIDEBAR_W, 0, width, height, HEADER_H, mx, my, this::openTaskDetail);
+                }
+```
+
+With:
+
+```java
+                if (detailPanel != null) {
+                    TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
+                            SIDEBAR_W, 0, width, height, HEADER_H, mx, my, null);
+                    detailPanel.render(g, font, SIDEBAR_W, 0, width, height);
+                } else {
+                    TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
+                            SIDEBAR_W, 0, width, height, HEADER_H, mx, my, this::openTaskDetail);
+                }
+```
+
+- [ ] **Step 6: Replace detail click handling in mouseClicked()**
+
+Replace the detail panel click handling section (around line 172-179):
+
+```java
+        // 详情面板开启时，优先处理
+        if (editingTask != null && mx > width - DETAIL_PANEL_W) {
+            if (TaskDetailPanel.mouseClicked(this, (int) mx, (int) my, btn, editingTask,
+                    currentColor, currentOutlineWidth, currentMapFilter, mapsText,
+                    SIDEBAR_W, 0, width, height, this::closeTaskDetail)) {
+                return true;
+            }
+        }
+```
+
+With:
+
+```java
+        // 详情面板开启时，优先处理
+        if (detailPanel != null && mx > width - DETAIL_PANEL_W) {
+            if (detailPanel.mouseClicked((int) mx, (int) my, btn)) {
+                return true;
+            }
+        }
+```
+
+- [ ] **Step 7: Forward keyboard events to detail panel**
+
+Add to `keyPressed()` and `charTyped()`:
+
+In `keyPressed()`:
+```java
+        if (detailPanel != null && detailPanel.keyPressed(key, sc, mod)) return true;
+```
+
+In `charTyped()`:
+```java
+        if (detailPanel != null && detailPanel.charTyped(ch, mod)) return true;
+```
+
+- [ ] **Step 8: Update sidebar click to reset detail panel**
+
+In `mouseClicked()`, sidebar click handler (around line 189-190):
+```java
+    editingTask = null;
+```
+Change to:
+```java
+    if (detailPanel != null) { detailPanel.dispose(this); detailPanel = null; }
+```
+
+- [ ] **Step 9: Fix scroll handling for detail mode**
+
+Replace the scroll handler:
+
+```java
+        if (editingTask != null) {
+            return TaskDetailPanel.mouseScrolled(vertical);
+        }
+```
+
+With:
+
+```java
+        if (detailPanel != null) {
+            return true; // absorb scroll in detail mode
+        }
+```
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/main/java/com/habitrain/core/client/gui/TaskDetailPanel.java src/main/java/com/habitrain/core/client/gui/MainConfigScreen.java
+git commit -m "fix: rewrite TaskDetailPanel with EditBox widgets, adapt MainConfigScreen"
+```
+
+---
+
+### Task 5: Fix layout overlap in TaskListPanel and MainConfigScreen
+
+**Files:**
+- Modify: `src/main/java/com/habitrain/core/client/gui/TaskListPanel.java`
+- Modify: `src/main/java/com/habitrain/core/client/gui/MainConfigScreen.java`
+
+- [ ] **Step 1: Fix task list Y offsets in TaskListPanel.render()**
+
+In `render()`, find and change the `listY` and `endY` calculations:
+
+```java
+        int listY = areaY + headerH + 24;  // was: + 2 (跳过搜索框区域)
+        int visibleH = areaH - headerH - 36;  // was: - 6 (预留底部按钮空间)
+```
+
+Also update the empty message Y calculation to account for the new offset:
+```java
+                    contentX + contentW / 2 - font.width(msg) / 2, listY + 30, 0, false);
+```
+
+- [ ] **Step 2: Fix visibleH in TaskListPanel.mouseClicked()**
+
+Same adjustment in `mouseClicked()`:
+```java
+        int visibleH = areaH - headerH - 36;  // was: - 6
+```
+
+- [ ] **Step 3: Fix search box position in MainConfigScreen.init()**
+
+Change the search box Y:
+```java
+        int searchY = HEADER_H + 2;  // was: HEADER_H + 4
+```
+
+- [ ] **Step 4: Fix close button position in MainConfigScreen.init()**
+
+Change the close button bounds:
+```java
+        ).bounds(width - 70, height - 26, 60, 16).build());  // was: height - 22
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/main/java/com/habitrain/core/client/gui/TaskListPanel.java src/main/java/com/habitrain/core/client/gui/MainConfigScreen.java
+git commit -m "fix: correct task list Y offsets to prevent overlap with search box and close button"
+```
+
+---
+
+### Task 6: Final build and verification
+
+- [ ] **Step 1: Build the core mod**
+
+```bash
+cd D:/Backup/mc\ mod/哈比列车api
+./gradlew clean build
+```
+
+Expected: `BUILD SUCCESSFUL`. JAR at `build/libs/habitrain_core-*.jar`.
+
+- [ ] **Step 2: Copy core JAR to temp directory**
+
+```bash
+cp build/libs/habitrain_core-*.jar "D:/Backup/mc mod/临时/"
+```
+
+- [ ] **Step 3: Build companion mod（哈比列车更多修改）**
+
+```bash
+cd D:/Backup/mc\ mod/哈比列车更多修改
+./gradlew clean build
+```
+
+Expected: `BUILD SUCCESSFUL`.
+
+- [ ] **Step 4: Copy companion JAR to temp directory**
+
+```bash
+cp build/libs/habitrain_more_tasks-*.jar "D:/Backup/mc mod/临时/"
+```
+
+- [ ] **Step 5: Commit all remaining changes**
+
+```bash
+cd D:/Backup/mc\ mod/哈比列车api
+git add -A
+git commit -m "fix: task system bugfixes - sync, GUI inputs, layout"
+```
