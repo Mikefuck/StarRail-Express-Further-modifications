@@ -145,15 +145,14 @@ public class TaskDetailPanel {
         g.drawString(font, Component.literal(status), statusRectX, y, 0, false);
         y += ROW_H;
 
-        // 2. 颜色选择
+        // 2. 颜色选择（文字颜色 = 当前颜色）
         g.drawString(font, Component.literal("§7颜色:"), panelX + PAD, y, 0, false);
         colorRectX = panelX + PAD + LABEL_W;
-        colorRectY = y + 4;
-        int colorBlockSize = 12;
-        g.fill(colorRectX, colorRectY, colorRectX + colorBlockSize, colorRectY + colorBlockSize, currentColor.getRGB());
+        // 直接用文字颜色代替方块，颜色名以当前颜色的 RGB 显示
+        String cHex = String.format("#%06X", currentColor.getRGB() & 0x00FFFFFF);
         String colorName = getColorName(currentColor);
-        g.drawString(font, Component.literal("§f" + colorName + " §7[点击切换]"),
-                colorRectX + colorBlockSize + 4, y, 0, false);
+        g.drawString(font, Component.literal("§f" + colorName + " §7(" + cHex + ") [点击切换]"),
+                colorRectX, y, currentColor.getRGB() & 0x00FFFFFF, false);
         y += ROW_H;
 
         // 3. 描边粗细
@@ -228,9 +227,10 @@ public class TaskDetailPanel {
             return true;
         }
 
-        // 颜色切换
-        if (mx >= colorRectX && mx <= colorRectX + 120
-                && my >= colorRectY && my <= colorRectY + ROW_H) {
+        // 颜色切换（从状态行底部到颜色行底部覆盖整行）
+        int colorRowY = panelY + 36 + ROW_H;
+        if (mx >= colorRectX && mx <= colorRectX + 140
+                && my >= colorRowY && my <= colorRowY + ROW_H) {
             int nextIdx = (findColorIndex(currentColor) + 1) % COLOR_PRESETS.length;
             currentColor = new Color(COLOR_PRESETS[nextIdx]);
             saveColor();

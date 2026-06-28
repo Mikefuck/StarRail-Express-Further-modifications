@@ -285,10 +285,15 @@ public class MainConfigScreen extends Screen {
         detailBoxes.clear();
         for (EditBox box : boxes) {
             detailBoxes.add(box);
+            addRenderableWidget(box);
         }
     }
 
     public void unregisterDetailWidgets(List<EditBox> boxes) {
+        for (EditBox box : boxes) {
+            box.setVisible(false);
+            children().remove(box);
+        }
         detailBoxes.clear();
     }
 }
