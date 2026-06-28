@@ -1,6 +1,7 @@
 package com.habitrain.core.client;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;

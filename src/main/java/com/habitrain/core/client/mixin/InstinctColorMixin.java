@@ -1,9 +1,9 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.taskapi.api.HabiTaskDefinition;
-import com.habitrain.taskapi.api.HabiTaskRegistry;
-import com.habitrain.taskapi.impl.config.HabiConfigManager;
-import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
+import com.habitrain.core.api.TaskDefinition;
+import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.TaskConfigEntry;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.SecurityMonitorBlock;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
@@ -37,17 +37,17 @@ public class InstinctColorMixin {
     @Inject(method = "render", at = @At("HEAD"), remap = false)
     private static void habitrain$buildOverrides(CallbackInfo ci) {
         overrideColors.clear();
-        for (HabiTaskDefinition def : HabiTaskRegistry.getAll()) {
+        // 仅从 ModMenu 配置中读取颜色覆盖，不自动添加默认色
+        for (TaskDefinition def : TaskRegistry.getAll()) {
             int bt = def.getBlockTypeId();
-            if (bt < 1) continue; // 移除 > 11 的限制，支持自定义类型 12+
+            if (bt < 1) continue;
 
-            HabiTaskConfigEntry cfg = HabiConfigManager.getInstance().getTaskConfig(def.getFullId());
+            TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
             if (cfg != null) {
+                // 用户通过 ModMenu 显式设置了颜色
                 overrideColors.put(bt, cfg.getColor());
-            } else if (bt >= 12 && def.getInstinctColor() != null) {
-                // 自定义任务：使用定义中的默认颜色
-                overrideColors.put(bt, def.getInstinctColor());
             }
+            // 不再为 type >= 12 自动添加默认色——由 CustomTaskBlockRendererMixin 处理
         }
     }
 

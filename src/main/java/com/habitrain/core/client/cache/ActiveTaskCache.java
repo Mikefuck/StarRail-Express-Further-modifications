@@ -1,4 +1,4 @@
-package com.habitrain.core.client;
+package com.habitrain.core.client.cache;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;

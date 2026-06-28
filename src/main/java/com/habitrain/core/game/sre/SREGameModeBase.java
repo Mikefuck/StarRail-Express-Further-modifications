@@ -63,6 +63,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         registerBuiltin("meditate", "冥想", HabiTaskCategory.MURDER, 1.0f, -1);
         registerBuiltin("outside", "外出", HabiTaskCategory.MURDER, 1.0f, -1);
         registerBuiltin("breathe", "呼吸新鲜空气", HabiTaskCategory.MURDER, 1.0f, -1);
+        registerBuiltin("be_alone", "一个人静静", HabiTaskCategory.MURDER, 1.0f, -1);
 
         // Repair mode tasks
         registerBuiltin("repair_wire", "修复线路", HabiTaskCategory.REPAIR, 1.0f, -1);

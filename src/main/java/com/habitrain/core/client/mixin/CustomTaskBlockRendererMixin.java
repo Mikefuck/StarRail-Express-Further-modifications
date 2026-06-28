@@ -1,12 +1,12 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.taskapi.api.HabiTaskDefinition;
-import com.habitrain.taskapi.api.HabiTaskRegistry;
-import com.habitrain.taskapi.client.ActiveCustomTaskCache;
-import com.habitrain.taskapi.impl.HabiTaskManager;
-import com.habitrain.taskapi.impl.config.HabiConfigManager;
-import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
+import com.habitrain.core.api.TaskDefinition;
+import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.client.cache.ActiveTaskCache;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.task.TaskManager;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -48,7 +48,7 @@ import java.util.OptionalDouble;
  * - 旁观/创造模式：渲染所有自定义任务方块（类型 ≥12），无需活跃任务
  *   → 与原始 render() 中 shouldDisplay[1..11] = true 的行为一致
  * - 生存模式：仅渲染玩家当前活跃的自定义任务匹配的方块
- * - 颜色从 {@link HabiTaskDefinition#getInstinctColor()} 获取，
+ * - 颜色从 {@link TaskDefinition#getInstinctColor()} 获取，
  *   如有 ModMenu 配置则使用配置颜色（与 {@link InstinctColorMixin} 逻辑一致）
  * - 透明度使用 Color 自身的 alpha 通道（不再硬编码 0.2f）
  * - 描边粗细可从配置读取（SRE 默认 4.0）
@@ -137,11 +137,11 @@ public class CustomTaskBlockRendererMixin {
      */
     private static Map<Integer, Color> buildTypeColorMap() {
         Map<Integer, Color> map = new HashMap<>();
-        for (HabiTaskDefinition def : HabiTaskRegistry.getAll()) {
+        for (TaskDefinition def : TaskRegistry.getAll()) {
             int bt = def.getBlockTypeId();
             if (bt < 12) continue;
 
-            HabiTaskConfigEntry cfg = HabiConfigManager.getInstance().getTaskConfig(def.getFullId());
+            TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
             if (cfg != null) {
                 map.put(bt, cfg.getColor());
             } else if (def.getInstinctColor() != null) {
@@ -176,21 +176,21 @@ public class CustomTaskBlockRendererMixin {
         }
 
         // ===== 生存模式：需要活跃的自定义任务 =====
-        // ★ 优先从 HabiTaskManager 读取（单机模式，共享 JVM）
-        // ★ 回退到 ActiveCustomTaskCache（多人模式，从服务端同步）
-        HabiTaskManager mgr = HabiTaskManager.getInstance();
-        var customTask = mgr.getActiveCustomTask(instance.player.getUUID());
+        // ★ 优先从 TaskManager 读取（单机模式，共享 JVM）
+        // ★ 回退到 ActiveTaskCache（多人模式，从服务端同步）
+        TaskManager mgr = TaskManager.getInstance();
+        var customTask = mgr.getActiveTask(instance.player.getUUID());
 
         int blockTypeId;
         Color taskColor;
         float lineWidth = 4.0f; // SRE 默认线宽
 
         if (customTask != null) {
-            // 单机模式：直接从 HabiTaskManager 获取
+            // 单机模式：直接从 TaskManager 获取
             blockTypeId = customTask.getDefinition().getBlockTypeId();
             if (blockTypeId < 12) return;
 
-            HabiTaskConfigEntry cfg = HabiConfigManager.getInstance().getTaskConfig(customTask.getFullId());
+            TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(customTask.getFullId());
             if (cfg != null) {
                 taskColor = cfg.getColor();
                 lineWidth = cfg.outlineWidth;
@@ -200,18 +200,18 @@ public class CustomTaskBlockRendererMixin {
             }
         } else {
             // ★ 多人模式：从服务端同步的缓存获取
-            String activeTaskId = ActiveCustomTaskCache.getActiveTaskFullId();
+            String activeTaskId = ActiveTaskCache.getActiveTaskFullId();
             if (activeTaskId == null) return; // 没有活跃的任务
 
-            blockTypeId = ActiveCustomTaskCache.getBlockTypeId();
+            blockTypeId = ActiveTaskCache.getBlockTypeId();
             if (blockTypeId < 12) return;
 
-            taskColor = ActiveCustomTaskCache.getColor();
-            lineWidth = ActiveCustomTaskCache.getOutlineWidth();
+            taskColor = ActiveTaskCache.getColor();
+            lineWidth = ActiveTaskCache.getOutlineWidth();
         }
 
         // 记录任务名称（用于日志）
-        String taskName = customTask != null ? customTask.getFullId() : ActiveCustomTaskCache.getActiveTaskFullId();
+        String taskName = customTask != null ? customTask.getFullId() : ActiveTaskCache.getActiveTaskFullId();
 
         int renderedCount = 0;
         var level = renderContext.world();

@@ -2,5 +2,11 @@
     "required": true,
     "package": "com.habitrain.core.client.mixin",
     "compatibilityLevel": "JAVA_21",
-    "client": []
+    "client": [
+        "HudCustomTaskMixin",
+        "CustomTaskBlockRendererMixin",
+        "InstinctColorMixin",
+        "InstinctCacheFixMixin",
+        "StarRailExpressTitleScreenMixin"
+    ]
 }

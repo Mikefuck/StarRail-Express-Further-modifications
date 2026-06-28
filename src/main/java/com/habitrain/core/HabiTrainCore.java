@@ -69,10 +69,6 @@ public class HabiTrainCore implements ModInitializer {
         // 5. 注册生命周期事件
         registerLifecycleEvents();
 
-        // 6. 冻结注册表
-        GameModeRegistry.freeze();
-        TaskRegistry.freeze();
-
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",
                 GameModeRegistry.size(), TaskRegistry.size());
     }
