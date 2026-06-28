@@ -7,13 +7,9 @@ version = project.mod_version
 group = project.maven_group
 
 repositories {
-    // 用于 CCA (Cardinal Components API)
     maven { url "https://maven.ladysnake.org/releases" }
-    // 用于 Wathe
     maven { url "https://api.modrinth.com/maven" }
-    // 用于 ModMenu
     maven { url "https://maven.terraformersmc.com/releases/" }
-    // 本地依赖 (如果使用本地JAR文件)
     flatDir { dirs "libs" }
 }
 
@@ -24,21 +20,9 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
-    // ModMenu (可视化配置界面)
     modImplementation "com.terraformersmc:modmenu:11.0.3"
-
-    // ========== 哈比列车依赖 ==========
-    // 前置模组: StarRailExpress (列车谋杀案核心模组, 包含noellesroles/harpymodloader)
-    // 需要将构建好的 starrailexpress JAR 放入 libs/ 目录
-    // 构建方式: 在 StarRailExpress 项目目录运行 gradlew build
-    // 然后将 build/libs/star_rail_express-*.jar 复制到本项目的 libs/ 目录
     modImplementation files("libs/star_rail_express-4.2.0.jar")
-
-    // Simple Voice Chat API (编译时需要，运行时由SRE提供)
     modCompileOnly files("libs/voicechat-fabric-1.21.1-2.6.18.jar")
-
-    // CCA (必需 - 用于组件系统)
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-base:6.1.2") { transitive = false }
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-entity:6.1.2") { transitive = false }
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-world:6.1.2") { transitive = false }
@@ -47,7 +31,6 @@ dependencies {
 processResources {
     def version = project.version
     inputs.property "version", version
-
     filesMatching("fabric.mod.json") {
         expand "version": version
     }
@@ -64,22 +47,10 @@ java {
 }
 
 jar {
-    def projectName = project.name
-    inputs.property "projectName", projectName
-
-    from("LICENSE") {
-        rename { "${it}_$projectName"}
-    }
+    from("LICENSE") { rename { "${it}_${project.archives_base_name}" } }
 }
 
 publishing {
-    publications {
-        create("mavenJava", MavenPublication) {
-            from components.java
-        }
-    }
-
-    repositories {
-        // Add repositories to publish to here.
-    }
+    publications { create("mavenJava", MavenPublication) { from components.java } }
+    repositories { mavenLocal() }
 }

@@ -1,36 +1,22 @@
 {
     "schemaVersion": 1,
-    "id": "habitrain_taskapi",
+    "id": "habitrain_core",
     "version": "${version}",
-    "name": "Mike任务API",
-    "description": "哈比列车任务系统API模组",
-    "authors": [
-        "HabiTrain"
-    ],
-    "contact": {
-        "homepage": "https://github.com/"
-    },
+    "name": "哈比列车核心 (HabiTrain Core)",
+    "description": "哈比列车游戏框架与任务系统API模组",
+    "authors": ["HabiTrain"],
+    "contact": { "homepage": "https://github.com/" },
     "license": "MIT",
-    "icon": "assets/habitrain_taskapi/icon.png",
+    "icon": "assets/habitrain_core/icon.png",
     "environment": "*",
     "entrypoints": {
-        "main": [
-            "com.habitrain.taskapi.HabiTrainTaskAPI"
-        ],
-        "client": [
-            "com.habitrain.taskapi.client.HabiTrainTaskAPIClient"
-        ],
-        "modmenu": [
-            "com.habitrain.taskapi.client.gui.HabiModMenuIntegration"
-        ]
+        "main": ["com.habitrain.core.HabiTrainCore"],
+        "client": ["com.habitrain.core.client.HabiTrainCoreClient"],
+        "modmenu": ["com.habitrain.core.client.gui.ModMenuIntegration"]
     },
     "mixins": [
-        "habitrain_taskapi.mixins.json",
-        {
-            "config": "habitrain_taskapi.client.mixins.json",
-            "environment": "client"
-        },
-        "habitrain_taskapi.replay.mixins.json"
+        "habitrain_core.mixins.json",
+        { "config": "habitrain_core.client.mixins.json", "environment": "client" }
     ],
     "depends": {
         "fabricloader": ">=0.19.2",
