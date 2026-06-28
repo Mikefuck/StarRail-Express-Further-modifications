@@ -1,6 +1,9 @@
 package com.habitrain.core.api;
 
+import com.habitrain.core.game.sre.TaskEnumHelper;
 import com.habitrain.core.task.TaskManager;
+import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
+import io.wifi.starrailexpress.cca.SREPlayerTaskComponent.TrainTask;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -9,7 +12,7 @@ import net.minecraft.world.entity.player.Player;
  * 任务运行时实例 — 取代 HabiTaskInstance。
  * 新增: 计时器支持、进度回调分发。
  */
-public class TaskInstance {
+public class TaskInstance implements TrainTask {
 
     private final TaskDefinition definition;
     private boolean fulfilled = false;
@@ -30,6 +33,10 @@ public class TaskInstance {
     public int getMaxProgress() { return maxProgress; }
     public int getElapsedTicks() { return elapsedTicks; }
     public boolean isFulfilled() { return fulfilled; }
+
+    @Override
+    public boolean isFulfilled(Player player) { return fulfilled; }
+
     public boolean isFailed() { return failed; }
 
     public void setProgress(int progress) {
@@ -79,7 +86,15 @@ public class TaskInstance {
     }
 
     public String getName() { return definition.getTaskId(); }
+
+    @Override
     public String getCustomTaskId() { return definition.getFullId(); }
+
+    @Override
+    public SREPlayerTaskComponent.Task getType() {
+        SREPlayerTaskComponent.Task custom = TaskEnumHelper.getCustom();
+        return custom != null ? custom : SREPlayerTaskComponent.Task.SLEEP;
+    }
 
     public CompoundTag toNbt() {
         CompoundTag nbt = new CompoundTag();
