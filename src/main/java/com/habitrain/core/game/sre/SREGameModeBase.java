@@ -104,7 +104,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     // ========== 语音群组管理 ==========
 
-    protected static void addPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
+    public static void addPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
         if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
 
         VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
@@ -127,7 +127,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         }
     }
 
-    protected static void processPendingVoiceJoins(MinecraftServer server) {
+    public static void processPendingVoiceJoins(MinecraftServer server) {
         if (pendingVoiceJoins.isEmpty()) return;
         Iterator<Map.Entry<UUID, Integer>> it = pendingVoiceJoins.entrySet().iterator();
         while (it.hasNext()) {
@@ -143,7 +143,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         }
     }
 
-    protected static void processGameEndGroupJoin(MinecraftServer server) {
+    public static void processGameEndGroupJoin(MinecraftServer server) {
         if (!pendingGameEndGroupJoin) return;
         pendingGameEndGroupJoin = false;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
