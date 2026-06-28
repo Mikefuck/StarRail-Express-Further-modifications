@@ -1,6 +1,6 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.taskapi.api.HabiTaskCategory;
+import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
@@ -62,7 +62,7 @@ public class TaskListScreen extends Screen {
 
     // ====== 状态 ======
     private final Screen parent;
-    private final HabiTaskCategory category;
+    private final TaskCategory category;
     private final String modeDisplayName;
     private final int modeAccentColor;
 
@@ -82,7 +82,7 @@ public class TaskListScreen extends Screen {
     private double dragStartOff = 0;
 
     // ====== 构造 ======
-    public TaskListScreen(Screen parent, HabiTaskCategory category,
+    public TaskListScreen(Screen parent, TaskCategory category,
                               String modeDisplayName, int modeAccentColor) {
         super(Component.literal("§l" + modeDisplayName + " - 任务列表"));
         this.parent = parent;
@@ -154,9 +154,10 @@ public class TaskListScreen extends Screen {
 
         List<TaskDefinition> tasks = new ArrayList<>();
         for (var def : TaskRegistry.getAll()) {
-            if (def.getOriginalCategory() == category || def.getOriginalCategory() == HabiTaskCategory.ALL) {
-                if (category == HabiTaskCategory.ALL && def.getOriginalCategory() != HabiTaskCategory.ALL) continue;
-                if (category == HabiTaskCategory.CUSTOM && def.getOriginalCategory() != HabiTaskCategory.CUSTOM) continue;
+            TaskCategory cat = def.getCategory();
+            if (cat == category || cat == TaskCategory.ALL) {
+                if (category == TaskCategory.ALL && cat != TaskCategory.ALL) continue;
+                if (category == TaskCategory.CUSTOM && cat != TaskCategory.CUSTOM) continue;
                 tasks.add(def);
             }
         }

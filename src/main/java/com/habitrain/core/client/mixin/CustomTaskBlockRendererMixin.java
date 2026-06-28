@@ -13,6 +13,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -129,6 +130,23 @@ public class CustomTaskBlockRendererMixin {
         matrices.popPose();
     }
 
+    // ====== 游戏状态检测 ======
+
+    /**
+     * 检测 SRE 游戏是否正在运行
+     * 大厅阶段返回 false，游戏进行中返回 true
+     */
+    private static boolean isGameRunning() {
+        var instance = Minecraft.getInstance();
+        if (instance == null || instance.level == null) return false;
+        try {
+            var gameWorld = SREGameWorldComponent.KEY.get(instance.level);
+            return gameWorld != null && gameWorld.isRunning();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ====== 颜色映射 ======
 
     /**
@@ -241,6 +259,12 @@ public class CustomTaskBlockRendererMixin {
      * 注意：旁观模式没有"活跃任务"，因此描边粗细使用 SRE 默认值 4.0。
      */
     private static void renderAllCustomTaskBlocks(WorldRenderContext renderContext) {
+        // ★ 大厅阶段（无活跃游戏）→ 不渲染 DLC 自定义方块（type ≥ 12）
+        //    只让 SRE 原版渲染器处理原版方块（type 1-11）
+        if (!isGameRunning()) {
+            return;
+        }
+
         Map<Integer, Color> typeColors = buildTypeColorMap();
         if (typeColors.isEmpty()) return;
 

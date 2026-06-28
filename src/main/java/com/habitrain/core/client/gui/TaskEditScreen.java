@@ -1,6 +1,5 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.taskapi.api.HabiTaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;

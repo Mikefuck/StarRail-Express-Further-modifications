@@ -1,6 +1,6 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.taskapi.api.HabiTaskCategory;
+import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
@@ -45,7 +45,7 @@ public class ConfigScreen extends Screen {
 
     // ====== 模式卡片定义 ======
     private record ModeCard(
-            HabiTaskCategory category,
+            TaskCategory category,
             String icon,
             String name,
             int accentColor,       // 强调色 ARGB
@@ -53,13 +53,13 @@ public class ConfigScreen extends Screen {
     ) {}
 
     private static final List<ModeCard> MODE_CARDS = List.of(
-            new ModeCard(HabiTaskCategory.MURDER, "🔪", "谋杀模式",
+            new ModeCard(TaskCategory.MURDER, "🔪", "谋杀模式",
                     0xFFFF5555, 0x22FF0000),
-            new ModeCard(HabiTaskCategory.REPAIR, "🔧", "修机模式",
+            new ModeCard(TaskCategory.REPAIR, "🔧", "修机模式",
                     0xFF55BBFF, 0x2200AAFF),
-            new ModeCard(HabiTaskCategory.ALL, "⭐", "通用任务",
+            new ModeCard(TaskCategory.ALL, "⭐", "通用任务",
                     0xFF55FF55, 0x2200AA00),
-            new ModeCard(HabiTaskCategory.CUSTOM, "📦", "自定义任务",
+            new ModeCard(TaskCategory.CUSTOM, "📦", "自定义任务",
                     0xFFFFAA00, 0x22FF8800)
     );
 
@@ -371,19 +371,20 @@ public class ConfigScreen extends Screen {
     //  工具方法
     // =========================================================
 
-    private List<TaskDefinition> getTasksForMode(HabiTaskCategory category) {
+    private List<TaskDefinition> getTasksForMode(TaskCategory category) {
         List<TaskDefinition> result = new ArrayList<>();
         for (var def : TaskRegistry.getAll()) {
-            if (def.getOriginalCategory() == category || def.getOriginalCategory() == HabiTaskCategory.ALL) {
+            TaskCategory cat = def.getCategory();
+            if (cat == category || cat == TaskCategory.ALL) {
                 // ALL 卡片只显示纯 ALL 任务
-                if (category == HabiTaskCategory.ALL && def.getOriginalCategory() != HabiTaskCategory.ALL) continue;
+                if (category == TaskCategory.ALL && cat != TaskCategory.ALL) continue;
                 // CUSTOM 卡片只显示纯 CUSTOM 任务
-                if (category == HabiTaskCategory.CUSTOM && def.getOriginalCategory() != HabiTaskCategory.CUSTOM) continue;
+                if (category == TaskCategory.CUSTOM && cat != TaskCategory.CUSTOM) continue;
                 result.add(def);
             }
         }
         result.sort(Comparator.comparingInt((TaskDefinition d) ->
-                "habitrain_taskapi".equals(d.getModId()) ? 0 : 1)
+                "habitrain_core".equals(d.getModId()) ? 0 : 1)
                 .thenComparing(TaskDefinition::getFullId));
         return result;
     }
