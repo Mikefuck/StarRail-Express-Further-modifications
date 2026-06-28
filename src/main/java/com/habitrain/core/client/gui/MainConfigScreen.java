@@ -285,21 +285,10 @@ public class MainConfigScreen extends Screen {
         detailBoxes.clear();
         for (EditBox box : boxes) {
             detailBoxes.add(box);
-            addRenderableWidget(box);
         }
     }
 
     public void unregisterDetailWidgets(List<EditBox> boxes) {
-        for (EditBox box : boxes) {
-            children().remove(box);
-        }
-        // renderables 是 private field, 没有 accessor method, 需要反射
-        try {
-            var renderablesField = Screen.class.getDeclaredField("renderables");
-            renderablesField.setAccessible(true);
-            var renderableList = (List<?>) renderablesField.get(this);
-            renderableList.removeAll(boxes);
-        } catch (Exception ignored) {}
         detailBoxes.clear();
     }
 }
