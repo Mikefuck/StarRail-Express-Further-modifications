@@ -586,12 +586,11 @@ public class TaskEditScreen extends Screen {
     }
 
     private String getCategoryName(TaskCategory cat) {
-        return switch (cat) {
-            case MURDER -> "谋杀模式";
-            case REPAIR -> "修机模式";
-            case ALL -> "通用任务";
-            case CUSTOM -> "自定义任务";
-        };
+        if (cat == TaskCategory.MURDER) return "谋杀模式";
+        if (cat == TaskCategory.REPAIR) return "修机模式";
+        if (cat == TaskCategory.ALL) return "通用任务";
+        if (cat == TaskCategory.CUSTOM) return "自定义任务";
+        return cat.getDisplayName();
     }
 
     // ---- 地图过滤模式 ----
