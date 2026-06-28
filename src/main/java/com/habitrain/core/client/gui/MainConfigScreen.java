@@ -65,7 +65,7 @@ public class MainConfigScreen extends Screen {
         rebuildSidebar();
         // 搜索框
         int searchX = SIDEBAR_W + PAD;
-        int searchY = HEADER_H + 4;
+        int searchY = HEADER_H + 2;
         searchBox = new EditBox(font, searchX, searchY, Math.min(200, width - SIDEBAR_W - PAD * 4), 14, Component.literal(""));
         searchBox.setMaxLength(64);
         searchBox.setHint(Component.literal("🔍 搜索任务..."));
@@ -75,7 +75,7 @@ public class MainConfigScreen extends Screen {
         // 关闭按钮
         addRenderableWidget(Button.builder(
                 Component.literal("§c✖ 关闭"), b -> onClose()
-        ).bounds(width - 70, height - 22, 60, 16).build());
+        ).bounds(width - 70, height - 26, 60, 16).build());
     }
 
     /** 构建侧栏条目列表 */
@@ -291,9 +291,15 @@ public class MainConfigScreen extends Screen {
 
     public void unregisterDetailWidgets(List<EditBox> boxes) {
         for (EditBox box : boxes) {
-            children.remove(box);
-            renderables.remove(box);
+            children().remove(box);
         }
+        // renderables 是 private field, 没有 accessor method, 需要反射
+        try {
+            var renderablesField = Screen.class.getDeclaredField("renderables");
+            renderablesField.setAccessible(true);
+            var renderableList = (List<?>) renderablesField.get(this);
+            renderableList.removeAll(boxes);
+        } catch (Exception ignored) {}
         detailBoxes.clear();
     }
 }
