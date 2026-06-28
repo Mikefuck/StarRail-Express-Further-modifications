@@ -314,6 +314,13 @@ public abstract class GenerateTaskMixin {
 
         if (player instanceof ServerPlayer sp) {
             ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
+            // ★ 发送正确名称的中心提示，替代 SRE 自带的 task_ 前缀通知
+            sp.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal(
+                    "§a✦ 新任务已派发: §f" + def.getDisplayName()
+                ),
+                false
+            );
         }
 
         return instance;
