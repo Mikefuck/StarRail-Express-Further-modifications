@@ -58,7 +58,7 @@ public class TaskListPanel {
         // 渲染行
         int startIdx = (int) (safeScroll / (ROW_H + ROW_GAP));
         int y = listY - (int) (safeScroll % (ROW_H + ROW_GAP));
-        int endY = areaY + areaH - 6;
+        int endY = areaY + areaH - 36;
 
         for (int i = startIdx; i < filtered.size() && y < endY; i++) {
             TaskDefinition def = filtered.get(i);
@@ -128,7 +128,7 @@ public class TaskListPanel {
         int startIdx = (int) (safeScroll / (ROW_H + ROW_GAP));
 
         for (int i = startIdx; i < filtered.size(); i++) {
-            if (y + ROW_H > areaY + areaH - 6) break;
+            if (y + ROW_H > areaY + areaH - 36) break;
 
             if (mx >= contentX && mx < contentX + contentW && my >= y && my < y + ROW_H) {
                 TaskDefinition def = filtered.get(i);

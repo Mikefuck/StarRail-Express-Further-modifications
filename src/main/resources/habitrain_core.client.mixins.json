@@ -7,6 +7,7 @@
         "CustomTaskBlockRendererMixin",
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
-        "StarRailExpressTitleScreenMixin"
+        "StarRailExpressTitleScreenMixin",
+        "FixTaskRendererMixin"
     ]
 }

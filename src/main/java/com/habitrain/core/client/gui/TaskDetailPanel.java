@@ -22,7 +22,7 @@ public class TaskDetailPanel {
     private static final int PANEL_W = 320;
     private static final int PAD = 10;
     private static final int ROW_H = 22;
-    private static final int LABEL_W = 72;
+    private static final int LABEL_W = 52;
     private static final int CONTENT_W = PANEL_W - PAD * 2 - LABEL_W - 6;
 
     private static final int[] COLOR_PRESETS = {
@@ -56,11 +56,12 @@ public class TaskDetailPanel {
     private final EditBox mapsBox;
     private final List<EditBox> allBoxes = new ArrayList<>();
 
-    // ---- 按钮矩形区域（用于点击检测） ----
+    // ---- 按钮/交互矩形区域（用于点击检测） ----
     private int panelX, panelY;
+    private int statusRectX, statusRectY;
     private int colorRectX, colorRectY;
     private int outlineDecX, outlineIncX;
-    private int mapModeX;
+    private int mapModeX, mapModeY;
     private int saveBtnX, resetBtnX;
     private int btnY;
 
@@ -110,8 +111,11 @@ public class TaskDetailPanel {
         screen.registerDetailWidgets(allBoxes);
     }
 
-    /** 注销 EditBox 控件 */
+    /** 注销 EditBox 控件（清除内容防止悬浮残留） */
     public void dispose(MainConfigScreen screen) {
+        for (EditBox box : allBoxes) {
+            box.setValue("");
+        }
         screen.unregisterDetailWidgets(allBoxes);
     }
 
@@ -133,20 +137,23 @@ public class TaskDetailPanel {
 
         int y = panelY + 36;
 
-        // 1. 启用/禁用
+        // 1. 启用/禁用（可点击切换）
         g.drawString(font, Component.literal("§7状态:"), panelX + PAD, y, 0, false);
+        statusRectX = panelX + PAD + LABEL_W;
+        statusRectY = y;
         String status = enabled ? "§a✔ 已启用" : "§c✖ 已禁用";
-        g.drawString(font, Component.literal(status), panelX + PAD + LABEL_W, y, 0, false);
+        g.drawString(font, Component.literal(status), statusRectX, y, 0, false);
         y += ROW_H;
 
         // 2. 颜色选择
         g.drawString(font, Component.literal("§7颜色:"), panelX + PAD, y, 0, false);
         colorRectX = panelX + PAD + LABEL_W;
-        colorRectY = y + 3;
-        g.fill(colorRectX, colorRectY, colorRectX + 18, colorRectY + 18, currentColor.getRGB());
+        colorRectY = y + 4;
+        int colorBlockSize = 12;
+        g.fill(colorRectX, colorRectY, colorRectX + colorBlockSize, colorRectY + colorBlockSize, currentColor.getRGB());
         String colorName = getColorName(currentColor);
         g.drawString(font, Component.literal("§f" + colorName + " §7[点击切换]"),
-                colorRectX + 22, y, 0, false);
+                colorRectX + colorBlockSize + 4, y, 0, false);
         y += ROW_H;
 
         // 3. 描边粗细
@@ -179,6 +186,7 @@ public class TaskDetailPanel {
         // 7. 地图过滤模式
         g.drawString(font, Component.literal("§7地图:"), panelX + PAD, y, 0, false);
         mapModeX = panelX + PAD + LABEL_W;
+        mapModeY = y;
         g.drawString(font, Component.literal("§f[ " + MAP_MODES[mapFilterMode] + " ] §7[点击切换]"),
                 mapModeX, y, 0, false);
         y += ROW_H;
@@ -206,6 +214,13 @@ public class TaskDetailPanel {
             if (box.mouseClicked(mx, my, btn)) return true;
         }
 
+        // 状态切换（已启用/已禁用）
+        if (mx >= statusRectX && mx <= statusRectX + font.width("§a✔ 已启用") + 10
+                && my >= statusRectY && my <= statusRectY + ROW_H) {
+            enabled = !enabled;
+            return true;
+        }
+
         // ← 返回
         if (mx >= panelX + PAD && mx <= panelX + PAD + font.width("← 返回") + 10
                 && my >= panelY + 8 && my <= panelY + 30) {
@@ -223,8 +238,9 @@ public class TaskDetailPanel {
         }
 
         // 描边 [-]
+        int outlineY = panelY + 36 + 2 * ROW_H;
         if (mx >= outlineDecX && mx <= outlineDecX + 24
-                && my >= panelY + 80 && my <= panelY + 102) {
+                && my >= outlineY && my <= outlineY + ROW_H) {
             outlineWidth = Math.max(1.0f, outlineWidth - 0.5f);
             saveOutlineWidth();
             return true;
@@ -232,7 +248,7 @@ public class TaskDetailPanel {
 
         // 描边 [+]
         if (mx >= outlineIncX && mx <= outlineIncX + 24
-                && my >= panelY + 80 && my <= panelY + 102) {
+                && my >= outlineY && my <= outlineY + ROW_H) {
             outlineWidth = Math.min(10.0f, outlineWidth + 0.5f);
             saveOutlineWidth();
             return true;
@@ -240,7 +256,7 @@ public class TaskDetailPanel {
 
         // 地图模式切换
         if (mx >= mapModeX && mx <= mapModeX + font.width("[ 全部地图 ]") + 40
-                && my >= panelY + 168 && my <= panelY + 190) {
+                && my >= mapModeY && my <= mapModeY + ROW_H) {
             mapFilterMode = (mapFilterMode + 1) % 3;
             saveMapFilter();
             return true;
