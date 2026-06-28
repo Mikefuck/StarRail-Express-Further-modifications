@@ -105,6 +105,11 @@ public class TaskInstance implements TrainTask {
         nbt.putInt("progress", this.progress);
         nbt.putInt("maxProgress", this.maxProgress);
         nbt.putInt("elapsedTicks", this.elapsedTicks);
+        // ★ 关键修复：写入 type 字段，使 SRE 客户端反序列化能正确还原 CUSTOM 任务
+        var customType = com.habitrain.core.game.sre.TaskEnumHelper.getCustom();
+        if (customType != null) {
+            nbt.putInt("type", customType.ordinal());
+        }
         return nbt;
     }
 
