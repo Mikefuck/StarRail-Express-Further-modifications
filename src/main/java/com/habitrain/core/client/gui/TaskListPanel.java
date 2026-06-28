@@ -118,7 +118,7 @@ public class TaskListPanel {
         List<TaskDefinition> filtered = filterTasks(tasks, searchText);
         int contentX = areaX + 4;
         int contentW = areaW - areaX - 8 - SCROLLBAR_W;
-        int listY = areaY + headerH + 2;
+        int listY = areaY + headerH + 24;
         int visibleH = areaH - headerH - 36;
         int totalH = filtered.size() * (ROW_H + ROW_GAP);
         int maxScroll = Math.max(0, totalH - visibleH);
