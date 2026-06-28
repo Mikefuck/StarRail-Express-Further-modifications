@@ -1,6 +1,5 @@
 package com.habitrain.core.api;
 
-import com.habitrain.taskapi.api.HabiTaskCategory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 
@@ -22,8 +21,8 @@ public class TaskDefinition {
     private final String fullId;
     private final String displayName;
 
-    // 分类支持：SRE 原版枚举 OR 自定义 TaskCategory
-    private final HabiTaskCategory originalCategory;
+    // 分类：标准 TaskCategory 或自定义 customCategory
+    private final TaskCategory category;
     private final String gameModeId;
     private final TaskCategory customCategory;
 
@@ -60,7 +59,7 @@ public class TaskDefinition {
         this.taskId = builder.taskId;
         this.fullId = builder.modId + ":" + builder.taskId;
         this.displayName = builder.displayName;
-        this.originalCategory = builder.originalCategory;
+        this.category = builder.category;
         this.gameModeId = builder.gameModeId;
         this.customCategory = builder.customCategory;
         this.weight = builder.weight;
@@ -88,7 +87,7 @@ public class TaskDefinition {
     public String getModId() { return modId; }
     public String getTaskId() { return taskId; }
     public String getDisplayName() { return displayName; }
-    public HabiTaskCategory getOriginalCategory() { return originalCategory; }
+    public TaskCategory getCategory() { return category; }
     public String getGameModeId() { return gameModeId; }
     public TaskCategory getCustomCategory() { return customCategory; }
     public float getWeight() { return weight; }
@@ -117,7 +116,7 @@ public class TaskDefinition {
         private final String modId;
         private final String taskId;
         private String displayName;
-        private HabiTaskCategory originalCategory = HabiTaskCategory.ALL;
+        private TaskCategory category = TaskCategory.ALL;
         private String gameModeId = "sre:base";
         private TaskCategory customCategory;
         private float weight = 1.0f;
@@ -147,7 +146,7 @@ public class TaskDefinition {
         }
 
         public Builder displayName(String name) { this.displayName = name; return this; }
-        public Builder originalCategory(HabiTaskCategory cat) { this.originalCategory = cat; return this; }
+        public Builder category(TaskCategory cat) { this.category = cat; return this; }
         public Builder customCategory(TaskCategory cat) { this.customCategory = cat; return this; }
         public Builder gameMode(String gameModeId) { this.gameModeId = gameModeId; return this; }
         public Builder weight(float w) { this.weight = w; return this; }

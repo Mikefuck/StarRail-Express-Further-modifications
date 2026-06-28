@@ -85,7 +85,7 @@ public class TaskInstance implements TrainTask {
         }
     }
 
-    public String getName() { return definition.getTaskId(); }
+    public String getName() { return definition.getDisplayName(); }
 
     @Override
     public String getCustomTaskId() { return definition.getFullId(); }

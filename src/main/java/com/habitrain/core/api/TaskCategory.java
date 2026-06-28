@@ -4,15 +4,18 @@ import java.util.Objects;
 
 /**
  * 任务分类 — per-GameMode 可自定义。
- * 内置快捷常量 ALL 用于通用任务。
- * SRE 原版任务仍使用 {@link com.habitrain.taskapi.api.HabiTaskCategory} 枚举。
+ * 标准分类常量 MURDER / REPAIR / ALL / CUSTOM 替代旧的 HabiTaskCategory 枚举。
  */
 public class TaskCategory {
     private final String id;
     private final String displayName;
     private final String gameModeId;
 
-    public static final TaskCategory ALL = new TaskCategory("core:all", "通用", "core");
+    // ========== 标准分类常量（替代旧的 HabiTaskCategory 枚举） ==========
+    public static final TaskCategory MURDER = new TaskCategory("sre:murder", "谋杀模式", "sre:base");
+    public static final TaskCategory REPAIR = new TaskCategory("sre:repair", "修机模式", "sre:base");
+    public static final TaskCategory ALL    = new TaskCategory("sre:all", "通用任务", "sre:base");
+    public static final TaskCategory CUSTOM = new TaskCategory("sre:custom", "自定义任务", "sre:base");
 
     public TaskCategory(String id, String displayName, String gameModeId) {
         this.id = Objects.requireNonNull(id);
