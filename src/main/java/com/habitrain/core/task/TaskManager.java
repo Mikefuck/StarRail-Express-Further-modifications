@@ -1,9 +1,9 @@
 package com.habitrain.core.task;
 
 import com.habitrain.core.api.*;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.taskapi.api.HabiTaskCategory;
-import com.habitrain.taskapi.impl.config.HabiConfigManager;
-import com.habitrain.taskapi.impl.config.HabiTaskConfigEntry;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -70,10 +70,10 @@ public class TaskManager {
 
     public List<TaskDefinition> getAvailableTasks(String mapName, HabiTaskCategory currentCategory) {
         List<TaskDefinition> available = new ArrayList<>();
-        HabiConfigManager config = HabiConfigManager.getInstance();
+        ConfigManager config = ConfigManager.getInstance();
 
         for (TaskDefinition def : TaskRegistry.getAll()) {
-            HabiTaskConfigEntry entry = config.getTaskConfig(def.getFullId());
+            TaskConfigEntry entry = config.getTaskConfig(def.getFullId());
             boolean mapEnabled = isTaskEnabledForMap(entry, mapName);
             if (!mapEnabled) continue;
 
@@ -89,12 +89,12 @@ public class TaskManager {
 
     public boolean isOriginalTaskDisabled(String taskName, String mapName) {
         String fullId = "habitrain_core:" + taskName.toLowerCase();
-        HabiTaskConfigEntry entry = HabiConfigManager.getInstance().getTaskConfig(fullId);
+        TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);
         if (entry == null) return false;
         return !isTaskEnabledForMap(entry, mapName);
     }
 
-    private boolean isTaskEnabledForMap(HabiTaskConfigEntry entry, String mapName) {
+    private boolean isTaskEnabledForMap(TaskConfigEntry entry, String mapName) {
         if (entry == null) return true;
         if (!entry.enabled) return false;
         if (entry.mapFilterMode == 0) return true;
