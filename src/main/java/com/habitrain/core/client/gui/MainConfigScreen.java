@@ -122,8 +122,7 @@ public class MainConfigScreen extends Screen {
         } else if (selectedSidebarIndex < sidebarEntries.size()) {
             SidebarEntry entry = sidebarEntries.get(selectedSidebarIndex);
             if (entry.isGameMode() && entry.tag() instanceof GameMode gm) {
-                String modeId = gm.getId();
-                List<TaskDefinition> tasks = getTasksForGameMode(modeId);
+                List<TaskDefinition> tasks = getTasksForGameMode(gm);
 
                 if (editingTask != null) {
                     TaskListPanel.render(g, font, tasks, searchText, scrollOffset,
@@ -205,7 +204,7 @@ public class MainConfigScreen extends Screen {
         if (editingTask == null && selectedSidebarIndex > 0 && selectedSidebarIndex < sidebarEntries.size()) {
             SidebarEntry entry = sidebarEntries.get(selectedSidebarIndex);
             if (entry.isGameMode() && entry.tag() instanceof GameMode gm) {
-                List<TaskDefinition> tasks = getTasksForGameMode(gm.getId());
+                List<TaskDefinition> tasks = getTasksForGameMode(gm);
                 TaskListPanel.mouseClicked(tasks, searchText, scrollOffset,
                         SIDEBAR_W, 0, width, height, HEADER_H, (int) mx, (int) my, btn,
                         this::openTaskDetail, this::toggleTask);
@@ -248,6 +247,18 @@ public class MainConfigScreen extends Screen {
 
     // ========== 任务交互 ==========
 
+    private List<TaskDefinition> getTasksForGameMode(GameMode gameMode) {
+        List<TaskCategory> categories = gameMode.getTaskCategories();
+        if (categories.isEmpty()) return List.of();
+        return TaskRegistry.getAll().stream()
+                .filter(def -> {
+                    TaskCategory cat = def.getCategory();
+                    return cat != null && (categories.contains(cat) || cat == TaskCategory.ALL);
+                })
+                .sorted(Comparator.comparing(TaskDefinition::getFullId))
+                .collect(Collectors.toList());
+    }
+
     private void openTaskDetail(TaskDefinition def) {
         editingTask = def;
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
@@ -277,13 +288,6 @@ public class MainConfigScreen extends Screen {
             TaskConfigEntry newCfg = new TaskConfigEntry(false);
             ConfigManager.getInstance().setTaskConfig(def.getFullId(), newCfg);
         }
-    }
-
-    private List<TaskDefinition> getTasksForGameMode(String gameModeId) {
-        return TaskRegistry.getAll().stream()
-                .filter(def -> gameModeId.equals(def.getGameModeId()))
-                .sorted(Comparator.comparing(TaskDefinition::getFullId))
-                .collect(Collectors.toList());
     }
 
     @Override
