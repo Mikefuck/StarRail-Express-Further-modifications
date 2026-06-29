@@ -38,6 +38,8 @@ public class BlackoutMode implements GameMode {
     private boolean sreGameRunning = false;
     /** 已尝试启动 SRE 游戏 */
     private boolean sreStartAttempted = false;
+    /** 已强制激活 SRE 游戏 (单人/少人绕过 minPlayerCount) */
+    private boolean sreForceActivated = false;
     /** 等待 SRE 游戏启动的 tick 数 */
     private int sreStartWaitTicks = 0;
 
@@ -67,6 +69,7 @@ public class BlackoutMode implements GameMode {
         this.gameEnded = false;
         this.sreGameRunning = false;
         this.sreStartAttempted = false;
+        this.sreForceActivated = false;
         this.sreStartWaitTicks = 0;
 
         BlackoutRoleManager.clear();
@@ -116,9 +119,12 @@ public class BlackoutMode implements GameMode {
             sreStartWaitTicks++;
             if (sreGame != null && sreGame.getGameStatus() == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.INACTIVE
                     && sreStartWaitTicks > 40) { // 等待 ~2 秒让地图加载
-                // 强制激活 SRE 游戏 (绕过 minPlayerCount 检查)
-                sreGame.setGameStatus(io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE);
-                com.habitrain.core.HabiTrainCore.LOGGER.info("BlackoutMode: Forced SRE game to ACTIVE");
+                if (!sreForceActivated) {
+                    // 强制激活 SRE 游戏 (绕过 minPlayerCount 检查)
+                    sreGame.setGameStatus(io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE);
+                    sreForceActivated = true;
+                    com.habitrain.core.HabiTrainCore.LOGGER.info("BlackoutMode: Forced SRE game to ACTIVE");
+                }
             }
             if (sreGame != null && sreGame.isRunning()) {
                 sreActive = true;
@@ -126,11 +132,14 @@ public class BlackoutMode implements GameMode {
         }
 
         if (sreActive && !sreGameRunning) {
-            // SRE 游戏刚刚开始 → 独立分配阵营（不再依赖 SRE 角色同步）
+            // 独立分配阵营（不再依赖 SRE 角色同步）
             sreGameRunning = true;
             sreStartAttempted = false;
-            BlackoutRoleManager.initRandomAssignment(
-                    level.getServer().getPlayerList().getPlayers(), 0.25f);
+            var server = level.getServer();
+            if (server != null) {
+                BlackoutRoleManager.initRandomAssignment(
+                        server.getPlayerList().getPlayers(), 0.25f);
+            }
 
             // 通知 HUD 显示
             try {
