@@ -1,8 +1,12 @@
 package com.habitrain.core;
 
+import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.blackout.BlackoutVotingEngine;
+import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.SERepairMode;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREMurderMode;
@@ -25,6 +29,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -51,10 +56,14 @@ public class HabiTrainCore implements ModInitializer {
         // 1. 配置系统
         ConfigManager.getInstance().load();
 
-        // 2. 注册内置 GameMode（SRE 模式）
+        // 2. 注册内置 GameMode（SRE 模式 + 停电模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
         GameModeRegistry.register(MOD_ID, "sre:repair", new SERepairMode());
+        GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
+
+        // 注册停电模式专用的 SRE GameMode（所有人 CIVILIAN）
+        SREBlackoutGameMode.register();
 
         // 3. 注册网络包
         TaskConfigPayload.register();
@@ -62,6 +71,9 @@ public class HabiTrainCore implements ModInitializer {
         ConfigUpdatePayload.register();
         ShaderConfigPayload.register();
         ShaderInfoPayload.register();
+        BlackoutTimerPayload.register();
+        BlackoutVotePayload.register();
+        BlackoutStatusPayload.register();
 
         // 4. 注册命令
         registerCommands();
@@ -83,6 +95,70 @@ public class HabiTrainCore implements ModInitializer {
                                     IntegerArgumentType.getInteger(ctx, "range")))
                     )
             );
+
+            // /habi_api 命令族 (管理命令: 需要 OP)
+            dispatcher.register(Commands.literal("habi_api")
+                    .requires(source -> source.hasPermission(2))
+                    .then(Commands.literal("blackout")
+                            .executes(ctx -> {
+                                ServerLevel level = ctx.getSource().getLevel();
+                                try {
+                                    GameModeRegistry.start("habitrain_core:habitrains:blackout", level);
+                                    ctx.getSource().sendSuccess(
+                                            () -> Component.literal("§a✅ 停电模式已启动！"), true);
+                                } catch (Exception e) {
+                                    ctx.getSource().sendFailure(
+                                            Component.literal("§c启动失败: " + e.getMessage()));
+                                }
+                                return 1;
+                            })
+                    )
+                    .then(Commands.literal("stop")
+                            .executes(ctx -> {
+                                ServerLevel level = ctx.getSource().getLevel();
+                                GameModeRegistry.stop(level);
+                                ctx.getSource().sendSuccess(
+                                        () -> Component.literal("§c⏹ 当前游戏模式已停止"), true);
+                                return 1;
+                            })
+                    )
+                    .then(Commands.literal("list")
+                            .executes(ctx -> {
+                                String modes = GameModeRegistry.getAll().stream()
+                                        .map(GameMode::getId)
+                                        .collect(java.util.stream.Collectors.joining("§7, §e"));
+                                ctx.getSource().sendSuccess(
+                                        () -> Component.literal("§e已注册模式: §e" + modes), true);
+                                return 1;
+                            })
+                    )
+            );
+
+            // /habi_api 玩家命令 (无需 OP, 警长购买枪支弹药)
+            dispatcher.register(Commands.literal("habi_api")
+                    .then(Commands.literal("buy_gun")
+                            .executes(ctx -> {
+                                ServerPlayer player = ctx.getSource().getPlayer();
+                                if (player == null) return 0;
+                                if (com.habitrain.core.game.blackout.TACZWeaponBridge.buyDesertEagle(player)) {
+                                    ctx.getSource().sendSuccess(() -> Component.literal("§a购买成功"), false);
+                                    return 1;
+                                }
+                                return 0;
+                            })
+                    )
+                    .then(Commands.literal("buy_ammo")
+                            .executes(ctx -> {
+                                ServerPlayer player = ctx.getSource().getPlayer();
+                                if (player == null) return 0;
+                                if (com.habitrain.core.game.blackout.TACZWeaponBridge.buyAmmo(player, 4)) {
+                                    ctx.getSource().sendSuccess(() -> Component.literal("§a购买成功"), false);
+                                    return 1;
+                                }
+                                return 0;
+                            })
+                    )
+            );
         });
     }
 
@@ -93,10 +169,12 @@ public class HabiTrainCore implements ModInitializer {
             LOGGER.info("配置已加载，共 {} 个已注册任务", TaskRegistry.size());
         });
 
-        // 每 tick 处理待加入语音群组的玩家 + 游戏结束后的群组恢复
+        // 每 tick 处理待加入语音群组的玩家 + 游戏结束后的群组恢复 + 激活的 GameMode tick
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
+            // tick active game modes
+            GameModeRegistry.tickAll(server);
         });
 
         // 玩家加入
@@ -118,6 +196,13 @@ public class HabiTrainCore implements ModInitializer {
             // 同步配置
             TaskConfigPayload.sendToPlayer(player);
             ShaderConfigPayload.sendToPlayer(player);
+
+            // 通知激活的 GameMode 玩家加入
+            ServerLevel level = server.getLevel(Level.OVERWORLD);
+            if (level != null) {
+                GameModeRegistry.getActiveForLevel(level)
+                    .ifPresent(mode -> mode.onPlayerJoin(player));
+            }
         });
 
         // C2S 配置更新接收器
@@ -136,6 +221,16 @@ public class HabiTrainCore implements ModInitializer {
                 if (context.server().isSingleplayer()) return;
                 TaskConfigPayload.broadcastToAll(context.server());
                 ShaderConfigPayload.broadcastToAll(context.server());
+            });
+        });
+
+        // C2S 投票接收器
+        ServerPlayNetworking.registerGlobalReceiver(BlackoutVotePayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                if (payload.isResult()) return;
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                BlackoutVotingEngine.castVote(player.getUUID(), payload.targetUUID());
             });
         });
 
