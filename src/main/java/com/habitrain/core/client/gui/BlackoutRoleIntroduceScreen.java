@@ -101,7 +101,7 @@ public class BlackoutRoleIntroduceScreen extends Screen {
             boolean selected = i == selectedIndex;
 
             // 卡片背景
-            int bgColor = selected ? 0xD0 + (role.color() & 0x00FFFFFF) : 0xC0444444;
+            int bgColor = selected ? (0xD0 << 24) | (role.color() & 0x00FFFFFF) : 0xC0444444;
             if (hovered && !selected) bgColor = 0xC0555555;
             gui.fill(cardX, cardY, cardX + LEFT_PANEL_W, cardY + CARD_H, bgColor);
 
