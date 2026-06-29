@@ -101,24 +101,23 @@ public class BlackoutRoleManager {
     /**
      * 独立分配阵营 — 不再依赖 SRE 角色同步。
      * @param players  所有参与玩家列表
-     * @param badRatio 坏人比例 (0.0 ~ 1.0)
      */
-    public static void initRandomAssignment(List<ServerPlayer> players, float badRatio) {
+    public static void initRandomAssignment(List<ServerPlayer> players) {
         clear();
         List<ServerPlayer> shuffled = new ArrayList<>(players);
         Collections.shuffle(shuffled);
 
-        int badCount = Math.max(1, (int)(shuffled.size() * badRatio));
+        int killerCount = Math.max(1, (int) Math.ceil(shuffled.size() / 6.0));
 
         for (int i = 0; i < shuffled.size(); i++) {
             UUID id = shuffled.get(i).getUUID();
-            if (i < badCount) {
+            if (i < killerCount) {
                 assignRole(id, RoleType.KILLER, Faction.BAD);
             } else {
                 assignRole(id, RoleType.CIVILIAN, Faction.GOOD);
             }
         }
-        LOGGER.info("BlackoutRoleManager: Assigned {} BAD / {} GOOD",
-                badCount, shuffled.size() - badCount);
+        LOGGER.info("BlackoutRoleManager: Assigned {} KILLER / {} CIVILIAN ({} players, formula n/6 ceil)",
+                killerCount, shuffled.size() - killerCount, shuffled.size());
     }
 }
