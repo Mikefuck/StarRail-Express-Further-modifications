@@ -2,9 +2,6 @@ package com.habitrain.core.game.blackout.sre;
 
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutRoleManager.Faction;
-import io.wifi.starrailexpress.api.NormalRole;
-import io.wifi.starrailexpress.api.SRERole;
-import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -21,9 +18,10 @@ import java.util.List;
 /**
  * 停电模式专用的 SRE GameMode。
  *
- * 所有玩家分配为 CIVILIAN（普通乘客）或自定义 BLACKOUT_BAD 角色（中立阵营），
- * 使得 SRE 看到两个不同阵营，不会触发"全员同阵营→结束游戏"。
- * 阵营分配由 BlackoutRoleManager 独立完成。
+ * 坏人玩家分配为 KILLER（杀手阵营），好人玩家分配为 CIVILIAN（平民阵营），
+ * 使得 SRE 看到两个不同阵营（杀手 vs 平民），不会触发"全员同阵营→结束游戏"。
+ * 实际阵营分配由 BlackoutRoleManager 独立完成，SRE 的 KILLER 角色仅用于
+ * 维持 SRE 游戏运行，不给玩家实际的 SRE 杀手能力。
  *
  * 在 {@link #register()} 中通过 SREGameModes.registerGameMode() 注册到 SRE，
  * 由 HabiTrainCore.onInitialize() 在模组初始化时调用。
@@ -35,35 +33,11 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
     public static final ResourceLocation MODE_ID =
             ResourceLocation.fromNamespaceAndPath("sre", "blackout");
 
-    /** 自定义 Blackout 坏人角色 — 中立阵营，无 SRE 杀手能力 */
-    private static final NormalRole BLACKOUT_BAD_ROLE = createBadRole();
-
     /** 是否已完成注册 */
     private static boolean registered = false;
 
     public SREBlackoutGameMode() {
         super(MODE_ID, 10, 1);
-    }
-
-    private static NormalRole createBadRole() {
-        NormalRole role = new NormalRole(
-                ResourceLocation.fromNamespaceAndPath("habitrain", "blackout_bad"),
-                0xAA0000,                       // 颜色：暗红
-                false,                          // isInnocent — 不在平民阵营
-                false,                          // canUseKiller — 无 SRE 杀手能力
-                MoodType.NONE,
-                100,                            // maxSprintTime
-                false                           // canSeeTime
-        );
-        role.setNeutrals(true);
-        role.setCanPickUpRevolver(false);
-        role.setCanUseInstinct(false);
-        role.setCanAutoAddMoney(false);
-        role.setCanHavePassiveIncome(false);
-        TMMRoles.registerRole(role);
-        LOGGER.info("Registered Blackout BAD role: {} ({})",
-                role.getIdentifier(), "NEUTRAL faction, no SRE killer abilities");
-        return role;
     }
 
     @Override
@@ -79,11 +53,11 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         // 3. 分配 Blackout 阵营（记录到 BlackoutRoleManager）
         BlackoutRoleManager.initRandomAssignment(players);
 
-        // 4. 分配 SRE 角色：好人=平民阵营，坏人=中立阵营
-        //    → SRE 看到两个不同阵营，不会触发"全员同阵营→结束游戏"
+        // 4. 分配 SRE 角色：好人=CIVILIAN（平民），坏人=KILLER（杀手阵营）
+        //    SRE 看到 CIVILIAN + KILLER 两个经典对抗阵营 → 不会结束游戏
         for (ServerPlayer player : players) {
             boolean isBad = BlackoutRoleManager.getFaction(player.getUUID()) == Faction.BAD;
-            game.addRole(player, isBad ? BLACKOUT_BAD_ROLE : TMMRoles.CIVILIAN, false);
+            game.addRole(player, isBad ? TMMRoles.KILLER : TMMRoles.CIVILIAN, false);
         }
         game.syncRoles();
 
