@@ -2,8 +2,13 @@ package com.habitrain.core.client;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
+import com.habitrain.core.client.BlackoutKeyHandler;
+import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.network.BlackoutStatusPayload;
+import com.habitrain.core.network.BlackoutStatusPayload.StatusType;
+import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
@@ -14,6 +19,7 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
@@ -135,6 +141,43 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             // 服务端会校验 OP 权限，非 OP 的请求会被拒绝
             String configJson = ConfigManager.getInstance().toJsonString();
             ConfigUpdatePayload.sendToServer(configJson);
+        });
+
+        // =========================================================
+        //  停电模式 — 客户端注册
+        // =========================================================
+
+        // 快捷键
+        BlackoutKeyHandler.register();
+
+        // HUD 渲染
+        HudRenderCallback.EVENT.register((g, tickDelta) -> {
+            BlackoutHudOverlay.render(g);
+        });
+
+        // 网络接收: 时间同步
+        ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                BlackoutHudOverlay.updateTime(
+                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive());
+            });
+        });
+
+        // 网络接收: 状态事件
+        ClientPlayNetworking.registerGlobalReceiver(BlackoutStatusPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                String msg;
+                var st = payload.statusType();
+                if (st == StatusType.BLACKOUT_START) msg = "§c⚡ 停电了！";
+                else if (st == StatusType.BLACKOUT_END) msg = "§a⚡ 供电恢复";
+                else if (st == StatusType.VOTE_OPEN) msg = "§e【投票】按 [P] 键打开投票界面！";
+                else if (st == StatusType.VOTE_RESULT) msg = "§e【投票】" + payload.data() + " 当选警长！";
+                else if (st == StatusType.TIME_WARNING) msg = "§e⚠ 仅剩 1 分钟！";
+                else msg = "";
+                if (ctx.client().player != null) {
+                    ctx.client().player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg));
+                }
+            });
         });
     }
 

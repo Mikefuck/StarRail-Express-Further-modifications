@@ -22,6 +22,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     modImplementation "com.terraformersmc:modmenu:11.0.3"
     modImplementation files("libs/star_rail_express-4.2.0.jar")
+    modImplementation files("libs/TACZ-Refabricated-1.21.1-0.7.0-forge1.1.8-hotfix.jar")
     modCompileOnly files("libs/voicechat-fabric-1.21.1-2.6.18.jar")
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-base:6.1.2") { transitive = false }
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-entity:6.1.2") { transitive = false }

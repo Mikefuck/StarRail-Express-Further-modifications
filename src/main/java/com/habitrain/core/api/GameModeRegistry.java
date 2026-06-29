@@ -1,6 +1,9 @@
 package com.habitrain.core.api;
 
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +17,7 @@ import java.util.*;
 public class GameModeRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("GameModeRegistry");
     private static final Map<String, GameMode> REGISTRY = new LinkedHashMap<>();
+    private static final Map<ResourceKey<Level>, GameMode> ACTIVE_MODES = new HashMap<>();
     private static boolean frozen = false;
 
     public static void register(String modId, String modeId, GameMode mode) {
@@ -41,13 +45,66 @@ public class GameModeRegistry {
     }
 
     /**
-     * 查找在指定世界激活的 GameMode。
-     * 如果多个模式同时激活，返回第一个匹配的。
+     * Start a GameMode in the given level. Calls onPreStart + onStart.
+     * Throws if another mode is already active in this level.
+     */
+    public static void start(String fullId, ServerLevel level) {
+        ResourceKey<Level> levelKey = level.dimension();
+        if (ACTIVE_MODES.containsKey(levelKey)) {
+            throw new IllegalStateException("A GameMode is already active in " + levelKey.location());
+        }
+        GameMode mode = REGISTRY.get(fullId);
+        if (mode == null) {
+            throw new IllegalArgumentException("GameMode '" + fullId + "' is not registered");
+        }
+        ACTIVE_MODES.put(levelKey, mode);
+        mode.onPreStart(level);
+        mode.onStart(level);
+        LOGGER.info("Started GameMode: {} in {}", fullId, levelKey.location());
+    }
+
+    /**
+     * Stop the active GameMode in the given level. Calls onEnd + onCleanup.
+     * No-op if no mode is active.
+     */
+    public static void stop(ServerLevel level) {
+        ResourceKey<Level> levelKey = level.dimension();
+        GameMode mode = ACTIVE_MODES.remove(levelKey);
+        if (mode != null) {
+            mode.onEnd(level, null);
+            mode.onCleanup(level);
+            LOGGER.info("Stopped GameMode: {} in {}", mode.getId(), levelKey.location());
+        }
+    }
+
+    /**
+     * Tick all active GameModes. Call from ServerTickEvents.END_SERVER_TICK.
+     */
+    public static void tickAll(MinecraftServer server) {
+        for (ServerLevel level : server.getAllLevels()) {
+            ResourceKey<Level> levelKey = level.dimension();
+            GameMode mode = ACTIVE_MODES.get(levelKey);
+            if (mode != null) {
+                mode.onTick(level);
+            }
+        }
+    }
+
+    /**
+     * Get the active GameMode in a level (also checks passive isActive() as fallback).
      */
     public static Optional<GameMode> getActiveForLevel(ServerLevel level) {
+        ResourceKey<Level> levelKey = level.dimension();
+        GameMode explicit = ACTIVE_MODES.get(levelKey);
+        if (explicit != null) return Optional.of(explicit);
+        // fallback: passive check
         return REGISTRY.values().stream()
                 .filter(m -> m.isActive(level))
                 .findFirst();
+    }
+
+    public static boolean isActiveInLevel(ServerLevel level) {
+        return ACTIVE_MODES.containsKey(level.dimension());
     }
 
     public static boolean isRegistered(String fullId) {
