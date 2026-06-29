@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.agmas.harpymodloader.Harpymodloader;
 
 import java.util.List;
 
@@ -38,7 +39,17 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
     @Override
     public void initializeGame(ServerLevel world, SREGameWorldComponent game,
                                List<ServerPlayer> players) {
+        // 必须执行 SRE 标准初始化流程
+        Harpymodloader.refreshRoles();
         game.clearRoleMap();
+
+        // 将玩家加入游戏队伍（否则 SRE 游戏会立即结束）
+        addPlayersToTeam(world.getServer().createCommandSourceStack(), players, "harpymodloader_game");
+
+        // 执行游戏启动函数
+        executeFunction(world.getServer().createCommandSourceStack(), "harpymodloader:start_game");
+
+        // 所有玩家分配为 CIVILIAN, 不赋予任何特殊能力
         for (ServerPlayer player : players) {
             game.addRole(player, TMMRoles.CIVILIAN, false);
         }
