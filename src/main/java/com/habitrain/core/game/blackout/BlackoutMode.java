@@ -132,14 +132,8 @@ public class BlackoutMode implements GameMode {
         }
 
         if (sreActive && !sreGameRunning) {
-            // 独立分配阵营（不再依赖 SRE 角色同步）
             sreGameRunning = true;
             sreStartAttempted = false;
-            var server = level.getServer();
-            if (server != null) {
-                BlackoutRoleManager.initRandomAssignment(
-                        server.getPlayerList().getPlayers());
-            }
 
             // 通知 HUD 显示
             try {
