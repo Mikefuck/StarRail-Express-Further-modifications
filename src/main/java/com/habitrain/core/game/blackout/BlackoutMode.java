@@ -6,12 +6,13 @@ import com.habitrain.core.network.BlackoutTimerPayload;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.game.GameUtils;
+import io.wifi.starrailexpress.api.SREGameModes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 停电模式 GameMode 实现 — habitrains:blackout
@@ -82,13 +83,22 @@ public class BlackoutMode implements GameMode {
         // 注册 TACZ 子弹监听
         TACZWeaponBridge.register();
 
-        // 启动 SRE 原版游戏 (地图重置、房间传送、角色分配等)
+        // 查找 companion mod 注册的 SREBlackoutGameMode
+        ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
+        var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
+        if (sreMode == null) {
+            com.habitrain.core.HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found! Did core mod registration fail?");
+            return;
+        }
+
+        // 启动 SRE 原版游戏 (地图重置、房间传送等)
         var sreGame = SREGameWorldComponent.KEY.get(level);
         if (sreGame != null && !sreGame.isRunning()) {
             sreStartAttempted = true;
             sreStartWaitTicks = 0;
-            GameUtils.startGame(level, io.wifi.starrailexpress.api.SREGameModes.MURDER,
-                    GameConstants.getInTicks(io.wifi.starrailexpress.api.SREGameModes.MURDER.defaultStartTime, 0));
+            GameUtils.startGame(level, sreMode,
+                    GameConstants.getInTicks(
+                        ((io.wifi.starrailexpress.api.GameMode)sreMode).defaultStartTime, 0));
         }
     }
 
@@ -116,10 +126,11 @@ public class BlackoutMode implements GameMode {
         }
 
         if (sreActive && !sreGameRunning) {
-            // SRE 游戏刚刚开始 → 同步角色到 BlackoutRoleManager
+            // SRE 游戏刚刚开始 → 独立分配阵营（不再依赖 SRE 角色同步）
             sreGameRunning = true;
             sreStartAttempted = false;
-            syncRolesFromSRE(level);
+            BlackoutRoleManager.initRandomAssignment(
+                    level.getServer().getPlayerList().getPlayers(), 0.25f);
 
             // 通知 HUD 显示
             try {
@@ -166,32 +177,6 @@ public class BlackoutMode implements GameMode {
         }
     }
 
-    /** 从 SRE 角色系统同步到我们的阵营/职业管理器 */
-    private void syncRolesFromSRE(ServerLevel level) {
-        BlackoutRoleManager.clear();
-        var sreGame = SREGameWorldComponent.KEY.get(level);
-        if (sreGame == null) return;
-
-        var roles = sreGame.getRoles();
-        for (var entry : roles.entrySet()) {
-            UUID playerId = entry.getKey();
-            var sreRole = entry.getValue();
-            if (sreRole == null) continue;
-
-            // 杀手阵营 → BAD, 其他 → GOOD
-            boolean isKiller = sreRole.canUseKiller();
-            BlackoutRoleManager.assignRole(playerId,
-                    isKiller ? BlackoutRoleManager.RoleType.KILLER : BlackoutRoleManager.RoleType.CIVILIAN,
-                    isKiller ? BlackoutRoleManager.Faction.BAD : BlackoutRoleManager.Faction.GOOD);
-        }
-
-        int good = BlackoutRoleManager.getRemainingGood();
-        int bad = BlackoutRoleManager.getRemainingBad();
-        com.habitrain.core.HabiTrainCore.LOGGER.info(
-            "BlackoutMode: Synced {} roles from SRE (good={}, bad={})",
-            good + bad, good, bad);
-    }
-
     @Override
     public void onTaskComplete(ServerPlayer player, TaskInstance task) {
         checkVictory();
@@ -201,11 +186,6 @@ public class BlackoutMode implements GameMode {
     public void onPlayerJoin(ServerPlayer player) {
         player.sendSystemMessage(Component.literal(
             "§e当前游戏: 停电模式  剩余: §l" + formatTime(BlackoutTimerSystem.getTotalTimeRemaining()) + "§r"));
-
-        // 重新同步角色 (新玩家可能加入了)
-        if (currentLevel != null && sreGameRunning) {
-            syncRolesFromSRE(currentLevel);
-        }
     }
 
     @Override
