@@ -1,5 +1,6 @@
 package com.habitrain.core.game.blackout.sre;
 
+import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -48,6 +49,9 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
         // 执行游戏启动函数
         executeFunction(world.getServer().createCommandSourceStack(), "harpymodloader:start_game");
+
+        // ==== 在此处分配 Blackout 角色（SRE 检查胜利条件之前） ====
+        BlackoutRoleManager.initRandomAssignment(players);
 
         // 所有玩家分配为 CIVILIAN, 不赋予任何特殊能力
         for (ServerPlayer player : players) {

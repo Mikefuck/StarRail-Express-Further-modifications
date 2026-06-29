@@ -138,7 +138,7 @@ public class BlackoutMode implements GameMode {
             var server = level.getServer();
             if (server != null) {
                 BlackoutRoleManager.initRandomAssignment(
-                        server.getPlayerList().getPlayers(), 0.25f);
+                        server.getPlayerList().getPlayers());
             }
 
             // 通知 HUD 显示
