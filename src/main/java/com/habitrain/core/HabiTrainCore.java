@@ -8,7 +8,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutVotingEngine;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
-import com.habitrain.core.game.sre.SERepairMode;
+import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREMurderMode;
 import com.habitrain.core.network.*;
@@ -60,7 +60,7 @@ public class HabiTrainCore implements ModInitializer {
         // 2. 注册内置 GameMode（SRE 模式 + 停电模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
-        GameModeRegistry.register(MOD_ID, "sre:repair", new SERepairMode());
+        GameModeRegistry.register(MOD_ID, "sre:repair", new SRERepairMode());
         GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
 
         // 注册停电模式专用的 SRE GameMode（所有人 CIVILIAN）

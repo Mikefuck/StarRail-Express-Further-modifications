@@ -30,7 +30,7 @@ public class SREMurderMode extends SREGameModeBase {
             SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
             if (gw == null || gw.getGameMode() == null) return false;
             String modeId = gw.getGameMode().identifier.toString();
-            return !modeId.contains("repair");
+            return "sre:murder".equals(modeId) || (!modeId.contains("repair") && !modeId.contains("blackout"));
         } catch (Exception e) {
             return false;
         }

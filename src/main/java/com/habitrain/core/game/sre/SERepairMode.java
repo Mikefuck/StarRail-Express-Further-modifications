@@ -6,11 +6,11 @@ import net.minecraft.server.level.ServerLevel;
 
 import java.util.List;
 
-public class SERepairMode extends SREGameModeBase {
+public class SRERepairMode extends SREGameModeBase {
 
     public static final String MODE_ID = "sre:repair";
 
-    public SERepairMode() {
+    public SRERepairMode() {
         taskCategories.add(new TaskCategory("sre:repair", "修机模式", MODE_ID));
         taskCategories.add(TaskCategory.ALL);
     }
