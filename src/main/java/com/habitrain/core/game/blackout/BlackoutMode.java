@@ -327,6 +327,33 @@ public class BlackoutMode implements GameMode {
         }
     }
 
+    /**
+     * 强制终止当前游戏（由 /habi_api stop 或管理员命令触发）。
+     * 完整走一遍 SRE 停服 + GameModeRegistry.stop 流程。
+     */
+    public void forceEndGame(WinResult result, String message) {
+        if (gameEnded) return;
+        gameEnded = true;
+        sreGameRunning = false;
+
+        if (currentLevel != null) {
+            broadcast(message);
+
+            try {
+                var sreGame = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(currentLevel);
+                if (sreGame != null) {
+                    sreGame.setGameStatus(
+                        io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STOPPING);
+                    sreGame.clearRoleMap();
+                }
+            } catch (Exception e) {
+                HabiTrainCore.LOGGER.error("forceEndGame: failed to stop SRE game", e);
+            }
+
+            GameModeRegistry.stop(currentLevel, result);
+        }
+    }
+
     private void broadcast(String message) {
         if (currentLevel == null) return;
         Component component = Component.literal(message);
