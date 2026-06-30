@@ -67,14 +67,23 @@ public class GameModeRegistry {
      * Stop the active GameMode in the given level. Calls onEnd + onCleanup.
      * No-op if no mode is active.
      */
-    public static void stop(ServerLevel level) {
+    public static void stop(ServerLevel level, WinResult result) {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode mode = ACTIVE_MODES.remove(levelKey);
         if (mode != null) {
-            mode.onEnd(level, null);
+            mode.onEnd(level, result);
             mode.onCleanup(level);
-            LOGGER.info("Stopped GameMode: {} in {}", mode.getId(), levelKey.location());
+            LOGGER.info("Stopped GameMode: {} in {} (result: {})",
+                    mode.getId(), levelKey.location(), result.getReason());
         }
+    }
+
+    /**
+     * Stop the active GameMode in the given level with a default force-end result.
+     * Delegates to {@link #stop(ServerLevel, WinResult)}.
+     */
+    public static void stop(ServerLevel level) {
+        stop(level, WinResult.forceEnd("管理员终止"));
     }
 
     /**

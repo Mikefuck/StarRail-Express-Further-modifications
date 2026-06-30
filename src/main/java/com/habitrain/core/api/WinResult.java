@@ -27,6 +27,10 @@ public class WinResult {
         return new WinResult(List.of(), reason);
     }
 
+    public static WinResult forceEnd(String reason) {
+        return new WinResult(List.of(), reason);
+    }
+
     public List<UUID> getWinners() { return winners; }
     public String getReason() { return reason; }
     public boolean hasWinner() { return !winners.isEmpty(); }
