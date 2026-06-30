@@ -200,11 +200,8 @@ public class BlackoutMode implements GameMode {
             sreGameRunning = true;
             sreStartAttempted = false;
 
-            // 通知 HUD 显示
-            try {
-                var cls = Class.forName("com.habitrain.core.client.gui.BlackoutHudOverlay");
-                cls.getMethod("setVisible", boolean.class).invoke(null, true);
-            } catch (Exception ignored) {}
+            // HUD 显示由 BlackoutTimerPayload 网络包驱动，无需服务端反射调客户端
+            HabiTrainCore.LOGGER.info("BlackoutMode: SRE game running, HUD will activate via network sync");
         }
 
         if (!sreActive && sreGameRunning) {
@@ -275,10 +272,8 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
         broadcast("§6对局结束！");
-        try {
-            var cls = Class.forName("com.habitrain.core.client.gui.BlackoutHudOverlay");
-            cls.getMethod("setVisible", boolean.class).invoke(null, false);
-        } catch (Exception ignored) {}
+        // HUD 隐藏由 `onCleanup` 的 `BlackoutTimerSystem.reset()` 后，
+        // 下次 BlackoutTimerPayload 广播时会带上总时间=0，客户端自行隐藏
         currentLevel = null;
     }
 
@@ -290,10 +285,7 @@ public class BlackoutMode implements GameMode {
         currentLevel = null;
         gameEnded = false;
         sreGameRunning = false;
-        try {
-            var cls = Class.forName("com.habitrain.core.client.gui.BlackoutHudOverlay");
-            cls.getMethod("setVisible", boolean.class).invoke(null, false);
-        } catch (Exception ignored) {}
+        // HUD 隐藏已由网络包驱动
     }
 
     @Override
