@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import com.habitrain.core.HabiTrainCore;
 import java.util.List;
 
 /**
@@ -90,7 +91,7 @@ public class BlackoutMode implements GameMode {
         ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
         var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
         if (sreMode == null) {
-            com.habitrain.core.HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found! Did core mod registration fail?");
+            HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found! Did core mod registration fail?");
             return;
         }
 
@@ -123,7 +124,7 @@ public class BlackoutMode implements GameMode {
                     // 强制激活 SRE 游戏 (绕过 minPlayerCount 检查)
                     sreGame.setGameStatus(io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE);
                     sreForceActivated = true;
-                    com.habitrain.core.HabiTrainCore.LOGGER.info("BlackoutMode: Forced SRE game to ACTIVE");
+                    HabiTrainCore.LOGGER.info("BlackoutMode: Forced SRE game to ACTIVE");
                 }
             }
             if (sreGame != null && sreGame.isRunning()) {
@@ -181,6 +182,11 @@ public class BlackoutMode implements GameMode {
                     totalTime,
                     permDark ? 0 : (maintTime > 0 ? maintTime : cd),
                     permDark || BlackoutTimerSystem.isTransientBlackoutActive());
+
+            // 每 40 tick (2秒) 保持永久停电状态
+            if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive()) {
+                reapplyPermanentBlackout();
+            }
         }
     }
 
@@ -227,7 +233,13 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public List<TaskDefinition> filterAvailableTasks(List<TaskDefinition> tasks, ServerPlayer player) {
-        return tasks;
+        // 只返回停电模式专属任务
+        return tasks.stream()
+                .filter(t -> {
+                    TaskCategory cat = t.getCategory();
+                    return BLACKOUT_GOOD.equals(cat) || BLACKOUT_BAD.equals(cat);
+                })
+                .toList();
     }
 
     // ====== 内部方法 ======
@@ -247,6 +259,24 @@ public class BlackoutMode implements GameMode {
             blackout.reset();
         }
         broadcast("§a供电已恢复");
+    }
+
+    private void reapplyPermanentBlackout() {
+        if (currentLevel == null) return;
+        var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
+        if (blackout != null) {
+            try {
+                var field = blackout.getClass().getDeclaredField("blackouts");
+                field.setAccessible(true);
+                java.util.List<?> list = (java.util.List<?>) field.get(blackout);
+                if (list.isEmpty()) {
+                    blackout.triggerBlackout(false, 60000);
+                    HabiTrainCore.LOGGER.debug("Re-applied permanent blackout");
+                }
+            } catch (Exception e) {
+                HabiTrainCore.LOGGER.error("Failed to reapply blackout", e);
+            }
+        }
     }
 
     private void sendTimeWarning() {
