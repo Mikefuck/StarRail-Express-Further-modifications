@@ -6,5 +6,11 @@
   "task.pet_cat": "摸猫猫",
   "task.search_backpack": "翻找一下自己的背包...",
   "task.look_my_eyes": "LOOK MY EYES",
-  "task.betel_quest": "你想咀嚼..."
+  "task.betel_quest": "你想咀嚼...",
+  "sre.role.blackout_civilian.name": "停电模式 · 平民",
+  "sre.role.blackout_civilian.desc": "普通乘客。在停电中生存，通过完成任务帮助好人阵营获胜。",
+  "sre.role.blackout_killer.name": "停电模式 · 杀手",
+  "sre.role.blackout_killer.desc": "隐藏在人群中的杀手。利用黑暗掩护行动，消灭所有好人。",
+  "sre.role.blackout_sheriff.name": "停电模式 · 警长",
+  "sre.role.blackout_sheriff.desc": "唯一可以击杀杀手的好人。通过投票选出，谨慎选择目标。"
 }

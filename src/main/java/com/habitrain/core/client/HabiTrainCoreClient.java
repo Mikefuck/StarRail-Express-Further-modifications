@@ -179,6 +179,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 }
             });
         });
+
+        // 注册停电角色到 SRE 角色系统
+        registerBlackoutRoles();
     }
 
     /**
@@ -215,6 +218,32 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         } catch (Exception e) {
             HabiTrainCore.LOGGER.warn("无法通过反射检测 Iris 光影包", e);
             return "";
+        }
+    }
+
+    private void registerBlackoutRoles() {
+        try {
+            io.wifi.starrailexpress.api.TMMRoles.registerRole(
+                new io.wifi.starrailexpress.api.NormalRole(
+                    io.wifi.starrailexpress.SRE.id("blackout_civilian"), 0x55FF55,
+                    true, false,
+                    io.wifi.starrailexpress.api.SRERole.MoodType.REAL, 200, true));
+
+            io.wifi.starrailexpress.api.TMMRoles.registerRole(
+                new io.wifi.starrailexpress.api.NormalRole(
+                    io.wifi.starrailexpress.SRE.id("blackout_killer"), 0xFF5555,
+                    false, true,
+                    io.wifi.starrailexpress.api.SRERole.MoodType.FAKE, 200, true));
+
+            io.wifi.starrailexpress.api.TMMRoles.registerRole(
+                new io.wifi.starrailexpress.api.NormalRole(
+                    io.wifi.starrailexpress.SRE.id("blackout_sheriff"), 0xFFFF55,
+                    true, true,
+                    io.wifi.starrailexpress.api.SRERole.MoodType.REAL, 200, true));
+
+            HabiTrainCore.LOGGER.info("Registered 3 Blackout mode roles into SRE role system");
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("Failed to register Blackout roles into SRE", e);
         }
     }
 }

@@ -3,5 +3,11 @@
   "task.pet_cat": "Pet a Cat",
   "task.search_backpack": "Search Your Backpack...",
   "task.look_my_eyes": "LOOK MY EYES",
-  "task.betel_quest": "You want to chew..."
+  "task.betel_quest": "You want to chew...",
+  "sre.role.blackout_civilian.name": "Blackout · Civilian",
+  "sre.role.blackout_civilian.desc": "Regular passenger. Survive the blackout, complete tasks to help the good faction win.",
+  "sre.role.blackout_killer.name": "Blackout · Killer",
+  "sre.role.blackout_killer.desc": "A killer hiding among the crowd. Use the darkness as cover, eliminate all innocents.",
+  "sre.role.blackout_sheriff.name": "Blackout · Sheriff",
+  "sre.role.blackout_sheriff.desc": "The only good player who can kill killers. Elected by vote, choose your targets wisely."
 }
