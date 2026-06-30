@@ -159,7 +159,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 BlackoutHudOverlay.updateTime(
-                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive());
+                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
             });
         });
 
@@ -170,8 +170,14 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 var st = payload.statusType();
                 if (st == StatusType.BLACKOUT_START) msg = "§c⚡ 停电了！";
                 else if (st == StatusType.BLACKOUT_END) msg = "§a⚡ 供电恢复";
-                else if (st == StatusType.VOTE_OPEN) msg = "§e【投票】按 [P] 键打开投票界面！";
-                else if (st == StatusType.VOTE_RESULT) msg = "§e【投票】" + payload.data() + " 当选警长！";
+                else if (st == StatusType.VOTE_OPEN) {
+                    msg = "§e【投票】按 [P] 键打开投票界面！";
+                    BlackoutHudOverlay.setVotingOpen(true);
+                }
+                else if (st == StatusType.VOTE_RESULT) {
+                    msg = "§e【投票】" + payload.data() + " 当选警长！";
+                    BlackoutHudOverlay.setVotingOpen(false);
+                }
                 else if (st == StatusType.TIME_WARNING) msg = "§e⚠ 仅剩 1 分钟！";
                 else msg = "";
                 if (ctx.client().player != null) {

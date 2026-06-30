@@ -181,7 +181,8 @@ public class BlackoutMode implements GameMode {
             BlackoutTimerPayload.broadcastToAll(level.getServer(),
                     totalTime,
                     permDark ? 0 : (maintTime > 0 ? maintTime : cd),
-                    permDark || BlackoutTimerSystem.isTransientBlackoutActive());
+                    permDark || BlackoutTimerSystem.isTransientBlackoutActive(),
+                    BlackoutTimerSystem.getPhase().ordinal());
 
             // 每 40 tick (2秒) 保持永久停电状态
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive()) {

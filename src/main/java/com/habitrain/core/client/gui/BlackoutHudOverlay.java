@@ -20,11 +20,13 @@ public class BlackoutHudOverlay {
     private static boolean showHud = false;
     private static boolean blackoutModeActive = false;
     private static boolean votingOpen = false;
+    private static int currentPhase = 0;  // 0=NORMAL, 1=FIRST_BLACKOUT, 2=MAINTENANCE, 3=SECOND_BLACKOUT
 
-    public static void updateTime(int total, int cd, boolean active) {
+    public static void updateTime(int total, int cd, boolean active, int phase) {
         totalTimeRemaining = total;
         blackoutCountdown = cd;
         blackoutActive = active;
+        currentPhase = phase;
         blackoutModeActive = true;
         showHud = true;
     }
@@ -54,9 +56,16 @@ public class BlackoutHudOverlay {
 
         // 顶部信息行
         String timeStr = formatTime(totalTimeRemaining);
-        String cdStr = blackoutActive
-                ? "§c⚡ 停电中"
-                : "§7停电: §e" + formatTime(blackoutCountdown);
+        String cdStr;
+        if (blackoutActive) {
+            cdStr = "§c⚡ 停电中";
+        } else if (currentPhase == 2) {  // MAINTENANCE
+            cdStr = "§b维护: §e" + formatTime(blackoutCountdown);
+        } else if (currentPhase == 0) {  // NORMAL
+            cdStr = "§7停电: §e" + formatTime(blackoutCountdown);
+        } else {
+            cdStr = "§7停电: §e" + formatTime(blackoutCountdown);
+        }
         String title = "§6⚡ 停电模式 §f剩余: §l" + timeStr + "§r  " + cdStr;
 
         g.drawString(font, Component.literal(title),
