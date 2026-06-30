@@ -25,7 +25,7 @@ public class BlackoutVotingEngine {
 
     private static boolean voteWindowOpen = false;
     private static int windowElapsedTicks = 0;
-    private static final int WINDOW_DURATION_TICKS = 600; // 30s × 20 tick
+    private static final int WINDOW_DURATION_TICKS = 600; // 600 tick = 30s（在 onTick 每秒调一次）
     private static boolean votingResolved = false;
     private static final Map<UUID, UUID> VOTES = new HashMap<>(); // voter → target
     private static MinecraftServer server = null;
@@ -56,7 +56,7 @@ public class BlackoutVotingEngine {
     public static void tickVoting() {
         if (!voteWindowOpen || votingResolved || server == null) return;
 
-        windowElapsedTicks += 20; // +1 秒
+        windowElapsedTicks++;  // +1 tick（caller 保证每秒调一次，但实际累加 tick）
         int remainingTicks = WINDOW_DURATION_TICKS - windowElapsedTicks;
 
         // 每10秒提醒一次

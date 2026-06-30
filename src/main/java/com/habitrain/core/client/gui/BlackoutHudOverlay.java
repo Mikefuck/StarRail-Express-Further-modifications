@@ -6,8 +6,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 
 /**
- * 停电模式 — 顶部 HUD 覆盖层
+ * 停电模式 — 顶部 HUD 覆盖层。
  * 显示: 模式名称、总时间、停电倒计时、进度条
+ * <p>
+ * <strong>注意：</strong>此类使用全局 static 变量，不支持多世界。
+ * 当前设计假设同一时刻只有一个停电模式游戏运行，
+ * 若需多 world/多实例支持，需改为实例化设计。
  *
  * 由客户端网络接收器通过 updateTime() 更新数据,
  * 在 HudRenderCallback 中调用 render()。

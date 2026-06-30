@@ -327,19 +327,15 @@ public class BlackoutMode implements GameMode {
 
     private void reapplyPermanentBlackout() {
         if (currentLevel == null) return;
-        var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
-        if (blackout != null) {
-            try {
-                var field = blackout.getClass().getDeclaredField("blackouts");
-                field.setAccessible(true);
-                java.util.List<?> list = (java.util.List<?>) field.get(blackout);
-                if (list.isEmpty()) {
-                    blackout.triggerBlackout(false, 60000);
-                    HabiTrainCore.LOGGER.debug("Re-applied permanent blackout");
-                }
-            } catch (Exception e) {
-                HabiTrainCore.LOGGER.error("Failed to reapply blackout", e);
+        try {
+            var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
+            if (blackout != null) {
+                // 简单的周期性重新触发（SRE API 允许重复触发）
+                blackout.triggerBlackout(false, 60000);
+                HabiTrainCore.LOGGER.debug("Re-applied permanent blackout via API (periodic push)");
             }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("Failed to reapply blackout", e);
         }
     }
 
