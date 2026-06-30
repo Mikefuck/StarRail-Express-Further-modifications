@@ -43,6 +43,20 @@ public class BlackoutHudOverlay {
     public static void setVisible(boolean visible) { showHud = visible; }
 
     /**
+     * 重置所有静态状态为默认值。
+     * 在断开连接或游戏结束时调用，确保 HUD 不会残留。
+     */
+    public static void reset() {
+        totalTimeRemaining = 300;
+        blackoutCountdown = 120;
+        blackoutActive = false;
+        showHud = false;
+        blackoutModeActive = false;
+        votingOpen = false;
+        currentPhase = 0;
+    }
+
+    /**
      * 在 HUD 渲染时调用 (注册到 HudRenderCallback)
      */
     public static void render(GuiGraphics g) {

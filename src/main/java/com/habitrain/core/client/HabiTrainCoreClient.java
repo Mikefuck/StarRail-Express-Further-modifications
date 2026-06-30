@@ -103,10 +103,11 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             });
         });
 
-        // 玩家断开连接 → 停止监测
+        // 玩家断开连接 → 停止监测 + 重置 HUD
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             monitoringShaderPack = false;
             lastSentShaderPack = "";
+            BlackoutHudOverlay.reset();
         });
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
@@ -158,8 +159,13 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 网络接收: 时间同步
         ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
-                BlackoutHudOverlay.updateTime(
-                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
+                if (payload.totalTimeRemaining() <= 0) {
+                    BlackoutHudOverlay.setVisible(false);
+                    BlackoutHudOverlay.setBlackoutModeActive(false);
+                } else {
+                    BlackoutHudOverlay.updateTime(
+                        payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
+                }
             });
         });
 

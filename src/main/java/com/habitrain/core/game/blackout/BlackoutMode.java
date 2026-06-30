@@ -279,8 +279,8 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
         broadcast("§6对局结束！");
-        // HUD 隐藏由 `onCleanup` 的 `BlackoutTimerSystem.reset()` 后，
-        // 下次 BlackoutTimerPayload 广播时会带上总时间=0，客户端自行隐藏
+        // HUD 隐藏由客户端 BlackoutTimerPayload 接收器处理:
+        // 当 totalTimeRemaining <= 0 时自动隐藏，无论广播是否触发。
         currentLevel = null;
     }
 
@@ -292,7 +292,7 @@ public class BlackoutMode implements GameMode {
         currentLevel = null;
         gameEnded = false;
         sreGameRunning = false;
-        // HUD 隐藏已由网络包驱动
+        // HUD 隐藏由客户端 totalTimeRemaining <= 0 检查自动处理
     }
 
     @Override
@@ -352,38 +352,52 @@ public class BlackoutMode implements GameMode {
 
         // 好人胜: 时间归零
         if (BlackoutTimerSystem.isTimeUp()) {
-            endGame("§a好人阵营获胜！时间归零，好人成功存活！");
+            endGame(WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
             return;
         }
 
         // 好人胜: 杀手全灭
         if (badRemaining <= 0 && goodRemaining > 0) {
-            endGame("§a好人阵营获胜！所有杀手已被消灭");
+            endGame(WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
             return;
         }
 
         // 杀手胜: 好人全灭
         if (goodRemaining <= 0 && badRemaining > 0) {
-            endGame("§c杀手阵营获胜！所有好人都被淘汰了");
+            endGame(WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
             return;
         }
     }
 
-    private void endGame(String message) {
+    /**
+     * 以指定 WinResult 结束游戏（含 clearRoleMap 和完整日志）。
+     * 由 checkVictory() 调用，使用自然的胜利原因。
+     */
+    private void endGame(WinResult result, String message) {
         if (gameEnded) return;
         gameEnded = true;
         sreGameRunning = false;
         broadcast(message);
         if (currentLevel != null) {
-            // 也停止 SRE 游戏
             try {
                 var sreGame = SREGameWorldComponent.KEY.get(currentLevel);
                 if (sreGame != null) {
                     sreGame.setGameStatus(io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STOPPING);
+                    sreGame.clearRoleMap();
                 }
-            } catch (Exception ignored) {}
-            GameModeRegistry.stop(currentLevel);
+            } catch (Exception e) {
+                HabiTrainCore.LOGGER.error("endGame: failed to stop SRE game", e);
+            }
+            GameModeRegistry.stop(currentLevel, result);
         }
+    }
+
+    /**
+     * 以默认 WinResult.forceEnd 结束游戏。
+     * 仅供内部意外终止路径使用（例如 SRE 游戏提前结束）。
+     */
+    private void endGame(String message) {
+        endGame(WinResult.forceEnd("游戏结束"), message);
     }
 
     /**
