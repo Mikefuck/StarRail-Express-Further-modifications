@@ -28,9 +28,15 @@ public class VoteScreen extends Screen {
     private UUID selectedTarget = null;
     private int windowRemaining = 30;
     private boolean confirmed = false;
+    private boolean votingOpen = true;
 
     public VoteScreen() {
+        this(true);
+    }
+
+    public VoteScreen(boolean votingOpen) {
         super(Component.literal("§l投票选举警长"));
+        this.votingOpen = votingOpen;
     }
 
     @Override
@@ -41,12 +47,24 @@ public class VoteScreen extends Screen {
                 Component.literal("§a✔ 确认投票"),
                 btn -> confirmVote()
         ).bounds(width / 2 - 50, height - 40, 100, 20).build());
+
+        addRenderableWidget(Button.builder(
+                Component.literal("✕"),
+                btn -> onClose()
+        ).bounds(width - 25, 5, 20, 18).build());
     }
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g, mx, my, delta);
         super.render(g, mx, my, delta);
+
+        if (!votingOpen) {
+            String msg = "§e当前不在投票时间内";
+            g.drawString(font, Component.literal(msg),
+                    width / 2 - font.width(msg) / 2, height / 2, 0xFFFFAA, false);
+            return;
+        }
 
         // 标题
         g.drawString(font, Component.literal("§l══════════ 投票选举警长 ══════════"),
@@ -107,7 +125,7 @@ public class VoteScreen extends Screen {
     }
 
     @Override
-    public boolean shouldCloseOnEsc() { return false; }
+    public boolean shouldCloseOnEsc() { return true; }
 
     @Override
     public boolean isPauseScreen() { return false; }
