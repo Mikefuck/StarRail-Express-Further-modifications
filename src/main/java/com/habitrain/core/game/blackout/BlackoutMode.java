@@ -216,6 +216,13 @@ public class BlackoutMode implements GameMode {
         tickAccumulator++;
 
         // 每 20 tick (~1秒) 更新
+        // 约定顺序 (不可随意调换):
+        //   1. BlackoutTimerSystem.tickSecond()     — 推进计时器
+        //   2. 投票阶段检查                             — 60s 解锁投票
+        //   3. BlackoutVotingEngine.tickVoting()     — 投票逻辑
+        //   4. checkVictory()                        — 时间归零或角色全灭判定
+        //   5. 广播时间同步                             — 同步 HUD
+        // tickSecond 与 checkVictory 必须在同一 tick 调用，确保时间归零与胜利判定原子化。
         if (tickAccumulator % 20 == 0) {
             BlackoutTimerSystem.tickSecond();
 

@@ -76,6 +76,14 @@ public class BlackoutTimerSystem {
 
     // ====== 每秒更新 (由 BlackoutMode.onTick 调用) ======
 
+    /**
+     * 每秒更新一次计时器状态。
+     * <p>
+     * <strong>调用约定：</strong>此方法必须由 {@code BlackoutMode.onTick()} 驱动，
+     * 且 {@code onTick()} 应保证每秒恰好调用一次本方法。
+     * 调用后应在同一 tick 内调用 {@code BlackoutMode#checkVictory()} 以确保时间归零和
+     * 胜利判定在同一帧完成。
+     */
     public static void tickSecond() {
         if (currentLevel == null) return;
 
