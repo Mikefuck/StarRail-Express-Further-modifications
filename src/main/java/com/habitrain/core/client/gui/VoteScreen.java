@@ -75,9 +75,13 @@ public class VoteScreen extends Screen {
         // 玩家列表
         var players = Minecraft.getInstance().level.players();
         var self = Minecraft.getInstance().player;
+        boolean isAlone = players.size() <= 1;
         int y = 55;
         for (var player : players) {
             if (player.getUUID().equals(self.getUUID())) continue;
+
+            // 只显示停电模式存活玩家（或单人模式全部显示）
+            if (!isAlone && !com.habitrain.core.client.gui.BlackoutHudOverlay.isBlackoutModeActive()) continue;
 
             boolean hovered = mx >= LIST_X && mx < LIST_X + LIST_W && my >= y && my < y + ENTRY_H;
             boolean selected = player.getUUID().equals(selectedTarget);
@@ -106,9 +110,11 @@ public class VoteScreen extends Screen {
 
         var players = Minecraft.getInstance().level.players();
         var self = Minecraft.getInstance().player;
+        boolean isAlone = players.size() <= 1;
         int y = 55;
         for (var player : players) {
             if (player.getUUID().equals(self.getUUID())) continue;
+            if (!isAlone && !com.habitrain.core.client.gui.BlackoutHudOverlay.isBlackoutModeActive()) continue;
             if (mx >= LIST_X && mx < LIST_X + LIST_W && my >= y && my < y + ENTRY_H) {
                 selectedTarget = player.getUUID();
                 return true;
