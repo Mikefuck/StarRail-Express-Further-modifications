@@ -74,7 +74,7 @@ public class BlackoutMode implements GameMode {
 
         BlackoutRoleManager.clear();
         BlackoutTimerSystem.init(level,
-                this::triggerSREBlackout,
+                this::triggerSREPermanentBlackout,
                 this::endSREBlackout,
                 this::sendTimeWarning
         );
@@ -173,10 +173,14 @@ public class BlackoutMode implements GameMode {
             checkVictory();
 
             // 广播时间同步
+            int totalTime = BlackoutTimerSystem.getTotalTimeRemaining();
+            boolean permDark = BlackoutTimerSystem.isPermanentBlackoutActive();
+            int maintTime = BlackoutTimerSystem.getMaintenanceTime();
+            int cd = BlackoutTimerSystem.getBlackoutCountdown();
             BlackoutTimerPayload.broadcastToAll(level.getServer(),
-                    BlackoutTimerSystem.getTotalTimeRemaining(),
-                    BlackoutTimerSystem.getBlackoutCountdown(),
-                    BlackoutTimerSystem.isBlackoutActive());
+                    totalTime,
+                    permDark ? 0 : (maintTime > 0 ? maintTime : cd),
+                    permDark || BlackoutTimerSystem.isTransientBlackoutActive());
         }
     }
 
@@ -228,13 +232,12 @@ public class BlackoutMode implements GameMode {
 
     // ====== 内部方法 ======
 
-    private void triggerSREBlackout() {
+    private void triggerSREPermanentBlackout() {
         if (currentLevel == null) return;
         var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
         if (blackout != null) {
-            blackout.triggerBlackout(true, 140);
+            blackout.triggerBlackout(true, 60000);
         }
-        broadcast("§c停电了！黑暗笼罩一切...");
     }
 
     private void endSREBlackout() {
@@ -251,17 +254,13 @@ public class BlackoutMode implements GameMode {
     }
 
     private void checkVictory() {
-        // 只有在 SRE 游戏运行中才检查胜利条件
         if (!sreGameRunning) return;
-        // 至少需要有好人和坏人才开始判定
         if (BlackoutRoleManager.getRemainingGood() <= 0 && BlackoutRoleManager.getRemainingBad() <= 0) return;
 
-        int totalRemaining = BlackoutTimerSystem.getTotalTimeRemaining();
-        int elapsed = 300 - totalRemaining;
         int goodRemaining = BlackoutRoleManager.getRemainingGood();
         int badRemaining = BlackoutRoleManager.getRemainingBad();
 
-        // 好人胜: 时间到0
+        // 好人胜: 时间归零
         if (BlackoutTimerSystem.isTimeUp()) {
             endGame("§a好人阵营获胜！时间归零，好人成功存活！");
             return;
@@ -277,11 +276,6 @@ public class BlackoutMode implements GameMode {
         if (goodRemaining <= 0 && badRemaining > 0) {
             endGame("§c杀手阵营获胜！所有好人都被淘汰了");
             return;
-        }
-
-        // 杀手胜: 5分钟到
-        if (elapsed >= 300 && totalRemaining > 0) {
-            endGame("§c杀手阵营获胜！5分钟已到，好人未能完成任务");
         }
     }
 
