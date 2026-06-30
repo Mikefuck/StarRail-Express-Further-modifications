@@ -139,7 +139,6 @@ public class BlackoutMode implements GameMode {
             if (!BlackoutRoleManager.isAlive(player.getUUID())) continue;
 
             var role = BlackoutRoleManager.getRole(player.getUUID());
-            var faction = BlackoutRoleManager.getFaction(player.getUUID());
 
             String roleName;
             String subtitle;
