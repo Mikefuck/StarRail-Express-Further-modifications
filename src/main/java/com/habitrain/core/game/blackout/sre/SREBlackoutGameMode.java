@@ -72,7 +72,7 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
     @Override
     public boolean hasSafeTime() {
-        return false;
+        return true;
     }
 
     @Override

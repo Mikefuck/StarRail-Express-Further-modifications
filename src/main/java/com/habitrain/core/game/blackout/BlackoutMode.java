@@ -8,6 +8,9 @@ import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.game.GameUtils;
 import io.wifi.starrailexpress.api.SREGameModes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -103,6 +106,68 @@ public class BlackoutMode implements GameMode {
             GameUtils.startGame(level, sreMode,
                     GameConstants.getInTicks(
                         ((io.wifi.starrailexpress.api.GameMode)sreMode).defaultStartTime, 0));
+        }
+
+        // ★ 新: 安全时间角色显示 — 延迟发送避免与 SRE 原生 Title 竞争
+        if (level.getServer() != null) {
+            scheduleRoleTitle(level);
+        }
+    }
+
+    // ====== 安全时间角色 Title 显示 ======
+
+    /**
+     * 延迟 5 tick (~0.25s) 等 SRE 安全时间初始化完成后发送自定义 Title，
+     * 避免与 SRE 原生安全时间 Title 竞争。
+     */
+    private void scheduleRoleTitle(ServerLevel level) {
+        level.getServer().execute(() -> {
+            level.getServer().execute(() -> {
+                level.getServer().execute(() -> {
+                    level.getServer().execute(() -> {
+                        level.getServer().execute(() -> {
+                            sendRoleTitles(level);
+                        });
+                    });
+                });
+            });
+        });
+    }
+
+    private void sendRoleTitles(ServerLevel level) {
+        for (ServerPlayer player : level.players()) {
+            if (!BlackoutRoleManager.isAlive(player.getUUID())) continue;
+
+            var role = BlackoutRoleManager.getRole(player.getUUID());
+            var faction = BlackoutRoleManager.getFaction(player.getUUID());
+
+            String roleName;
+            String subtitle;
+
+            switch (role) {
+                case KILLER -> {
+                    roleName = "黑化杀手";
+                    subtitle = "§7坏人阵营 — 破坏列车，消灭好人";
+                }
+                case SHERIFF -> {
+                    roleName = "警长";
+                    subtitle = "§7好人阵营 — 维护秩序，保护列车";
+                }
+                default -> {
+                    roleName = "黑化平民";
+                    subtitle = "§7好人阵营 — 完成好人任务，存活到最后";
+                }
+            }
+
+            String titleText = "§6§l你是 " + roleName;
+            player.connection.send(
+                new ClientboundSetTitleTextPacket(
+                    Component.literal(titleText)));
+            player.connection.send(
+                new ClientboundSetSubtitleTextPacket(
+                    Component.literal(subtitle)));
+            player.connection.send(
+                new ClientboundSetTitlesAnimationPacket(10, 60, 20));
         }
     }
 
