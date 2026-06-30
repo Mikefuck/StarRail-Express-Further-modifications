@@ -18,13 +18,21 @@ public class BlackoutHudOverlay {
     private static int blackoutCountdown = 120;
     private static boolean blackoutActive = false;
     private static boolean showHud = false;
+    private static boolean blackoutModeActive = false;
+    private static boolean votingOpen = false;
 
     public static void updateTime(int total, int cd, boolean active) {
         totalTimeRemaining = total;
         blackoutCountdown = cd;
         blackoutActive = active;
+        blackoutModeActive = true;
         showHud = true;
     }
+
+    public static void setBlackoutModeActive(boolean v) { blackoutModeActive = v; }
+    public static void setVotingOpen(boolean v) { votingOpen = v; }
+    public static boolean isBlackoutModeActive() { return blackoutModeActive; }
+    public static boolean isVotingOpen() { return votingOpen; }
 
     public static void setVisible(boolean visible) { showHud = visible; }
 

@@ -1,5 +1,7 @@
 package com.habitrain.core.game.blackout;
 
+import com.habitrain.core.network.BlackoutStatusPayload;
+import com.habitrain.core.network.BlackoutStatusPayload.StatusType;
 import com.habitrain.core.network.BlackoutVotePayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
@@ -44,7 +46,10 @@ public class BlackoutVotingEngine {
         VOTES.clear();
         broadcast("§e【投票】现在可以投出你觉得的「警长」！按 [P] 键打开投票界面");
         broadcast("§7投票将在 30 秒后截止");
-        LOGGER.info("Voting window opened for 30s");
+        LOGGER.info("Voting window opened for 30s, server={}", server != null ? "available" : "null");
+        if (server != null) {
+            BlackoutStatusPayload.broadcast(server, StatusType.VOTE_OPEN, "");
+        }
     }
 
     /** 每秒调用 (由 BlackoutMode.onTick 驱动) */
