@@ -7,6 +7,7 @@ import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutStatusPayload;
 import com.habitrain.core.network.BlackoutStatusPayload.StatusType;
 import com.habitrain.core.network.BlackoutTimerPayload;
@@ -14,6 +15,8 @@ import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
 import com.habitrain.core.network.TaskConfigPayload;
+import io.wifi.starrailexpress.event.client.OnGameFinishedClient;
+import io.wifi.starrailexpress.event.client.OnGameStartedClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -109,6 +112,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             monitoringShaderPack = false;
             lastSentShaderPack = "";
             BlackoutHudOverlay.reset();
+            BlackoutWelcomeRenderer.reset();
         });
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
@@ -181,19 +185,35 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 var st = payload.statusType();
                 if (st == StatusType.BLACKOUT_START) msg = "§c⚡ 停电了！";
                 else if (st == StatusType.BLACKOUT_END) msg = "§a⚡ 供电恢复";
-                else if (st == StatusType.VOTE_OPEN) {
-                    msg = "§e【投票】按 [P] 键打开投票界面！";
-                    BlackoutHudOverlay.setVotingOpen(true);
-                }
-                else if (st == StatusType.VOTE_RESULT) {
-                    msg = "§e【投票】" + payload.data() + " 当选警长！";
-                    BlackoutHudOverlay.setVotingOpen(false);
-                }
                 else if (st == StatusType.TIME_WARNING) msg = "§e⚠ 仅剩 1 分钟！";
                 else msg = "";
                 if (ctx.client().player != null) {
                     ctx.client().player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg));
                 }
+            });
+        });
+
+        // 监听 SRE 游戏结束事件 → 立即隐藏 HUD
+        OnGameFinishedClient.EVENT.register(() -> {
+            Minecraft.getInstance().execute(() -> {
+                BlackoutHudOverlay.reset();
+                BlackoutWelcomeRenderer.reset();
+            });
+        });
+
+        // 监听 SRE 游戏开始事件 → 准备 HUD
+        OnGameStartedClient.EVENT.register(() -> {
+            Minecraft.getInstance().execute(() -> {
+                // HUD will be populated by BlackoutTimerPayload
+            });
+        });
+
+        // 开局报幕
+        ClientPlayNetworking.registerGlobalReceiver(BlackoutAnnouncePayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                BlackoutWelcomeRenderer.startWelcome(
+                    payload.roleName(), payload.subtitle(), payload.goal(),
+                    payload.killerCount(), payload.targetCount());
             });
         });
 
