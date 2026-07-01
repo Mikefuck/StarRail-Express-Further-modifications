@@ -118,13 +118,7 @@ public class HabiTrainCore implements ModInitializer {
                     .then(Commands.literal("stop")
                             .executes(ctx -> {
                                 ServerLevel level = ctx.getSource().getLevel();
-                                var active = GameModeRegistry.getActiveForLevel(level);
-                                if (active.isPresent() && active.get() instanceof BlackoutMode bm) {
-                                    bm.forceEndGame(WinResult.forceEnd("管理员终止"),
-                                            "§c⏹ 游戏已被管理员终止");
-                                } else {
-                                    GameModeRegistry.stop(level);
-                                }
+                                GameModeRegistry.stop(level);
                                 ctx.getSource().sendSuccess(
                                         () -> Component.literal("§c⏹ 当前游戏模式已停止"), true);
                                 return 1;

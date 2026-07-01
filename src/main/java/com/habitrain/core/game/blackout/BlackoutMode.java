@@ -4,14 +4,7 @@ import com.habitrain.core.api.*;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.network.BlackoutTimerPayload;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.game.GameConstants;
-import io.wifi.starrailexpress.game.GameUtils;
-import io.wifi.starrailexpress.api.SREGameModes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
-import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
-import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -36,16 +29,7 @@ public class BlackoutMode implements GameMode {
 
     private ServerLevel currentLevel;
     private int tickAccumulator = 0;
-    private boolean votingPhasePassed = false;
     private boolean gameEnded = false;
-    /** SRE 游戏已实际开始 (角色已分配、地图已加载) */
-    private boolean sreGameRunning = false;
-    /** 已尝试启动 SRE 游戏 */
-    private boolean sreStartAttempted = false;
-    /** 已强制激活 SRE 游戏 (单人/少人绕过 minPlayerCount) */
-    private boolean sreForceActivated = false;
-    /** 等待 SRE 游戏启动的 tick 数 */
-    private int sreStartWaitTicks = 0;
 
     @Override
     public String getId() { return MODE_ID; }
@@ -69,12 +53,7 @@ public class BlackoutMode implements GameMode {
     public void onPreStart(ServerLevel level) {
         this.currentLevel = level;
         this.tickAccumulator = 0;
-        this.votingPhasePassed = false;
         this.gameEnded = false;
-        this.sreGameRunning = false;
-        this.sreStartAttempted = false;
-        this.sreForceActivated = false;
-        this.sreStartWaitTicks = 0;
 
         BlackoutRoleManager.clear();
         BlackoutTimerSystem.init(level,
@@ -87,161 +66,33 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onStart(ServerLevel level) {
-        // 注册 TACZ 子弹监听
         TACZWeaponBridge.register();
-
-        // 查找 companion mod 注册的 SREBlackoutGameMode
-        ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
-        var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
-        if (sreMode == null) {
-            HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found! Did core mod registration fail?");
-            return;
-        }
-
-        // 启动 SRE 原版游戏 (地图重置、房间传送等)
-        var sreGame = SREGameWorldComponent.KEY.get(level);
-        if (sreGame != null && !sreGame.isRunning()) {
-            sreStartAttempted = true;
-            sreStartWaitTicks = 0;
-            GameUtils.startGame(level, sreMode,
-                    GameConstants.getInTicks(
-                        ((io.wifi.starrailexpress.api.GameMode)sreMode).defaultStartTime, 0));
-        }
-
-        // ★ 新: 安全时间角色显示 — 延迟发送避免与 SRE 原生 Title 竞争
-        if (level.getServer() != null) {
-            scheduleRoleTitle(level);
-        }
-    }
-
-    // ====== 安全时间角色 Title 显示 ======
-
-    /**
-     * 延迟 5 tick (~0.25s) 等 SRE 安全时间初始化完成后发送自定义 Title，
-     * 避免与 SRE 原生安全时间 Title 竞争。
-     */
-    private void scheduleRoleTitle(ServerLevel level) {
-        level.getServer().execute(() -> {
-            level.getServer().execute(() -> {
-                level.getServer().execute(() -> {
-                    level.getServer().execute(() -> {
-                        level.getServer().execute(() -> {
-                            sendRoleTitles(level);
-                        });
-                    });
-                });
-            });
-        });
-    }
-
-    private void sendRoleTitles(ServerLevel level) {
-        for (ServerPlayer player : level.players()) {
-            if (!BlackoutRoleManager.isAlive(player.getUUID())) continue;
-
-            var role = BlackoutRoleManager.getRole(player.getUUID());
-
-            String roleName;
-            String subtitle;
-
-            switch (role) {
-                case KILLER -> {
-                    roleName = "黑化杀手";
-                    subtitle = "§7坏人阵营 — 破坏列车，消灭好人";
-                }
-                case SHERIFF -> {
-                    roleName = "警长";
-                    subtitle = "§7好人阵营 — 维护秩序，保护列车";
-                }
-                default -> {
-                    roleName = "黑化平民";
-                    subtitle = "§7好人阵营 — 完成好人任务，存活到最后";
-                }
-            }
-
-            String titleText = "§6§l你是 " + roleName;
-            player.connection.send(
-                new ClientboundSetTitleTextPacket(
-                    Component.literal(titleText)));
-            player.connection.send(
-                new ClientboundSetSubtitleTextPacket(
-                    Component.literal(subtitle)));
-            player.connection.send(
-                new ClientboundSetTitlesAnimationPacket(10, 60, 20));
-        }
+        // SRE game is started by SREBlackoutGameMode.initializeGame()
+        HabiTrainCore.LOGGER.info("BlackoutMode: SRE lifecycle managed by SREBlackoutGameMode");
     }
 
     @Override
     public void onTick(ServerLevel level) {
         if (level != currentLevel || gameEnded) return;
 
-        // 检测 SRE 游戏状态变化
         var sreGame = SREGameWorldComponent.KEY.get(level);
         boolean sreActive = sreGame != null && sreGame.isRunning();
 
-        // 等待 SRE 游戏启动: startGame 异步加载地图, 完成后设置 gameStatus
-        // 但单人/少人时 minPlayerCount 不满足, 需要强制激活
-        if (!sreActive && sreStartAttempted && !sreGameRunning) {
-            sreStartWaitTicks++;
-            if (sreGame != null && sreGame.getGameStatus() == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.INACTIVE
-                    && sreStartWaitTicks > 40) { // 等待 ~2 秒让地图加载
-                if (!sreForceActivated) {
-                    // 强制激活 SRE 游戏 (绕过 minPlayerCount 检查)
-                    sreGame.setGameStatus(io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE);
-                    sreForceActivated = true;
-                    HabiTrainCore.LOGGER.info("BlackoutMode: Forced SRE game to ACTIVE");
-                }
-            }
-            if (sreGame != null && sreGame.isRunning()) {
-                sreActive = true;
-            }
-        }
-
-        if (sreActive && !sreGameRunning) {
-            sreGameRunning = true;
-            sreStartAttempted = false;
-
-            // HUD 显示由 BlackoutTimerPayload 网络包驱动，无需服务端反射调客户端
-            HabiTrainCore.LOGGER.info("BlackoutMode: SRE game running, HUD will activate via network sync");
-        }
-
-        if (!sreActive && sreGameRunning) {
-            sreGameRunning = false;
+        // SRE game ended externally (e.g., tmm stop) → end BlackoutMode
+        if (!sreActive && !gameEnded) {
             endGame("§6对局结束");
             return;
         }
 
-        // 仅当 SRE 游戏运行中才执行停电模式的计时
         if (!sreActive) return;
 
+        // Timer only runs while SRE is active
         tickAccumulator++;
-
-        // 每 20 tick (~1秒) 更新
-        // 约定顺序 (不可随意调换):
-        //   1. BlackoutTimerSystem.tickSecond()     — 推进计时器
-        //   2. 投票阶段检查                             — 60s 解锁投票
-        //   3. BlackoutVotingEngine.tickVoting()     — 投票逻辑
-        //   4. checkVictory()                        — 时间归零或角色全灭判定
-        //   5. 广播时间同步                             — 同步 HUD
-        // tickSecond 与 checkVictory 必须在同一 tick 调用，确保时间归零与胜利判定原子化。
         if (tickAccumulator % 20 == 0) {
             BlackoutTimerSystem.tickSecond();
-
-            // 投票阶段检查 (60s后)
-            int totalRemaining = BlackoutTimerSystem.getTotalTimeRemaining();
-            int elapsed = 300 - totalRemaining;
-            if (!votingPhasePassed && elapsed >= 60) {
-                votingPhasePassed = true;
-                BlackoutVotingEngine.init(level.getServer());
-                BlackoutVotingEngine.openVoting();
-            }
-
-            // tick voting engine
-            BlackoutVotingEngine.tickVoting();
-
-            // 检查胜利条件
             checkVictory();
 
-            // 广播时间同步
+            // Broadcast time sync
             int totalTime = BlackoutTimerSystem.getTotalTimeRemaining();
             boolean permDark = BlackoutTimerSystem.isPermanentBlackoutActive();
             int maintTime = BlackoutTimerSystem.getMaintenanceTime();
@@ -252,7 +103,7 @@ public class BlackoutMode implements GameMode {
                     permDark || BlackoutTimerSystem.isTransientBlackoutActive(),
                     BlackoutTimerSystem.getPhase().ordinal());
 
-            // 每 40 tick (2秒) 保持永久停电状态
+            // Reapply permanent blackout
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive()) {
                 reapplyPermanentBlackout();
             }
@@ -288,11 +139,8 @@ public class BlackoutMode implements GameMode {
     public void onCleanup(ServerLevel level) {
         BlackoutRoleManager.clear();
         BlackoutTimerSystem.reset();
-        BlackoutVotingEngine.reset();
         currentLevel = null;
         gameEnded = false;
-        sreGameRunning = false;
-        // HUD 隐藏由客户端 totalTimeRemaining <= 0 检查自动处理
     }
 
     @Override
@@ -344,7 +192,6 @@ public class BlackoutMode implements GameMode {
     }
 
     private void checkVictory() {
-        if (!sreGameRunning) return;
         if (BlackoutRoleManager.getRemainingGood() <= 0 && BlackoutRoleManager.getRemainingBad() <= 0) return;
 
         int goodRemaining = BlackoutRoleManager.getRemainingGood();
@@ -376,7 +223,6 @@ public class BlackoutMode implements GameMode {
     private void endGame(WinResult result, String message) {
         if (gameEnded) return;
         gameEnded = true;
-        sreGameRunning = false;
         broadcast(message);
         if (currentLevel != null) {
             try {
@@ -398,33 +244,6 @@ public class BlackoutMode implements GameMode {
      */
     private void endGame(String message) {
         endGame(WinResult.forceEnd("游戏结束"), message);
-    }
-
-    /**
-     * 强制终止当前游戏（由 /habi_api stop 或管理员命令触发）。
-     * 完整走一遍 SRE 停服 + GameModeRegistry.stop 流程。
-     */
-    public void forceEndGame(WinResult result, String message) {
-        if (gameEnded) return;
-        gameEnded = true;
-        sreGameRunning = false;
-
-        if (currentLevel != null) {
-            broadcast(message);
-
-            try {
-                var sreGame = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(currentLevel);
-                if (sreGame != null) {
-                    sreGame.setGameStatus(
-                        io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STOPPING);
-                    sreGame.clearRoleMap();
-                }
-            } catch (Exception e) {
-                HabiTrainCore.LOGGER.error("forceEndGame: failed to stop SRE game", e);
-            }
-
-            GameModeRegistry.stop(currentLevel, result);
-        }
     }
 
     private void broadcast(String message) {
