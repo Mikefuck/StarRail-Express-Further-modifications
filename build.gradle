@@ -27,6 +27,7 @@ dependencies {
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-base:6.1.2") { transitive = false }
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-entity:6.1.2") { transitive = false }
     modImplementation("org.ladysnake.cardinal-components-api:cardinal-components-world:6.1.2") { transitive = false }
+    modImplementation files("libs/betel-nut-mod-4.0.1.jar")
 }
 
 processResources {
