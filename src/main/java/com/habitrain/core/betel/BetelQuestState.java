@@ -60,13 +60,13 @@ public class BetelQuestState {
         return instance;
     }
 
-    public PlayerBetelData getPlayerData(UUID uuid) {
+    private PlayerBetelData computePlayerData(UUID uuid) {
         return playerData.computeIfAbsent(uuid, k -> new PlayerBetelData());
     }
 
     /** 获取玩家数据（静态快捷方式） */
-    private static PlayerBetelData getData(UUID uuid) {
-        return getInstance().getPlayerData(uuid);
+    public static PlayerBetelData getPlayerData(UUID uuid) {
+        return getInstance().computePlayerData(uuid);
     }
 
     // ===== 食物限制系统（来自UseItemCallback） =====
@@ -114,7 +114,7 @@ public class BetelQuestState {
      * 之后玩家可以随时采集槟榔（不再需要任务激活）
      */
     public static void markQuestAssigned(UUID uuid) {
-        getData(uuid).hasBetelQuestBeenAssigned = true;
+        getPlayerData(uuid).hasBetelQuestBeenAssigned = true;
         HabiTrainCore.LOGGER.debug("玩家 {} 的槟榔任务已标记为本局已刷新", getPlayerName(uuid));
     }
 
@@ -122,21 +122,21 @@ public class BetelQuestState {
      * 检查玩家的槟榔任务是否已在本局刷新过
      */
     public static boolean hasQuestBeenAssigned(UUID uuid) {
-        return getData(uuid).hasBetelQuestBeenAssigned;
+        return getPlayerData(uuid).hasBetelQuestBeenAssigned;
     }
 
     /**
      * 检查玩家是否处于食物限制状态（Stage 3+，只能吃槟榔）
      */
     public static boolean hasFoodRestriction(UUID uuid) {
-        return getData(uuid).hasFoodRestriction;
+        return getPlayerData(uuid).hasFoodRestriction;
     }
 
     /**
      * 设置玩家的食物限制状态
      */
     public static void setFoodRestriction(UUID uuid, boolean restricted) {
-        getData(uuid).hasFoodRestriction = restricted;
+        getPlayerData(uuid).hasFoodRestriction = restricted;
     }
 
     /**
@@ -156,7 +156,7 @@ public class BetelQuestState {
      */
     public static void resetEatenStatus(Player player) {
         if (player == null) return;
-        PlayerBetelData data = getData(player.getUUID());
+        PlayerBetelData data = getPlayerData(player.getUUID());
         data.hasEatenBetelNut = false;
 
         try {
@@ -181,7 +181,7 @@ public class BetelQuestState {
      *    建议优先使用 {@link #resetEatenStatus(PlayerEntity)} 重载。
      */
     public static void resetEatenStatus(UUID uuid) {
-        PlayerBetelData data = getData(uuid);
+        PlayerBetelData data = getPlayerData(uuid);
         data.hasEatenBetelNut = false;
         data.lastDetectedEatTime = 0;
         HabiTrainCore.LOGGER.debug("玩家 {} 的吃槟榔状态已重置 (UUID版本, lastDetectedEatTime=0)",
@@ -310,7 +310,7 @@ public class BetelQuestState {
      */
     public static void tickPlayer(ServerPlayer player) {
         BetelQuestState state = getInstance();
-        PlayerBetelData data = state.getPlayerData(player.getUUID());
+        PlayerBetelData data = state.computePlayerData(player.getUUID());
 
         // ===== 新玩家加入（第一次tick）- 清除残留的成瘾效果 =====
         if (!data.hasBeenProcessed) {
@@ -633,9 +633,7 @@ public class BetelQuestState {
      * 检查玩家是否已经吃过槟榔（用于任务完成检测）
      */
     public static boolean hasPlayerEatenBetelNut(UUID uuid) {
-        return getInstance().playerData
-                .computeIfAbsent(uuid, k -> new PlayerBetelData())
-                .hasEatenBetelNut;
+        return getPlayerData(uuid).hasEatenBetelNut;
     }
 
     public static class PlayerBetelData {
