@@ -1,12 +1,9 @@
 package com.habitrain.core;
-
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.api.WinResult;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutVotingEngine;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.game.sre.SREGameModeBase;
@@ -36,11 +33,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-
 /**
  * 哈比列车核心 — 主入口类。
  * 职责: 配置初始化、GameMode注册、网络包注册、生命周期事件转发。
@@ -49,23 +44,18 @@ import java.util.UUID;
 public class HabiTrainCore implements ModInitializer {
     public static final String MOD_ID = "habitrain_core";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-
     @Override
     public void onInitialize() {
         LOGGER.info("哈比列车核心 (HabiTrain Core) 初始化中...");
-
         // 1. 配置系统
         ConfigManager.getInstance().load();
-
         // 2. 注册内置 GameMode（SRE 模式 + 停电模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
         GameModeRegistry.register(MOD_ID, "sre:repair", new SRERepairMode());
         GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
-
         // 注册停电模式专用的 SRE GameMode（所有人 CIVILIAN）
         SREBlackoutGameMode.register();
-
         // 3. 注册网络包
         TaskConfigPayload.register();
         ActiveTaskPayload.register();
@@ -73,20 +63,15 @@ public class HabiTrainCore implements ModInitializer {
         ShaderConfigPayload.register();
         ShaderInfoPayload.register();
         BlackoutTimerPayload.register();
-        BlackoutVotePayload.register();
         BlackoutStatusPayload.register();
         BlackoutAnnouncePayload.register();
-
         // 4. 注册命令
         registerCommands();
-
         // 5. 注册生命周期事件
         registerLifecycleEvents();
-
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",
                 GameModeRegistry.size(), TaskRegistry.size());
     }
-
     private void registerCommands() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("instantgroup")
@@ -97,7 +82,6 @@ public class HabiTrainCore implements ModInitializer {
                                     IntegerArgumentType.getInteger(ctx, "range")))
                     )
             );
-
             // /habi_api 命令族 (管理命令: 需要 OP)
             dispatcher.register(Commands.literal("habi_api")
                     .requires(source -> source.hasPermission(2))
@@ -115,15 +99,6 @@ public class HabiTrainCore implements ModInitializer {
                                 return 1;
                             })
                     )
-                    .then(Commands.literal("stop")
-                            .executes(ctx -> {
-                                ServerLevel level = ctx.getSource().getLevel();
-                                GameModeRegistry.stop(level);
-                                ctx.getSource().sendSuccess(
-                                        () -> Component.literal("§c⏹ 当前游戏模式已停止"), true);
-                                return 1;
-                            })
-                    )
                     .then(Commands.literal("list")
                             .executes(ctx -> {
                                 String modes = GameModeRegistry.getAll().stream()
@@ -135,7 +110,6 @@ public class HabiTrainCore implements ModInitializer {
                             })
                     )
             );
-
             // /habi_api 玩家命令 (无需 OP, 警长购买枪支弹药)
             dispatcher.register(Commands.literal("habi_api")
                     .then(Commands.literal("buy_gun")
@@ -163,14 +137,12 @@ public class HabiTrainCore implements ModInitializer {
             );
         });
     }
-
     private void registerLifecycleEvents() {
         // 服务器启动后加载配置
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
             LOGGER.info("配置已加载，共 {} 个已注册任务", TaskRegistry.size());
         });
-
         // 每 tick 处理待加入语音群组的玩家 + 游戏结束后的群组恢复 + 激活的 GameMode tick
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             SREGameModeBase.processPendingVoiceJoins(server);
@@ -178,11 +150,9 @@ public class HabiTrainCore implements ModInitializer {
             // tick active game modes
             GameModeRegistry.tickAll(server);
         });
-
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
-
             try {
                 var gameLevel = server.getLevel(Level.OVERWORLD);
                 if (gameLevel != null) {
@@ -194,11 +164,9 @@ public class HabiTrainCore implements ModInitializer {
             } catch (Exception e) {
                 LOGGER.error("[VoiceGroup] 添加大厅玩家到语音群组失败", e);
             }
-
             // 同步配置
             TaskConfigPayload.sendToPlayer(player);
             ShaderConfigPayload.sendToPlayer(player);
-
             // 通知激活的 GameMode 玩家加入
             ServerLevel level = server.getLevel(Level.OVERWORLD);
             if (level != null) {
@@ -206,7 +174,6 @@ public class HabiTrainCore implements ModInitializer {
                     .ifPresent(mode -> mode.onPlayerJoin(player));
             }
         });
-
         // C2S 配置更新接收器
         ServerPlayNetworking.registerGlobalReceiver(ConfigUpdatePayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -219,24 +186,13 @@ public class HabiTrainCore implements ModInitializer {
                 ConfigManager.getInstance().loadFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
-
                 if (context.server().isSingleplayer()) return;
                 TaskConfigPayload.broadcastToAll(context.server());
                 ShaderConfigPayload.broadcastToAll(context.server());
             });
         });
-
-        // C2S 投票接收器
-        ServerPlayNetworking.registerGlobalReceiver(BlackoutVotePayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                if (payload.isResult()) return;
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                BlackoutVotingEngine.castVote(player.getUUID(), payload.targetUUID());
-            });
-        });
-
         // C2S 光影包信息接收器
+
         ServerPlayNetworking.registerGlobalReceiver(ShaderInfoPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
@@ -257,14 +213,11 @@ public class HabiTrainCore implements ModInitializer {
             });
         });
     }
-
     // ========== /instantgroup 命令 ==========
-
     private static int executeInstantGroup(CommandContext<CommandSourceStack> context, int range) {
         CommandSourceStack source = context.getSource();
         ServerPlayer sender = source.getPlayer();
         if (sender == null) { source.sendFailure(Component.literal("§c此命令只能由玩家执行")); return 0; }
-
         if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) {
             source.sendFailure(Component.literal("§c语音聊天系统未就绪")); return 0;
         }
@@ -272,7 +225,6 @@ public class HabiTrainCore implements ModInitializer {
         if (api.getConnectionOf(sender.getUUID()) == null) {
             source.sendFailure(Component.literal("§c你的语音连接尚未就绪")); return 0;
         }
-
         MinecraftServer srv = source.getServer();
         Vec3 senderPos = sender.position();
         List<ServerPlayer> nearby = new ArrayList<>();
@@ -284,7 +236,6 @@ public class HabiTrainCore implements ModInitializer {
             source.sendSuccess(() -> Component.literal("§e附近 " + range + " 格内没有其他玩家"), true);
             return 0;
         }
-
         Group tempGroup;
         try {
             tempGroup = api.groupBuilder()
@@ -293,12 +244,10 @@ public class HabiTrainCore implements ModInitializer {
         } catch (Exception e) {
             source.sendFailure(Component.literal("§c创建语音群组失败")); return 0;
         }
-
         try {
             VoicechatConnection conn = api.getConnectionOf(sender.getUUID());
             if (conn != null) conn.setGroup(tempGroup);
         } catch (Exception ignored) {}
-
         int count = 0;
         for (ServerPlayer p : nearby) {
             try {
@@ -315,7 +264,6 @@ public class HabiTrainCore implements ModInitializer {
         LOGGER.info("[InstantGroup] {} 执行 /instantgroup {}，{} 名玩家", sender.getName().getString(), range, count);
         return count;
     }
-
     public static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
     }
