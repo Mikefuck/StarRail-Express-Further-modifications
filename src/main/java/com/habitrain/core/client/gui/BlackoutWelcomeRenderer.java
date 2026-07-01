@@ -59,8 +59,8 @@ public class BlackoutWelcomeRenderer {
         float cx = w / 2f;
         float cy = h / 2f + 3.5f;
 
-        // 角色名 (tick 200-181)
-        if (welcomeTime <= 200 && welcomeTime > 120) {
+        // 角色名 (tick 180-0, 累加显示后常驻)
+        if (welcomeTime <= 180) {
             var txt = Component.literal(roleName);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
@@ -68,8 +68,8 @@ public class BlackoutWelcomeRenderer {
             g.drawCenteredString(font, txt, 0, -12, 0xFFFFFF);
             g.pose().popPose();
         }
-        // 副标题 (tick 180-121)
-        if (welcomeTime <= 180 && welcomeTime > 60) {
+        // 副标题 (tick 120-0, 累加显示后常驻)
+        if (welcomeTime <= 120) {
             var txt = Component.literal(subtitle);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
@@ -77,8 +77,8 @@ public class BlackoutWelcomeRenderer {
             g.drawCenteredString(font, txt, 0, 0, 0xFFFFFF);
             g.pose().popPose();
         }
-        // 目标 (tick 120-61)
-        if (welcomeTime <= 120 && welcomeTime > 0) {
+        // 目标 (tick 60-0, 累加显示后常驻)
+        if (welcomeTime <= 60) {
             var txt = Component.literal(goal);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
