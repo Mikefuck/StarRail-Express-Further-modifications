@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.BlackoutKeyHandler;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
+import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.BlackoutStatusPayload;
@@ -112,6 +113,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // 报幕 tick（每帧执行，独立于光影监测）
+            BlackoutWelcomeRenderer.tick();
+
             if (!monitoringShaderPack) return;
             if (!FabricLoader.getInstance().isModLoaded("iris")) return;
 
@@ -154,6 +158,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // HUD 渲染
         HudRenderCallback.EVENT.register((g, tickDelta) -> {
             BlackoutHudOverlay.render(g);
+            BlackoutWelcomeRenderer.render(g);
         });
 
         // 网络接收: 时间同步

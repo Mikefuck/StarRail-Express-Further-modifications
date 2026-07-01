@@ -75,6 +75,7 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutTimerPayload.register();
         BlackoutVotePayload.register();
         BlackoutStatusPayload.register();
+        BlackoutAnnouncePayload.register();
 
         // 4. 注册命令
         registerCommands();
