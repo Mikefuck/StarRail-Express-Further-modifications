@@ -201,13 +201,6 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             });
         });
 
-        // 监听 SRE 游戏开始事件 → 准备 HUD
-        OnGameStartedClient.EVENT.register(() -> {
-            Minecraft.getInstance().execute(() -> {
-                // HUD will be populated by BlackoutTimerPayload
-            });
-        });
-
         // 开局报幕
         ClientPlayNetworking.registerGlobalReceiver(BlackoutAnnouncePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {

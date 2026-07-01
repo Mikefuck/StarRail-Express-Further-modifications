@@ -23,7 +23,6 @@ public class BlackoutHudOverlay {
     private static boolean blackoutActive = false;
     private static boolean showHud = false;
     private static boolean blackoutModeActive = false;
-    private static boolean votingOpen = false;
     private static int currentPhase = 0;  // 0=NORMAL, 1=FIRST_BLACKOUT, 2=MAINTENANCE, 3=SECOND_BLACKOUT
 
     public static void updateTime(int total, int cd, boolean active, int phase) {
@@ -36,9 +35,7 @@ public class BlackoutHudOverlay {
     }
 
     public static void setBlackoutModeActive(boolean v) { blackoutModeActive = v; }
-    public static void setVotingOpen(boolean v) { votingOpen = v; }
     public static boolean isBlackoutModeActive() { return blackoutModeActive; }
-    public static boolean isVotingOpen() { return votingOpen; }
 
     public static void setVisible(boolean visible) { showHud = visible; }
 
@@ -52,7 +49,6 @@ public class BlackoutHudOverlay {
         blackoutActive = false;
         showHud = false;
         blackoutModeActive = false;
-        votingOpen = false;
         currentPhase = 0;
     }
 

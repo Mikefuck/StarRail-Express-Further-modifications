@@ -4,6 +4,7 @@ import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutRoleManager.Faction;
 import com.habitrain.core.game.blackout.BlackoutRoleManager.RoleType;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
+import com.habitrain.core.network.BlackoutTimerPayload;
 import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -92,7 +93,10 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
                     new BlackoutAnnouncePayload(roleName, subtitle, goal, killerCount, goodCount));
         }
 
-        // 6. 最后启动 SRE 游戏（角色已分配完毕，阵营已同步，公告已发送）
+        // 6. 广播初始 HUD 计时器 (5 分钟, 2 分钟后首次停电)
+        BlackoutTimerPayload.broadcastToAll(world.getServer(), 300, 120, false, 0);
+
+        // 7. 最后启动 SRE 游戏（角色已分配完毕，阵营已同步，公告已发送）
         executeFunction(world.getServer().createCommandSourceStack(), "harpymodloader:start_game");
     }
 

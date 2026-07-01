@@ -1,10 +1,13 @@
 package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.api.*;
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.network.BlackoutTimerPayload;
+import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.game.GameConstants;
+import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -30,6 +33,8 @@ public class BlackoutMode implements GameMode {
     private ServerLevel currentLevel;
     private int tickAccumulator = 0;
     private boolean gameEnded = false;
+    /** SRE 游戏是否已实际开始运行 (异步加载地图完成后) */
+    private boolean sreGameRunning = false;
 
     @Override
     public String getId() { return MODE_ID; }
@@ -54,6 +59,7 @@ public class BlackoutMode implements GameMode {
         this.currentLevel = level;
         this.tickAccumulator = 0;
         this.gameEnded = false;
+        this.sreGameRunning = false;
 
         BlackoutRoleManager.clear();
         BlackoutTimerSystem.init(level,
@@ -67,8 +73,20 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onStart(ServerLevel level) {
         TACZWeaponBridge.register();
-        // SRE game is started by SREBlackoutGameMode.initializeGame()
-        HabiTrainCore.LOGGER.info("BlackoutMode: SRE lifecycle managed by SREBlackoutGameMode");
+
+        // 查找并启动 SRE 游戏 (异步加载地图、分配角色)
+        ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
+        var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
+        if (sreMode == null) {
+            HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found!");
+            return;
+        }
+        var sreGame = SREGameWorldComponent.KEY.get(level);
+        if (sreGame != null && !sreGame.isRunning()) {
+            GameUtils.startGame(level, sreMode,
+                    GameConstants.getInTicks(
+                        ((io.wifi.starrailexpress.api.GameMode)sreMode).defaultStartTime, 0));
+        }
     }
 
     @Override
@@ -78,12 +96,19 @@ public class BlackoutMode implements GameMode {
         var sreGame = SREGameWorldComponent.KEY.get(level);
         boolean sreActive = sreGame != null && sreGame.isRunning();
 
-        // SRE game ended externally (e.g., tmm stop) → end BlackoutMode
-        if (!sreActive && !gameEnded) {
+        // 状态转换: SRE 游戏开始
+        if (sreActive && !sreGameRunning) {
+            sreGameRunning = true;
+        }
+
+        // 状态转换: SRE 游戏结束 (如 tmm stop) → 结束 BlackoutMode
+        if (!sreActive && sreGameRunning) {
+            sreGameRunning = false;
             endGame("§6对局结束");
             return;
         }
 
+        // 等待 SRE 启动完成
         if (!sreActive) return;
 
         // Timer only runs while SRE is active
@@ -141,6 +166,7 @@ public class BlackoutMode implements GameMode {
         BlackoutTimerSystem.reset();
         currentLevel = null;
         gameEnded = false;
+        sreGameRunning = false;
     }
 
     @Override

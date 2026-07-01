@@ -1,14 +1,11 @@
 package com.habitrain.core.client.gui;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -60,7 +57,6 @@ public class BlackoutRoleIntroduceScreen extends Screen {
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
-        renderBackground(g, mouseX, mouseY, partialTick);
 
         int usableW = Math.min(600, (int)(width * 0.9f));
         int leftW = (int)(usableW * 0.35f);

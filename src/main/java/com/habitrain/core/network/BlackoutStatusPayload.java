@@ -19,8 +19,6 @@ public record BlackoutStatusPayload(
     public enum StatusType {
         BLACKOUT_START,
         BLACKOUT_END,
-        VOTE_OPEN,
-        VOTE_RESULT,
         TIME_WARNING
     }
 

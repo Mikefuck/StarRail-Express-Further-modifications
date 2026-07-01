@@ -73,11 +73,6 @@ public class BlackoutRoleManager {
         return new ArrayList<>(sheriffs);
     }
 
-    /** 非杀手可当选警长 */
-    public static boolean canBeSheriff(UUID playerId) {
-        return isAlive(playerId) && getRole(playerId) != RoleType.KILLER;
-    }
-
     /**
      * 按杀手数量分配警长。
      * 在 initRandomAssignment 之后调用。
@@ -116,13 +111,6 @@ public class BlackoutRoleManager {
     /** 获取所有存活玩家ID (排除已淘汰的) */
     public static List<UUID> getAllAlive() {
         return new ArrayList<>(ROLES.keySet());
-    }
-
-    /** 获取可被投票的玩家 (存活且非自己) */
-    public static List<UUID> getVotablePlayers(UUID voterId) {
-        return getAllAlive().stream()
-                .filter(id -> !id.equals(voterId))
-                .toList();
     }
 
     public static void clear() {
