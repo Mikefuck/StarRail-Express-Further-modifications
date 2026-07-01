@@ -26,7 +26,7 @@ public class BlackoutRoleManager {
 
     private static final Map<UUID, RoleType> ROLES = new HashMap<>();
     private static final Map<UUID, Faction> FACTIONS = new HashMap<>();
-    private static UUID sheriffId = null;
+    private static final Set<UUID> sheriffs = new HashSet<>();
 
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutRoleManager");
 
@@ -51,20 +51,26 @@ public class BlackoutRoleManager {
     public static void eliminate(UUID playerId) {
         ROLES.remove(playerId);
         FACTIONS.remove(playerId);
-        if (playerId.equals(sheriffId)) sheriffId = null;
+        sheriffs.remove(playerId);
     }
 
     // ====== 警长 ======
 
     public static void setSheriff(UUID playerId) {
-        sheriffId = playerId;
+        sheriffs.add(playerId);
         ROLES.put(playerId, RoleType.SHERIFF);
     }
 
-    public static UUID getSheriff() { return sheriffId; }
-
     public static boolean isSheriff(UUID playerId) {
-        return playerId.equals(sheriffId);
+        return sheriffs.contains(playerId);
+    }
+
+    public static int getSheriffCount() {
+        return sheriffs.size();
+    }
+
+    public static List<UUID> getAllSheriffs() {
+        return new ArrayList<>(sheriffs);
     }
 
     /** 非杀手可当选警长 */
@@ -78,7 +84,7 @@ public class BlackoutRoleManager {
      * 杀手 1 人 → 警长 1 人，杀手 3 人 → 警长 3 人，以此类推。
      */
     public static void assignSheriffs() {
-        if (sheriffId != null) return; // 防止重复分配
+        if (!sheriffs.isEmpty()) return; // 防止重复分配
         int killerCount = getRemainingBad();
         int sheriffCount = Math.max(1, killerCount);
 
@@ -122,7 +128,7 @@ public class BlackoutRoleManager {
     public static void clear() {
         ROLES.clear();
         FACTIONS.clear();
-        sheriffId = null;
+        sheriffs.clear();
     }
 
     /**
