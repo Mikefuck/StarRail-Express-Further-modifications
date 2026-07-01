@@ -2,10 +2,13 @@ package com.habitrain.core.game.blackout.sre;
 
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutRoleManager.Faction;
+import com.habitrain.core.game.blackout.BlackoutRoleManager.RoleType;
+import com.habitrain.core.network.BlackoutAnnouncePayload;
 import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.modes.SREMurderGameMode;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -50,8 +53,9 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         // 2. 将玩家加入游戏队伍
         addPlayersToTeam(world.getServer().createCommandSourceStack(), players, "harpymodloader_game");
 
-        // 3. 分配 Blackout 阵营（记录到 BlackoutRoleManager）
+        // 3. 分配 Blackout 阵营 + 警长
         BlackoutRoleManager.initRandomAssignment(players);
+        BlackoutRoleManager.assignSheriffs();
 
         // 4. 分配 SRE 角色：好人=CIVILIAN（平民），坏人=KILLER（杀手阵营）
         //    SRE 看到 CIVILIAN + KILLER 两个经典对抗阵营 → 不会结束游戏
@@ -61,7 +65,34 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         }
         game.syncRoles();
 
-        // 5. 最后启动 SRE 游戏（角色已分配完毕，阵营已同步）
+        // 5. 向每位玩家发送 Blackout 阵营公告（角色介绍 + 目标）
+        int killerCount = BlackoutRoleManager.getRemainingBad();
+        int goodCount = players.size() - killerCount;
+        for (ServerPlayer player : players) {
+            var pid = player.getUUID();
+            var role = BlackoutRoleManager.getRole(pid);
+            boolean isBad = BlackoutRoleManager.getFaction(pid) == Faction.BAD;
+            String roleName;
+            String subtitle;
+            String goal;
+            if (role == RoleType.KILLER) {
+                roleName = "黑化杀手";
+                subtitle = "§c坏人阵营 — 破坏列车，消灭好人";
+                goal = "消灭所有好人，不要让列车恢复供电！";
+            } else if (role == RoleType.SHERIFF) {
+                roleName = "警长";
+                subtitle = "§b好人阵营 — 找出并制裁杀手";
+                goal = "暗中调查可疑玩家，用枪维护秩序！";
+            } else {
+                roleName = "黑化平民";
+                subtitle = "§a好人阵营 — 完成任务，存活到最后";
+                goal = "完成好人任务，活下去！";
+            }
+            ServerPlayNetworking.send(player,
+                    new BlackoutAnnouncePayload(roleName, subtitle, goal, killerCount, goodCount));
+        }
+
+        // 6. 最后启动 SRE 游戏（角色已分配完毕，阵营已同步，公告已发送）
         executeFunction(world.getServer().createCommandSourceStack(), "harpymodloader:start_game");
     }
 

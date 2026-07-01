@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,32 @@ public class BlackoutRoleManager {
     /** 非杀手可当选警长 */
     public static boolean canBeSheriff(UUID playerId) {
         return isAlive(playerId) && getRole(playerId) != RoleType.KILLER;
+    }
+
+    /**
+     * 按杀手数量分配警长。
+     * 在 initRandomAssignment 之后调用。
+     * 杀手 1 人 → 警长 1 人，杀手 3 人 → 警长 3 人，以此类推。
+     */
+    public static void assignSheriffs() {
+        if (sheriffId != null) return; // 防止重复分配
+        int killerCount = getRemainingBad();
+        int sheriffCount = Math.max(1, killerCount);
+
+        List<UUID> candidates = ROLES.entrySet().stream()
+                .filter(e -> e.getValue() == RoleType.CIVILIAN)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        Collections.shuffle(candidates);
+
+        int assigned = 0;
+        for (UUID id : candidates) {
+            if (assigned >= sheriffCount) break;
+            setSheriff(id);
+            assigned++;
+        }
+        LOGGER.info("BlackoutRoleManager: Assigned {} SHERIFF(s) ({} killers, {} candidates)",
+                assigned, killerCount, candidates.size());
     }
 
     // ====== 阵营统计 ======
