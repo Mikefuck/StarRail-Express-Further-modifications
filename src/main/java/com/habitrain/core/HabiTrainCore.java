@@ -48,7 +48,6 @@ import betel.nut.BetelNutConfig;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffects;
