@@ -50,6 +50,7 @@ public class Engine {
         TaskDefinition last = pool.get(pool.size() - 1);
         TaskInstance instance = new TaskInstance(last);
         last.onAssign(player, instance);
+        if (gameMode != null) gameMode.onTaskAssign((ServerPlayer) player, instance);
         return instance;
     }
 
