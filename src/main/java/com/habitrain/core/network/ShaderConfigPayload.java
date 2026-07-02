@@ -25,6 +25,8 @@ import java.util.List;
  * - whitelist (String[]): 允许的光影包名称列表
  */
 public class ShaderConfigPayload implements CustomPacketPayload {
+    private static final int MAX_STRING_LENGTH = 65536;
+
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "shader_config_sync");
     public static final CustomPacketPayload.Type<ShaderConfigPayload> TYPE =
             new CustomPacketPayload.Type<>(ID);
@@ -53,6 +55,7 @@ public class ShaderConfigPayload implements CustomPacketPayload {
             List<String> whitelist = new ArrayList<>();
             for (int i = 0; i < count; i++) {
                 int len = buf.readInt();
+                len = Math.min(len, MAX_STRING_LENGTH);
                 byte[] bytes = new byte[len];
                 buf.readBytes(bytes);
                 whitelist.add(new String(bytes, StandardCharsets.UTF_8));

@@ -25,6 +25,8 @@ import net.minecraft.server.level.ServerPlayer;
  * - taskFullId (String): 活跃任务的完整 ID，空字符串=无活跃任务
  */
 public class ActiveTaskPayload implements CustomPacketPayload {
+    private static final int MAX_STRING_LENGTH = 65536;
+
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "active_task");
     public static final CustomPacketPayload.Type<ActiveTaskPayload> TYPE =
             new CustomPacketPayload.Type<>(ID);
@@ -50,6 +52,7 @@ public class ActiveTaskPayload implements CustomPacketPayload {
         public ActiveTaskPayload decode(ByteBuf buf) {
             int len = buf.readInt();
             if (len <= 0) return new ActiveTaskPayload("");
+            len = Math.min(len, MAX_STRING_LENGTH);
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new ActiveTaskPayload(new String(bytes, StandardCharsets.UTF_8));

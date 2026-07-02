@@ -20,6 +20,8 @@ import net.minecraft.resources.ResourceLocation;
  *   空字符串表示没有使用光影包（默认光影）
  */
 public class ShaderInfoPayload implements CustomPacketPayload {
+    private static final int MAX_STRING_LENGTH = 65536;
+
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "shader_pack_info");
     public static final CustomPacketPayload.Type<ShaderInfoPayload> TYPE =
             new CustomPacketPayload.Type<>(ID);
@@ -44,6 +46,7 @@ public class ShaderInfoPayload implements CustomPacketPayload {
         public ShaderInfoPayload decode(ByteBuf buf) {
             int len = buf.readInt();
             if (len <= 0) return new ShaderInfoPayload("");
+            len = Math.min(len, MAX_STRING_LENGTH);
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8));

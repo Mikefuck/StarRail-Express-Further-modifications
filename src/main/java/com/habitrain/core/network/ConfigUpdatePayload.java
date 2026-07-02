@@ -23,6 +23,8 @@ import net.minecraft.resources.ResourceLocation;
  * 非 OP 玩家的更新请求会被拒绝。
  */
 public class ConfigUpdatePayload implements CustomPacketPayload {
+    private static final int MAX_JSON_LENGTH = 1048576;
+
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "config_update");
     public static final CustomPacketPayload.Type<ConfigUpdatePayload> TYPE =
             new CustomPacketPayload.Type<>(ID);
@@ -42,6 +44,7 @@ public class ConfigUpdatePayload implements CustomPacketPayload {
         public ConfigUpdatePayload decode(ByteBuf buf) {
             int len = buf.readInt();
             if (len <= 0) return new ConfigUpdatePayload("{}");
+            len = Math.min(len, MAX_JSON_LENGTH);
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new ConfigUpdatePayload(new String(bytes, StandardCharsets.UTF_8));
