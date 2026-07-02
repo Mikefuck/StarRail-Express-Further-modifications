@@ -46,19 +46,9 @@ public class TaskListScreen extends Screen {
     private static final int ROW_GAP = 2;
     private static final int SCROLLBAR_W = 4;
 
-    // ====== 颜色预设 ======
-    private static final int[] COLORS = {
-            0xB4FF0000, 0xB4FF7F00, 0xB4FFFF00, 0xB400FF00,
-            0xB40000FF, 0xB48B00FF, 0xB4FF00FF, 0xB400FFFF,
-            0xB4FFC0CB, 0xB4FFA500, 0xB4C0C0C0, 0xB4FFFFFF,
-            0xB4FF6B6B, 0xB4FFD700, 0xB47CFC00, 0xB400FA9A,
-            0xB46020F0, 0xB4FF1493, 0xB400CED1, 0xB4FF8C00,
-    };
-    private static final String[] COLOR_NAMES = {
-            "红","橙","黄","绿","蓝","紫","品红","青",
-            "粉","琥珀","银","白","珊瑚","金","草绿","碧绿",
-            "紫罗兰","深粉","深蓝","亮橙"
-    };
+    // ====== 颜色预设 (共享常量) ======
+    private static final int ALPHA = 0xB4;
+    private static int color(int index) { return SharedGuiConstants.getColor(index, ALPHA); }
 
     // ====== 状态 ======
     private final Screen parent;
@@ -179,10 +169,11 @@ public class TaskListScreen extends Screen {
             // 计算颜色名称
             int colorIdx = -1;
             int cur = cfg.instinctColor & 0x00FFFFFF;
-            for (int i = 0; i < COLORS.length; i++) {
-                if ((COLORS[i] & 0x00FFFFFF) == cur) { colorIdx = i; break; }
+            int n = SharedGuiConstants.getColorCount();
+            for (int i = 0; i < n; i++) {
+                if ((color(i) & 0x00FFFFFF) == cur) { colorIdx = i; break; }
             }
-            String colorName = colorIdx >= 0 ? COLOR_NAMES[colorIdx] : "自定义";
+            String colorName = colorIdx >= 0 ? SharedGuiConstants.COLOR_NAMES[colorIdx] : "自定义";
 
             allTaskInfos.add(new TaskRowInfo(def, cfg, isBuiltin, cfg.instinctColor, colorName));
         }

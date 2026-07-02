@@ -148,30 +148,7 @@ public class ConfigManager {
                 configFile.getParentFile().mkdirs();
             }
 
-            JsonObject root = new JsonObject();
-
-            JsonObject global = new JsonObject();
-            global.addProperty("dlcProbabilityTarget", dlcProbabilityTarget);
-            global.addProperty("dlcWeightBoost", calculateCurrentBoost());
-            global.addProperty("shaderWhitelistEnabled", shaderWhitelistEnabled);
-            var whitelistArray = new com.google.gson.JsonArray();
-            for (String name : shaderWhitelist) whitelistArray.add(name);
-            global.add("shaderWhitelist", whitelistArray);
-            root.add("global", global);
-
-            JsonObject tasks = new JsonObject();
-            for (TaskDefinition def : TaskRegistry.getAll()) {
-                String fullId = def.getFullId();
-                TaskConfigEntry entry = taskConfigs.getOrDefault(fullId, new TaskConfigEntry(true));
-                tasks.add(fullId, entry.toJson());
-            }
-            root.add("tasks", tasks);
-
-            JsonObject gameModes = new JsonObject();
-            for (Map.Entry<String, GameModeConfigScope> e : gameModeConfigs.entrySet()) {
-                gameModes.add(e.getKey(), e.getValue().toJson());
-            }
-            root.add("gameModes", gameModes);
+            JsonObject root = buildJsonRoot(true);
 
             try (FileWriter writer = new FileWriter(configFile)) {
                 gson.toJson(root, writer);
@@ -185,6 +162,37 @@ public class ConfigManager {
                 LOGGER.error("保存回调执行失败", e);
             }
         }
+    }
+
+    private JsonObject buildJsonRoot(boolean includeWeightBoost) {
+        JsonObject root = new JsonObject();
+
+        JsonObject global = new JsonObject();
+        global.addProperty("dlcProbabilityTarget", dlcProbabilityTarget);
+        if (includeWeightBoost) {
+            global.addProperty("dlcWeightBoost", calculateCurrentBoost());
+        }
+        global.addProperty("shaderWhitelistEnabled", shaderWhitelistEnabled);
+        var whitelistArray = new com.google.gson.JsonArray();
+        for (String name : shaderWhitelist) whitelistArray.add(name);
+        global.add("shaderWhitelist", whitelistArray);
+        root.add("global", global);
+
+        JsonObject tasks = new JsonObject();
+        for (TaskDefinition def : TaskRegistry.getAll()) {
+            String fullId = def.getFullId();
+            TaskConfigEntry entry = taskConfigs.getOrDefault(fullId, new TaskConfigEntry(true));
+            tasks.add(fullId, entry.toJson());
+        }
+        root.add("tasks", tasks);
+
+        JsonObject gameModes = new JsonObject();
+        for (Map.Entry<String, GameModeConfigScope> e : gameModeConfigs.entrySet()) {
+            gameModes.add(e.getKey(), e.getValue().toJson());
+        }
+        root.add("gameModes", gameModes);
+
+        return root;
     }
 
     private void createDefaultConfig() {
@@ -312,31 +320,7 @@ public class ConfigManager {
     // ========================================================================
 
     public String toJsonString() {
-        JsonObject root = new JsonObject();
-
-        JsonObject global = new JsonObject();
-        global.addProperty("dlcProbabilityTarget", dlcProbabilityTarget);
-        global.addProperty("shaderWhitelistEnabled", shaderWhitelistEnabled);
-        var whitelistArr = new com.google.gson.JsonArray();
-        for (String name : shaderWhitelist) whitelistArr.add(name);
-        global.add("shaderWhitelist", whitelistArr);
-        root.add("global", global);
-
-        JsonObject tasks = new JsonObject();
-        for (TaskDefinition def : TaskRegistry.getAll()) {
-            String fullId = def.getFullId();
-            TaskConfigEntry entry = taskConfigs.getOrDefault(fullId, new TaskConfigEntry(true));
-            tasks.add(fullId, entry.toJson());
-        }
-        root.add("tasks", tasks);
-
-        JsonObject gameModes = new JsonObject();
-        for (Map.Entry<String, GameModeConfigScope> e : gameModeConfigs.entrySet()) {
-            gameModes.add(e.getKey(), e.getValue().toJson());
-        }
-        root.add("gameModes", gameModes);
-
-        return gson.toJson(root);
+        return gson.toJson(buildJsonRoot(false));
     }
 
     public void loadFromJsonString(String json) {

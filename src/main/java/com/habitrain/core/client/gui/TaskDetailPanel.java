@@ -25,18 +25,8 @@ public class TaskDetailPanel {
     private static final int LABEL_W = 52;
     private static final int CONTENT_W = PANEL_W - PAD * 2 - LABEL_W - 6;
 
-    private static final int[] COLOR_PRESETS = {
-        0xFFFF0000, 0xFFFF7F00, 0xFFFFFF00, 0xFF00FF00,
-        0xFF0000FF, 0xFF8B00FF, 0xFFFF00FF, 0xFF00FFFF,
-        0xFFFFC0CB, 0xFFFFA500, 0xFFC0C0C0, 0xFFFFFFFF,
-        0xFFFF6B6B, 0xFFFFD700, 0xFF7CFC00, 0xFF00FA9A,
-        0xFF6020F0, 0xFFFF1493, 0xFF00CED1, 0xFFFF8C00
-    };
-    private static final String[] COLOR_NAMES = {
-        "红色","橙色","黄色","绿色","蓝色","紫色","品红色","青色",
-        "粉色","琥珀色","银色","白色","珊瑚色","金色","草绿色","碧绿色",
-        "紫罗兰","深粉色","深蓝色","亮橙色"
-    };
+    private static final int ALPHA = 0xFF;
+    private static int color(int index) { return SharedGuiConstants.getColor(index, ALPHA); }
     private static final String[] MAP_MODES = {"全部地图", "仅以下地图", "排除以下地图"};
 
     // ---- 面板状态 ----
@@ -231,8 +221,8 @@ public class TaskDetailPanel {
         int colorRowY = panelY + 36 + ROW_H;
         if (mx >= colorRectX && mx <= colorRectX + 140
                 && my >= colorRowY && my <= colorRowY + ROW_H) {
-            int nextIdx = (findColorIndex(currentColor) + 1) % COLOR_PRESETS.length;
-            currentColor = new Color(COLOR_PRESETS[nextIdx]);
+            int nextIdx = (findColorIndex(currentColor) + 1) % SharedGuiConstants.getColorCount();
+            currentColor = new Color(color(nextIdx), true);
             saveColor();
             return true;
         }
@@ -368,14 +358,16 @@ public class TaskDetailPanel {
 
     private static int findColorIndex(Color c) {
         int rgb = c.getRGB() & 0x00FFFFFF;
-        for (int i = 0; i < COLOR_PRESETS.length; i++) {
-            if ((COLOR_PRESETS[i] & 0x00FFFFFF) == rgb) return i;
+        int n = SharedGuiConstants.getColorCount();
+        for (int i = 0; i < n; i++) {
+            if ((color(i) & 0x00FFFFFF) == rgb) return i;
         }
         return 0;
     }
 
     private static String getColorName(Color c) {
         int idx = findColorIndex(c);
-        return idx < COLOR_NAMES.length ? COLOR_NAMES[idx] : "自定义";
+        int n = SharedGuiConstants.getColorCount();
+        return idx < n ? SharedGuiConstants.COLOR_NAMES[idx] : "自定义";
     }
 }

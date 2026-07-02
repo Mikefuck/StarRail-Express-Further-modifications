@@ -273,12 +273,16 @@ public class BlackoutMode implements GameMode {
         endGame(WinResult.forceEnd("游戏结束"), message);
     }
 
-    private void broadcast(String message) {
-        if (currentLevel == null) return;
+    public static void broadcast(ServerLevel level, String message) {
+        if (level == null) return;
         Component component = Component.literal(message);
-        for (ServerPlayer player : currentLevel.players()) {
+        for (ServerPlayer player : level.players()) {
             player.sendSystemMessage(component);
         }
+    }
+
+    private void broadcast(String message) {
+        broadcast(currentLevel, message);
     }
 
     public static String formatTime(int seconds) {

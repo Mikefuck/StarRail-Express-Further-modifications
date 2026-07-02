@@ -49,21 +49,9 @@ public class TaskEditScreen extends Screen {
     private static final int LABEL_W = 76;
     private static final int SCROLLBAR_W = 4;
 
-    // ====== 20色预设 ======
-    private static final int[] COLORS = {
-            0xB4FF0000, 0xB4FF7F00, 0xB4FFFF00, 0xB400FF00,
-            0xB40000FF, 0xB48B00FF, 0xB4FF00FF, 0xB400FFFF,
-            0xB4FFC0CB, 0xB4FFA500, 0xB4C0C0C0, 0xB4FFFFFF,
-            0xB4FF6B6B, 0xB4FFD700, 0xB47CFC00, 0xB400FA9A,
-            0xB46020F0, 0xB4FF1493, 0xB400CED1, 0xB4FF8C00,
-    };
-    private static final String[] COLOR_NAMES = {
-            "红色","橙色","黄色","绿色",
-            "蓝色","紫色","品红色","青色",
-            "粉色","琥珀色","银色","白色",
-            "珊瑚色","金色","草绿色","碧绿色",
-            "紫罗兰","深粉色","深蓝色","亮橙色"
-    };
+    // ====== 20色预设 (共享常量) ======
+    private static final int ALPHA = 0xB4;
+    private static int color(int index) { return SharedGuiConstants.getColor(index, ALPHA); }
 
     // ====== 状态 ======
     private final Screen parent;
@@ -360,7 +348,7 @@ public class TaskEditScreen extends Screen {
         int swatchX = colorBtn.getX() + colorBtn.getWidth() + 4;
         Color col = new Color(cfg.getColor(), true);
         int idx = getColorIndex();
-        String cName = idx >= 0 ? COLOR_NAMES[idx] : "自定义";
+        String cName = idx >= 0 ? SharedGuiConstants.COLOR_NAMES[idx] : "自定义";
         renderColorSwatch(g, f, swatchX, r2 + 3, col, cName);
 
         // 第3行: 描边粗细
@@ -519,22 +507,23 @@ public class TaskEditScreen extends Screen {
 
     private int getColorIndex() {
         int cur = cfg.instinctColor & 0x00FFFFFF;
-        for (int i = 0; i < COLORS.length; i++) {
-            if ((COLORS[i] & 0x00FFFFFF) == cur) return i;
+        for (int i = 0; i < SharedGuiConstants.getColorCount(); i++) {
+            if ((color(i) & 0x00FFFFFF) == cur) return i;
         }
         return -1;
     }
 
     private void cycleColor() {
         int cur = cfg.instinctColor & 0x00FFFFFF;
-        for (int i = 0; i < COLORS.length; i++) {
-            if ((COLORS[i] & 0x00FFFFFF) == cur) {
-                cfg.instinctColor = COLORS[(i + 1) % COLORS.length];
+        int n = SharedGuiConstants.getColorCount();
+        for (int i = 0; i < n; i++) {
+            if ((color(i) & 0x00FFFFFF) == cur) {
+                cfg.instinctColor = color((i + 1) % n);
                 saveCurrent();
                 return;
             }
         }
-        cfg.instinctColor = COLORS[0];
+        cfg.instinctColor = color(0);
         saveCurrent();
     }
 

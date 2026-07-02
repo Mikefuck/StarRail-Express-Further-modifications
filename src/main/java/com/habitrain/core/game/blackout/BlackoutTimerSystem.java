@@ -1,8 +1,6 @@
 package com.habitrain.core.game.blackout;
 
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.network.chat.Component;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -202,9 +200,6 @@ public class BlackoutTimerSystem {
     public static boolean isTimeUp(ServerLevel level) { return getOrCreate(level).totalTimeRemaining <= 0; }
 
     private static void broadcast(ServerLevel level, String msg) {
-        Component c = Component.literal(msg);
-        for (ServerPlayer player : level.players()) {
-            player.sendSystemMessage(c);
-        }
+        BlackoutMode.broadcast(level, msg);
     }
 }
