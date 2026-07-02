@@ -17,8 +17,10 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -44,9 +46,8 @@ public abstract class GenerateTaskMixin {
         throw new AssertionError("Shadowed");
     }
 
-    @Overwrite(remap = false)
-    @Nullable
-    public SREPlayerTaskComponent.TrainTask generateTaskInternal() {
+    @Inject(method = "generateTaskInternal", at = @At("HEAD"), cancellable = true, remap = false)
+    private void onGenerateTaskInternal(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
         LOGGER.info("[HabiDebug] ===== genTask CALLED! tasks.size={}, timesGotten={} =====",
                 tasks.size(), timesGotten.size());
 
@@ -68,7 +69,7 @@ public abstract class GenerateTaskMixin {
         LOGGER.info("[HabiDebug] Flat pool built: {} entries, total weight={}",
                 weightEntries.size(), String.format("%.2f", total));
 
-        return weightedSelect(weightEntries, total);
+        cir.setReturnValue(weightedSelect(weightEntries, total));
     }
 
     private float addOriginalTasks(List<Map.Entry<Object, Float>> entries,
