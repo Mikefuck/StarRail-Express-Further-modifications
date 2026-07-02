@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 
 
 
@@ -28,7 +29,7 @@ public class SabotageWiringTask {
             })
             .completionChecker((player, task) -> task.getProgress() >= 1)
             .onComplete((player, task) -> {
-                BlackoutTimerSystem.triggerTransientBlackout();
+                BlackoutTimerSystem.triggerTransientBlackout(((ServerPlayer)player).serverLevel());
                 player.sendSystemMessage(
                     Component.literal("§c✔ 破坏了线路，触发短暂停电！"));
             })

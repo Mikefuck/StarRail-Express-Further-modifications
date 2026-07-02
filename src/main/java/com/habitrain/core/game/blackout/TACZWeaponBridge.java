@@ -51,13 +51,12 @@ public class TACZWeaponBridge {
             if (event.getLogicalSide().isClient()) return;
             if (!(event.getHurtEntity() instanceof ServerPlayer target)) return;
             if (!(event.getAttacker() instanceof ServerPlayer shooter)) return;
-
-            var level = target.serverLevel();
-            var activeMode = GameModeRegistry.getActiveForLevel(level);
+            var bLevel = target.serverLevel();
+            var activeMode = GameModeRegistry.getActiveForLevel(bLevel);
             if (activeMode.isEmpty() || !(activeMode.get() instanceof BlackoutMode)) return;
 
-            if (!BlackoutRoleManager.isSheriff(shooter.getUUID())) return;
-            if (!BlackoutRoleManager.isAlive(target.getUUID())) return;
+            if (!BlackoutRoleManager.isSheriff(bLevel, shooter.getUUID())) return;
+            if (!BlackoutRoleManager.isAlive(bLevel, target.getUUID())) return;
 
             event.setCanceled(true);
             eliminatePlayer(target, shooter);
@@ -73,7 +72,8 @@ public class TACZWeaponBridge {
      * @return true=购买成功
      */
     public static boolean buyDesertEagle(ServerPlayer player) {
-        if (!BlackoutRoleManager.isSheriff(player.getUUID())) {
+        var level = player.serverLevel();
+        if (!BlackoutRoleManager.isSheriff(level, player.getUUID())) {
             player.sendSystemMessage(Component.literal("§c只有警长才能购买沙漠之鹰！"));
             return false;
         }
@@ -119,7 +119,8 @@ public class TACZWeaponBridge {
      * @return true=购买成功
      */
     public static boolean buyAmmo(ServerPlayer player, int count) {
-        if (!BlackoutRoleManager.isSheriff(player.getUUID())) {
+        var level = player.serverLevel();
+        if (!BlackoutRoleManager.isSheriff(level, player.getUUID())) {
             player.sendSystemMessage(Component.literal("§c只有警长才能购买弹药！"));
             return false;
         }
@@ -171,7 +172,7 @@ public class TACZWeaponBridge {
 
             gameWorld.removeRole(target);           // SRE 角色移除 = 游戏死亡
             gameWorld.addPlayerKill(shooter.getUUID()); // 记录击杀
-            BlackoutRoleManager.eliminate(target.getUUID()); // 停电模式淘汰
+            BlackoutRoleManager.eliminate(target.serverLevel(), target.getUUID()); // 停电模式淘汰
 
             target.sendSystemMessage(Component.literal(
                 "§c你被警长 §e" + shooter.getName().getString() + " §c击杀了！"));

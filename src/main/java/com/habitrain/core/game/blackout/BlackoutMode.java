@@ -61,7 +61,7 @@ public class BlackoutMode implements GameMode {
         this.gameEnded = false;
         this.sreGameRunning = false;
 
-        BlackoutRoleManager.clear();
+        BlackoutRoleManager.clear(level);
         BlackoutTimerSystem.init(level,
                 this::triggerSREPermanentBlackout,
                 this::endSREBlackout,
@@ -114,22 +114,22 @@ public class BlackoutMode implements GameMode {
         // Timer only runs while SRE is active
         tickAccumulator++;
         if (tickAccumulator % 20 == 0) {
-            BlackoutTimerSystem.tickSecond();
+            BlackoutTimerSystem.tickSecond(currentLevel);
             checkVictory();
 
             // Broadcast time sync
-            int totalTime = BlackoutTimerSystem.getTotalTimeRemaining();
-            boolean permDark = BlackoutTimerSystem.isPermanentBlackoutActive();
-            int maintTime = BlackoutTimerSystem.getMaintenanceTime();
-            int cd = BlackoutTimerSystem.getBlackoutCountdown();
+            int totalTime = BlackoutTimerSystem.getTotalTimeRemaining(currentLevel);
+            boolean permDark = BlackoutTimerSystem.isPermanentBlackoutActive(currentLevel);
+            int maintTime = BlackoutTimerSystem.getMaintenanceTime(currentLevel);
+            int cd = BlackoutTimerSystem.getBlackoutCountdown(currentLevel);
             BlackoutTimerPayload.broadcastToAll(level.getServer(),
                     totalTime,
                     permDark ? 0 : (maintTime > 0 ? maintTime : cd),
-                    permDark || BlackoutTimerSystem.isTransientBlackoutActive(),
-                    BlackoutTimerSystem.getPhase().ordinal());
+                    permDark || BlackoutTimerSystem.isTransientBlackoutActive(currentLevel),
+                    BlackoutTimerSystem.getPhase(currentLevel).ordinal());
 
             // Reapply permanent blackout
-            if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive()) {
+            if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive(currentLevel)) {
                 reapplyPermanentBlackout();
             }
         }
@@ -143,12 +143,12 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onPlayerJoin(ServerPlayer player) {
         player.sendSystemMessage(Component.literal(
-            "§e当前游戏: 停电模式  剩余: §l" + formatTime(BlackoutTimerSystem.getTotalTimeRemaining()) + "§r"));
+            "§e当前游戏: 停电模式  剩余: §l" + formatTime(BlackoutTimerSystem.getTotalTimeRemaining(currentLevel)) + "§r"));
     }
 
     @Override
     public void onPlayerLeave(ServerPlayer player) {
-        BlackoutRoleManager.eliminate(player.getUUID());
+        BlackoutRoleManager.eliminate(currentLevel, player.getUUID());
         checkVictory();
     }
 
@@ -162,8 +162,8 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onCleanup(ServerLevel level) {
-        BlackoutRoleManager.clear();
-        BlackoutTimerSystem.reset();
+        BlackoutRoleManager.clear(level);
+        BlackoutTimerSystem.reset(level);
         currentLevel = null;
         gameEnded = false;
         sreGameRunning = false;
@@ -218,13 +218,14 @@ public class BlackoutMode implements GameMode {
     }
 
     private void checkVictory() {
-        if (BlackoutRoleManager.getRemainingGood() <= 0 && BlackoutRoleManager.getRemainingBad() <= 0) return;
+        if (currentLevel == null) return;
+        if (BlackoutRoleManager.getRemainingGood(currentLevel) <= 0 && BlackoutRoleManager.getRemainingBad(currentLevel) <= 0) return;
 
-        int goodRemaining = BlackoutRoleManager.getRemainingGood();
-        int badRemaining = BlackoutRoleManager.getRemainingBad();
+        int goodRemaining = BlackoutRoleManager.getRemainingGood(currentLevel);
+        int badRemaining = BlackoutRoleManager.getRemainingBad(currentLevel);
 
         // 好人胜: 时间归零
-        if (BlackoutTimerSystem.isTimeUp()) {
+        if (BlackoutTimerSystem.isTimeUp(currentLevel)) {
             endGame(WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
             return;
         }

@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Blocks;
 
 
@@ -18,7 +19,7 @@ public class MaintainPowerTask {
             .instinctColor(0, 200, 255, 200)
             .scanBlocks(Blocks.REDSTONE_LAMP)
             .onComplete((player, task) -> {
-                BlackoutTimerSystem.delayMaintenanceOrCountdown(15);
+                BlackoutTimerSystem.delayMaintenanceOrCountdown(((ServerPlayer)player).serverLevel(), 15);
                 player.sendSystemMessage(
                     Component.literal("§a✔ 维护了供电系统，供电时间延长15秒！"));
             })

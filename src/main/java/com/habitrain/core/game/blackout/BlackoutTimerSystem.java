@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,225 +20,189 @@ import org.slf4j.LoggerFactory;
 public class BlackoutTimerSystem {
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutTimer");
 
-    // ====== 常量 ======
-    private static final int TOTAL_TIME = 300;          // 对局总时长 300s
-    private static final int FIRST_BLACKOUT_CD = 120;   // 第一次停电倒计时 120s
-    private static final int MAINTENANCE_DURATION = 60; // 维护期时长 60s
-    private static final int TRANSIENT_TICKS = 140;     // 短暂停电 7s × 20 tick
+    private static final Map<ServerLevel, TimerState> instances = new java.util.HashMap<>();
 
-    // ====== 三态枚举 ======
+    // ====== 常量 ======
+    private static final int TOTAL_TIME = 300;
+    private static final int FIRST_BLACKOUT_CD = 120;
+    private static final int MAINTENANCE_DURATION = 60;
+    private static final int TRANSIENT_TICKS = 140;
+
     public enum Phase {
-        NORMAL,           // 灯亮，停电倒计时递减
-        FIRST_BLACKOUT,   // 第一次永久停电 (可恢复)
-        MAINTENANCE,      // 恢复供电维护期
-        SECOND_BLACKOUT   // 第二次永久停电 (不可逆)
+        NORMAL,
+        FIRST_BLACKOUT,
+        MAINTENANCE,
+        SECOND_BLACKOUT
     }
 
-    private static Phase phase = Phase.NORMAL;
+    private static TimerState getOrCreate(ServerLevel level) {
+        return instances.computeIfAbsent(level, k -> new TimerState());
+    }
 
-    // ====== 计时器 ======
-    private static int totalTimeRemaining = TOTAL_TIME;   // 对局总倒计时
-    private static int blackoutCountdown = FIRST_BLACKOUT_CD;  // 停电倒计时
-    private static int maintenanceTime = 0;                // 维护期倒计时
-    private static boolean warningSent = false;            // 60s 预警
-
-    // 短暂停电 (杀手破坏线路)
-    private static boolean transientBlackoutActive = false;
-    private static int transientBlackoutTicks = 0;
-
-    private static ServerLevel currentLevel = null;
-    private static Runnable onPermanentStart = null;  // 永久停电回调（调用 SRE API）
-    private static Runnable onPermanentEnd = null;     // 永久停电恢复（调用 SRE API 恢复灯光）
-    private static Runnable onTimeWarning = null;      // 60s 预警
-
-    // ====== 初始化 ======
+    private static class TimerState {
+        Phase phase = Phase.NORMAL;
+        int totalTimeRemaining = TOTAL_TIME;
+        int blackoutCountdown = FIRST_BLACKOUT_CD;
+        int maintenanceTime = 0;
+        boolean warningSent = false;
+        boolean transientBlackoutActive = false;
+        int transientBlackoutTicks = 0;
+        ServerLevel currentLevel = null;
+        Runnable onPermanentStart = null;
+        Runnable onPermanentEnd = null;
+        Runnable onTimeWarning = null;
+    }
 
     public static void init(ServerLevel level, Runnable permanentStartCb, Runnable permanentEndCb, Runnable timeWarningCb) {
-        phase = Phase.NORMAL;
-        totalTimeRemaining = TOTAL_TIME;
-        blackoutCountdown = FIRST_BLACKOUT_CD;
-        maintenanceTime = 0;
-        warningSent = false;
-        transientBlackoutActive = false;
-        transientBlackoutTicks = 0;
-        currentLevel = level;
-        onPermanentStart = permanentStartCb;
-        onPermanentEnd = permanentEndCb;
-        onTimeWarning = timeWarningCb;
-        LOGGER.info("BlackoutTimerSystem initialized: phase=NORMAL, {}s total, {}s blackout CD", TOTAL_TIME, FIRST_BLACKOUT_CD);
+        var s = new TimerState();
+        s.currentLevel = level;
+        s.onPermanentStart = permanentStartCb;
+        s.onPermanentEnd = permanentEndCb;
+        s.onTimeWarning = timeWarningCb;
+        instances.put(level, s);
+        LOGGER.info("BlackoutTimerSystem initialized for level {}: phase=NORMAL, {}s total, {}s blackout CD",
+                level.dimension().location(), TOTAL_TIME, FIRST_BLACKOUT_CD);
     }
 
-    public static void reset() {
-        currentLevel = null;
-        onPermanentStart = null;
-        onPermanentEnd = null;
-        onTimeWarning = null;
+    public static void reset(ServerLevel level) {
+        instances.remove(level);
     }
 
     // ====== 每秒更新 (由 BlackoutMode.onTick 调用) ======
 
-    /**
-     * 每秒更新一次计时器状态。
-     * <p>
-     * <strong>调用约定：</strong>此方法必须由 {@code BlackoutMode.onTick()} 驱动，
-     * 且 {@code onTick()} 应保证每秒恰好调用一次本方法。
-     * 调用后应在同一 tick 内调用 {@code BlackoutMode#checkVictory()} 以确保时间归零和
-     * 胜利判定在同一帧完成。
-     */
-    public static void tickSecond() {
-        if (currentLevel == null) return;
+    public static void tickSecond(ServerLevel level) {
+        var s = getOrCreate(level);
+        if (s.currentLevel == null) return;
 
-        // === 总时间倒计时 (所有状态下都走，修复之前的冻结 bug) ===
-        totalTimeRemaining--;
+        s.totalTimeRemaining--;
 
-        // === 60s 预警 ===
-        if (totalTimeRemaining <= 60 && !warningSent) {
-            warningSent = true;
-            if (onTimeWarning != null) onTimeWarning.run();
+        if (s.totalTimeRemaining <= 60 && !s.warningSent) {
+            s.warningSent = true;
+            if (s.onTimeWarning != null) s.onTimeWarning.run();
         }
 
-        // === 胜利检查 (时间归零 → 好人胜利) ===
-        if (totalTimeRemaining <= 0) return;
+        if (s.totalTimeRemaining <= 0) return;
 
-        // === 短暂停电计时 (杀手破坏线路) ===
-        if (transientBlackoutActive) {
-            transientBlackoutTicks--;
-            if (transientBlackoutTicks <= 0) {
-                transientBlackoutActive = false;
-                LOGGER.info("Transient blackout ended");
+        if (s.transientBlackoutActive) {
+            s.transientBlackoutTicks--;
+            if (s.transientBlackoutTicks <= 0) {
+                s.transientBlackoutActive = false;
+                LOGGER.info("Transient blackout ended for level {}", level.dimension().location());
             }
         }
 
-        // === 按当前阶段处理 ===
-        switch (phase) {
-            case NORMAL -> tickNormal();
-            case FIRST_BLACKOUT -> {
-                // 等待好人"维修线路"任务调用 restorePower()
-            }
-            case MAINTENANCE -> tickMaintenance();
-            case SECOND_BLACKOUT -> {
-                // 等待好人做任务减总时间，或杀手击杀全部好人
-            }
+        switch (s.phase) {
+            case NORMAL -> tickNormal(level, s);
+            case FIRST_BLACKOUT -> {}
+            case MAINTENANCE -> tickMaintenance(level, s);
+            case SECOND_BLACKOUT -> {}
         }
     }
 
-    private static void tickNormal() {
-        blackoutCountdown--;
-        if (blackoutCountdown <= 0) {
-            // 进入第一次永久停电
-            phase = Phase.FIRST_BLACKOUT;
-            if (onPermanentStart != null) onPermanentStart.run();
-            broadcast("§c⚡ 永久停电！列车陷入黑暗！");
-            broadcast("§e好人完成维修任务可恢复供电");
-            LOGGER.info("Phase transition: NORMAL → FIRST_BLACKOUT");
+    private static void tickNormal(ServerLevel level, TimerState s) {
+        s.blackoutCountdown--;
+        if (s.blackoutCountdown <= 0) {
+            s.phase = Phase.FIRST_BLACKOUT;
+            if (s.onPermanentStart != null) s.onPermanentStart.run();
+            broadcast(level, "§c⚡ 永久停电！列车陷入黑暗！");
+            broadcast(level, "§e好人完成维修任务可恢复供电");
+            LOGGER.info("Phase transition: NORMAL → FIRST_BLACKOUT for level {}", level.dimension().location());
         }
     }
 
-    private static void tickMaintenance() {
-        maintenanceTime--;
-        if (maintenanceTime <= 0) {
-            // 进入第二次永久停电 (不可逆)
-            phase = Phase.SECOND_BLACKOUT;
-            if (onPermanentStart != null) onPermanentStart.run();
-            broadcast("§c备用电源耗尽！列车再次陷入黑暗！");
-            broadcast("§e好人无法再恢复供电，但做可减少总时间提前胜利！");
-            LOGGER.info("Phase transition: MAINTENANCE → SECOND_BLACKOUT");
+    private static void tickMaintenance(ServerLevel level, TimerState s) {
+        s.maintenanceTime--;
+        if (s.maintenanceTime <= 0) {
+            s.phase = Phase.SECOND_BLACKOUT;
+            if (s.onPermanentStart != null) s.onPermanentStart.run();
+            broadcast(level, "§c备用电源耗尽！列车再次陷入黑暗！");
+            broadcast(level, "§e好人无法再恢复供电，但做可减少总时间提前胜利！");
+            LOGGER.info("Phase transition: MAINTENANCE → SECOND_BLACKOUT for level {}", level.dimension().location());
         }
     }
 
-    // ====== 供电恢复 (由 RepairWiringTask.onComplete 调用) ======
-
-    public static void restorePower() {
-        if (phase != Phase.FIRST_BLACKOUT) {
-            LOGGER.warn("restorePower called but phase is {} (only valid in FIRST_BLACKOUT)", phase);
+    public static void restorePower(ServerLevel level) {
+        var s = getOrCreate(level);
+        if (s.phase != Phase.FIRST_BLACKOUT) {
+            LOGGER.warn("restorePower called but phase is {} for level {}", s.phase, level.dimension().location());
             return;
         }
-        // 恢复灯光
-        if (onPermanentEnd != null) onPermanentEnd.run();
-        phase = Phase.MAINTENANCE;
-        maintenanceTime = MAINTENANCE_DURATION;
-        broadcast("§a✔ 供电已恢复！维护期 " + MAINTENANCE_DURATION + " 秒");
-        broadcast("§e请在 " + MAINTENANCE_DURATION + " 秒内尽可能做任务维持供电！");
-        LOGGER.info("Power restored, phase: FIRST_BLACKOUT → MAINTENANCE ({}s)", MAINTENANCE_DURATION);
+        if (s.onPermanentEnd != null) s.onPermanentEnd.run();
+        s.phase = Phase.MAINTENANCE;
+        s.maintenanceTime = MAINTENANCE_DURATION;
+        broadcast(level, "§a✔ 供电已恢复！维护期 " + MAINTENANCE_DURATION + " 秒");
+        broadcast(level, "§e请在 " + MAINTENANCE_DURATION + " 秒内尽可能做任务维持供电！");
+        LOGGER.info("Power restored for level {}", level.dimension().location());
     }
 
-    // ====== 短暂停电 (杀手破坏线路) ======
+    public static void triggerTransientBlackout(ServerLevel level) {
+        var s = getOrCreate(level);
+        if (s.transientBlackoutActive) return;
+        s.transientBlackoutActive = true;
+        s.transientBlackoutTicks = TRANSIENT_TICKS;
+        if (s.onPermanentStart != null) s.onPermanentStart.run();
+        broadcast(level, "§c⚡ 线路被破坏！短暂停电！");
+        LOGGER.info("Transient blackout triggered for level {} ({} ticks)", level.dimension().location(), TRANSIENT_TICKS);
 
-    public static void triggerTransientBlackout() {
-        if (transientBlackoutActive) return;
-        transientBlackoutActive = true;
-        transientBlackoutTicks = TRANSIENT_TICKS;
-        // 调用 SRE 短暂停电 (只给效果，不改变阶段)
-        if (onPermanentStart != null) onPermanentStart.run();
-        broadcast("§c⚡ 线路被破坏！短暂停电！");
-        LOGGER.info("Transient blackout triggered ({} ticks)", TRANSIENT_TICKS);
-
-        // 如果在维护期，减少维护时间
-        if (phase == Phase.MAINTENANCE) {
-            maintenanceTime = Math.max(0, maintenanceTime - 15);
-            broadcast("§c维护期减少 15 秒！");
+        if (s.phase == Phase.MAINTENANCE) {
+            s.maintenanceTime = Math.max(0, s.maintenanceTime - 15);
+            broadcast(level, "§c维护期减少 15 秒！");
         }
-        // 如果在 NORMAL 阶段，减少停电倒计时
-        if (phase == Phase.NORMAL) {
-            blackoutCountdown = Math.max(0, blackoutCountdown - 15);
+        if (s.phase == Phase.NORMAL) {
+            s.blackoutCountdown = Math.max(0, s.blackoutCountdown - 15);
         }
     }
 
-    // ====== 任务交互 API ======
-
-    /** 好人: 减少总时间 (添加煤炭 → -30s) */
-    public static void reduceTime(int seconds) {
-        totalTimeRemaining = Math.max(0, totalTimeRemaining - seconds);
-        LOGGER.info("Total time reduced by {}s, remaining: {}s", seconds, totalTimeRemaining);
+    public static void reduceTime(ServerLevel level, int seconds) {
+        var s = getOrCreate(level);
+        s.totalTimeRemaining = Math.max(0, s.totalTimeRemaining - seconds);
+        LOGGER.info("Total time reduced by {}s for level {}, remaining: {}s", seconds, level.dimension().location(), s.totalTimeRemaining);
     }
 
-    /** 坏人: 增加总时间 (熔炉爆炸 → +15s) */
-    public static void addTime(int seconds) {
-        totalTimeRemaining += seconds;
-        LOGGER.info("Total time increased by {}s, remaining: {}s", seconds, totalTimeRemaining);
+    public static void addTime(ServerLevel level, int seconds) {
+        var s = getOrCreate(level);
+        s.totalTimeRemaining += seconds;
+        LOGGER.info("Total time increased by {}s for level {}, remaining: {}s", seconds, level.dimension().location(), s.totalTimeRemaining);
     }
 
-    /** 好人: 推迟第一次停电倒计时/增加维护期 (维修线路 → +15s, 维护供电 → +15s) */
-    public static void delayMaintenanceOrCountdown(int seconds) {
-        switch (phase) {
+    public static void delayMaintenanceOrCountdown(ServerLevel level, int seconds) {
+        var s = getOrCreate(level);
+        switch (s.phase) {
             case NORMAL -> {
-                blackoutCountdown = Math.min(blackoutCountdown + seconds, 300);
-                LOGGER.info("Blackout CD delayed by {}s, now: {}s", seconds, blackoutCountdown);
+                s.blackoutCountdown = Math.min(s.blackoutCountdown + seconds, 300);
+                LOGGER.info("Blackout CD delayed by {}s for level {}, now: {}s", seconds, level.dimension().location(), s.blackoutCountdown);
             }
             case MAINTENANCE -> {
-                maintenanceTime += seconds;
-                LOGGER.info("Maintenance time extended by {}s, now: {}s", seconds, maintenanceTime);
+                s.maintenanceTime += seconds;
+                LOGGER.info("Maintenance time extended by {}s for level {}, now: {}s", seconds, level.dimension().location(), s.maintenanceTime);
             }
-            default -> LOGGER.warn("delayMaintenanceOrCountdown called in phase {}", phase);
+            default -> LOGGER.warn("delayMaintenanceOrCountdown called in phase {} for level {}", s.phase, level.dimension().location());
         }
     }
 
     // ====== 读取器 ======
 
-    public static Phase getPhase() { return phase; }
-    public static int getTotalTimeRemaining() { return totalTimeRemaining; }
-    public static int getBlackoutCountdown() { return phase == Phase.NORMAL ? blackoutCountdown : 0; }
-    public static int getMaintenanceTime() { return phase == Phase.MAINTENANCE ? maintenanceTime : 0; }
-    public static boolean isPermanentBlackoutActive() {
-        return phase == Phase.FIRST_BLACKOUT || phase == Phase.SECOND_BLACKOUT;
+    public static Phase getPhase(ServerLevel level) { return getOrCreate(level).phase; }
+    public static int getTotalTimeRemaining(ServerLevel level) { return getOrCreate(level).totalTimeRemaining; }
+    public static int getBlackoutCountdown(ServerLevel level) {
+        var s = getOrCreate(level);
+        return s.phase == Phase.NORMAL ? s.blackoutCountdown : 0;
     }
-    public static boolean isTransientBlackoutActive() { return transientBlackoutActive; }
-    public static boolean isInMaintenance() { return phase == Phase.MAINTENANCE; }
-    public static boolean isTimeUp() { return totalTimeRemaining <= 0; }
-
-    /**
-     * 向后兼容: 判断是否处于停电状态 (永久或短暂)
-     * @deprecated 请使用 isPermanentBlackoutActive() || isTransientBlackoutActive()
-     */
-    @Deprecated
-    public static boolean isBlackoutActive() {
-        return isPermanentBlackoutActive() || isTransientBlackoutActive();
+    public static int getMaintenanceTime(ServerLevel level) {
+        var s = getOrCreate(level);
+        return s.phase == Phase.MAINTENANCE ? s.maintenanceTime : 0;
     }
+    public static boolean isPermanentBlackoutActive(ServerLevel level) {
+        var p = getOrCreate(level).phase;
+        return p == Phase.FIRST_BLACKOUT || p == Phase.SECOND_BLACKOUT;
+    }
+    public static boolean isTransientBlackoutActive(ServerLevel level) { return getOrCreate(level).transientBlackoutActive; }
+    public static boolean isInMaintenance(ServerLevel level) { return getOrCreate(level).phase == Phase.MAINTENANCE; }
+    public static boolean isTimeUp(ServerLevel level) { return getOrCreate(level).totalTimeRemaining <= 0; }
 
-    private static void broadcast(String msg) {
-        if (currentLevel == null) return;
+    private static void broadcast(ServerLevel level, String msg) {
         Component c = Component.literal(msg);
-        for (ServerPlayer player : currentLevel.players()) {
+        for (ServerPlayer player : level.players()) {
             player.sendSystemMessage(c);
         }
     }

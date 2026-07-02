@@ -6,6 +6,7 @@ import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 
@@ -32,7 +33,7 @@ public class FurnaceExplosionTask {
             })
             .completionChecker((player, task) -> task.getProgress() >= 1)
             .onComplete((player, task) -> {
-                BlackoutTimerSystem.addTime(15);
+                BlackoutTimerSystem.addTime(((ServerPlayer)player).serverLevel(), 15);
                 if (player.level() instanceof ServerLevel serverLevel) {
                     var center = player.blockPosition();
                     for (int x = -5; x <= 5; x++) {

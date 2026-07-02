@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,81 +10,89 @@ import org.slf4j.LoggerFactory;
 /**
  * 停电模式 — 阵营/职业管理器。
  * 预留扩展接口：后续添加新角色只需新增 enum 值 + 修改分配逻辑。
+ *
+ * 支持多维度同时游戏：状态按维度(ServerLevel)隔离。
  */
 public class BlackoutRoleManager {
 
     public enum Faction {
-        GOOD,   // 好人阵营
-        BAD     // 坏人阵营
+        GOOD,
+        BAD
     }
 
     public enum RoleType {
-        CIVILIAN,  // 平民
-        KILLER,    // 杀手
-        SHERIFF,   // 警长（投票选出）
-        // 预留扩展: FUTURE_ROLE_1, FUTURE_ROLE_2
+        CIVILIAN,
+        KILLER,
+        SHERIFF,
     }
 
-    private static final Map<UUID, RoleType> ROLES = new HashMap<>();
-    private static final Map<UUID, Faction> FACTIONS = new HashMap<>();
-    private static final Set<UUID> sheriffs = new HashSet<>();
-
+    private static final Map<ServerLevel, RoleState> instances = new HashMap<>();
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutRoleManager");
 
-    public static void assignRole(UUID playerId, RoleType role, Faction faction) {
-        ROLES.put(playerId, role);
-        FACTIONS.put(playerId, faction);
+    private static RoleState getOrCreate(ServerLevel level) {
+        return instances.computeIfAbsent(level, k -> new RoleState());
     }
 
-    public static Faction getFaction(UUID playerId) {
-        return FACTIONS.getOrDefault(playerId, Faction.GOOD);
+    private static class RoleState {
+        final Map<UUID, RoleType> roles = new HashMap<>();
+        final Map<UUID, Faction> factions = new HashMap<>();
+        final Set<UUID> sheriffs = new HashSet<>();
     }
 
-    public static RoleType getRole(UUID playerId) {
-        return ROLES.getOrDefault(playerId, RoleType.CIVILIAN);
+    public static void assignRole(ServerLevel level, UUID playerId, RoleType role, Faction faction) {
+        var state = getOrCreate(level);
+        state.roles.put(playerId, role);
+        state.factions.put(playerId, faction);
     }
 
-    public static boolean isAlive(UUID playerId) {
-        return ROLES.containsKey(playerId);
+    public static Faction getFaction(ServerLevel level, UUID playerId) {
+        var state = getOrCreate(level);
+        return state.factions.getOrDefault(playerId, Faction.GOOD);
     }
 
-    /** 淘汰玩家 (被枪击杀等) */
-    public static void eliminate(UUID playerId) {
-        ROLES.remove(playerId);
-        FACTIONS.remove(playerId);
-        sheriffs.remove(playerId);
+    public static RoleType getRole(ServerLevel level, UUID playerId) {
+        var state = getOrCreate(level);
+        return state.roles.getOrDefault(playerId, RoleType.CIVILIAN);
+    }
+
+    public static boolean isAlive(ServerLevel level, UUID playerId) {
+        return getOrCreate(level).roles.containsKey(playerId);
+    }
+
+    public static void eliminate(ServerLevel level, UUID playerId) {
+        var state = getOrCreate(level);
+        state.roles.remove(playerId);
+        state.factions.remove(playerId);
+        state.sheriffs.remove(playerId);
     }
 
     // ====== 警长 ======
 
-    public static void setSheriff(UUID playerId) {
-        sheriffs.add(playerId);
-        ROLES.put(playerId, RoleType.SHERIFF);
+    public static void setSheriff(ServerLevel level, UUID playerId) {
+        var state = getOrCreate(level);
+        state.sheriffs.add(playerId);
+        state.roles.put(playerId, RoleType.SHERIFF);
     }
 
-    public static boolean isSheriff(UUID playerId) {
-        return sheriffs.contains(playerId);
+    public static boolean isSheriff(ServerLevel level, UUID playerId) {
+        return getOrCreate(level).sheriffs.contains(playerId);
     }
 
-    public static int getSheriffCount() {
-        return sheriffs.size();
+    public static int getSheriffCount(ServerLevel level) {
+        return getOrCreate(level).sheriffs.size();
     }
 
-    public static List<UUID> getAllSheriffs() {
-        return new ArrayList<>(sheriffs);
+    public static List<UUID> getAllSheriffs(ServerLevel level) {
+        return new ArrayList<>(getOrCreate(level).sheriffs);
     }
 
-    /**
-     * 按杀手数量分配警长。
-     * 在 initRandomAssignment 之后调用。
-     * 杀手 1 人 → 警长 1 人，杀手 3 人 → 警长 3 人，以此类推。
-     */
-    public static void assignSheriffs() {
-        if (!sheriffs.isEmpty()) return; // 防止重复分配
-        int killerCount = getRemainingBad();
+    public static void assignSheriffs(ServerLevel level) {
+        var state = getOrCreate(level);
+        if (!state.sheriffs.isEmpty()) return;
+        int killerCount = getRemainingBad(level);
         int sheriffCount = Math.max(1, killerCount);
 
-        List<UUID> candidates = ROLES.entrySet().stream()
+        List<UUID> candidates = state.roles.entrySet().stream()
                 .filter(e -> e.getValue() == RoleType.CIVILIAN)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
@@ -92,7 +101,7 @@ public class BlackoutRoleManager {
         int assigned = 0;
         for (UUID id : candidates) {
             if (assigned >= sheriffCount) break;
-            setSheriff(id);
+            setSheriff(level, id);
             assigned++;
         }
         LOGGER.info("BlackoutRoleManager: Assigned {} SHERIFF(s) ({} killers, {} candidates)",
@@ -101,30 +110,25 @@ public class BlackoutRoleManager {
 
     // ====== 阵营统计 ======
 
-    public static int getRemainingCount(Faction faction) {
-        return (int) FACTIONS.values().stream().filter(f -> f == faction).count();
+    public static int getRemainingCount(ServerLevel level, Faction faction) {
+        var state = getOrCreate(level);
+        return (int) state.factions.values().stream().filter(f -> f == faction).count();
     }
 
-    public static int getRemainingGood() { return getRemainingCount(Faction.GOOD); }
-    public static int getRemainingBad() { return getRemainingCount(Faction.BAD); }
+    public static int getRemainingGood(ServerLevel level) { return getRemainingCount(level, Faction.GOOD); }
+    public static int getRemainingBad(ServerLevel level) { return getRemainingCount(level, Faction.BAD); }
 
-    /** 获取所有存活玩家ID (排除已淘汰的) */
-    public static List<UUID> getAllAlive() {
-        return new ArrayList<>(ROLES.keySet());
+    public static List<UUID> getAllAlive(ServerLevel level) {
+        return new ArrayList<>(getOrCreate(level).roles.keySet());
     }
 
-    public static void clear() {
-        ROLES.clear();
-        FACTIONS.clear();
-        sheriffs.clear();
+    public static void clear(ServerLevel level) {
+        instances.remove(level);
     }
 
-    /**
-     * 独立分配阵营 — 不再依赖 SRE 角色同步。
-     * @param players  所有参与玩家列表
-     */
-    public static void initRandomAssignment(List<ServerPlayer> players) {
-        clear();
+    public static void initRandomAssignment(ServerLevel level, List<ServerPlayer> players) {
+        clear(level);
+        var state = getOrCreate(level);
         List<ServerPlayer> shuffled = new ArrayList<>(players);
         Collections.shuffle(shuffled);
 
@@ -133,9 +137,11 @@ public class BlackoutRoleManager {
         for (int i = 0; i < shuffled.size(); i++) {
             UUID id = shuffled.get(i).getUUID();
             if (i < killerCount) {
-                assignRole(id, RoleType.KILLER, Faction.BAD);
+                state.roles.put(id, RoleType.KILLER);
+                state.factions.put(id, Faction.BAD);
             } else {
-                assignRole(id, RoleType.CIVILIAN, Faction.GOOD);
+                state.roles.put(id, RoleType.CIVILIAN);
+                state.factions.put(id, Faction.GOOD);
             }
         }
         LOGGER.info("BlackoutRoleManager: Assigned {} KILLER / {} CIVILIAN ({} players, formula n/6 ceil)",

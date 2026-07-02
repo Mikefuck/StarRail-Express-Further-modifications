@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Blocks;
 
 
@@ -29,7 +30,7 @@ public class AddCoalTask {
             })
             .completionChecker((player, task) -> task.getProgress() >= 1)
             .onComplete((player, task) -> {
-                BlackoutTimerSystem.reduceTime(30);
+                BlackoutTimerSystem.reduceTime(((ServerPlayer)player).serverLevel(), 30);
                 player.sendSystemMessage(
                     Component.literal("§a✔ 找到了煤矿，给锅炉添加煤炭！总时间减少30秒！"));
             })

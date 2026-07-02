@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Blocks;
 
 
@@ -19,7 +20,7 @@ public class RepairWiringTask {
             .scanBlocks(Blocks.REDSTONE_BLOCK)
             .onComplete((player, task) -> {
                 // 如果在第一次永久停电阶段，恢复供电
-                BlackoutTimerSystem.restorePower();
+                BlackoutTimerSystem.restorePower(((ServerPlayer)player).serverLevel());
                 player.sendSystemMessage(Component.literal("§a✔ 维修了线路，恢复供电！"));
             })
             .completionChecker((player, task) -> task.isFulfilled())

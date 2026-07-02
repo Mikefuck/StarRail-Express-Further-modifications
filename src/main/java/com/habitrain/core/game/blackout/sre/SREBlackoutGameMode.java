@@ -55,24 +55,24 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         addPlayersToTeam(world.getServer().createCommandSourceStack(), players, "harpymodloader_game");
 
         // 3. 分配 Blackout 阵营 + 警长
-        BlackoutRoleManager.initRandomAssignment(players);
-        BlackoutRoleManager.assignSheriffs();
+        BlackoutRoleManager.initRandomAssignment(world, players);
+        BlackoutRoleManager.assignSheriffs(world);
 
         // 4. 分配 SRE 角色：好人=CIVILIAN（平民），坏人=KILLER（杀手阵营）
         //    SRE 看到 CIVILIAN + KILLER 两个经典对抗阵营 → 不会结束游戏
         for (ServerPlayer player : players) {
-            boolean isBad = BlackoutRoleManager.getFaction(player.getUUID()) == Faction.BAD;
+            boolean isBad = BlackoutRoleManager.getFaction(world, player.getUUID()) == Faction.BAD;
             game.addRole(player, isBad ? TMMRoles.KILLER : TMMRoles.CIVILIAN, false);
         }
         game.syncRoles();
 
         // 5. 向每位玩家发送 Blackout 阵营公告（角色介绍 + 目标）
-        int killerCount = BlackoutRoleManager.getRemainingBad();
+        int killerCount = BlackoutRoleManager.getRemainingBad(world);
         int goodCount = players.size() - killerCount;
         for (ServerPlayer player : players) {
             var pid = player.getUUID();
-            var role = BlackoutRoleManager.getRole(pid);
-            boolean isBad = BlackoutRoleManager.getFaction(pid) == Faction.BAD;
+            var role = BlackoutRoleManager.getRole(world, pid);
+            boolean isBad = BlackoutRoleManager.getFaction(world, pid) == Faction.BAD;
             String roleName;
             String subtitle;
             String goal;
