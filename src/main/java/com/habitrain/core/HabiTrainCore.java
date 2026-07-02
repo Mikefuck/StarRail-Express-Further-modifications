@@ -130,10 +130,10 @@ public class HabiTrainCore implements ModInitializer {
                                     IntegerArgumentType.getInteger(ctx, "range")))
                     )
             );
-            // /habi_api 命令族 (管理命令: 需要 OP)
+            // /habi_api 命令族 (OP 命令: blackout/list; 玩家命令: buy_gun/buy_ammo)
             dispatcher.register(Commands.literal("habi_api")
-                    .requires(source -> source.hasPermission(2))
                     .then(Commands.literal("blackout")
+                            .requires(source -> source.hasPermission(2))
                             .executes(ctx -> {
                                 ServerLevel level = ctx.getSource().getLevel();
                                 try {
@@ -148,6 +148,7 @@ public class HabiTrainCore implements ModInitializer {
                             })
                     )
                     .then(Commands.literal("list")
+                            .requires(source -> source.hasPermission(2))
                             .executes(ctx -> {
                                 String modes = GameModeRegistry.getAll().stream()
                                         .map(GameMode::getId)
@@ -157,9 +158,6 @@ public class HabiTrainCore implements ModInitializer {
                                 return 1;
                             })
                     )
-            );
-            // /habi_api 玩家命令 (无需 OP, 警长购买枪支弹药)
-            dispatcher.register(Commands.literal("habi_api")
                     .then(Commands.literal("buy_gun")
                             .executes(ctx -> {
                                 ServerPlayer player = ctx.getSource().getPlayer();

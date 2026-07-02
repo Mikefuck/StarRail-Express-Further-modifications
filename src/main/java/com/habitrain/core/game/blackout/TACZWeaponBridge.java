@@ -98,9 +98,10 @@ public class TACZWeaponBridge {
             return false;
         }
 
-        // 扣款 + 给物品
+        // 给物品 + 扣款 (先给物品再扣款，避免物品丢失但钱被扣)
+        boolean added = player.getInventory().add(stack);
         shop.addToBalance(-DESERT_EAGLE_PRICE);
-        if (!player.getInventory().add(stack)) {
+        if (!added) {
             player.drop(stack, false);
         }
         DESERT_EAGLE_PURCHASED.add(player.getUUID());
@@ -139,8 +140,9 @@ public class TACZWeaponBridge {
             return false;
         }
 
+        boolean added = player.getInventory().add(stack);
         shop.addToBalance(-totalPrice);
-        if (!player.getInventory().add(stack)) {
+        if (!added) {
             player.drop(stack, false);
         }
 
