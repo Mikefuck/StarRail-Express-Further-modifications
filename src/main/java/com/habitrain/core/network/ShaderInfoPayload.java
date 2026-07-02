@@ -2,6 +2,7 @@ package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.codec.StreamCodec;
@@ -45,12 +46,12 @@ public class ShaderInfoPayload implements CustomPacketPayload {
             if (len <= 0) return new ShaderInfoPayload("");
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
-            return new ShaderInfoPayload(new String(bytes));
+            return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8));
         }
 
         @Override
         public void encode(ByteBuf buf, ShaderInfoPayload payload) {
-            byte[] bytes = payload.shaderPackName.getBytes();
+            byte[] bytes = payload.shaderPackName.getBytes(StandardCharsets.UTF_8);
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);

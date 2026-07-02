@@ -11,6 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,7 +47,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 int keyLen = buf.readInt();
                 byte[] keyBytes = new byte[keyLen];
                 buf.readBytes(keyBytes);
-                String key = new String(keyBytes);
+                String key = new String(keyBytes, StandardCharsets.UTF_8);
 
                 TaskConfigEntry entry = new TaskConfigEntry();
                 entry.enabled = buf.readBoolean();
@@ -55,7 +56,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
                     int mapLen = buf.readInt();
                     byte[] mapBytes = new byte[mapLen];
                     buf.readBytes(mapBytes);
-                    entry.enabledMaps.add(new String(mapBytes));
+                    entry.enabledMaps.add(new String(mapBytes, StandardCharsets.UTF_8));
                 }
                 entry.instinctColor = buf.readInt();
 
@@ -83,7 +84,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 String key = entry.getKey();
                 TaskConfigEntry config = entry.getValue();
 
-                byte[] keyBytes = key.getBytes();
+                byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
                 buf.writeInt(keyBytes.length);
                 buf.writeBytes(keyBytes);
 
@@ -91,7 +92,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
 
                 buf.writeInt(config.enabledMaps.size());
                 for (String map : config.enabledMaps) {
-                    byte[] mapBytes = map.getBytes();
+                    byte[] mapBytes = map.getBytes(StandardCharsets.UTF_8);
                     buf.writeInt(mapBytes.length);
                     buf.writeBytes(mapBytes);
                 }

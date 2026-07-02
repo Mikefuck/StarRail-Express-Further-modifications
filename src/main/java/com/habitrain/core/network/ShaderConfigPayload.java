@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,7 +55,7 @@ public class ShaderConfigPayload implements CustomPacketPayload {
                 int len = buf.readInt();
                 byte[] bytes = new byte[len];
                 buf.readBytes(bytes);
-                whitelist.add(new String(bytes));
+                whitelist.add(new String(bytes, StandardCharsets.UTF_8));
             }
             return new ShaderConfigPayload(enabled, whitelist);
         }
@@ -64,7 +65,7 @@ public class ShaderConfigPayload implements CustomPacketPayload {
             buf.writeBoolean(payload.enabled);
             buf.writeInt(payload.whitelist.size());
             for (String name : payload.whitelist) {
-                byte[] bytes = name.getBytes();
+                byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
                 buf.writeInt(bytes.length);
                 buf.writeBytes(bytes);
             }

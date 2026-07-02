@@ -2,6 +2,7 @@ package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -51,12 +52,12 @@ public class ActiveTaskPayload implements CustomPacketPayload {
             if (len <= 0) return new ActiveTaskPayload("");
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
-            return new ActiveTaskPayload(new String(bytes));
+            return new ActiveTaskPayload(new String(bytes, StandardCharsets.UTF_8));
         }
 
         @Override
         public void encode(ByteBuf buf, ActiveTaskPayload payload) {
-            byte[] bytes = payload.taskFullId.getBytes();
+            byte[] bytes = payload.taskFullId.getBytes(StandardCharsets.UTF_8);
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);
