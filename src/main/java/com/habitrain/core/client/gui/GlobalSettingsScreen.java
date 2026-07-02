@@ -252,10 +252,6 @@ public class GlobalSettingsScreen extends Screen {
         g.drawString(f, Component.literal("§7config/habitrain_taskapi.json → dlcProbabilityTarget"),
                 PAD, height - 10, 0x555555, false);
 
-        // ---- 自动录制回放提示 ----
-        String autoTip = "§7开启后，游戏开始将自动录制所有玩家回放，游戏结束自动停止（需安装 ServerReplay）";
-        g.drawString(f, Component.literal(autoTip),
-                width / 2 - f.width(autoTip) / 2, backBtn.getY() + 22, 0x555555, false);
     }
 
     @Override

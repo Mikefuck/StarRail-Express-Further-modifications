@@ -15,9 +15,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(SREPlayerTaskComponent.class)
-public class ServerTickMixin {
+public class SREPlayerTaskComponentMixin {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("ServerTickMixin");
+    private static final Logger LOGGER = LoggerFactory.getLogger("SREPlayerTaskComponentMixin");
 
     @Shadow(remap = false)
     private Player player;

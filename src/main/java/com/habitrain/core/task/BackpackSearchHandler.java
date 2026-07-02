@@ -11,7 +11,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -136,16 +135,6 @@ public class BackpackSearchHandler {
         // 给予缓慢3效果（6秒 = 120 ticks，+10 tick缓冲）
         serverPlayer.addEffect(new MobEffectInstance(
                 MobEffects.MOVEMENT_SLOWDOWN, SEARCH_TICKS + 10, 2, false, true, true));
-
-        // 播放翻找背包音效
-        serverPlayer.serverLevel().playSound(
-                null,
-                serverPlayer.blockPosition(),
-                HabiTrainCore.BACKPACK_SEARCH_SOUND,
-                SoundSource.PLAYERS,
-                1.0f,
-                1.0f
-        );
 
         serverPlayer.displayClientMessage(Component.literal("§7开始翻找背包... 6秒后完成"), true);
 

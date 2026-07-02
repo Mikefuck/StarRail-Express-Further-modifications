@@ -7,10 +7,6 @@
     "subtitle": "获得槟榔",
     "sounds": ["habitrain_core:betel_nut_get"]
   },
-  "backpack_search": {
-    "subtitle": "翻找背包",
-    "sounds": ["habitrain_core:backpack_search"]
-  },
   "look_my_eyes": {
     "subtitle": "对视",
     "sounds": ["habitrain_core:look_my_eyes"]

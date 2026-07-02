@@ -19,9 +19,4 @@ public class TaskBalancer {
         return Math.max(0.0f, Math.min(10.0f, boost));
     }
 
-    public static float calcDlcPercent(float boost, long dlcCount, long origCount) {
-        float dlcTotal = boost * dlcCount;
-        float grand = dlcTotal + origCount;
-        return grand > 0 ? dlcTotal / grand : 0;
-    }
 }

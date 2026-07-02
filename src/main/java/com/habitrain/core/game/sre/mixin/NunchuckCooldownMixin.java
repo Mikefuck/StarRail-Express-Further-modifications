@@ -14,6 +14,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(targets = "io.wifi.starrailexpress.network.original.NunchuckHitPayload")
 public class NunchuckCooldownMixin {
 
+    private static final int KILLER_ROLE_TYPE = 4;
+    private static final int NUNCHUCK_COOLDOWN_TICKS = 1000;
+
     private static final Logger LOGGER = LoggerFactory.getLogger("NunchuckCooldownMixin");
     private static final ThreadLocal<Boolean> killHappened = ThreadLocal.withInitial(() -> false);
 
@@ -55,11 +58,11 @@ public class NunchuckCooldownMixin {
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(attacker.level());
             var role = game.getRole(attacker);
-            if (role == null || role.getRoleType() != 4) {
+            if (role == null || role.getRoleType() != KILLER_ROLE_TYPE) {
                 return;
             }
 
-            attacker.getCooldowns().addCooldown(TMMItems.NUNCHUCK, 1000);
+            attacker.getCooldowns().addCooldown(TMMItems.NUNCHUCK, NUNCHUCK_COOLDOWN_TICKS);
 
             LOGGER.debug(
                     "[NunchuckCD] 杀手 {} 使用双节棍击杀，设置冷却=1000 ticks (50秒)",

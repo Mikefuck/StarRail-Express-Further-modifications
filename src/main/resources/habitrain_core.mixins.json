@@ -5,10 +5,8 @@
     "mixins": [
         "MapScannerMixin",
         "GenerateTaskMixin",
-        "ServerTickMixin",
+        "SREPlayerTaskComponentMixin",
         "RoleMethodDispatcherMixin",
         "NunchuckCooldownMixin"
     ],
-    "client": [],
-    "server": []
 }

@@ -255,7 +255,8 @@ public class ConfigManager {
         float boost = TaskBalancer.calcBoost(dlcProbabilityTarget, dlcCount, origCount);
 
         if (dlcCount > 0) {
-            float pct = TaskBalancer.calcDlcPercent(boost, dlcCount, origCount);
+            float dlcTotal = boost * dlcCount;
+            float pct = (dlcTotal + origCount) > 0 ? dlcTotal / (dlcTotal + origCount) : 0;
             LOGGER.info("[DLC概率] 目标={}%, {}个DLC vs {}个原版 → autoBoost={} (实际概率≈{}%)",
                     Math.round(dlcProbabilityTarget * 100), dlcCount, origCount,
                     String.format("%.2f", boost), Math.round(pct * 100));

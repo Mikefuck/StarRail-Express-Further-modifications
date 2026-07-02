@@ -93,30 +93,6 @@ public class EffectOwnershipTracker {
     }
 
     /**
-     * 批量释放一个来源的所有效果，返回可以安全移除的效果列表
-     */
-    public static List<Holder<MobEffect>> releaseAll(UUID playerUuid, String source) {
-        Map<String, Set<String>> playerEffects = ownership.get(playerUuid);
-        if (playerEffects == null) return List.of();
-
-        List<Holder<MobEffect>> toRemove = new ArrayList<>();
-        Iterator<Map.Entry<String, Set<String>>> it = playerEffects.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<String, Set<String>> entry = it.next();
-            Set<String> sources = entry.getValue();
-            sources.remove(source);
-            if (sources.isEmpty()) {
-                it.remove();
-                // 无法从 String 还原为 Holder<MobEffect>，所以返回空列表
-            }
-        }
-        if (playerEffects.isEmpty()) {
-            ownership.remove(playerUuid);
-        }
-        return toRemove;
-    }
-
-    /**
      * 检查某来源是否声明了某效果
      */
     public static boolean isClaimedBy(UUID playerUuid, Holder<MobEffect> effect, String source) {

@@ -77,10 +77,15 @@ public class HabiTrainCore implements ModInitializer {
     public static final SoundEvent BETEL_NUT_EAT_SOUND = SoundEvent.createVariableRangeEvent(BETEL_NUT_EAT_ID);
     public static final ResourceLocation BETEL_NUT_GET_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "betel_nut_get");
     public static final SoundEvent BETEL_NUT_GET_SOUND = SoundEvent.createVariableRangeEvent(BETEL_NUT_GET_ID);
-    public static final ResourceLocation BACKPACK_SEARCH_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "backpack_search");
-    public static final SoundEvent BACKPACK_SEARCH_SOUND = SoundEvent.createVariableRangeEvent(BACKPACK_SEARCH_ID);
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
+    // NOTE: look_my_eyes.ogg is missing from assets — no sound will play at runtime
+
+    // ===== 方块类型ID常量 =====
+    private static final int GRASS_BLOCK_TYPE_ID = 12;
+    private static final int CAT_BLOCK_TYPE_ID = 13;
+    private static final int BACKPACK_TYPE_ID = 15;
+    private static final int NO_BLOCK_TYPE_ID = -1;
 
     private static final String[] CAT_BLOCK_IDS = {
         "yuushya:british_shorthair", "yuushya:white_cat", "yuushya:black_cat",
@@ -318,10 +323,6 @@ public class HabiTrainCore implements ModInitializer {
     // ===== 以下方法合并自 HabiTrainMoreTasks =====
 
     private void registerMoreTasks() {
-        int GRASS_BLOCK_TYPE_ID = 12;
-        int CAT_BLOCK_TYPE_ID = 13;
-        int BACKPACK_TYPE_ID = 15;
-
         // 任务: test_grass（已有的测试任务）
         TaskRegistry.register(MOD_ID, "test_grass", builder -> builder
             .displayName("test_grass")
@@ -461,7 +462,7 @@ public class HabiTrainCore implements ModInitializer {
             .displayName("LOOK MY EYES")
             .category(TaskCategory.MURDER)
             .weight(1.0f)
-            .blockTypeId(-1)
+            .blockTypeId(NO_BLOCK_TYPE_ID)
             .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
                 task.setMaxProgress(60);
@@ -617,18 +618,21 @@ public class HabiTrainCore implements ModInitializer {
     }
 
     private static Set<Block> resolveCatBlocks() {
-        return Arrays.stream(CAT_BLOCK_IDS)
+        Set<Block> blocks = Arrays.stream(CAT_BLOCK_IDS)
             .map(id -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id)))
             .filter(block -> block != Blocks.AIR)
             .collect(Collectors.toSet());
+        if (blocks.isEmpty()) {
+            LOGGER.warn("yuushya mod not installed, cat task will have no scan blocks");
+        }
+        return blocks;
     }
 
     private void registerMoreSounds() {
         Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_EAT_ID, BETEL_NUT_EAT_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_GET_ID, BETEL_NUT_GET_SOUND);
-        Registry.register(BuiltInRegistries.SOUND_EVENT, BACKPACK_SEARCH_ID, BACKPACK_SEARCH_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, LOOK_MY_EYES_ID, LOOK_MY_EYES_SOUND);
-        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, backpack_search, look_my_eyes");
+        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes");
     }
 
     private void initBetelSystem() {

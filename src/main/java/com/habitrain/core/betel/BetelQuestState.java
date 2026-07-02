@@ -39,6 +39,13 @@ import java.util.*;
  * - 当enableAddictionSystem关闭时自动跳过依赖config的代码，但仍能检测吃槟榔事件
  */
 public class BetelQuestState {
+    // ===== SRE 角色类型常量 =====
+    private static final int SRE_ROLE_CIVILIAN = 1;
+    private static final int SRE_ROLE_NEUTRAL_1 = 2;
+    private static final int SRE_ROLE_NEUTRAL_2 = 3;
+    private static final int SRE_ROLE_KILLER = 4;
+    private static final int SRE_ROLE_SHERIFF = 5;
+
     private static BetelQuestState instance;
 
     /** 每局游戏是否已使用揭晓机制 */
@@ -614,11 +621,10 @@ public class BetelQuestState {
 
             int roleType = role.getRoleType();
             String name = switch (roleType) {
-                case 1 -> "平民";
-                case 2 -> "中立";
-                case 3 -> "中立";
-                case 4 -> "杀手";
-                case 5 -> "警长";
+                case SRE_ROLE_CIVILIAN -> "平民";
+                case SRE_ROLE_NEUTRAL_1, SRE_ROLE_NEUTRAL_2 -> "中立";
+                case SRE_ROLE_KILLER -> "杀手";
+                case SRE_ROLE_SHERIFF -> "警长";
                 default -> "未知";
             };
             HabiTrainCore.LOGGER.debug("获取玩家 {} 阵营: type={}, name={}", player.getName().getString(), roleType, name);
