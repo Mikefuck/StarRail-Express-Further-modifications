@@ -378,18 +378,24 @@ public class ConfigManager {
 
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
         suppressCallback = true;
-        this.taskConfigs.clear();
-        this.taskConfigs.putAll(configs);
-        this.dlcProbabilityTarget = target;
-        save();
-        suppressCallback = false;
+        try {
+            this.taskConfigs.clear();
+            this.taskConfigs.putAll(configs);
+            this.dlcProbabilityTarget = target;
+            save();
+        } finally {
+            suppressCallback = false;
+        }
     }
 
     public void applySyncFromJson(String json) {
         suppressCallback = true;
-        loadFromJsonString(json);
-        save();
-        suppressCallback = false;
+        try {
+            loadFromJsonString(json);
+            save();
+        } finally {
+            suppressCallback = false;
+        }
     }
 
     public File getConfigFile() { return configFile; }
