@@ -78,9 +78,8 @@ public class ServerTickMixin {
 
         if (customTask.isFulfilled()) {
             LOGGER.info("[HabiDebug] Custom task {} fulfilled, removing tracking", customTask.getFullId());
-            mgr.removeActiveTask(player.getUUID());
-
             if (player instanceof ServerPlayer sp) {
+                mgr.handleTaskCompletion(sp, customTask);
                 ActiveTaskPayload.clearForPlayer(sp);
             }
         }

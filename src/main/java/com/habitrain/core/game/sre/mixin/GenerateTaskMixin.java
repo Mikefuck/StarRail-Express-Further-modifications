@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.TaskCategory;
+import com.habitrain.core.game.sre.SRETrainTaskWrapper;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
@@ -317,7 +318,7 @@ public abstract class GenerateTaskMixin {
             ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
         }
 
-        return instance;
+        return new SRETrainTaskWrapper(instance);
     }
 
     private float getEffectiveWeight(TaskDefinition def) {

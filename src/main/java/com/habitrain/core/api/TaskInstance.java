@@ -1,9 +1,5 @@
 package com.habitrain.core.api;
 
-import com.habitrain.core.game.sre.TaskEnumHelper;
-import com.habitrain.core.task.TaskManager;
-import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
-import io.wifi.starrailexpress.cca.SREPlayerTaskComponent.TrainTask;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -11,8 +7,10 @@ import net.minecraft.world.entity.player.Player;
 /**
  * 任务运行时实例 — 取代 HabiTaskInstance。
  * 新增: 计时器支持、进度回调分发。
+ *
+ * 注意: 不直接实现 SRE 的 TrainTask 接口，而是通过 {@code SRETrainTaskWrapper} 适配。
  */
-public class TaskInstance implements TrainTask {
+public class TaskInstance {
 
     private final TaskDefinition definition;
     private boolean fulfilled = false;
@@ -33,10 +31,6 @@ public class TaskInstance implements TrainTask {
     public int getMaxProgress() { return maxProgress; }
     public int getElapsedTicks() { return elapsedTicks; }
     public boolean isFulfilled() { return fulfilled; }
-
-    @Override
-    public boolean isFulfilled(Player player) { return fulfilled; }
-
     public boolean isFailed() { return failed; }
 
     public void setProgress(int progress) {
@@ -80,21 +74,12 @@ public class TaskInstance implements TrainTask {
             this.fulfilled = true;
             if (player instanceof ServerPlayer sp) {
                 definition.onComplete(sp, this);
-                TaskManager.getInstance().handleTaskCompletion(sp, this);
             }
         }
     }
 
     public String getName() { return definition.getDisplayName(); }
-
-    @Override
     public String getCustomTaskId() { return definition.getFullId(); }
-
-    @Override
-    public SREPlayerTaskComponent.Task getType() {
-        SREPlayerTaskComponent.Task custom = TaskEnumHelper.getCustom();
-        return custom != null ? custom : SREPlayerTaskComponent.Task.SLEEP;
-    }
 
     public CompoundTag toNbt() {
         CompoundTag nbt = new CompoundTag();
@@ -105,11 +90,6 @@ public class TaskInstance implements TrainTask {
         nbt.putInt("progress", this.progress);
         nbt.putInt("maxProgress", this.maxProgress);
         nbt.putInt("elapsedTicks", this.elapsedTicks);
-        // ★ 关键修复：写入 type 字段，使 SRE 客户端反序列化能正确还原 CUSTOM 任务
-        var customType = com.habitrain.core.game.sre.TaskEnumHelper.getCustom();
-        if (customType != null) {
-            nbt.putInt("type", customType.ordinal());
-        }
         return nbt;
     }
 
