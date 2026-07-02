@@ -5,7 +5,7 @@ import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
 
-import java.awt.Color;
+
 
 /**
  * 停电模式 — 坏人任务: 破坏线路
@@ -19,7 +19,7 @@ public class SabotageWiringTask {
             .category(BlackoutMode.BLACKOUT_BAD)
             .weight(1.0f)
             .blockTypeId(22)
-            .instinctColor(new Color(255, 0, 0, 200))
+            .instinctColor(255, 0, 0, 200)
             .scanBlockIds("minecraft:redstone_wire")
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);

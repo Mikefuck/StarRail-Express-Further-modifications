@@ -45,7 +45,7 @@ public class InstinctColorMixin {
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
             if (cfg != null) {
                 // 用户通过 ModMenu 显式设置了颜色
-                overrideColors.put(bt, cfg.getColor());
+                overrideColors.put(bt, new Color(cfg.getColor(), true));
             }
             // 不再为 type >= 12 自动添加默认色——由 CustomTaskBlockRendererMixin 处理
         }

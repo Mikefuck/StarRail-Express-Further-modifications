@@ -9,7 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 
-import java.awt.Color;
+
 
 /**
  * 停电模式 — 坏人任务: 熔炉爆炸
@@ -23,7 +23,7 @@ public class FurnaceExplosionTask {
             .category(BlackoutMode.BLACKOUT_BAD)
             .weight(1.0f)
             .blockTypeId(23)
-            .instinctColor(new Color(255, 69, 0, 200))
+            .instinctColor(255, 69, 0, 200)
             .scanBlocks(Blocks.FURNACE, Blocks.BLAST_FURNACE)
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);

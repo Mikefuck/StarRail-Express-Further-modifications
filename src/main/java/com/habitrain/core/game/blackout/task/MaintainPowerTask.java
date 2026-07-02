@@ -6,7 +6,7 @@ import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Blocks;
 
-import java.awt.Color;
+
 
 public class MaintainPowerTask {
     public static void register() {
@@ -15,7 +15,7 @@ public class MaintainPowerTask {
             .category(BlackoutMode.BLACKOUT_GOOD)
             .weight(1.0f)
             .blockTypeId(-1)
-            .instinctColor(new Color(0, 200, 255, 200))
+            .instinctColor(0, 200, 255, 200)
             .scanBlocks(Blocks.REDSTONE_LAMP)
             .onComplete((player, task) -> {
                 BlackoutTimerSystem.delayMaintenanceOrCountdown(15);

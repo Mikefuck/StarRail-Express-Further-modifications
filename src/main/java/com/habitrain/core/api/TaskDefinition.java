@@ -3,7 +3,6 @@ package com.habitrain.core.api;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 
-import java.awt.Color;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -28,7 +27,7 @@ public class TaskDefinition {
 
     private final float weight;
     private final int blockTypeId;
-    private final Color instinctColor;
+    private final int instinctColor;
     private final boolean canDirectlyWin;
     private final Set<Block> scanBlocks;
     private final Set<String> scanBlockIds;
@@ -92,7 +91,7 @@ public class TaskDefinition {
     public TaskCategory getCustomCategory() { return customCategory; }
     public float getWeight() { return weight; }
     public int getBlockTypeId() { return blockTypeId; }
-    public Color getInstinctColor() { return instinctColor; }
+    public int getInstinctColorRGB() { return instinctColor; }
     public boolean canDirectlyWin() { return canDirectlyWin; }
     public Set<Block> getScanBlocks() { return scanBlocks; }
     public Set<String> getScanBlockIds() { return scanBlockIds; }
@@ -121,7 +120,7 @@ public class TaskDefinition {
         private TaskCategory customCategory;
         private float weight = 1.0f;
         private int blockTypeId = -1;
-        private Color instinctColor = new Color(200, 200, 200, 180);
+        private int instinctColor = 0xB4C8C8C8;
         private boolean canDirectlyWin = false;
         private Set<Block> scanBlocks = Set.of();
         private Set<String> scanBlockIds = Set.of();
@@ -151,7 +150,8 @@ public class TaskDefinition {
         public Builder gameMode(String gameModeId) { this.gameModeId = gameModeId; return this; }
         public Builder weight(float w) { this.weight = w; return this; }
         public Builder blockTypeId(int id) { this.blockTypeId = id; return this; }
-        public Builder instinctColor(Color c) { this.instinctColor = c; return this; }
+        public Builder instinctColor(int argb) { this.instinctColor = argb; return this; }
+        public Builder instinctColor(int r, int g, int b, int a) { this.instinctColor = (a << 24) | (r << 16) | (g << 8) | b; return this; }
         public Builder canDirectlyWin(boolean v) { this.canDirectlyWin = v; return this; }
         public Builder scanBlocks(Block... blocks) { this.scanBlocks = Set.of(blocks); return this; }
         public Builder scanBlockIds(String... ids) { this.scanBlockIds = Set.of(ids); return this; }

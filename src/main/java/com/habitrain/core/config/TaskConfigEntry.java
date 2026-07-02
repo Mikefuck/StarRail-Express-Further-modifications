@@ -4,7 +4,7 @@ import com.google.gson.JsonObject;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 
-import java.awt.Color;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,7 +18,7 @@ public class TaskConfigEntry {
 
     @Deprecated
     public List<String> disabledMaps = new ArrayList<>();
-    public int instinctColor = new Color(200, 200, 200, 180).getRGB();
+    public int instinctColor = 0xB4C8C8C8;
     public float outlineWidth = 4.0f;
 
     public int goldReward = -1;
@@ -85,8 +85,8 @@ public class TaskConfigEntry {
         return refreshWeight >= 0f ? refreshWeight : def.getWeight();
     }
 
-    public Color getColor() {
-        return new Color(instinctColor, true);
+    public int getColor() {
+        return instinctColor;
     }
 
     public static TaskConfigEntry createDefault() {

@@ -73,8 +73,8 @@ public class TaskDetailPanel {
         // 加载当前配置
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
         this.enabled = cfg == null || cfg.enabled;
-        this.currentColor = cfg != null ? cfg.getColor()
-            : (def.getInstinctColor() != null ? def.getInstinctColor() : new Color(200, 200, 200, 180));
+        this.currentColor = cfg != null ? new Color(cfg.getColor(), true)
+            : new Color(def.getInstinctColorRGB(), true);
         this.outlineWidth = cfg != null ? cfg.outlineWidth : 4.0f;
         this.mapFilterMode = cfg != null ? cfg.mapFilterMode : 0;
         String mapsStr = (cfg != null && cfg.enabledMaps != null) ? String.join(",", cfg.enabledMaps) : "";
@@ -339,7 +339,7 @@ public class TaskDetailPanel {
         emotionBox.setValue("");
         weightBox.setValue("");
         mapsBox.setValue("");
-        currentColor = def.getInstinctColor() != null ? def.getInstinctColor() : new Color(200, 200, 200, 180);
+        currentColor = new Color(def.getInstinctColorRGB(), true);
         outlineWidth = 4.0f;
         mapFilterMode = 0;
         enabled = true;

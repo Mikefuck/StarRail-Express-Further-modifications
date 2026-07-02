@@ -99,12 +99,12 @@ public class ActiveTaskCache {
 
         TaskConfigEntry cfg = getConfig();
         if (cfg != null) {
-            return cfg.getColor();
+            return new Color(cfg.getColor(), true);
         }
 
         TaskDefinition def = TaskRegistry.get(activeTaskFullId);
-        if (def != null && def.getInstinctColor() != null) {
-            return def.getInstinctColor();
+        if (def != null) {
+            return new Color(def.getInstinctColorRGB(), true);
         }
 
         return new Color(200, 200, 200, 180);

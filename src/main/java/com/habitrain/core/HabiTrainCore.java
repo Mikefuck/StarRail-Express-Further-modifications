@@ -59,7 +59,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
-import java.awt.Color;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -329,7 +328,7 @@ public class HabiTrainCore implements ModInitializer {
             .category(TaskCategory.MURDER)
             .weight(1.0f)
             .blockTypeId(GRASS_BLOCK_TYPE_ID)
-            .instinctColor(new Color(0, 200, 0, 180))
+            .instinctColor(0, 200, 0, 180)
             .scanBlocks(Blocks.GRASS_BLOCK)
             .onAssign((player, task) -> {
                 task.setMaxProgress(80);
@@ -374,7 +373,7 @@ public class HabiTrainCore implements ModInitializer {
             .category(TaskCategory.MURDER)
             .weight(1.0f)
             .blockTypeId(CAT_BLOCK_TYPE_ID)
-            .instinctColor(new Color(255, 182, 193, 200))
+            .instinctColor(255, 182, 193, 200)
             .scanBlockIds(CAT_BLOCK_IDS)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
@@ -428,7 +427,7 @@ public class HabiTrainCore implements ModInitializer {
             .category(TaskCategory.MURDER)
             .weight(1.0f)
             .blockTypeId(BACKPACK_TYPE_ID)
-            .instinctColor(new Color(139, 90, 43, 200))
+            .instinctColor(139, 90, 43, 200)
             .scanBlockIds("decocraft:backpack_red")
             .canAssign((player, task) ->
                 !BackpackQuestState.hasCompleted(player.getUUID()))
@@ -463,7 +462,7 @@ public class HabiTrainCore implements ModInitializer {
             .category(TaskCategory.MURDER)
             .weight(1.0f)
             .blockTypeId(-1)
-            .instinctColor(new Color(255, 105, 180, 200))
+            .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
                 task.setMaxProgress(60);
                 player.sendSystemMessage(Component.literal("§d【任务】找到一名玩家，和ta对视3秒！"));

@@ -6,7 +6,7 @@ import com.habitrain.core.api.TaskRegistry;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.awt.Color;
+
 
 /**
  * 槟榔任务定义
@@ -20,7 +20,7 @@ public class BetelQuestDefinition {
                 .category(TaskCategory.MURDER)
                 .weight(1.0f)
                 .blockTypeId(14)
-                .instinctColor(new Color(46, 139, 87, 180))
+                .instinctColor(46, 139, 87, 180)
                 .scanBlockIds("betel-nut-mod:betel_palm_leaves")
                 .onAssign((player, task) -> {
                     // 标记槟榔任务已在本局刷新（后续可自由采集槟榔）

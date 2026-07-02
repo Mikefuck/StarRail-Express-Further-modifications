@@ -358,7 +358,7 @@ public class TaskEditScreen extends Screen {
         colorBtn.render(g, mx, my, delta);
         // 色块预览
         int swatchX = colorBtn.getX() + colorBtn.getWidth() + 4;
-        Color col = cfg.getColor();
+        Color col = new Color(cfg.getColor(), true);
         int idx = getColorIndex();
         String cName = idx >= 0 ? COLOR_NAMES[idx] : "自定义";
         renderColorSwatch(g, f, swatchX, r2 + 3, col, cName);

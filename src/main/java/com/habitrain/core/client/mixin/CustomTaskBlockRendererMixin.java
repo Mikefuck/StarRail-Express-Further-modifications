@@ -161,11 +161,9 @@ public class CustomTaskBlockRendererMixin {
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
             if (cfg != null) {
-                map.put(bt, cfg.getColor());
-            } else if (def.getInstinctColor() != null) {
-                map.put(bt, def.getInstinctColor());
+                map.put(bt, new Color(cfg.getColor(), true));
             } else {
-                map.put(bt, new Color(200, 200, 200, 180));
+                map.put(bt, new Color(def.getInstinctColorRGB(), true));
             }
         }
         return map;
@@ -210,11 +208,10 @@ public class CustomTaskBlockRendererMixin {
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(customTask.getFullId());
             if (cfg != null) {
-                taskColor = cfg.getColor();
+                taskColor = new Color(cfg.getColor(), true);
                 lineWidth = cfg.outlineWidth;
             } else {
-                taskColor = customTask.getDefinition().getInstinctColor();
-                if (taskColor == null) taskColor = new Color(200, 200, 200, 180);
+                taskColor = new Color(customTask.getDefinition().getInstinctColorRGB(), true);
             }
         } else {
             // ★ 多人模式：从服务端同步的缓存获取

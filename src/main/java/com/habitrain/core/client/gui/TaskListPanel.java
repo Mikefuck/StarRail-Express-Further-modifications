@@ -64,8 +64,8 @@ public class TaskListPanel {
             TaskDefinition def = filtered.get(i);
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
             boolean enabled = cfg == null || cfg.enabled;
-            Color color = cfg != null ? cfg.getColor()
-                    : (def.getInstinctColor() != null ? def.getInstinctColor() : new Color(200, 200, 200, 180));
+            Color color = cfg != null ? new Color(cfg.getColor(), true)
+                    : new Color(def.getInstinctColorRGB(), true);
             boolean hover = mx >= contentX && mx < contentX + contentW
                     && my >= y && my < y + ROW_H;
 

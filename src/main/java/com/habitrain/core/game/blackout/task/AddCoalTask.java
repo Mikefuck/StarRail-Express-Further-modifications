@@ -6,7 +6,7 @@ import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Blocks;
 
-import java.awt.Color;
+
 
 /**
  * 停电模式 — 好人任务: 添加煤炭
@@ -20,7 +20,7 @@ public class AddCoalTask {
             .category(BlackoutMode.BLACKOUT_GOOD)
             .weight(1.0f)
             .blockTypeId(20)
-            .instinctColor(new Color(50, 50, 50, 200))
+            .instinctColor(50, 50, 50, 200)
             .scanBlocks(Blocks.COAL_BLOCK, Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE)
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
