@@ -13,9 +13,15 @@ import java.util.stream.Collectors;
  */
 public class Engine {
 
-    private static Engine INSTANCE;
+    private static volatile Engine INSTANCE;
     public static Engine getInstance() {
-        if (INSTANCE == null) INSTANCE = new Engine();
+        if (INSTANCE == null) {
+            synchronized (Engine.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new Engine();
+                }
+            }
+        }
         return INSTANCE;
     }
 

@@ -12,7 +12,7 @@ import java.util.UUID;
  * 游戏结束时由 GameLifecycleHandler 重置所有状态。
  */
 public class BackpackQuestState {
-    private static BackpackQuestState instance;
+    private static volatile BackpackQuestState instance;
 
     /** 本局已完成背包翻找任务的玩家 UUID 集合 */
     private final Set<UUID> completedPlayers = new HashSet<>();
@@ -25,7 +25,11 @@ public class BackpackQuestState {
 
     public static BackpackQuestState getInstance() {
         if (instance == null) {
-            instance = new BackpackQuestState();
+            synchronized (BackpackQuestState.class) {
+                if (instance == null) {
+                    instance = new BackpackQuestState();
+                }
+            }
         }
         return instance;
     }

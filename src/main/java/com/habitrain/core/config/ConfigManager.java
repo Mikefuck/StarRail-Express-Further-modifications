@@ -28,7 +28,7 @@ import java.util.Map;
  */
 public class ConfigManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
-    private static ConfigManager INSTANCE;
+    private static volatile ConfigManager INSTANCE;
     private final File configFile;
     private final Map<String, TaskConfigEntry> taskConfigs = new HashMap<>();
     private final Map<String, GameModeConfigScope> gameModeConfigs = new HashMap<>();
@@ -57,7 +57,13 @@ public class ConfigManager {
     }
 
     public static ConfigManager getInstance() {
-        if (INSTANCE == null) INSTANCE = new ConfigManager();
+        if (INSTANCE == null) {
+            synchronized (ConfigManager.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new ConfigManager();
+                }
+            }
+        }
         return INSTANCE;
     }
 

@@ -22,10 +22,16 @@ import java.util.stream.Collectors;
  */
 public class TaskManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskManager");
-    private static TaskManager INSTANCE;
+    private static volatile TaskManager INSTANCE;
 
     public static TaskManager getInstance() {
-        if (INSTANCE == null) INSTANCE = new TaskManager();
+        if (INSTANCE == null) {
+            synchronized (TaskManager.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new TaskManager();
+                }
+            }
+        }
         return INSTANCE;
     }
 
