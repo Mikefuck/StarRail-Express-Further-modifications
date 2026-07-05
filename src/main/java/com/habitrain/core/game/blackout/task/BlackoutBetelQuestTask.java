@@ -1,0 +1,48 @@
+package com.habitrain.core.game.blackout.task;
+
+import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.betel.BetelQuestState;
+import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.util.SubtitleNotifier;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+
+/**
+ * 停电模式好人任务：你想咀嚼...（复用 BetelQuestState 槟榔系统）。
+ * <p>玩家吃下槟榔后任务完成。
+ * <p>完成时增加供电时间 15 秒 + 发放金币 50 / 情绪 0.5 奖励。
+ * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
+ */
+public class BlackoutBetelQuestTask {
+
+    public static void register() {
+        TaskRegistry.register("habitrain_core", "blackout_betel_quest", builder -> builder
+            .displayName("你想咀嚼...")
+            .category(BlackoutMode.BLACKOUT_GOOD)
+            .weight(3.0f)
+            .blockTypeId(36)
+            .instinctColor(46, 139, 87, 180)
+            .scanBlockIds("betel-nut-mod:betel_palm_leaves")
+            .onAssign((player, task) -> {
+                BetelQuestState.markQuestAssigned(player.getUUID());
+                BetelQuestState.resetEatenStatus(player);
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(
+                            serverPlayer,
+                            Component.translatable("task.blackout_betel_quest"),
+                            Component.literal("§6【任务】你想咀嚼...去找槟榔吃吧。"),
+                            80
+                    );
+                }
+            })
+            .completionChecker((player, task) ->
+                BetelQuestState.hasPlayerEatenBetelNut(player.getUUID()))
+            .onComplete((player, task) -> {
+                if (player instanceof ServerPlayer serverPlayer) {
+                    BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_betel_quest");
+                }
+            })
+        );
+    }
+}
