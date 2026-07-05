@@ -4,8 +4,10 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.cache.ActiveTaskCache;
+import com.habitrain.core.client.InstinctColorHelper;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.task.TaskManager;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -27,7 +29,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.agmas.noellesroles.client.NoellesrolesClient;
 import org.agmas.noellesroles.client.TaskBlockOverlayRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -39,6 +40,7 @@ import java.awt.Color;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.Set;
 
 /**
  * Mixin - 注入 {@link TaskBlockOverlayRenderer#render(WorldRenderContext)} 方法
@@ -153,7 +155,15 @@ public class CustomTaskBlockRendererMixin {
      * 构建 blockTypeId → Color 的映射
      * 优先使用 ModMenu 配置颜色，其次使用任务定义默认颜色
      */
+    private static Map<Integer, Color> cachedTypeColorMap = null;
+    private static int cachedColorVersion = -1;
+
     private static Map<Integer, Color> buildTypeColorMap() {
+        // 缓存：仅在配置颜色变更（InstinctColorHelper.colorVersion 改变）或首次调用时重建，
+        // 避免每帧分配 HashMap + 全表扫描 TaskRegistry.getAll()。
+        if (cachedTypeColorMap != null && cachedColorVersion == InstinctColorHelper.getColorVersion()) {
+            return cachedTypeColorMap;
+        }
         Map<Integer, Color> map = new HashMap<>();
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int bt = def.getBlockTypeId();
@@ -166,6 +176,8 @@ public class CustomTaskBlockRendererMixin {
                 map.put(bt, new Color(def.getInstinctColorRGB(), true));
             }
         }
+        cachedTypeColorMap = map;
+        cachedColorVersion = InstinctColorHelper.getColorVersion();
         return map;
     }
 
@@ -183,7 +195,7 @@ public class CustomTaskBlockRendererMixin {
         var instance = Minecraft.getInstance();
         if (instance == null || instance.player == null || instance.level == null) return;
 
-        if (NoellesrolesClient.taskBlocks.isEmpty()) return;
+        if (CustomTaskBlockCache.isEmpty()) return;
 
         // ===== 旁观/创造模式 =====
         if (SREClient.isPlayerSpectatingOrCreative()) {
@@ -205,6 +217,7 @@ public class CustomTaskBlockRendererMixin {
             // 单机模式：直接从 TaskManager 获取
             blockTypeId = customTask.getDefinition().getBlockTypeId();
             if (blockTypeId < 12) return;
+            if (blockTypeId == 12) return;
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(customTask.getFullId());
             if (cfg != null) {
@@ -220,6 +233,7 @@ public class CustomTaskBlockRendererMixin {
 
             blockTypeId = ActiveTaskCache.getBlockTypeId();
             if (blockTypeId < 12) return;
+            if (blockTypeId == 12) return;
 
             taskColor = ActiveTaskCache.getColor();
             lineWidth = ActiveTaskCache.getOutlineWidth();
@@ -230,19 +244,19 @@ public class CustomTaskBlockRendererMixin {
 
         int renderedCount = 0;
         var level = renderContext.world();
-        for (Map.Entry<BlockPos, Integer> entry : NoellesrolesClient.taskBlocks.entrySet()) {
-            if (entry.getValue() == blockTypeId) {
-                // 跳过已有独立颜色逻辑的方块
-                if (level != null && level.getBlockState(entry.getKey()).getBlock() instanceof TaskInstinctShowableInterface)
-                    continue;
+        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
+            Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
+            if (typeIds == null || !typeIds.contains(blockTypeId)) continue;
 
-                renderCustomOverlay(renderContext, entry.getKey(), taskColor, lineWidth);
-                renderedCount++;
-            }
+            if (level != null && level.getBlockState(pos).getBlock() instanceof TaskInstinctShowableInterface)
+                continue;
+
+            renderCustomOverlay(renderContext, pos, taskColor, lineWidth);
+            renderedCount++;
         }
 
         if (renderedCount > 0) {
-            HabiTrainCore.LOGGER.info("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for task {}",
+            HabiTrainCore.LOGGER.debug("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for task {}",
                     renderedCount, taskName != null ? taskName : "unknown");
         }
     }
@@ -267,23 +281,26 @@ public class CustomTaskBlockRendererMixin {
 
         int renderedCount = 0;
         var level = renderContext.world();
-        for (Map.Entry<BlockPos, Integer> entry : NoellesrolesClient.taskBlocks.entrySet()) {
-            int type = entry.getValue();
-            if (type >= 12) {
-                // 跳过已有独立颜色逻辑的方块
-                if (level != null && level.getBlockState(entry.getKey()).getBlock() instanceof TaskInstinctShowableInterface)
-                    continue;
+        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
+            Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
+            if (typeIds == null) continue;
 
+            if (level != null && level.getBlockState(pos).getBlock() instanceof TaskInstinctShowableInterface)
+                continue;
+
+            for (int type : typeIds) {
+                if (type == 12) continue;
                 Color color = typeColors.get(type);
                 if (color != null) {
-                    renderCustomOverlay(renderContext, entry.getKey(), color, 4.0f);
+                    renderCustomOverlay(renderContext, pos, color, 4.0f);
                     renderedCount++;
+                    break;
                 }
             }
         }
 
         if (renderedCount > 0) {
-            HabiTrainCore.LOGGER.info("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} custom task blocks (spectating/creative)", renderedCount);
+            HabiTrainCore.LOGGER.debug("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} custom task blocks (spectating/creative)", renderedCount);
         }
     }
 }
