@@ -3,10 +3,14 @@
     "package": "com.habitrain.core.game.sre.mixin",
     "compatibilityLevel": "JAVA_21",
     "mixins": [
+        "BlackoutShopMixin",
         "MapScannerMixin",
         "GenerateTaskMixin",
         "SREPlayerTaskComponentMixin",
         "RoleMethodDispatcherMixin",
-        "NunchuckCooldownMixin"
-    ],
+        "NunchuckCooldownMixin",
+        "MinigameRewardMixin",
+        "MinigameTaskAssignmentMixin",
+        "BlackoutEatMixin"
+    ]
 }
