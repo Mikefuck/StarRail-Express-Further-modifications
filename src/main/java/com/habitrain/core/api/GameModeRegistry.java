@@ -58,9 +58,19 @@ public class GameModeRegistry {
             throw new IllegalArgumentException("GameMode '" + fullId + "' is not registered");
         }
         ACTIVE_MODES.put(levelKey, mode);
-        mode.onPreStart(level);
-        mode.onStart(level);
-        LOGGER.info("Started GameMode: {} in {}", fullId, levelKey.location());
+        try {
+            mode.onPreStart(level);
+            mode.onStart(level);
+            LOGGER.info("Started GameMode: {} in {}", fullId, levelKey.location());
+        } catch (RuntimeException e) {
+            ACTIVE_MODES.remove(levelKey);
+            try {
+                mode.onCleanup(level);
+            } catch (Exception cleanupError) {
+                LOGGER.error("GameMode cleanup failed after start error for {}", fullId, cleanupError);
+            }
+            throw e;
+        }
     }
 
     /**
@@ -71,8 +81,19 @@ public class GameModeRegistry {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode mode = ACTIVE_MODES.remove(levelKey);
         if (mode != null) {
-            mode.onEnd(level, result);
-            mode.onCleanup(level);
+            // 用 try/finally 保证 onEnd 抛异常时 onCleanup 仍会执行，
+            // 避免 per-level 状态（角色/计时器/商店等 manager 的 map 条目）因异常泄漏。
+            try {
+                mode.onEnd(level, result);
+            } catch (RuntimeException e) {
+                LOGGER.error("GameMode onEnd failed for {} in {}", mode.getId(), levelKey.location(), e);
+            } finally {
+                try {
+                    mode.onCleanup(level);
+                } catch (RuntimeException cleanupError) {
+                    LOGGER.error("GameMode onCleanup failed for {} in {}", mode.getId(), levelKey.location(), cleanupError);
+                }
+            }
             LOGGER.info("Stopped GameMode: {} in {} (result: {})",
                     mode.getId(), levelKey.location(), result.getReason());
         }

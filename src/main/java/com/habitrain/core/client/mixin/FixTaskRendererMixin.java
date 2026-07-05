@@ -1,8 +1,16 @@
 package com.habitrain.core.client.mixin;
 
+import com.habitrain.core.client.util.TaskTextNormalizer;
+import com.habitrain.core.game.blackout.BlackoutRoles;
+import com.habitrain.core.game.sre.SRETrainTaskWrapper;
+import com.habitrain.core.task.TaskManager;
+import com.habitrain.core.api.TaskInstance;
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -10,11 +18,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Mixin - 修正 SRE 的 TaskRenderer 对 CUSTOM 类型任务的显示文本。
- *
- * SRE 的 HudMoodRenderer$TaskRenderer 和 MoodRenderer$TaskRenderer
- * 在渲染所有任务时都会添加 "task." + (feel/fake) 前缀。
- * 对于 CUSTOM 类型的 DLC 任务，我们不想要这个前缀——应该直接显示任务名称。
+ * 同时作用于 SRE 的两个内部 TaskRenderer 宿主类，归一化其显示文本。
+ * <p>
+ * 脆弱性说明：两个目标类都必须存在且都声明 {@code private Component text} 字段，
+ * 任一类被 SRE 重命名或字段签名变更都会导致 mixin 应用失败。
+ * 若 SRE 后续移除其中一个渲染器，需同步从这里删掉对应 target。
  */
 @Mixin(targets = {
     "io.wifi.starrailexpress.client.gui.HudMoodRenderer$TaskRenderer",
@@ -25,15 +33,43 @@ public class FixTaskRendererMixin {
     @Shadow(remap = false)
     private Component text;
 
-    /**
-     * 在 tick() 末尾检查 CUSTOM 类型任务，覆盖 text 字段去掉前缀。
-     */
     @Inject(method = "tick", at = @At("TAIL"), remap = false)
-    private void habitrain$fixCustomTaskText(SREPlayerTaskComponent.TrainTask task, float delta,
-                                              CallbackInfoReturnable<Boolean> cir) {
-        if (task != null && task.getType() == SREPlayerTaskComponent.Task.CUSTOM) {
-            // 直接使用任务名称，去掉 SRE 加的 "task.feel" / "task.fake" 前缀
-            this.text = Component.literal(task.getName());
+    private void habitrain$fixTaskText(SREPlayerTaskComponent.TrainTask task, float delta,
+                                       CallbackInfoReturnable<Boolean> cir) {
+        if (task == null) {
+            return;
         }
+
+        Component taskNameComponent = TaskTextNormalizer.normalizeTaskTitle(task);
+        boolean killer = SREClient.isKiller();
+        // 关灯模式警长虽因 canUseKiller=true 被判为 killer，但任务都是真实有效的，
+        // 不应显示"你可以假装去..."的 killer 前缀。
+        if (killer) {
+            SREGameWorldComponent gc = SREClient.gameComponent;
+            var self = Minecraft.getInstance().player;
+            if (gc != null && self != null) {
+                SRERole role = gc.getRole(self);
+                if (role != null && BlackoutRoles.SHERIFF_ID.equals(role.identifier())) {
+                    killer = false;
+                }
+            }
+        }
+
+        // 杀手双任务区分：只有假任务（来自好人任务池，包装为 SRETrainTaskWrapper 且
+        // 在 TaskManager.fakeTasks 中追踪）才显示"你可以假装去..."前缀；
+        // 真任务（坏人任务池）显示"感觉要去..."前缀，避免两个任务都带"假装"。
+        boolean isFakeTask = false;
+        if (killer && task instanceof SRETrainTaskWrapper wrapper) {
+            TaskInstance instance = wrapper.unwrap();
+            var self = Minecraft.getInstance().player;
+            if (self != null && instance != null) {
+                TaskInstance fake = TaskManager.getInstance().getFakeTask(self.getUUID());
+                isFakeTask = (fake == instance);
+            }
+        }
+        boolean useFakePrefix = killer && isFakeTask;
+
+        this.text = Component.translatable("task." + (useFakePrefix ? "fake" : "feel"))
+                .append(taskNameComponent);
     }
 }

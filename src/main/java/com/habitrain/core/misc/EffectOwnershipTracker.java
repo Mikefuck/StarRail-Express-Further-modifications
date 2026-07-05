@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * ===== 问题背景 =====
  * Minecraft 原版效果系统没有「来源」概念。同一个效果类型(如 DARKNESS)在玩家身上只有一个槽位，
- * 后应用的会覆盖先应用的。removeStatusEffect(StatusEffects.DARKNESS) 会无条件移除 darkness，
+ * 后应用的会覆盖先应用的。removeEffect(MobEffects.DARKNESS) 会无条件移除 darkness，
  * 无法区分是关灯、槟榔戒断还是厨师食物添加的。
  *
  * ===== 设计方案 =====

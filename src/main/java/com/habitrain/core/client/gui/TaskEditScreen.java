@@ -60,6 +60,7 @@ public class TaskEditScreen extends Screen {
     private final TaskCategory category;
     private final String modeDisplayName;
     private final int modeAccentColor;
+    private final boolean remoteEditable;
 
     // 滚动
     private double scrollOffset = 0;
@@ -96,6 +97,7 @@ public class TaskEditScreen extends Screen {
         this.category = category;
         this.modeDisplayName = modeDisplayName;
         this.modeAccentColor = modeAccentColor;
+        this.remoteEditable = LiveConfigAccess.canEditRemoteConfigs();
     }
 
     // =========================================================
@@ -109,6 +111,10 @@ public class TaskEditScreen extends Screen {
 
         // ===== 基础设置区（不注册到widget系统，在裁剪区域内手动渲染）=====
         enableBtn = Button.builder(makeEnableText(), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             cfg.enabled = !cfg.enabled;
             enableBtn.setMessage(makeEnableText());
             saveCurrent();
@@ -118,11 +124,19 @@ public class TaskEditScreen extends Screen {
                 .bounds(-10000, -10000, 88, 20).build();
 
         outlineMinusBtn = Button.builder(Component.literal("§c−"), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             cfg.outlineWidth = Math.max(1.0f, cfg.outlineWidth - 0.5f);
             saveCurrent();
         }).bounds(-10000, -10000, 20, 20).build();
 
         outlinePlusBtn = Button.builder(Component.literal("§a+"), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             cfg.outlineWidth = Math.min(10.0f, cfg.outlineWidth + 0.5f);
             saveCurrent();
         }).bounds(-10000, -10000, 20, 20).build();
@@ -132,16 +146,19 @@ public class TaskEditScreen extends Screen {
         goldField.setMaxLength(8);
         if (cfg.goldReward >= 0) goldField.setValue(String.valueOf(cfg.goldReward));
         goldField.setHint(Component.literal("默认"));
+        goldField.setEditable(remoteEditable);
 
         emotionField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         emotionField.setMaxLength(8);
         if (cfg.emotionReward >= 0f) emotionField.setValue(String.format("%.2f", cfg.emotionReward));
         emotionField.setHint(Component.literal("默认"));
+        emotionField.setEditable(remoteEditable);
 
         weightField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         weightField.setMaxLength(8);
         if (cfg.refreshWeight >= 0f) weightField.setValue(String.format("%.1f", cfg.refreshWeight));
         weightField.setHint(Component.literal("默认"));
+        weightField.setEditable(remoteEditable);
 
         // ===== 地图设置区（不注册到widget系统）=====
         mapFilterBtn = Button.builder(
@@ -152,12 +169,17 @@ public class TaskEditScreen extends Screen {
         mapField.setMaxLength(512);
         String initMap = String.join(",", cfg.enabledMaps);
         if (!initMap.isEmpty()) mapField.setValue(initMap);
+        mapField.setEditable(remoteEditable);
 
         // ===== 底部按钮 =====
         int centerX = width / 2;
         int btnY = height - FOOTER_H + 6;
 
         saveBtn = Button.builder(Component.literal("§a✔ 保存修改"), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             syncFields();
             saveCurrent();
             showMessage("§a✔ 任务「" + def.getDisplayName() + "」已保存！");
@@ -165,6 +187,10 @@ public class TaskEditScreen extends Screen {
         addRenderableWidget(saveBtn);
 
         saveReturnBtn = Button.builder(Component.literal("§b✔ 保存并返回"), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             syncFields();
             saveCurrent();
             goBack();
@@ -172,6 +198,10 @@ public class TaskEditScreen extends Screen {
         addRenderableWidget(saveReturnBtn);
 
         resetBtn = Button.builder(Component.literal("§7↺ 重置默认"), b -> {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return;
+            }
             resetDefault();
             // 重建界面
             clearWidgets();
@@ -183,6 +213,16 @@ public class TaskEditScreen extends Screen {
         topBackBtn = Button.builder(Component.literal("§7← 返回列表"), b -> goBack())
                 .bounds(width - 90, 4, 80, 16).build();
         addRenderableWidget(topBackBtn);
+        if (!remoteEditable) {
+            enableBtn.active = false;
+            colorBtn.active = false;
+            outlineMinusBtn.active = false;
+            outlinePlusBtn.active = false;
+            mapFilterBtn.active = false;
+            saveBtn.active = false;
+            saveReturnBtn.active = false;
+            resetBtn.active = false;
+        }
 
         // 计算内容高度
         recalcContentHeight();
@@ -255,6 +295,10 @@ public class TaskEditScreen extends Screen {
         boolean builtin = "habitrain_taskapi".equals(def.getModId());
         g.drawString(f, Component.literal(builtin ? "§8[内置任务]" : "§e[外部/DLC任务]"),
                 PAD, 30, 0, false);
+        if (!remoteEditable) {
+            g.drawString(f, Component.literal("§c只读：联机服务器中仅 OP 可修改"),
+                    PAD, 42, 0xFF7777, false);
+        }
 
         // 顶部彩色装饰线
         g.fill(PAD, HEADER_H - 1, width - PAD, HEADER_H, modeAccentColor);
@@ -550,6 +594,9 @@ public class TaskEditScreen extends Screen {
     }
 
     private void resetDefault() {
+        if (!remoteEditable) {
+            return;
+        }
         cfg.enabled = true;
         cfg.enabledMaps.clear();
         cfg.mapFilterMode = 0;
@@ -562,6 +609,9 @@ public class TaskEditScreen extends Screen {
     }
 
     private void saveCurrent() {
+        if (!remoteEditable) {
+            return;
+        }
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), cfg);
     }
 
@@ -653,27 +703,47 @@ public class TaskEditScreen extends Screen {
         // 按钮点击——使用上次render设置的当前位置
         if (mx >= enableBtn.getX() && mx < enableBtn.getX() + 88
                 && my >= enableBtn.getY() && my < enableBtn.getY() + 20) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             enableBtn.mouseClicked(mx, my, button);
             return true;
         }
         if (mx >= colorBtn.getX() && mx < colorBtn.getX() + 88
                 && my >= colorBtn.getY() && my < colorBtn.getY() + 20) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             colorBtn.mouseClicked(mx, my, button);
             return true;
         }
         if (mx >= outlineMinusBtn.getX() && mx < outlineMinusBtn.getX() + 20
                 && my >= outlineMinusBtn.getY() && my < outlineMinusBtn.getY() + 20) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             outlineMinusBtn.mouseClicked(mx, my, button);
             return true;
         }
         if (mx >= outlinePlusBtn.getX() && mx < outlinePlusBtn.getX() + 20
                 && my >= outlinePlusBtn.getY() && my < outlinePlusBtn.getY() + 20) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             outlinePlusBtn.mouseClicked(mx, my, button);
             return true;
         }
         // 地图过滤模式按钮（仅在启用时可点击）
         if (cfg.enabled && mx >= mapFilterBtn.getX() && mx < mapFilterBtn.getX() + 90
                 && my >= mapFilterBtn.getY() && my < mapFilterBtn.getY() + 20) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             mapFilterBtn.mouseClicked(mx, my, button);
             return true;
         }
@@ -681,21 +751,37 @@ public class TaskEditScreen extends Screen {
         // 编辑框点击——设置焦点
         if (mx >= goldField.getX() && mx < goldField.getX() + 60
                 && my >= goldField.getY() && my < goldField.getY() + 14) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             goldField.setFocused(true);
             return true;
         }
         if (mx >= emotionField.getX() && mx < emotionField.getX() + 60
                 && my >= emotionField.getY() && my < emotionField.getY() + 14) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             emotionField.setFocused(true);
             return true;
         }
         if (mx >= weightField.getX() && mx < weightField.getX() + 60
                 && my >= weightField.getY() && my < weightField.getY() + 14) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             weightField.setFocused(true);
             return true;
         }
         if (cfg.enabled && mx >= mapField.getX() && mx < mapField.getX() + mapField.getWidth()
                 && my >= mapField.getY() && my < mapField.getY() + 14) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
             mapField.setFocused(true);
             return true;
         }

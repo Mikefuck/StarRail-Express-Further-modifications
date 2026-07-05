@@ -3,6 +3,7 @@ package com.habitrain.core.api;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -65,12 +66,12 @@ public class TaskDefinition {
         this.blockTypeId = builder.blockTypeId;
         this.instinctColor = builder.instinctColor;
         this.canDirectlyWin = builder.canDirectlyWin;
-        this.scanBlocks = builder.scanBlocks;
-        this.scanBlockIds = builder.scanBlockIds;
+        this.scanBlocks = Set.copyOf(builder.scanBlocks);
+        this.scanBlockIds = Set.copyOf(builder.scanBlockIds);
         this.timeLimit = builder.timeLimit;
         this.canRepeat = builder.canRepeat;
         this.shareProgress = builder.shareProgress;
-        this.tags = builder.tags;
+        this.tags = List.copyOf(builder.tags);
         this.onAssignHandler = builder.onAssignHandler;
         this.onCompleteHandler = builder.onCompleteHandler;
         this.onRemoveHandler = builder.onRemoveHandler;
@@ -93,12 +94,12 @@ public class TaskDefinition {
     public int getBlockTypeId() { return blockTypeId; }
     public int getInstinctColorRGB() { return instinctColor; }
     public boolean canDirectlyWin() { return canDirectlyWin; }
-    public Set<Block> getScanBlocks() { return scanBlocks; }
-    public Set<String> getScanBlockIds() { return scanBlockIds; }
+    public Set<Block> getScanBlocks() { return Collections.unmodifiableSet(scanBlocks); }
+    public Set<String> getScanBlockIds() { return Collections.unmodifiableSet(scanBlockIds); }
     public int getTimeLimit() { return timeLimit; }
     public boolean canRepeat() { return canRepeat; }
     public boolean isShareProgress() { return shareProgress; }
-    public List<String> getTags() { return tags; }
+    public List<String> getTags() { return Collections.unmodifiableList(tags); }
 
     // --- Callback dispatch ---
     public void onAssign(Player player, TaskInstance instance) { if (onAssignHandler != null) onAssignHandler.accept(player, instance); }
@@ -108,6 +109,8 @@ public class TaskDefinition {
     public boolean checkCompletion(Player player, TaskInstance instance) { if (completionChecker != null) return completionChecker.apply(player, instance); return instance.isFulfilled(); }
     public void onTick(Player player, TaskInstance instance) { if (tickHandler != null) tickHandler.accept(player, instance); }
     public boolean canAssign(Player player, TaskInstance instance) { if (canAssignPredicate != null) return canAssignPredicate.test(player, instance); return true; }
+    /** 不需要 TaskInstance 的安全重载 — 当调用方没有 instance 时使用，避免传入 null */
+    public boolean canAssign(Player player) { if (canAssignPredicate != null) return canAssignPredicate.test(player, null); return true; }
     public void onProgressUpdate(Player player, TaskInstance instance, int oldProgress) { if (onProgressUpdateHandler != null) onProgressUpdateHandler.onProgressUpdate(player, instance, oldProgress); }
 
     // --- Builder ---

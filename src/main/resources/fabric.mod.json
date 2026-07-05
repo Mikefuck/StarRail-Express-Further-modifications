@@ -25,7 +25,6 @@
         "fabric-api": "*",
         "starrailexpress": "*",
         "modmenu": "*",
-        "tacz": "*",
         "betel-nut-mod": "*"
     }
 }

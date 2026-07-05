@@ -13,9 +13,19 @@ import net.minecraft.world.entity.player.Player;
 public class SRETrainTaskWrapper implements TrainTask {
 
     private final TaskInstance instance;
+    private final SREPlayerTaskComponent.Task typeOverride;
 
     public SRETrainTaskWrapper(TaskInstance instance) {
+        this(instance, null);
+    }
+
+    /**
+     * @param typeOverride 非空时用指定 Task 枚举槽位，避免与主 DLC 任务(CUSTOM)冲突。
+     *                     杀手假任务用此构造函数传一个空闲的原版枚举（如 PRAY）。
+     */
+    public SRETrainTaskWrapper(TaskInstance instance, SREPlayerTaskComponent.Task typeOverride) {
         this.instance = instance;
+        this.typeOverride = typeOverride;
     }
 
     public TaskInstance unwrap() {
@@ -39,16 +49,17 @@ public class SRETrainTaskWrapper implements TrainTask {
 
     @Override
     public SREPlayerTaskComponent.Task getType() {
+        if (typeOverride != null) {
+            return typeOverride;
+        }
         SREPlayerTaskComponent.Task custom = TaskEnumHelper.getCustom();
         return custom != null ? custom : SREPlayerTaskComponent.Task.SLEEP;
     }
 
     public CompoundTag toNbt() {
         CompoundTag nbt = instance.toNbt();
-        var customType = TaskEnumHelper.getCustom();
-        if (customType != null) {
-            nbt.putInt("type", customType.ordinal());
-        }
+        SREPlayerTaskComponent.Task t = getType();
+        nbt.putInt("type", t.ordinal());
         return nbt;
     }
 }

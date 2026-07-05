@@ -3,6 +3,7 @@ package com.habitrain.core.betel;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -32,9 +33,10 @@ public class BetelQuestDefinition {
                 })
                 .onComplete((player, task) -> {
                     if (player instanceof ServerPlayer sp) {
-                        sp.sendSystemMessage(
-                                Component.literal(
-                                        "§a[任务完成] §7你满足了对槟榔的渴望！"));
+                        SubtitleNotifier.sendTop(sp,
+                                Component.literal("§a[任务完成]"),
+                                Component.literal("§7你满足了对槟榔的渴望！"),
+                                80);
                     }
                 })
                 .canAssign((player, task) -> {

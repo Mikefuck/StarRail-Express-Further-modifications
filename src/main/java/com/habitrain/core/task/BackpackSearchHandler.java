@@ -3,6 +3,7 @@ package com.habitrain.core.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.task.TaskManager;
+import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
@@ -51,32 +52,44 @@ public class BackpackSearchHandler {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeSearches.isEmpty()) return;
 
-            long tick = 0;
-            for (ServerLevel world : server.getAllLevels()) {
-                tick = world.getGameTime();
-                break; // 用主世界的tick计数即可
-            }
+            // 统一用主世界 gameTime，避免玩家在下界/末地右键背包时 startTick 与
+            // 超时检查使用不同维度 gameTime 造成偏差。
+            long tick = server.overworld().getGameTime();
 
             for (var it = activeSearches.entrySet().iterator(); it.hasNext();) {
                 var entry = it.next();
                 UUID uuid = entry.getKey();
                 long startTick = entry.getValue();
 
-                // 超时清理
+                // 超时清理：移除追踪并主动清除缓慢效果（不依赖外部 mod 每 tick 清除）
                 if (tick - startTick >= SEARCH_TICKS) {
+                    ServerPlayer timedOut = server.getPlayerList().getPlayer(uuid);
+                    if (timedOut != null) {
+                        timedOut.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    }
                     it.remove();
+                    // 同步清理任务实例：玩家可能因断线/切世界错过最后一 tick，
+                    // 导致任务 progress 卡在 < max，本局再也无法获得新 DLC 任务。
+                    // 这里主动标记失败并移除活跃任务，避免玩家被永久卡住。
+                    TaskManager mgr = TaskManager.getInstance();
+                    TaskInstance stuckTask = mgr.getActiveTask(uuid);
+                    if (stuckTask != null
+                            && ("habitrain_core:search_backpack".equals(stuckTask.getFullId())
+                                    || "habitrain_core:blackout_search_backpack".equals(stuckTask.getFullId()))
+                            && !stuckTask.isFulfilled()) {
+                        stuckTask.markFailed();
+                        mgr.removeActiveTask(uuid);
+                    }
                     continue;
                 }
 
                 // 在实体同步前重新施加缓慢，对抗betel-nut-mod的清除
-                for (ServerLevel world : server.getAllLevels()) {
-                    Player player = world.getPlayerByUUID(uuid);
-                    if (player instanceof ServerPlayer sp) {
-                        int remaining = (int) (SEARCH_TICKS - (tick - startTick) + 10);
-                        sp.addEffect(new MobEffectInstance(
-                                MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                        break;
-                    }
+                // 直接用 PlayerList.getPlayer(uuid) 查找，避免遍历所有世界（原 O(N*M)）
+                ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+                if (sp != null) {
+                    int remaining = (int) (SEARCH_TICKS - (tick - startTick) + 10);
+                    sp.addEffect(new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
                 }
             }
         });
@@ -117,18 +130,25 @@ public class BackpackSearchHandler {
 
         UUID uuid = player.getUUID();
 
-        // 检查玩家是否有翻找背包任务（使用新 TaskManager API）
+        // 检查玩家是否有翻找背包任务（支持谋杀模式与停电模式两个版本）
         TaskInstance task = TaskManager.getInstance().getActiveTask(uuid);
-        if (task == null || !"habitrain_core:search_backpack".equals(task.getFullId())) {
+        if (task == null || (!"habitrain_core:search_backpack".equals(task.getFullId())
+                && !"habitrain_core:blackout_search_backpack".equals(task.getFullId()))) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
             return InteractionResult.PASS;
         }
+        String taskKey = task.getFullId();
 
         // 防止重复点击
         if (activeSearches.containsKey(uuid)) {
-            serverPlayer.displayClientMessage(Component.literal("§7正在翻找背包中，请稍候..."), true);
+            SubtitleNotifier.sendTop(
+                    serverPlayer,
+                    Component.translatable(taskKey),
+                    Component.literal("正在翻找背包中，请稍候..."),
+                    45
+            );
             return InteractionResult.FAIL;
         }
 
@@ -136,10 +156,20 @@ public class BackpackSearchHandler {
         serverPlayer.addEffect(new MobEffectInstance(
                 MobEffects.MOVEMENT_SLOWDOWN, SEARCH_TICKS + 10, 2, false, true, true));
 
-        serverPlayer.displayClientMessage(Component.literal("§7开始翻找背包... 6秒后完成"), true);
+        SubtitleNotifier.sendTop(
+                serverPlayer,
+                Component.translatable(taskKey),
+                Component.literal("右键背包来翻找！"),
+                60
+        );
 
         // 记录翻找状态（onTick 会据此递增任务进度）
-        activeSearches.put(uuid, world.getGameTime());
+        // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差
+        if (world instanceof ServerLevel sl && sl.getServer() != null) {
+            activeSearches.put(uuid, sl.getServer().overworld().getGameTime());
+        } else {
+            activeSearches.put(uuid, world.getGameTime());
+        }
 
         return InteractionResult.FAIL;
     }

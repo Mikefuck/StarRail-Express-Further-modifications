@@ -30,6 +30,10 @@ public class BlackoutWelcomeRenderer {
 
     public static boolean isActive() { return welcomeTime > 0; }
 
+    public static String getRoleName() {
+        return roleName;
+    }
+
     public static void tick() {
         if (welcomeTime <= 0) return;
         LocalPlayer player = Minecraft.getInstance().player;

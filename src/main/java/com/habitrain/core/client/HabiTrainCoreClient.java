@@ -4,10 +4,17 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.BlackoutKeyHandler;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
+import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
+import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
+import com.habitrain.core.client.gui.LiveConfigAccess;
+import com.habitrain.core.client.InstinctColorHelper;
+import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.game.blackout.BlackoutRoles;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
+import com.habitrain.core.network.BlackoutSheriffVotePayload;
 import com.habitrain.core.network.BlackoutStatusPayload;
 import com.habitrain.core.network.BlackoutStatusPayload.StatusType;
 import com.habitrain.core.network.BlackoutTimerPayload;
@@ -26,6 +33,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 import java.util.Optional;
 
@@ -61,6 +69,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                         payload.getConfigs(),
                         ConfigManager.getInstance().getDlcProbabilityTarget()
                 );
+                InstinctColorHelper.markDirty();
             });
         });
 
@@ -75,6 +84,12 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                             payload.getTaskFullId());
                     ActiveTaskCache.setActiveTask(payload.getTaskFullId());
                 }
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.CustomTaskBlockPayload.TYPE, (payload, context) -> {
+            context.client().execute(() -> {
+                com.habitrain.core.game.sre.CustomTaskBlockCache.loadFromSnapshot(payload.getBlockTypeIds());
             });
         });
 
@@ -100,7 +115,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                     HabiTrainCore.LOGGER.info("检测到当前光影包: {}", lastSentShaderPack);
                 }
                 // 发送到服务端
-                ShaderInfoPayload.sendToServer(lastSentShaderPack);
+                PayloadSenders.sendShaderInfo(lastSentShaderPack);
                 // 启动实时监测
                 monitoringShaderPack = true;
                 shaderMonitorTick = 0;
@@ -113,6 +128,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             lastSentShaderPack = "";
             BlackoutHudOverlay.reset();
             BlackoutWelcomeRenderer.reset();
+            BlackoutSheriffVoteState.clear();
         });
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
@@ -130,7 +146,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             if (!currentPack.equals(lastSentShaderPack)) {
                 lastSentShaderPack = currentPack;
                 HabiTrainCore.LOGGER.info("检测到光影包切换: {}", currentPack.isEmpty() ? "(无)" : currentPack);
-                ShaderInfoPayload.sendToServer(currentPack);
+                PayloadSenders.sendShaderInfo(currentPack);
             }
         });
 
@@ -145,11 +161,13 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             // ★ 单机模式（集成服务器）：配置已保存在本地，无需同步
             //    client.getSingleplayerServer() != null 表示当前正在运行本地集成服务器
             if (client.getSingleplayerServer() != null) return;
+            if (!LiveConfigAccess.canEditRemoteConfigs()) return;
 
             // 发送当前完整配置到服务端
             // 服务端会校验 OP 权限，非 OP 的请求会被拒绝
             String configJson = ConfigManager.getInstance().toJsonString();
-            ConfigUpdatePayload.sendToServer(configJson);
+            InstinctColorHelper.markDirty();
+            PayloadSenders.sendConfigUpdate(configJson);
         });
 
         // =========================================================
@@ -169,35 +187,53 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 if (payload.totalTimeRemaining() <= 0) {
-                    BlackoutHudOverlay.setVisible(false);
-                    BlackoutHudOverlay.setBlackoutModeActive(false);
-                } else {
-                    BlackoutHudOverlay.updateTime(
-                        payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
+                    BlackoutHudOverlay.reset();
+                    BlackoutWelcomeRenderer.reset();
+                    return;
                 }
+
+                BlackoutHudOverlay.updateTime(
+                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
             });
         });
 
         // 网络接收: 状态事件
         ClientPlayNetworking.registerGlobalReceiver(BlackoutStatusPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
-                String msg;
                 var st = payload.statusType();
-                if (st == StatusType.BLACKOUT_START) msg = "§c⚡ 停电了！";
-                else if (st == StatusType.BLACKOUT_END) msg = "§a⚡ 供电恢复";
-                else if (st == StatusType.TIME_WARNING) msg = "§e⚠ 仅剩 1 分钟！";
-                else msg = "";
-                if (ctx.client().player != null) {
-                    ctx.client().player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg));
+                Component main;
+                Component sub;
+                if (st == StatusType.BLACKOUT_START) {
+                    main = Component.literal("§c停电");
+                    sub = Component.literal("§c⚡ 停电了！");
+                } else if (st == StatusType.BLACKOUT_END) {
+                    main = Component.literal("§a供电恢复");
+                    sub = Component.literal("§a⚡ 供电恢复");
+                } else if (st == StatusType.TIME_WARNING) {
+                    main = Component.literal("§e时间警告");
+                    sub = Component.literal("§e⚠ 仅剩 1 分钟！");
+                } else {
+                    return;
                 }
+                com.habitrain.core.client.util.ClientSubtitleNotifier.sendTop(main, sub, 80);
             });
         });
 
         // 监听 SRE 游戏结束事件 → 立即隐藏 HUD
+        ClientPlayNetworking.registerGlobalReceiver(BlackoutSheriffVotePayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                BlackoutSheriffVoteState.update(payload);
+                if (!payload.active() && ctx.client().screen instanceof BlackoutSheriffVoteScreen) {
+                    ctx.client().setScreen(null);
+                }
+            });
+        });
+
         OnGameFinishedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
                 BlackoutHudOverlay.reset();
                 BlackoutWelcomeRenderer.reset();
+                BlackoutSheriffVoteState.clear();
             });
         });
 
@@ -210,8 +246,13 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             });
         });
 
+        // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
+        //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
+
         // 注册停电角色到 SRE 角色系统
-        registerBlackoutRoles();
+        BlackoutRoles.register();
+        // 填充警长/杀手商店目录（否则 ROLE_SHOPS 为空，商店无商品可买）
+        com.habitrain.core.game.blackout.BlackoutShopService.bootstrapDefaults();
     }
 
     /**
@@ -251,29 +292,4 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         }
     }
 
-    private void registerBlackoutRoles() {
-        try {
-            io.wifi.starrailexpress.api.TMMRoles.registerRole(
-                new io.wifi.starrailexpress.api.NormalRole(
-                    io.wifi.starrailexpress.SRE.id("blackout_civilian"), 0x55FF55,
-                    true, false,
-                    io.wifi.starrailexpress.api.SRERole.MoodType.REAL, 200, true));
-
-            io.wifi.starrailexpress.api.TMMRoles.registerRole(
-                new io.wifi.starrailexpress.api.NormalRole(
-                    io.wifi.starrailexpress.SRE.id("blackout_killer"), 0xFF5555,
-                    false, true,
-                    io.wifi.starrailexpress.api.SRERole.MoodType.FAKE, 200, true));
-
-            io.wifi.starrailexpress.api.TMMRoles.registerRole(
-                new io.wifi.starrailexpress.api.NormalRole(
-                    io.wifi.starrailexpress.SRE.id("blackout_sheriff"), 0xFFFF55,
-                    true, true,
-                    io.wifi.starrailexpress.api.SRERole.MoodType.REAL, 200, true));
-
-            HabiTrainCore.LOGGER.info("Registered 3 Blackout mode roles into SRE role system");
-        } catch (Exception e) {
-            HabiTrainCore.LOGGER.error("Failed to register Blackout roles into SRE", e);
-        }
-    }
 }

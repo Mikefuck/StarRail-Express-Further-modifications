@@ -53,7 +53,7 @@ public class StarRailExpressTitleScreenMixin {
                     ordinal = 0),
             index = 1)
     private static String habitrain$appendApiText(String v) {
-        return v + " | Mike任务api加载中";
+        return v + " | 哈比列车api加载中";
     }
 
     @Inject(method = "render", at = @At("HEAD"))

@@ -6,11 +6,11 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public record BlackoutAnnouncePayload(
-    String roleName,        // 显示名, e.g. "黑化杀手"
-    String subtitle,        // 副标题, e.g. "§7坏人阵营 — 破坏列车，消灭好人"
-    String goal,            // 目标, e.g. "消灭所有好人"
-    int killerCount,
-    int targetCount
+    String roleName,        // 角色显示名, e.g. "杀手" / "平民" / "警长"（见 BlackoutRoles.announcementName）
+    String subtitle,        // 副标题, e.g. "坏人阵营。利用黑暗清除所有好人。"
+    String goal,            // 目标描述
+    int killerCount,        // 坏人（杀手）阵营剩余人数
+    int targetCount         // 好人阵营剩余人数（对杀手而言是目标数）
 ) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<BlackoutAnnouncePayload> TYPE =
             new CustomPacketPayload.Type<>(HabiTrainCore.id("blackout_announce"));

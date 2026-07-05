@@ -44,12 +44,15 @@ public class InstinctCacheFixMixin {
             method = "updateInstinctCache",
             at = @At(
                     value = "INVOKE",
-                    target = "Ljava/util/Map;entrySet()Ljava/util/Set;"
+                    target = "Ljava/util/Map;entrySet()Ljava/util/Set;",
+                    ordinal = 0
             ),
             remap = false
     )
     private static Set<Map.Entry<UUID, Integer>> snapshotEntrySet(Map<UUID, Integer> map) {
-        // 返回 entrySet 的副本 (HashSet)，避免迭代过程中原始 Map 被修改导致 CME
+        // 返回 entrySet 的副本 (HashSet)，避免迭代过程中原始 Map 被修改导致 CME。
+        // ordinal = 0 明确只重定向 updateInstinctCache 中第一个 entrySet() 调用（即触发 CME 的那处循环），
+        // 避免将来该方法新增其它 entrySet 调用时被意外重定向。
         return new HashSet<>(map.entrySet());
     }
 }

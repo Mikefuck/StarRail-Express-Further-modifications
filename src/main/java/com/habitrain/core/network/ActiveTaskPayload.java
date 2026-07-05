@@ -1,6 +1,7 @@
 package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -12,7 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
 /**
  * S2C 网络包 - 服务端 → 客户端同步当前玩家的活跃自定义任务
  *
- * 作用：将服务端 HabiTaskManager 中记录的玩家活跃 DLC 任务 ID
+ * 作用：将服务端 com.habitrain.core.task.TaskManager 中记录的玩家活跃 DLC 任务 ID
  * 同步到客户端，以便 CustomTaskBlockRendererMixin 在多人模式下
  * 也能正确渲染自定义任务方块的高亮边框。
  *
@@ -51,8 +52,13 @@ public class ActiveTaskPayload implements CustomPacketPayload {
         @Override
         public ActiveTaskPayload decode(ByteBuf buf) {
             int len = buf.readInt();
-            if (len <= 0) return new ActiveTaskPayload("");
-            len = Math.min(len, MAX_STRING_LENGTH);
+            if (len < 0) {
+                throw new DecoderException("ActiveTaskPayload: negative length " + len);
+            }
+            if (len == 0) return new ActiveTaskPayload("");
+            if (len > MAX_STRING_LENGTH) {
+                throw new DecoderException("ActiveTaskPayload: length " + len + " exceeds max " + MAX_STRING_LENGTH);
+            }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new ActiveTaskPayload(new String(bytes, StandardCharsets.UTF_8));

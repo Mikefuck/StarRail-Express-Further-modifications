@@ -37,6 +37,7 @@ public class ShaderWhitelistScreen extends Screen {
     private final Screen parent;
     private boolean whitelistEnabled;
     private final List<String> whitelist = new ArrayList<>();
+    private final boolean remoteEditable;
 
     // 控件
     private Button toggleBtn;
@@ -55,6 +56,7 @@ public class ShaderWhitelistScreen extends Screen {
     public ShaderWhitelistScreen(Screen parent) {
         super(Component.literal("§l🎨 Iris 光影白名单"));
         this.parent = parent;
+        this.remoteEditable = LiveConfigAccess.canEditRemoteConfigs();
 
         // 从配置管理器加载当前状态
         ConfigManager cfg = ConfigManager.getInstance();
@@ -71,6 +73,10 @@ public class ShaderWhitelistScreen extends Screen {
         // ---- 启用/禁用开关 ----
         toggleBtn = addRenderableWidget(Button.builder(
                 getToggleMessage(), b -> {
+                    if (!remoteEditable) {
+                        LiveConfigAccess.showDeniedMessage();
+                        return;
+                    }
                     whitelistEnabled = !whitelistEnabled;
                     b.setMessage(getToggleMessage());
                     saveToServer();
@@ -82,6 +88,7 @@ public class ShaderWhitelistScreen extends Screen {
         addBox.setMaxLength(128);
         addBox.setHint(Component.literal("输入光影包名称..."));
         addBox.setResponder(t -> addText = t.trim());
+        addBox.setEditable(remoteEditable);
         addRenderableWidget(addBox);
 
         addBtn = addRenderableWidget(Button.builder(
@@ -93,6 +100,11 @@ public class ShaderWhitelistScreen extends Screen {
                 Component.literal("§7← 返回"), b ->
                         Minecraft.getInstance().setScreen(parent)
         ).bounds(PAD, height - FOOTER_H + 4, 80, 20).build());
+
+        if (!remoteEditable) {
+            toggleBtn.active = false;
+            addBtn.active = false;
+        }
     }
 
     private Component getToggleMessage() {
@@ -103,6 +115,10 @@ public class ShaderWhitelistScreen extends Screen {
 
     /** 添加输入框中的文本到白名单 */
     private void addCurrentText() {
+        if (!remoteEditable) {
+            LiveConfigAccess.showDeniedMessage();
+            return;
+        }
         if (addText.isEmpty()) return;
         // 检查是否已存在（忽略大小写）
         boolean exists = whitelist.stream().anyMatch(
@@ -122,6 +138,10 @@ public class ShaderWhitelistScreen extends Screen {
 
     /** 从白名单中移除指定条目 */
     private void removeEntry(int index) {
+        if (!remoteEditable) {
+            LiveConfigAccess.showDeniedMessage();
+            return;
+        }
         if (index >= 0 && index < whitelist.size()) {
             whitelist.remove(index);
             saveToServer();
@@ -130,6 +150,9 @@ public class ShaderWhitelistScreen extends Screen {
 
     /** 保存到服务端（通过已有的 save 回调 → C2S 配置更新通道） */
     private void saveToServer() {
+        if (!remoteEditable) {
+            return;
+        }
         // 使用批量更新方法（仅调用一次 save，触发 save 回调自动发送到服务端）
         ConfigManager cfg = ConfigManager.getInstance();
         cfg.setShaderWhitelistConfig(whitelistEnabled, whitelist);
@@ -151,6 +174,10 @@ public class ShaderWhitelistScreen extends Screen {
         g.drawString(f, Component.literal("§l🎨 Iris 光影白名单"), PAD, 4, 0xFFFFFF, false);
         g.drawString(f, Component.literal("§7设置服务器允许使用的 Iris 光影包，仅 OP 可修改"),
                 PAD, 18, 0x888888, false);
+        if (!remoteEditable) {
+            g.drawString(f, Component.literal("§c只读：联机服务器中仅 OP 可修改"),
+                    PAD, 30, 0xFF7777, false);
+        }
 
         // 分割线
         g.fill(PAD, HEADER_H + 2, width - PAD, HEADER_H + 3, 0x30FFFFFF);

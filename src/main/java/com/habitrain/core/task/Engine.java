@@ -38,25 +38,30 @@ public class Engine {
 
         // 加权随机
         float totalWeight = 0;
-        for (TaskDefinition def : pool) totalWeight += def.getWeight();
+        for (TaskDefinition def : pool) {
+            if (def.getWeight() > 0) totalWeight += def.getWeight();
+        }
         if (totalWeight <= 0) return null;
 
         float rand = player.getRandom().nextFloat() * totalWeight;
         for (TaskDefinition def : pool) {
-            rand -= def.getWeight();
-            if (rand <= 0) {
+            float w = def.getWeight();
+            if (w <= 0) continue;
+            rand -= w;
+            // 用 < 0 而非 <= 0：避免 rand 恰好为 0 且首个任务权重为 0 时被错误选中
+            if (rand < 0) {
                 TaskInstance instance = new TaskInstance(def);
                 def.onAssign(player, instance);
-                if (gameMode != null) gameMode.onTaskAssign((ServerPlayer) player, instance);
+                if (gameMode != null && player instanceof ServerPlayer sp) gameMode.onTaskAssign(sp, instance);
                 return instance;
             }
         }
 
-        // fallback — 取最后一项
+        // fallback - 取最后一项
         TaskDefinition last = pool.get(pool.size() - 1);
         TaskInstance instance = new TaskInstance(last);
         last.onAssign(player, instance);
-        if (gameMode != null) gameMode.onTaskAssign((ServerPlayer) player, instance);
+        if (gameMode != null && player instanceof ServerPlayer sp) gameMode.onTaskAssign(sp, instance);
         return instance;
     }
 
@@ -66,8 +71,8 @@ public class Engine {
     public List<TaskDefinition> buildTaskPool(Player player, GameMode gameMode) {
         List<TaskDefinition> all = new ArrayList<>(TaskRegistry.getAll());
 
-        if (gameMode != null) {
-            all = gameMode.filterAvailableTasks(all, (ServerPlayer) player);
+        if (gameMode != null && player instanceof ServerPlayer sp) {
+            all = gameMode.filterAvailableTasks(all, sp);
         }
 
         return all.stream()

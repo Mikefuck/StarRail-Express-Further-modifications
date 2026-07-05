@@ -5,10 +5,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /**
- * 任务运行时实例 — 取代 HabiTaskInstance。
- * 新增: 计时器支持、进度回调分发。
- *
- * 注意: 不直接实现 SRE 的 TrainTask 接口，而是通过 {@code SRETrainTaskWrapper} 适配。
+ * Runtime task instance that stores progress and lifecycle state.
  */
 public class TaskInstance {
 
@@ -16,10 +13,13 @@ public class TaskInstance {
     private boolean fulfilled = false;
     private int progress = 0;
     private int maxProgress = 1;
-
-    // 限时任务计时 (tick 数)
     private int elapsedTicks = 0;
     private boolean failed = false;
+    // tick 外调用 setProgress() 时用作 onProgressUpdate 回调的 player。
+    // tick() 内会临时覆盖为当前 tick 的 player，并在 finally 中恢复为 owner。
+    private Player progressUpdatePlayer = null;
+    // 任务归属玩家（由 onAssign/tick 设置），保证 tick 外 setProgress 也能派发回调。
+    private Player ownerPlayer = null;
 
     public TaskInstance(TaskDefinition definition) {
         this.definition = definition;
@@ -37,11 +37,21 @@ public class TaskInstance {
         int old = this.progress;
         this.progress = progress;
         if (old != progress) {
-            definition.onProgressUpdate(null, this, old);
+            // tick 内 progressUpdatePlayer 是当前 tick 的 player；
+            // tick 外调用时回退到 ownerPlayer，避免回调静默丢失。
+            Player p = progressUpdatePlayer != null ? progressUpdatePlayer : ownerPlayer;
+            if (p != null) {
+                definition.onProgressUpdate(p, this, old);
+            }
         }
     }
 
-    public void setMaxProgress(int maxProgress) { this.maxProgress = maxProgress; }
+    public void setMaxProgress(int maxProgress) {
+        // 防止 0/负值导致 completionChecker 里 progress >= maxProgress 逻辑错乱：
+        //   maxProgress=0 → 任务一分配就立即完成
+        //   maxProgress<0 → 永不完成
+        this.maxProgress = Math.max(1, maxProgress);
+    }
     public void setFulfilled(boolean fulfilled) { this.fulfilled = fulfilled; }
 
     public void markFailed() {
@@ -50,31 +60,35 @@ public class TaskInstance {
     }
 
     /**
-     * 每个服务端 tick 调用一次。
-     * 处理: tick 回调 → 计时器 → 完成检测 → 超时检测。
+     * Called once per server tick.
      */
     public void tick(Player player) {
         if (fulfilled) return;
 
-        // 限时检测
-        if (definition.getTimeLimit() > 0) {
-            elapsedTicks++;
-            if (elapsedTicks >= definition.getTimeLimit() * 20) {
-                markFailed();
-                definition.onFail(player, this);
-                return;
+        // 记录归属玩家，tick 外 setProgress 可回退使用
+        this.ownerPlayer = player;
+        progressUpdatePlayer = player;
+        try {
+            if (definition.getTimeLimit() > 0) {
+                elapsedTicks++;
+                if (elapsedTicks >= definition.getTimeLimit() * 20) {
+                    markFailed();
+                    definition.onFail(player, this);
+                    return;
+                }
             }
-        }
 
-        // 调用 tick 回调
-        definition.onTick(player, this);
+            definition.onTick(player, this);
 
-        // 完成检测
-        if (definition.checkCompletion(player, this)) {
-            this.fulfilled = true;
-            if (player instanceof ServerPlayer sp) {
-                definition.onComplete(sp, this);
+            if (definition.checkCompletion(player, this)) {
+                this.fulfilled = true;
+                // 与 onFail 保持对称：对所有 Player 调用 onComplete。
+                // DLC 回调内部可自行用 instanceof ServerPlayer 判断是否在服务端上下文。
+                definition.onComplete(player, this);
             }
+        } finally {
+            // 恢复为 owner，tick 外 setProgress 仍可派发回调
+            progressUpdatePlayer = ownerPlayer;
         }
     }
 

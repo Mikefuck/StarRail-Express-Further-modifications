@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -35,14 +36,26 @@ public class TaskManager {
         return INSTANCE;
     }
 
-    private final Map<UUID, TaskInstance> activeCustomTasks = new HashMap<>();
+    // ConcurrentHashMap：避免单机模式下 Netty IO 线程编码与主线程修改导致 CME，
+    // 以及未来 off-thread 访问的可见性问题。
+    private final Map<UUID, TaskInstance> activeCustomTasks = new ConcurrentHashMap<>();
+
+    /**
+     * 杀手双任务机制：杀手的"假任务"（并行任务）单独追踪，不覆盖主任务。
+     * key = playerUUID, value = 假任务实例（来自好人任务池，完成只给金币不推进胜利）
+     */
+    private final Map<UUID, TaskInstance> activeFakeTasks = new ConcurrentHashMap<>();
 
     public TaskInstance getActiveTask(UUID playerUuid) { return activeCustomTasks.get(playerUuid); }
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
 
+    public TaskInstance getFakeTask(UUID playerUuid) { return activeFakeTasks.get(playerUuid); }
+    public void setFakeTask(UUID playerUuid, TaskInstance task) { activeFakeTasks.put(playerUuid, task); }
+    public void removeFakeTask(UUID playerUuid) { activeFakeTasks.remove(playerUuid); }
+
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
-    public void clearAllActiveTasks() { activeCustomTasks.clear(); }
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); }
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);
@@ -70,7 +83,10 @@ public class TaskManager {
             if (modeId.contains("repair_escape") || modeId.contains("repair")) {
                 return TaskCategory.REPAIR;
             }
-            return TaskCategory.MURDER;
+            if (modeId.contains("murder")) {
+                return TaskCategory.MURDER;
+            }
+            return TaskCategory.ALL;
         } catch (Exception e) {
             return TaskCategory.ALL;
         }
@@ -86,9 +102,9 @@ public class TaskManager {
             if (!mapEnabled) continue;
 
             TaskCategory cat = def.getCategory();
-            boolean categoryMatch = (cat == TaskCategory.ALL
-                || cat == TaskCategory.CUSTOM
-                || cat == currentCategory);
+            boolean categoryMatch = (TaskCategory.ALL.equals(cat)
+                || TaskCategory.CUSTOM.equals(cat)
+                || cat.equals(currentCategory));
             if (!categoryMatch) continue;
 
             available.add(def);
@@ -120,6 +136,12 @@ public class TaskManager {
     public void handleTaskCompletion(ServerPlayer player, TaskInstance instance) {
         TaskDefinition def = instance.getDefinition();
 
+        // 先移除活跃任务，避免 DLC 在 onTaskComplete 回调内连发新任务被随后清除。
+        // 用 == instance 守卫，避免删掉回调里新分配的任务。
+        if (getActiveTask(player.getUUID()) == instance) {
+            removeActiveTask(player.getUUID());
+        }
+
         if (player.level() instanceof ServerLevel sl) {
             GameModeRegistry.getActiveForLevel(sl).ifPresent(gm ->
                 gm.onTaskComplete(player, instance));
@@ -128,9 +150,6 @@ public class TaskManager {
         if (def.canDirectlyWin()) {
             triggerDirectWin(player, instance);
         }
-
-        // ★ 任务完成 → 清理活跃任务，防止已完成任务残留在渲染器中
-        removeActiveTask(player.getUUID());
     }
 
     private void triggerDirectWin(ServerPlayer player, TaskInstance instance) {

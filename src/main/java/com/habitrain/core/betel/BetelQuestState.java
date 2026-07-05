@@ -178,23 +178,6 @@ public class BetelQuestState {
                 player.getName().getString(), data.lastDetectedEatTime);
     }
 
-    /**
-     * 重置玩家在本局的吃槟榔状态（通过UUID查找玩家）
-     * 旧方法，保留以兼容其他调用方（如果有直接传UUID的）
-     *
-     * ★ 注意：在集成服务器（单人模式）中，getCurrentServer() 返回 null，
-     *    导致无法查找玩家，lastDetectedEatTime 会回退为 0。
-     *    有概率导致上局残留时间戳被误检测。
-     *    建议优先使用 {@link #resetEatenStatus(PlayerEntity)} 重载。
-     */
-    public static void resetEatenStatus(UUID uuid) {
-        PlayerBetelData data = getPlayerData(uuid);
-        data.hasEatenBetelNut = false;
-        data.lastDetectedEatTime = 0;
-        HabiTrainCore.LOGGER.debug("玩家 {} 的吃槟榔状态已重置 (UUID版本, lastDetectedEatTime=0)",
-                getPlayerName(uuid));
-    }
-
     /** 获取当前服务器实例 */
     private static MinecraftServer getCurrentServer() {
         try {
@@ -648,9 +631,6 @@ public class BetelQuestState {
 
         /** 上次记录的诊断成瘾阶段（用于变化检测，避免重复日志） */
         int lastDiagnosticStage = 0;
-
-        /** 上次记录的诊断戒断严重度 */
-        int lastDiagnosticSeverity = 0;
 
         /** 是否已处理过首次tick（用于检测新玩家加入） */
         boolean hasBeenProcessed = false;

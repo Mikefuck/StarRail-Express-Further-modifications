@@ -1,36 +1,54 @@
 package com.habitrain.core.client;
 
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
-import com.habitrain.core.client.gui.BlackoutRoleIntroduceScreen;
+import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
+import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 public class BlackoutKeyHandler {
 
-    private static final KeyMapping ROLE_INTRO_KEY = new KeyMapping(
-            "key.habitrain.blackout.role_intro",
-            GLFW.GLFW_KEY_U,
-            "category.habitrain.blackout"
-    );
-
     private static boolean registered = false;
+    private static KeyMapping openVoteKey;
+
+    public static KeyMapping getOpenVoteKey() {
+        return openVoteKey;
+    }
 
     public static void register() {
         if (registered) return;
         registered = true;
 
-        KeyBindingHelper.registerKeyBinding(ROLE_INTRO_KEY);
+        openVoteKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.habitrain_core.open_sheriff_vote",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_V,
+                "key.categories.habitrain_core"
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // U 键 — 打开角色介绍（仅黑灯模式激活时）
-            while (ROLE_INTRO_KEY.consumeClick()) {
-                if (client.player != null && client.screen == null
-                        && BlackoutHudOverlay.isBlackoutModeActive()) {
-                    client.setScreen(new BlackoutRoleIntroduceScreen());
-                }
+            while (openVoteKey.consumeClick()) {
+                openVote(client);
             }
         });
+    }
+
+    private static void openVote(Minecraft client) {
+        if (client.player == null) return;
+
+        if (!BlackoutSheriffVoteState.isActive()) {
+            com.habitrain.core.client.util.ClientSubtitleNotifier.sendTop(
+                    Component.literal("§e警长投票"),
+                    Component.literal("§e当前没有进行中的警长投票。"),
+                    60);
+            return;
+        }
+
+        if (client.screen instanceof BlackoutSheriffVoteScreen) return;
+        client.setScreen(new BlackoutSheriffVoteScreen(client.screen));
     }
 }

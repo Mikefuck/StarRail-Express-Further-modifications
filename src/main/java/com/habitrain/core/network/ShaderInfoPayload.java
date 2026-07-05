@@ -1,10 +1,8 @@
 package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -74,12 +72,6 @@ public class ShaderInfoPayload implements CustomPacketPayload {
         PayloadTypeRegistry.playC2S().register(TYPE, CODEC);
     }
 
-    /**
-     * 从客户端发送当前光影包名称到服务端
-     * @param shaderPackName 当前光影包名称，空=无光影包
-     */
-    public static void sendToServer(String shaderPackName) {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new ShaderInfoPayload(shaderPackName));
-    }
+    // 客户端发送逻辑见 com.habitrain.core.client.network.PayloadSenders#sendShaderInfo
+    // （移出公共 payload 类以避免引用客户端类，防止专用服务器加载风险）
 }

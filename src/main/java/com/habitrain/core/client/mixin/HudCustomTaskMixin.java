@@ -19,18 +19,20 @@ public class HudCustomTaskMixin {
 
     @Inject(method = "readFromSyncNbt", at = @At("TAIL"), remap = false)
     private void habitrain$onReadSyncNbt(CompoundTag tag, HolderLookup.Provider lookup, CallbackInfo ci) {
-        if (tag.contains("tasks", Tag.TAG_LIST)) {
-            for (Tag element : tag.getList("tasks", Tag.TAG_COMPOUND)) {
-                if (element instanceof CompoundTag compound && compound.contains("customId")) {
-                    String cid = compound.getString("customId");
-                    if (!cid.isEmpty()) {
-                        ActiveTaskCache.setActiveTask(cid);
-                        return;
-                    }
+        // 同步数据不含 tasks 列表时（可能是部分同步），不动缓存，避免透视高亮闪烁。
+        if (!tag.contains("tasks", Tag.TAG_LIST)) {
+            return;
+        }
+        for (Tag element : tag.getList("tasks", Tag.TAG_COMPOUND)) {
+            if (element instanceof CompoundTag compound && compound.contains("customId")) {
+                String cid = compound.getString("customId");
+                if (!cid.isEmpty()) {
+                    ActiveTaskCache.setActiveTask(cid);
+                    return;
                 }
             }
         }
-        // 没有找到自定义任务 → 清空缓存
+        // tasks 列表存在但无自定义任务条目 → 服务端确认玩家当前无自定义任务，清空缓存
         ActiveTaskCache.clear();
     }
 }

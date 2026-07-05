@@ -43,8 +43,8 @@ public class TaskRegistry {
     /** 按分类查询 */
     public static List<TaskDefinition> getByCategory(TaskCategory category) {
         return REGISTRY.values().stream()
-                .filter(def -> def.getCategory() == category
-                        || def.getCategory() == TaskCategory.ALL)
+                .filter(def -> def.getCategory().equals(category)
+                        || TaskCategory.ALL.equals(def.getCategory()))
                 .toList();
     }
 

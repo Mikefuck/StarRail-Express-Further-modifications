@@ -1,10 +1,8 @@
 package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -72,18 +70,6 @@ public class ConfigUpdatePayload implements CustomPacketPayload {
         PayloadTypeRegistry.playC2S().register(TYPE, CODEC);
     }
 
-    /**
-     * 从客户端发送配置更新到服务端
-     * @param configJson ConfigManager.toJsonString() 的输出
-     */
-    public static void sendToServer(String configJson) {
-        var client = Minecraft.getInstance();
-        if (client.getConnection() == null) return;
-
-        // ★ 单机模式（集成服务器）：配置已保存在本地文件，无需网络同步
-        //    client.getSingleplayerServer() != null 表示当前运行的是本地集成服务器
-        if (client.getSingleplayerServer() != null) return;
-
-        ClientPlayNetworking.send(new ConfigUpdatePayload(configJson));
-    }
+    // 客户端发送逻辑见 com.habitrain.core.client.network.PayloadSenders#sendConfigUpdate
+    // （移出公共 payload 类以避免引用客户端类，防止专用服务器加载风险）
 }

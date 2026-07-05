@@ -60,10 +60,16 @@ public class RoleMethodDispatcherMixin {
         if (config == null) return;
 
         if (config.goldReward >= 0) {
+            // 先确认必要组件已附加，再 cancel 原 SRE 逻辑；否则放行原逻辑，
+            // 避免 cancel 后 NPE 导致玩家既拿不到自定义奖励也拿不到 SRE 基础奖励。
+            SREPlayerProgressionComponent progression = SREPlayerProgressionComponent.KEY.get(player);
+            if (progression == null) {
+                return;
+            }
             try {
                 ci.cancel();
 
-                SREPlayerProgressionComponent.KEY.get(player).onRoundQuestFinished(quest);
+                progression.onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
 
                 if (role != null) {

@@ -10,5 +10,9 @@
   "look_my_eyes": {
     "subtitle": "对视",
     "sounds": ["habitrain_core:look_my_eyes"]
+  },
+  "backpack_search": {
+    "subtitle": "翻找背包",
+    "sounds": ["habitrain_core:backpack_search"]
   }
 }

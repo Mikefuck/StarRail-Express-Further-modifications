@@ -3,6 +3,7 @@ package com.habitrain.core.network;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.codec.StreamCodec;
@@ -25,6 +26,11 @@ public class TaskConfigPayload implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<TaskConfigPayload> TYPE =
             new CustomPacketPayload.Type<>(ID);
 
+    // decode 长度上限，防止恶意/损坏的 S2C 包触发 OOM
+    private static final int MAX_ENTRIES = 4096;
+    private static final int MAX_STR_LEN = 1024;
+    private static final int MAX_MAPS_PER_ENTRY = 256;
+
     private final Map<String, TaskConfigEntry> configs;
 
     public TaskConfigPayload(Map<String, TaskConfigEntry> configs) {
@@ -42,9 +48,15 @@ public class TaskConfigPayload implements CustomPacketPayload {
         @Override
         public TaskConfigPayload decode(ByteBuf buf) {
             int size = buf.readInt();
+            if (size < 0 || size > MAX_ENTRIES) {
+                throw new DecoderException("Invalid task config entry size: " + size);
+            }
             Map<String, TaskConfigEntry> configs = new HashMap<>();
             for (int i = 0; i < size; i++) {
                 int keyLen = buf.readInt();
+                if (keyLen < 0 || keyLen > MAX_STR_LEN) {
+                    throw new DecoderException("Invalid config key length: " + keyLen);
+                }
                 byte[] keyBytes = new byte[keyLen];
                 buf.readBytes(keyBytes);
                 String key = new String(keyBytes, StandardCharsets.UTF_8);
@@ -52,20 +64,23 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 TaskConfigEntry entry = new TaskConfigEntry();
                 entry.enabled = buf.readBoolean();
                 int enabledMapCount = buf.readInt();
+                if (enabledMapCount < 0 || enabledMapCount > MAX_MAPS_PER_ENTRY) {
+                    throw new DecoderException("Invalid enabledMap count: " + enabledMapCount);
+                }
                 for (int j = 0; j < enabledMapCount; j++) {
                     int mapLen = buf.readInt();
+                    if (mapLen < 0 || mapLen > MAX_STR_LEN) {
+                        throw new DecoderException("Invalid map name length: " + mapLen);
+                    }
                     byte[] mapBytes = new byte[mapLen];
                     buf.readBytes(mapBytes);
                     entry.enabledMaps.add(new String(mapBytes, StandardCharsets.UTF_8));
                 }
                 entry.instinctColor = buf.readInt();
 
-                // ★ v3: mapFilterMode (0=不启用, 1=白名单, 2=黑名单)
-                if (buf.readableBytes() >= 4) {
-                    entry.mapFilterMode = Math.max(0, Math.min(2, buf.readInt()));
-                }
-
-                // ====== v2: 新增奖励和权重字段 (向后兼容) ======
+                // 本协议为单模组内部协议（客户端与服务端同版本），无版本兼容需求。
+                // 字段按 encode 顺序连续读取：mapFilterMode → goldReward → emotionReward → refreshWeight
+                entry.mapFilterMode = Math.max(0, Math.min(2, buf.readInt()));
                 entry.goldReward = buf.readInt();
                 entry.emotionReward = buf.readFloat();
                 entry.refreshWeight = buf.readFloat();
@@ -78,7 +93,14 @@ public class TaskConfigPayload implements CustomPacketPayload {
         @Override
         public void encode(ByteBuf buf, TaskConfigPayload payload) {
             // ★ 防御性复制：防止单机模式下 save() 与 Netty IO 线程同时修改 map 导致 CME
-            var entries = new ArrayList<>(payload.configs.entrySet());
+            // 预先过滤 null entry，避免 Netty 编码线程抛 NPE；
+            // 同时保证写入的 size 与实际条目数一致（decode 端按 size 读取）。
+            var entries = new ArrayList<Map.Entry<String, TaskConfigEntry>>();
+            for (var e : payload.configs.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    entries.add(e);
+                }
+            }
             buf.writeInt(entries.size());
             for (var entry : entries) {
                 String key = entry.getKey();
@@ -92,6 +114,11 @@ public class TaskConfigPayload implements CustomPacketPayload {
 
                 buf.writeInt(config.enabledMaps.size());
                 for (String map : config.enabledMaps) {
+                    if (map == null) {
+                        // 写入 0 长度占位，保持 count 一致
+                        buf.writeInt(0);
+                        continue;
+                    }
                     byte[] mapBytes = map.getBytes(StandardCharsets.UTF_8);
                     buf.writeInt(mapBytes.length);
                     buf.writeBytes(mapBytes);
@@ -99,10 +126,8 @@ public class TaskConfigPayload implements CustomPacketPayload {
 
                 buf.writeInt(config.instinctColor);
 
-                // ★ v3: mapFilterMode
                 buf.writeInt(config.mapFilterMode);
 
-                // ====== v2: 新增奖励和权重字段 ======
                 buf.writeInt(config.goldReward);
                 buf.writeFloat(config.emotionReward);
                 buf.writeFloat(config.refreshWeight);

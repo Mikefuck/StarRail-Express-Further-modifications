@@ -1,9 +1,20 @@
 package com.habitrain.core.game.blackout;
 
-import com.habitrain.core.api.*;
+import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.GameMode;
+import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.api.TaskCategory;
+import com.habitrain.core.api.TaskDefinition;
+import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager.VoteResolution;
+import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutTimerPayload;
+import com.habitrain.core.util.SubtitleNotifier;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.network.chat.Component;
@@ -11,36 +22,54 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
-import com.habitrain.core.HabiTrainCore;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
-/**
- * 停电模式 GameMode 实现 — habitrains:blackout
- *
- * 基于 SRE 原版游戏运行 (地图重置、房间传送、角色分配由 SRE 处理)，
- * 叠加停电模式的计时器、投票、任务系统。
- */
 public class BlackoutMode implements GameMode {
 
     public static final String MODE_ID = "habitrains:blackout";
-    public static final String MODE_DISPLAY = "停电模式";
+    public static final String MODE_DISPLAY = "\u505c\u7535\u6a21\u5f0f";
 
+    /**
+     * 好人任务池 —— 停电模式中好人阵营(GOOD)玩家的任务池。
+     * <p>新增好人任务时，注册用 {@code .category(BlackoutMode.BLACKOUT_GOOD)} 归属此池。
+     * 当前任务：添煤 / 修理线路 / 维持供电。
+     */
     public static final TaskCategory BLACKOUT_GOOD =
-            new TaskCategory("habitrain:blackout_good", "好人任务", MODE_ID);
+            new TaskCategory("habitrain:blackout_good", "\u597d\u4eba\u4efb\u52a1", MODE_ID);
+    /**
+     * 坏人任务池 —— 停电模式中坏人阵营(BAD)玩家的任务池（杀手真任务）。
+     * <p>新增坏人任务时，注册用 {@code .category(BlackoutMode.BLACKOUT_BAD)} 归属此池。
+     * 当前任务：破坏线路 / 炸毁熔炉。
+     */
     public static final TaskCategory BLACKOUT_BAD =
-            new TaskCategory("habitrain:blackout_bad", "坏人任务", MODE_ID);
+            new TaskCategory("habitrain:blackout_bad", "\u574f\u4eba\u4efb\u52a1", MODE_ID);
 
     private ServerLevel currentLevel;
     private int tickAccumulator = 0;
     private boolean gameEnded = false;
-    /** SRE 游戏是否已实际开始运行 (异步加载地图完成后) */
     private boolean sreGameRunning = false;
+    private String pendingEndMessage = null;
+
+    /**
+     * 上一局结束时的获胜阵营，供 {@link com.habitrain.core.game.blackout.sre.SREBlackoutGameMode#finalizeGame}
+     * 在 SRE 回放数据生成后覆盖 winStatus / 单人 hasWin 使用。
+     * <p>
+     * null 表示未结算或同归于尽。在 {@link #endGame} 中赋值，{@link #onPreStart} 中清空。
+     */
+    private static volatile BlackoutRoleManager.Faction lastWinningFaction = null;
 
     @Override
-    public String getId() { return MODE_ID; }
+    public String getId() {
+        return MODE_ID;
+    }
 
     @Override
-    public String getDisplayName() { return MODE_DISPLAY; }
+    public String getDisplayName() {
+        return MODE_DISPLAY;
+    }
 
     @Override
     public List<TaskCategory> getTaskCategories() {
@@ -52,40 +81,35 @@ public class BlackoutMode implements GameMode {
         return currentLevel != null && currentLevel.dimension().equals(level.dimension());
     }
 
-    // ====== 生命周期 ======
-
     @Override
     public void onPreStart(ServerLevel level) {
-        this.currentLevel = level;
-        this.tickAccumulator = 0;
-        this.gameEnded = false;
-        this.sreGameRunning = false;
+        currentLevel = level;
+        tickAccumulator = 0;
+        gameEnded = false;
+        sreGameRunning = false;
+        pendingEndMessage = null;
+        lastWinningFaction = null;
 
         BlackoutRoleManager.clear(level);
-        BlackoutTimerSystem.init(level,
-                this::triggerSREPermanentBlackout,
-                this::endSREBlackout,
-                this::sendTimeWarning
-        );
-        TACZWeaponBridge.resetPurchases();
+        BlackoutSheriffVoteManager.reset(level);
+        BlackoutTimerSystem.init(level, this::triggerSREPermanentBlackout, this::endSREBlackout, this::sendTimeWarning);
+        BlackoutShopService.resetRound(level);
+        syncClientBlackoutReset(level);
     }
 
     @Override
     public void onStart(ServerLevel level) {
-        TACZWeaponBridge.register();
-
-        // 查找并启动 SRE 游戏 (异步加载地图、分配角色)
         ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
         var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
         if (sreMode == null) {
             HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found!");
             return;
         }
+
         var sreGame = SREGameWorldComponent.KEY.get(level);
         if (sreGame != null && !sreGame.isRunning()) {
             GameUtils.startGame(level, sreMode,
-                    GameConstants.getInTicks(
-                        ((io.wifi.starrailexpress.api.GameMode)sreMode).defaultStartTime, 0));
+                    GameConstants.getInTicks(((io.wifi.starrailexpress.api.GameMode) sreMode).defaultStartTime, 0));
         }
     }
 
@@ -96,39 +120,45 @@ public class BlackoutMode implements GameMode {
         var sreGame = SREGameWorldComponent.KEY.get(level);
         boolean sreActive = sreGame != null && sreGame.isRunning();
 
-        // 状态转换: SRE 游戏开始
         if (sreActive && !sreGameRunning) {
             sreGameRunning = true;
         }
 
-        // 状态转换: SRE 游戏结束 (如 tmm stop) → 结束 BlackoutMode
         if (!sreActive && sreGameRunning) {
             sreGameRunning = false;
-            endGame("§6对局结束");
+            endGame("\u6e38\u620f\u7ed3\u675f");
             return;
         }
 
-        // 等待 SRE 启动完成
         if (!sreActive) return;
 
-        // Timer only runs while SRE is active
         tickAccumulator++;
         if (tickAccumulator % 20 == 0) {
             BlackoutTimerSystem.tickSecond(currentLevel);
+
+            // 每秒把真实计时值同步给客户端 HUD（进度条右侧倒计时需要实时数据）
+            var phase = BlackoutTimerSystem.getPhase(currentLevel);
+            int countdown = switch (phase) {
+                case NORMAL -> BlackoutTimerSystem.getBlackoutCountdown(currentLevel);
+                case MAINTENANCE -> BlackoutTimerSystem.getMaintenanceTime(currentLevel);
+                default -> 0;
+            };
+            if (currentLevel.getServer() != null) {
+                BlackoutTimerPayload.broadcastToAll(currentLevel.getServer(),
+                        BlackoutTimerSystem.getTotalTimeRemaining(currentLevel),
+                        countdown,
+                        BlackoutTimerSystem.isPermanentBlackoutActive(currentLevel),
+                        phase.ordinal());
+            }
+
+            BlackoutSheriffVoteManager.tickSecond(currentLevel).ifPresent(this::applySheriffVoteResult);
+            checkSanityDeaths();
             checkVictory();
 
-            // Broadcast time sync
-            int totalTime = BlackoutTimerSystem.getTotalTimeRemaining(currentLevel);
-            boolean permDark = BlackoutTimerSystem.isPermanentBlackoutActive(currentLevel);
-            int maintTime = BlackoutTimerSystem.getMaintenanceTime(currentLevel);
-            int cd = BlackoutTimerSystem.getBlackoutCountdown(currentLevel);
-            BlackoutTimerPayload.broadcastToAll(level.getServer(),
-                    totalTime,
-                    permDark ? 0 : (maintTime > 0 ? maintTime : cd),
-                    permDark || BlackoutTimerSystem.isTransientBlackoutActive(currentLevel),
-                    BlackoutTimerSystem.getPhase(currentLevel).ordinal());
+            // checkVictory/endGame 可能在本 tick 内同步触发 onEnd，把 currentLevel 置 null，
+            // 此后不得再访问 currentLevel，否则会 NPE 崩服。
+            if (currentLevel == null || gameEnded) return;
 
-            // Reapply permanent blackout
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive(currentLevel)) {
                 reapplyPermanentBlackout();
             }
@@ -137,13 +167,40 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onTaskComplete(ServerPlayer player, TaskInstance task) {
+        // 杀手双任务附属奖励钩子（暂时留空）：
+        // 杀手完成真任务(BLACKOUT_BAD)或假任务(BLACKOUT_GOOD)时在此分发对应的附属奖励。
+        // 两个任务完成都给金币奖励（金币由 RoleMethodDispatcherMixin 在 callOnFinishQuest 路径发放），
+        // 附属奖励根据杀手选择做的任务触发，此处为预留扩展点。
+        if (currentLevel != null && player != null && task != null) {
+            TaskCategory cat = task.getDefinition().getCategory();
+            if (BLACKOUT_BAD.equals(cat)) {
+                onKillerRealTaskComplete(player, task);
+            } else if (BLACKOUT_GOOD.equals(cat)) {
+                onKillerFakeTaskComplete(player, task);
+            }
+        }
         checkVictory();
+    }
+
+    /**
+     * 杀手完成"真任务"(BLACKOUT_BAD)时的附属奖励钩子（暂时留空）。
+     * 金币奖励已由 RoleMethodDispatcherMixin 发放，此处用于后续扩展专属附属奖励。
+     */
+    protected void onKillerRealTaskComplete(ServerPlayer player, TaskInstance task) {
+        // TODO: 杀手真任务附属奖励
+    }
+
+    /**
+     * 杀手完成"假任务"(BLACKOUT_GOOD)时的附属奖励钩子（暂时留空）。
+     * 金币奖励已由 RoleMethodDispatcherMixin 发放，此处用于后续扩展专属附属奖励。
+     */
+    protected void onKillerFakeTaskComplete(ServerPlayer player, TaskInstance task) {
+        // TODO: 杀手假任务附属奖励
     }
 
     @Override
     public void onPlayerJoin(ServerPlayer player) {
-        player.sendSystemMessage(Component.literal(
-            "§e当前游戏: 停电模式  剩余: §l" + formatTime(BlackoutTimerSystem.getTotalTimeRemaining(currentLevel)) + "§r"));
+        BlackoutSheriffVoteManager.onPlayerJoined(currentLevel, player);
     }
 
     @Override
@@ -154,24 +211,36 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
-        broadcast("§6对局结束！");
-        // HUD 隐藏由客户端 BlackoutTimerPayload 接收器处理:
-        // 当 totalTimeRemaining <= 0 时自动隐藏，无论广播是否触发。
+        String message = pendingEndMessage != null ? pendingEndMessage : "结束对局";
+        broadcast(message);
+        pendingEndMessage = null;
+        if (level != null && level.getServer() != null) {
+            com.habitrain.core.network.BlackoutSheriffVotePayload.broadcastToAll(level.getServer(), false, 0, 15, 1, java.util.List.of());
+        }
+        syncClientBlackoutReset(level);
         currentLevel = null;
     }
 
     @Override
     public void onCleanup(ServerLevel level) {
-        BlackoutRoleManager.clear(level);
+        if (level != null && level.getServer() != null) {
+            com.habitrain.core.network.BlackoutSheriffVotePayload.broadcastToAll(level.getServer(), false, 0, 15, 1, java.util.List.of());
+        }
+        syncClientBlackoutReset(level);
+        // 注意：不在此处清除 BlackoutRoleManager 的角色状态——SRE 的 showReplay 结束通报
+        // 在本 tick 之后才执行，需要读取 roleHistory 来展示全员身份。状态会在下一局
+        // initRandomAssignment 开始时 clear，不会泄漏到下一局。
+        BlackoutSheriffVoteManager.reset(level);
         BlackoutTimerSystem.reset(level);
+        BlackoutShopService.resetRound(level);
         currentLevel = null;
         gameEnded = false;
         sreGameRunning = false;
+        pendingEndMessage = null;
     }
 
     @Override
     public List<TaskDefinition> filterAvailableTasks(List<TaskDefinition> tasks, ServerPlayer player) {
-        // 只返回停电模式专属任务
         return tasks.stream()
                 .filter(t -> {
                     TaskCategory cat = t.getCategory();
@@ -180,13 +249,12 @@ public class BlackoutMode implements GameMode {
                 .toList();
     }
 
-    // ====== 内部方法 ======
-
     private void triggerSREPermanentBlackout() {
         if (currentLevel == null) return;
         var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
         if (blackout != null) {
-            blackout.triggerBlackout(true, 60000);
+            // \u7528\u8fdc\u8d85\u4e00\u5c40\u65f6\u957f\u7684\u6301\u7eed\u65f6\u95f4\u4e00\u6b21\u6027\u89e6\u53d1\uff0c\u907f\u514d\u77ed\u671f\u5185\u53cd\u590d\u89e6\u53d1\u4ea7\u751f\u5173\u706f\u97f3\u6548\u5237\u5c4f\u3002
+            blackout.triggerBlackout(true, 600000);
         }
     }
 
@@ -196,17 +264,17 @@ public class BlackoutMode implements GameMode {
         if (blackout != null) {
             blackout.reset();
         }
-        broadcast("§a供电已恢复");
+        broadcast("\u00a7a\u4f9b\u7535\u5df2\u6062\u590d");
     }
 
     private void reapplyPermanentBlackout() {
         if (currentLevel == null) return;
         try {
             var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
-            if (blackout != null) {
-                // 简单的周期性重新触发（SRE API 允许重复触发）
-                blackout.triggerBlackout(false, 60000);
-                HabiTrainCore.LOGGER.debug("Re-applied permanent blackout via API (periodic push)");
+            // \u4ec5\u5728\u505c\u7535\u5df2\u5931\u6548\uff08\u88ab\u5916\u90e8\u6e05\u9664/\u5230\u671f\uff09\u65f6\u624d\u91cd\u65b0\u89e6\u53d1\uff0c\u907f\u514d\u6bcf 2 \u79d2\u91cd\u590d\u64ad\u653e\u5173\u706f\u97f3\u6548\u3002
+            if (blackout != null && !blackout.isBlackoutActive()) {
+                blackout.triggerBlackout(false, 600000);
+                HabiTrainCore.LOGGER.debug("Re-applied permanent blackout via API (recovery)");
             }
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("Failed to reapply blackout", e);
@@ -214,43 +282,78 @@ public class BlackoutMode implements GameMode {
     }
 
     private void sendTimeWarning() {
-        broadcast("§e仅剩 1 分钟！");
+        // Blackout mode intentionally hides all timer UI and warning text.
+    }
+
+    /**
+     * 理智条清空判死：每秒检查所有存活的好人阵营玩家，当 SRE 的
+     * {@link io.wifi.starrailexpress.cca.SREPlayerMoodComponent} 理智值降至
+     * {@code isLowerThanDepressed} 阈值时，立即判定其对局死亡。
+     * <p>
+     * 仅对好人阵营生效（杀手/中立不受理智清空影响）。死亡通过 SRE 的
+     * {@link io.wifi.starrailexpress.game.GameUtils#killPlayer} 执行标准死亡流程
+     * （变旁观、记回放），并从 {@link BlackoutRoleManager} 阵营状态中淘汰。
+     */
+    private void checkSanityDeaths() {
+        if (currentLevel == null || gameEnded) return;
+        var server = currentLevel.getServer();
+        if (server == null) return;
+
+        for (ServerPlayer player : currentLevel.players()) {
+            if (player.isSpectator() || player.isCreative()) continue;
+            UUID id = player.getUUID();
+            if (!BlackoutRoleManager.isAlive(currentLevel, id)) continue;
+            if (BlackoutRoleManager.getFaction(currentLevel, id) != BlackoutRoleManager.Faction.GOOD) continue;
+
+            try {
+                var mood = io.wifi.starrailexpress.cca.SREPlayerMoodComponent.KEY.get(player);
+                if (mood == null) continue;
+                if (!mood.isLowerThanDepressed()) continue;
+
+                // 理智崩溃 → 判定对局死亡
+                GameUtils.killPlayer(player, true, null,
+                        ResourceLocation.fromNamespaceAndPath("habitrain_core", "sanity_collapse"));
+                BlackoutRoleManager.eliminate(currentLevel, id);
+                broadcast(currentLevel, "\u00a7c" + player.getName().getString() + " \u00a7c因理智崩溃而倒下。");
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.error("checkSanityDeaths: failed for player {}", id, t);
+            }
+        }
     }
 
     private void checkVictory() {
         if (currentLevel == null) return;
-        if (BlackoutRoleManager.getRemainingGood(currentLevel) <= 0 && BlackoutRoleManager.getRemainingBad(currentLevel) <= 0) return;
-
         int goodRemaining = BlackoutRoleManager.getRemainingGood(currentLevel);
         int badRemaining = BlackoutRoleManager.getRemainingBad(currentLevel);
 
-        // 好人胜: 时间归零
+        if (goodRemaining <= 0 && badRemaining <= 0) {
+            lastWinningFaction = null;
+            endGame(WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
+            return;
+        }
+
         if (BlackoutTimerSystem.isTimeUp(currentLevel)) {
-            endGame(WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
+            lastWinningFaction = BlackoutRoleManager.Faction.GOOD;
+            endGame(WinResult.noWinner("\u65f6\u95f4\u5f52\u96f6"), "\u00a7a\u597d\u4eba\u9635\u8425\u83b7\u80dc\uff01\u65f6\u95f4\u5f52\u96f6\uff0c\u597d\u4eba\u6210\u529f\u5b58\u6d3b\uff01");
             return;
         }
 
-        // 好人胜: 杀手全灭
         if (badRemaining <= 0 && goodRemaining > 0) {
-            endGame(WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
+            lastWinningFaction = BlackoutRoleManager.Faction.GOOD;
+            endGame(WinResult.noWinner("\u6740\u624b\u5168\u706d"), "\u00a7a\u597d\u4eba\u9635\u8425\u83b7\u80dc\uff01\u6240\u6709\u6740\u624b\u5df2\u88ab\u6d88\u706d");
             return;
         }
 
-        // 杀手胜: 好人全灭
         if (goodRemaining <= 0 && badRemaining > 0) {
-            endGame(WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
-            return;
+            lastWinningFaction = BlackoutRoleManager.Faction.BAD;
+            endGame(WinResult.noWinner("\u597d\u4eba\u5168\u706d"), "\u00a7c\u6740\u624b\u9635\u8425\u83b7\u80dc\uff01\u6240\u6709\u597d\u4eba\u90fd\u88ab\u6dd8\u6c70\u4e86");
         }
     }
 
-    /**
-     * 以指定 WinResult 结束游戏（含 clearRoleMap 和完整日志）。
-     * 由 checkVictory() 调用，使用自然的胜利原因。
-     */
     private void endGame(WinResult result, String message) {
         if (gameEnded) return;
         gameEnded = true;
-        broadcast(message);
+        pendingEndMessage = message;
         if (currentLevel != null) {
             try {
                 var sreGame = SREGameWorldComponent.KEY.get(currentLevel);
@@ -265,19 +368,74 @@ public class BlackoutMode implements GameMode {
         }
     }
 
-    /**
-     * 以默认 WinResult.forceEnd 结束游戏。
-     * 仅供内部意外终止路径使用（例如 SRE 游戏提前结束）。
-     */
     private void endGame(String message) {
-        endGame(WinResult.forceEnd("游戏结束"), message);
+        lastWinningFaction = null;
+        endGame(WinResult.forceEnd("\u6e38\u620f\u7ed3\u675f"), message);
+    }
+
+    private void applySheriffVoteResult(VoteResolution resolution) {
+        if (currentLevel == null || resolution == null) return;
+        if (resolution.winnerIds().isEmpty()) return;
+
+        try {
+            java.util.Random random = new java.util.Random(currentLevel.getRandom().nextLong());
+            Map<UUID, ServerPlayer> playerMap = new HashMap<>();
+            for (ServerPlayer player : currentLevel.players()) {
+                playerMap.put(player.getUUID(), player);
+            }
+
+            for (int i = 0; i < resolution.winnerIds().size(); i++) {
+                UUID winnerId = resolution.winnerIds().get(i);
+                boolean wasKiller = resolution.winnerWasKillers().get(i);
+                ServerPlayer player = playerMap.get(winnerId);
+                if (player == null) continue;
+
+                // 随机一个警察职业作为被票选者的可见身份。
+                // 杀手被票选时阵营保持 BAD（身份欺诈）：显示成警察但实际仍是坏人。
+                BlackoutRoleDefinition policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
+                BlackoutRoleManager.Faction currentFaction =
+                        BlackoutRoleManager.getFaction(currentLevel, player.getUUID());
+                BlackoutRoleManager.Faction factionOverride =
+                        (currentFaction == BlackoutRoleManager.Faction.BAD)
+                                ? BlackoutRoleManager.Faction.BAD
+                                : null;
+                BlackoutRoleManager.setSheriff(currentLevel, player.getUUID(), policeRole, factionOverride);
+
+                ServerPlayNetworking.send(player, new BlackoutAnnouncePayload(
+                        policeRole.announcementName(),
+                        policeRole.announcementSubtitle(),
+                        policeRole.announcementGoal(),
+                        BlackoutRoleManager.getRemainingBad(currentLevel),
+                        BlackoutRoleManager.getRemainingGood(currentLevel)
+                ));
+
+                if (wasKiller) {
+                    var shop = SREPlayerShopComponent.KEY.get(player);
+                    if (shop != null) {
+                        shop.addToBalance(200);
+                    }
+                    SubtitleNotifier.sendTop(player,
+                            Component.literal("\u00a76\u8b66\u957f\u5165\u573a"),
+                            Component.literal("\u00a76\u4f60\u56e0\u4e3a\u88ab\u7968\u9009\u4e3a\u8b66\u957f\u83b7\u5f97\u4e86 200 \u91d1\u5e01\u3002"),
+                            80);
+                }
+            }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("Failed to grant sheriff vote reward", e);
+        }
+    }
+
+    private void syncClientBlackoutReset(ServerLevel level) {
+        if (level == null || level.getServer() == null) return;
+        BlackoutTimerPayload.broadcastToAll(level.getServer(), 0, 0, false, 0);
     }
 
     public static void broadcast(ServerLevel level, String message) {
         if (level == null) return;
         Component component = Component.literal(message);
         for (ServerPlayer player : level.players()) {
-            player.sendSystemMessage(component);
+            // 聊天栏在关灯模式被屏蔽，改用屏幕顶部派发 GUI（SubtitleNotifier）
+            SubtitleNotifier.sendTop(player, Component.empty(), component, 80);
         }
     }
 
@@ -289,5 +447,9 @@ public class BlackoutMode implements GameMode {
         int m = seconds / 60;
         int s = seconds % 60;
         return String.format("%d:%02d", m, s);
+    }
+
+    public static BlackoutRoleManager.Faction getLastWinningFaction() {
+        return lastWinningFaction;
     }
 }

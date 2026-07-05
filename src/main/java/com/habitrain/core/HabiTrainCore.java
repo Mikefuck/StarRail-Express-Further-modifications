@@ -4,6 +4,10 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
+import com.habitrain.core.game.blackout.BlackoutShopService;
+import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.game.sre.SREGameModeBase;
@@ -44,6 +48,7 @@ import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
 import com.habitrain.core.task.GameLifecycleHandler;
+import com.habitrain.core.util.SubtitleNotifier;
 import betel.nut.BetelNutConfig;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.minecraft.core.Registry;
@@ -87,7 +92,7 @@ public class HabiTrainCore implements ModInitializer {
     private static final int BACKPACK_TYPE_ID = 15;
     private static final int NO_BLOCK_TYPE_ID = -1;
 
-    private static final String[] CAT_BLOCK_IDS = {
+    public static final String[] CAT_BLOCK_IDS = {
         "yuushya:british_shorthair", "yuushya:white_cat", "yuushya:black_cat",
         "yuushya:ragdoll", "yuushya:calico", "yuushya:siamese", "yuushya:tabby"
     };
@@ -104,6 +109,11 @@ public class HabiTrainCore implements ModInitializer {
         GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
         // 注册停电模式专用的 SRE GameMode（所有人 CIVILIAN）
         SREBlackoutGameMode.register();
+        // 注册停电模式角色到 SRE 角色系统（含复用 SRE 原版 6 个角色）。
+        // 服务端也必须注册，否则 BlackoutRoleRegistry 在专用服上为空，
+        // getRandomByFaction 会回退到固定的 KILLER/CIVILIAN，失去随机分配能力。
+        com.habitrain.core.game.blackout.BlackoutRoles.register();
+        com.habitrain.core.game.blackout.BlackoutShopService.bootstrapDefaults();
         // 3. 注册网络包
         TaskConfigPayload.register();
         ActiveTaskPayload.register();
@@ -113,6 +123,11 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutTimerPayload.register();
         BlackoutStatusPayload.register();
         BlackoutAnnouncePayload.register();
+        BlackoutSheriffVotePayload.register();       // S2C: 投票状态同步
+        BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
+        CustomTaskBlockPayload.register();
+        // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
+        //     本模组不再重复注册；客户端接收、HUD tick/render 也由 SRE 接管。
         // 4. 注册命令
         registerCommands();
         // 5. 注册生命周期事件
@@ -162,36 +177,31 @@ public class HabiTrainCore implements ModInitializer {
                                 return 1;
                             })
                     )
-                    .then(Commands.literal("buy_gun")
-                            .executes(ctx -> {
-                                ServerPlayer player = ctx.getSource().getPlayer();
-                                if (player == null) return 0;
-                                if (com.habitrain.core.game.blackout.TACZWeaponBridge.buyDesertEagle(player)) {
-                                    ctx.getSource().sendSuccess(() -> Component.literal("§a购买成功"), false);
-                                    return 1;
-                                }
-                                return 0;
-                            })
-                    )
-                    .then(Commands.literal("buy_ammo")
-                            .executes(ctx -> {
-                                ServerPlayer player = ctx.getSource().getPlayer();
-                                if (player == null) return 0;
-                                if (com.habitrain.core.game.blackout.TACZWeaponBridge.buyAmmo(player, 4)) {
-                                    ctx.getSource().sendSuccess(() -> Component.literal("§a购买成功"), false);
-                                    return 1;
-                                }
-                                return 0;
-                            })
-                    )
-            );
-        });
-    }
+              );
+          });
+      }
     private void registerLifecycleEvents() {
         // 服务器启动后加载配置
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
-            LOGGER.info("配置已加载，共 {} 个已注册任务", TaskRegistry.size());
+            ConfigManager.getInstance().applyMinigameEnforcement(server);
+            // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
+            // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
+            TaskRegistry.freeze();
+            GameModeRegistry.freeze();
+            LOGGER.info("配置已加载，共 {} 个已注册任务（注册表已冻结）", TaskRegistry.size());
+        });
+        // 服务器关闭时清理停电模式各 manager 的 per-level 静态 Map 条目。
+        // 单机模式下集成服务器停止后客户端 JVM 仍存活，static 字段不会重置，
+        // 不清理会导致下一局残留状态（计时器/角色/商店/投票）误用。
+        // 注：fabric-api 此版本无 ServerLevelEvents.UNLOAD，故在 SERVER_STOPPING 遍历所有 level 清理。
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            for (ServerLevel level : server.getAllLevels()) {
+                BlackoutRoleManager.clear(level);
+                BlackoutTimerSystem.reset(level);
+                BlackoutSheriffVoteManager.reset(level);
+                BlackoutShopService.resetRound(level);
+            }
         });
         // 每 tick 处理待加入语音群组的玩家 + 游戏结束后的群组恢复 + 激活的 GameMode tick
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -218,6 +228,7 @@ public class HabiTrainCore implements ModInitializer {
             }
             // 同步配置
             TaskConfigPayload.sendToPlayer(player);
+            CustomTaskBlockPayload.sendToPlayer(player);
             ShaderConfigPayload.sendToPlayer(player);
             // 通知激活的 GameMode 玩家加入
             ServerLevel level = server.getLevel(Level.OVERWORLD);
@@ -237,6 +248,7 @@ public class HabiTrainCore implements ModInitializer {
                 }
                 ConfigManager.getInstance().loadFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
+                ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
                 if (context.server().isSingleplayer()) return;
                 TaskConfigPayload.broadcastToAll(context.server());
@@ -262,6 +274,16 @@ public class HabiTrainCore implements ModInitializer {
                             "§7请更换为允许的光影包后重新加入。\n\n" +
                             "§7如需帮助，请联系服务器管理员。"));
                 }
+            });
+        });
+        // C2S 警长投票接收器：客户端投票 → 服务端记票
+        ServerPlayNetworking.registerGlobalReceiver(BlackoutSheriffVoteCastPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer voter = context.player();
+                if (voter == null) return;
+                ServerLevel level = voter.serverLevel();
+                if (level == null) return;
+                BlackoutSheriffVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId(), payload.slotIndex());
             });
         });
     }
@@ -378,7 +400,9 @@ public class HabiTrainCore implements ModInitializer {
             .scanBlockIds(CAT_BLOCK_IDS)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
-                player.sendSystemMessage(Component.literal("§d【任务】去找一只猫猫摸一摸！盯着猫猫看5秒！"));
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.pet_cat"), Component.literal("§d去找一只猫猫摸一摸！盯着猫猫看5秒！"), 80);
+                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -418,7 +442,9 @@ public class HabiTrainCore implements ModInitializer {
             .completionChecker((player, task) ->
                 task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
-                player.sendSystemMessage(Component.literal("§a✔ 摸猫猫任务完成！猫猫真可爱！"));
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.pet_cat"), Component.literal("§a✔ 摸猫猫任务完成！猫猫真可爱！"));
+                }
             })
         );
 
@@ -434,7 +460,9 @@ public class HabiTrainCore implements ModInitializer {
                 !BackpackQuestState.hasCompleted(player.getUUID()))
             .onAssign((player, task) -> {
                 task.setMaxProgress(120);
-                player.sendSystemMessage(Component.literal("§6【任务】翻找一下自己的背包...右键背包来翻找！"));
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.search_backpack"), Component.literal("§6【任务】翻找一下自己的背包...右键背包来翻找！"));
+                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -452,7 +480,9 @@ public class HabiTrainCore implements ModInitializer {
                 BackpackSearchHandler.stopSearching(serverPlayer.getUUID());
                 serverPlayer.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                 giveRandomBackpackItem(serverPlayer);
-                serverPlayer.sendSystemMessage(
+                SubtitleNotifier.sendTop(
+                    serverPlayer,
+                    Component.translatable("task.search_backpack"),
                     Component.literal("§a✔ 翻找背包完成！你找到了一些有用的东西！"));
             })
         );
@@ -466,7 +496,9 @@ public class HabiTrainCore implements ModInitializer {
             .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
                 task.setMaxProgress(60);
-                player.sendSystemMessage(Component.literal("§d【任务】找到一名玩家，和ta对视3秒！"));
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.look_my_eyes"), Component.literal("§d【任务】找到一名玩家，和ta对视3秒！"));
+                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -519,18 +551,36 @@ public class HabiTrainCore implements ModInitializer {
                         1.0f
                     );
                 }
-                player.sendSystemMessage(Component.literal("§a✔ LOOK MY EYES 完成！你们对视了3秒！"));
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.look_my_eyes"), Component.literal("§a✔ LOOK MY EYES 完成！你们对视了3秒！"));
+                }
             })
         );
 
         // 停电模式任务注册
         com.habitrain.core.game.blackout.task.AddCoalTask.register();
+        com.habitrain.core.game.blackout.task.AddCoalHandler.register();
         com.habitrain.core.game.blackout.task.RepairWiringTask.register();
+        com.habitrain.core.game.blackout.task.RepairWiringHandler.register();
         com.habitrain.core.game.blackout.task.SabotageWiringTask.register();
+        com.habitrain.core.game.blackout.task.SabotageWiringHandler.register();
         com.habitrain.core.game.blackout.task.FurnaceExplosionTask.register();
+        com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.register();
         com.habitrain.core.game.blackout.task.MaintainPowerTask.register();
+        com.habitrain.core.game.blackout.task.MaintainPowerHandler.register();
 
-        LOGGER.info("已注册更多任务: test_grass, 摸猫猫, 翻找背包, LOOK MY EYES, 停电模式x5");
+        // 停电模式日常任务（7个，加入 BLACKOUT_GOOD 池，也自动成为坏人假任务池）
+        com.habitrain.core.game.blackout.task.BlackoutEatTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutEatHandler.register();
+        com.habitrain.core.game.blackout.task.BlackoutDrinkTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutDrinkHandler.register();
+        com.habitrain.core.game.blackout.task.BlackoutSearchBackpackTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutBetelQuestTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutPetCatTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutBeAloneTask.register();
+        com.habitrain.core.game.blackout.task.BlackoutLookMyEyesTask.register();
+
+        LOGGER.info("已注册更多任务: test_grass, 摸猫猫, 翻找背包, LOOK MY EYES, 停电模式x5, 停电日常x7");
     }
 
     /**
@@ -617,7 +667,12 @@ public class HabiTrainCore implements ModInitializer {
         }
     }
 
-    private static Set<Block> resolveCatBlocks() {
+    private static Set<Block> cachedCatBlocks = null;
+    public static Set<Block> resolveCatBlocks() {
+        // yuushya 模组是否安装在运行期不变，首次解析后缓存，避免每 tick 重新查注册表 + 新建 Set
+        if (cachedCatBlocks != null) {
+            return cachedCatBlocks;
+        }
         Set<Block> blocks = Arrays.stream(CAT_BLOCK_IDS)
             .map(id -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(id)))
             .filter(block -> block != Blocks.AIR)
@@ -625,6 +680,7 @@ public class HabiTrainCore implements ModInitializer {
         if (blocks.isEmpty()) {
             LOGGER.warn("yuushya mod not installed, cat task will have no scan blocks");
         }
+        cachedCatBlocks = blocks;
         return blocks;
     }
 

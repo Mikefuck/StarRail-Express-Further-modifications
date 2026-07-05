@@ -36,6 +36,7 @@ public class GlobalSettingsScreen extends Screen {
     private final Screen parent;
     private float currentTarget;
     private boolean dragging = false;
+    private final boolean remoteEditable;
 
     private int sliderX, sliderY, sliderW, sliderH = 12;
     private int trackTop, trackBot;
@@ -46,6 +47,7 @@ public class GlobalSettingsScreen extends Screen {
         super(Component.literal("§l⚙ 全局设置 — 自动平衡系统"));
         this.parent = parent;
         this.currentTarget = ConfigManager.getInstance().getDlcProbabilityTarget();
+        this.remoteEditable = LiveConfigAccess.canEditRemoteConfigs();
     }
 
     @Override
@@ -85,10 +87,20 @@ public class GlobalSettingsScreen extends Screen {
                 }
         ).bounds(PAD, height - 28, 80, 20).build());
 
+        if (!remoteEditable) {
+            decreaseBtn.active = false;
+            increaseBtn.active = false;
+            resetBtn.active = false;
+        }
+
         updateBtn();
     }
 
     private void adjust(float delta) {
+        if (!remoteEditable) {
+            LiveConfigAccess.showDeniedMessage();
+            return;
+        }
         float nv = currentTarget + delta;
         nv = Math.round(nv / STEP) * STEP;
         nv = Mth.clamp(nv, MIN_TARGET, MAX_TARGET);
@@ -100,6 +112,9 @@ public class GlobalSettingsScreen extends Screen {
     }
 
     private void saveAndUpdate() {
+        if (!remoteEditable) {
+            return;
+        }
         ConfigManager.getInstance().setDlcProbabilityTarget(currentTarget);
     }
 
@@ -177,6 +192,10 @@ public class GlobalSettingsScreen extends Screen {
                 PAD, TITLE_Y + 14, 0x888888, false);
         g.drawString(f, Component.literal("§7✓ 默认50%即可，以下滑条只在需要微调时使用"),
                 PAD, TITLE_Y + 26, 0x888888, false);
+        if (!remoteEditable) {
+            g.drawString(f, Component.literal("§c只读：联机服务器中仅 OP 可修改此项"),
+                    PAD, TITLE_Y + 38, 0xFF7777, false);
+        }
 
         // 分割线
         g.fill(PAD, TITLE_Y + 42, width - PAD, TITLE_Y + 43, 0x30FFFFFF);

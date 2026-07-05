@@ -1,20 +1,14 @@
 package com.habitrain.core.client.gui;
 
+import com.habitrain.core.client.BlackoutKeyHandler;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 
 /**
- * 停电模式 — 顶部 HUD 覆盖层。
- * 显示: 模式名称、总时间、停电倒计时、进度条
- * <p>
- * <strong>注意：</strong>此类使用全局 static 变量，不支持多世界。
- * 当前设计假设同一时刻只有一个停电模式游戏运行，
- * 若需多 world/多实例支持，需改为实例化设计。
- *
- * 由客户端网络接收器通过 updateTime() 更新数据,
- * 在 HudRenderCallback 中调用 render()。
+ * Blackout mode top HUD overlay.
  */
 public class BlackoutHudOverlay {
 
@@ -24,9 +18,16 @@ public class BlackoutHudOverlay {
     private static boolean showHud = false;
     private static boolean blackoutModeActive = false;
     private static int currentPhase = 0;  // 0=NORMAL, 1=FIRST_BLACKOUT, 2=MAINTENANCE, 3=SECOND_BLACKOUT
+    // 当前对局的有效总时长（进度条分母）。服务端 BlackoutTimerSystem.TOTAL_TIME 固定为 300，
+    // 但 addTime 可使剩余时间超过 300，因此动态追踪已知的最大值，避免进度条比例失真。
+    private static int totalDuration = 300;
+    private static final int TIME_WARNING_SECONDS = 60;
 
     public static void updateTime(int total, int cd, boolean active, int phase) {
         totalTimeRemaining = total;
+        if (total > totalDuration) {
+            totalDuration = total;
+        }
         blackoutCountdown = cd;
         blackoutActive = active;
         currentPhase = phase;
@@ -39,10 +40,6 @@ public class BlackoutHudOverlay {
 
     public static void setVisible(boolean visible) { showHud = visible; }
 
-    /**
-     * 重置所有静态状态为默认值。
-     * 在断开连接或游戏结束时调用，确保 HUD 不会残留。
-     */
     public static void reset() {
         totalTimeRemaining = 300;
         blackoutCountdown = 120;
@@ -50,66 +47,79 @@ public class BlackoutHudOverlay {
         showHud = false;
         blackoutModeActive = false;
         currentPhase = 0;
+        totalDuration = 300;
     }
 
-    /**
-     * 在 HUD 渲染时调用 (注册到 HudRenderCallback)
-     */
     public static void render(GuiGraphics g) {
         if (!showHud) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
-        Font font = mc.font;
         int width = mc.getWindow().getGuiScaledWidth();
-        int barW = 200;
+        int barW = 220;
         int barX = (width - barW) / 2;
-        int barY = 10;
-        int barH = 6;
+        int barY = 11;
+        int barH = 2;
 
-        // 顶部信息行
-        String timeStr = formatTime(totalTimeRemaining);
-        String cdStr;
-        if (blackoutActive) {
-            cdStr = "§c⚡ 停电中";
-        } else if (currentPhase == 2) {  // MAINTENANCE
-            cdStr = "§b维护: §e" + formatTime(blackoutCountdown);
-        } else if (currentPhase == 0) {  // NORMAL
-            cdStr = "§7停电: §e" + formatTime(blackoutCountdown);
-        } else {
-            cdStr = "§7停电: §e" + formatTime(blackoutCountdown);
-        }
-        String title = "§6⚡ 停电模式 §f剩余: §l" + timeStr + "§r  " + cdStr;
+        g.fill(barX, barY - 1, barX + barW, barY + barH + 1, 0x332A3642);
+        g.fill(barX, barY, barX + barW, barY + barH, 0x88262E38);
 
-        g.drawString(font, Component.literal(title),
-                (width - font.width(title)) / 2, 0, 0, false);
-
-        // 进度条背景
-        g.fill(barX, barY, barX + barW, barY + barH, 0x88333333);
-        // 已过时间 (灰色)
-        int elapsed = 300 - totalTimeRemaining;
-        int filledW = (int) ((float) elapsed / 300 * barW);
+        int elapsed = totalDuration - totalTimeRemaining;
+        int filledW = totalDuration > 0 ? (int) ((float) elapsed / totalDuration * barW) : 0;
+        filledW = Math.max(0, Math.min(filledW, barW));
         if (filledW > 0) {
-            g.fill(barX, barY, barX + Math.min(filledW, barW), barY + barH, 0xFF555555);
+            g.fill(barX, barY, barX + filledW, barY + barH, 0xFF596573);
         }
-        // 剩余时间 (绿色，停电中红色)
+
         int remainingW = barW - filledW;
         if (remainingW > 0) {
-            int color = blackoutActive ? 0xFFFF4444 : 0xFF44AA44;
+            int color = blackoutActive ? 0xFFD84B4B : 0xFF4AC06A;
             g.fill(barX + filledW, barY, barX + barW, barY + barH, color);
         }
-        // 停电倒计时标记 (红色竖线)
+
         if (!blackoutActive && blackoutCountdown > 0) {
-            int markerX = barX + (int) ((float) (300 - blackoutCountdown) / 300 * barW);
-            g.fill(markerX, barY - 2, markerX + 2, barY + barH + 2, 0xFFFF4444);
+            int markerX = barX + (int) ((float) (totalDuration - blackoutCountdown) / totalDuration * barW);
+            g.fill(markerX, barY - 2, markerX + 1, barY + barH + 2, 0xFFFF6A6A);
         }
-        // 60s 预警线 (黄色)
-        int warningX = barX + (int) ((float) (300 - 60) / 300 * barW);
+
+        int warningX = barX + (int) ((float) (totalDuration - TIME_WARNING_SECONDS) / totalDuration * barW);
         g.fill(warningX, barY - 1, warningX + 1, barY + barH + 1, 0xFFFFFF00);
+
+        // 进度条右侧：游戏倒计时 + 停电/维护倒计时
+        Font font = mc.font;
+        int textX = barX + barW + 6;
+        int textY = barY - 4;
+
+        String gameText = "§f" + formatTime(totalTimeRemaining);
+        g.drawString(font, gameText, textX, textY, 0xFFFFFFFF, false);
+
+        if (blackoutActive) {
+            String blackoutText = "§c停电中";
+            g.drawString(font, blackoutText, textX, textY + 10, 0xFFD84B4B, false);
+        } else if (blackoutCountdown > 0) {
+            String cdLabel = currentPhase == 2 ? "§e维护" : "§e停电";
+            String cdText = cdLabel + " " + formatTime(blackoutCountdown);
+            g.drawString(font, cdText, textX, textY + 10, 0xFFFFD84B, false);
+        }
+
+        // 警长投票进行中时，在 HUD 下方显示带实际绑定按键的提示。
+        // 按键名取自客户端 KeyMapping，玩家改键后提示自动跟随。
+        if (BlackoutSheriffVoteState.isActive()) {
+            KeyMapping voteKey = BlackoutKeyHandler.getOpenVoteKey();
+            Component keyName = voteKey != null ? voteKey.getTranslatedKeyMessage() : Component.literal("V");
+            Component hint = Component.literal("§e按 §f")
+                    .append(keyName)
+                    .append("§e 打开警长投票 §7(" + BlackoutSheriffVoteState.getRemainingSeconds() + "s)");
+            int hintWidth = font.width(hint);
+            int hintX = (width - hintWidth) / 2;
+            int hintY = barY + 12;
+            g.drawString(font, hint, hintX, hintY, 0xFFFFFFFF, false);
+        }
     }
 
     private static String formatTime(int seconds) {
+        if (seconds < 0) seconds = 0;
         int m = seconds / 60;
         int s = seconds % 60;
         return String.format("%d:%02d", m, s);
