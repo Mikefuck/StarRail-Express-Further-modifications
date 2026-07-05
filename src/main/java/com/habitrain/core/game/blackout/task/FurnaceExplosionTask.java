@@ -3,56 +3,64 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
-import net.minecraft.core.BlockPos;
+import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
 
-
-
 /**
- * 停电模式 — 坏人任务: 熔炉爆炸
- * 效果: 熔炉爆炸 → 总时间 +15秒 + 点燃附近TNT
+ * 停电模式坏人任务：炸毁熔炉（两阶段右键交互）。
+ * <p>阶段0：右键红石火把方块 → 给缓慢III + 发放 1 个红石火把 → 进入阶段1
+ * <p>阶段1：手持红石火把右键 TNT → 消耗火把 + 给 2 秒缓慢 + 推进完成 → 2 秒后点燃 TNT + 全图通报
+ * <p>完成时触发原版短暂停电 + 减供电时间 40 秒 + 发放金币 50 / 情绪 0.5 奖励。
+ * <p>属于 {@link BlackoutMode#BLACKOUT_BAD} 池。
  */
 public class FurnaceExplosionTask {
 
+    static final int TORCH_PHASE = 0;
+    static final int TNT_PHASE = 1;
+    static final int PROGRESS_DONE = 2;
+
     public static void register() {
         TaskRegistry.register("habitrain_core", "furnace_explosion", builder -> builder
-            .displayName("熔炉爆炸")
+            .displayName("炸毁熔炉")
             .category(BlackoutMode.BLACKOUT_BAD)
-            .weight(1.0f)
+            .weight(3.0f)
             .blockTypeId(23)
             .instinctColor(255, 69, 0, 200)
-            .scanBlocks(Blocks.FURNACE, Blocks.BLAST_FURNACE)
+            .scanBlocks(Blocks.TNT, Blocks.REDSTONE_TORCH)
             .onAssign((player, task) -> {
-                task.setMaxProgress(1);
-                player.sendSystemMessage(Component.literal(
-                    "§c【任务】引爆熔炉，制造混乱！"));
-            })
-            .completionChecker((player, task) -> task.getProgress() >= 1)
-            .onComplete((player, task) -> {
-                BlackoutTimerSystem.addTime(((ServerPlayer)player).serverLevel(), 15);
-                if (player.level() instanceof ServerLevel serverLevel) {
-                    var center = player.blockPosition();
-                    for (int x = -5; x <= 5; x++) {
-                        for (int y = -5; y <= 5; y++) {
-                            for (int z = -5; z <= 5; z++) {
-                                var targetPos = center.offset(x, y, z);
-                                var state = serverLevel.getBlockState(targetPos);
-                                if (state.is(Blocks.TNT)) {
-                                    serverLevel.destroyBlock(targetPos, false);
-                                    serverLevel.explode(null, targetPos.getX() + 0.5, targetPos.getY() + 0.5, targetPos.getZ() + 0.5,
-                                            4.0f, Level.ExplosionInteraction.BLOCK);
-                                }
-                            }
-                        }
-                    }
+                task.setMaxProgress(PROGRESS_DONE);
+                if (player instanceof ServerPlayer serverPlayer) {
+                    SubtitleNotifier.sendTop(
+                            serverPlayer,
+                            Component.translatable("task.furnace_explosion"),
+                            Component.literal("§6【任务】右键红石火把取火把，再持火把右键 TNT 引爆！"),
+                            80
+                    );
                 }
-                player.sendSystemMessage(
-                    Component.literal("§c✔ 引爆熔炉，制造混乱！总时间增加15秒！"));
             })
+            .completionChecker((player, task) -> task.getProgress() >= PROGRESS_DONE)
+            .onComplete((player, task) -> {
+                if (player instanceof ServerPlayer serverPlayer) {
+                    BlackoutTimerSystem.triggerTransientBlackout(serverPlayer.serverLevel());
+                    BlackoutTimerSystem.reduceMaintenanceOrCountdown(serverPlayer.serverLevel(), 40);
+                    BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:furnace_explosion");
+                    SubtitleNotifier.sendTop(
+                            serverPlayer,
+                            Component.translatable("task.furnace_explosion"),
+                            Component.literal("§a熔炉已炸毁！供电时间减少 40 秒，已触发短暂停电。"),
+                            80
+                    );
+                }
+            })
+            .onRemove((player, task) -> cleanup(player))
         );
+    }
+
+    private static void cleanup(Player player) {
+        if (player == null) return;
+        FurnaceExplosionHandler.clearState(player.getUUID());
     }
 }
