@@ -8,6 +8,13 @@
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
         "StarRailExpressTitleScreenMixin",
-        "FixTaskRendererMixin"
+        "FixTaskRendererMixin",
+        "SubtitleHUDPrefixFixMixin",
+        "RoleIntroduceScreenMixin",
+        "BlackoutLimitedInventoryScreenMixin",
+        "InstinctKillerTeamMixin",
+        "InstinctSheriffGateMixin",
+        "BlackoutTimeRendererMixin",
+        "CameraBlockOverlayMixin"
     ]
 }
