@@ -2,8 +2,8 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
-import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -21,7 +21,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 @Mixin(MapScannerManager.class)
@@ -47,57 +49,65 @@ public class MapScannerMixin {
 
         int totalAddedCount = 0;
 
+        Map<Block, Set<Integer>> blockToTypeIds = new HashMap<>();
+
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int blockTypeId = def.getBlockTypeId();
             if (blockTypeId < 12) continue;
 
-            Set<Block> scanBlocks = new HashSet<>();
+            boolean anyResolved = false;
             if (def.getScanBlocks() != null) {
-                scanBlocks.addAll(def.getScanBlocks());
+                for (Block b : def.getScanBlocks()) {
+                    blockToTypeIds.computeIfAbsent(b, k -> new HashSet<>()).add(blockTypeId);
+                    anyResolved = true;
+                }
             }
             if (def.getScanBlockIds() != null) {
                 for (String blockId : def.getScanBlockIds()) {
                     Block resolved = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(blockId));
                     if (resolved != null && resolved != Blocks.AIR) {
-                        scanBlocks.add(resolved);
+                        blockToTypeIds.computeIfAbsent(resolved, k -> new HashSet<>()).add(blockTypeId);
+                        anyResolved = true;
                     } else {
                         LOGGER.warn("[MapScannerMixin] 无法解析方块ID: {} (任务: {})",
                                 blockId, def.getFullId());
                     }
                 }
             }
+            if (anyResolved) {
+                LOGGER.debug("[MapScannerMixin] built lookup entry for task {}, typeId={}",
+                        def.getFullId(), blockTypeId);
+            }
+        }
 
-            if (scanBlocks.isEmpty()) continue;
+        if (blockToTypeIds.isEmpty()) {
+            LOGGER.info("[MapScannerMixin] 没有可扫描的自定义任务方块");
+            return;
+        }
 
-            int taskAddedCount = 0;
-            for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
-                for (int y = areaBox.minY(); y <= areaBox.maxY(); y++) {
-                    for (int z = areaBox.minZ(); z <= areaBox.maxZ(); z++) {
-                        BlockPos pos = new BlockPos(x, y, z);
-                        BlockState state = serverLevel.getBlockState(pos);
-                        Block block = state.getBlock();
+        CustomTaskBlockCache.clear();
 
-                        for (Block targetBlock : scanBlocks) {
-                            if (block.equals(targetBlock)) {
-                                GameUtils.taskBlocks.put(pos, blockTypeId);
-                                taskAddedCount++;
-                                break;
-                            }
+        for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
+            for (int y = areaBox.minY(); y <= areaBox.maxY(); y++) {
+                for (int z = areaBox.minZ(); z <= areaBox.maxZ(); z++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = serverLevel.getBlockState(pos);
+                    Block block = state.getBlock();
+
+                    Set<Integer> typeIds = blockToTypeIds.get(block);
+                    if (typeIds != null) {
+                        for (int typeId : typeIds) {
+                            CustomTaskBlockCache.put(pos, typeId);
                         }
+                        totalAddedCount++;
                     }
                 }
-            }
-
-            if (taskAddedCount > 0) {
-                LOGGER.info("[MapScannerMixin] added {} blocks (type {}) for task {}",
-                        taskAddedCount, blockTypeId, def.getFullId());
-                totalAddedCount += taskAddedCount;
             }
         }
 
         if (totalAddedCount > 0) {
             MapScannerManager.saveArea(serverLevel);
-            LOGGER.info("[MapScannerMixin] updated scanner cache with {} custom task blocks",
+            LOGGER.info("[MapScannerMixin] updated custom task block cache with {} entries (multi-typeId)",
                     totalAddedCount);
         }
     }
