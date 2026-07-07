@@ -493,30 +493,51 @@ public class BlackoutMode implements GameMode {
                 ServerPlayer player = playerMap.get(winnerId);
                 if (player == null) continue;
 
-                // 随机一个 SRE 原版警察职业作为被票选者的可见身份。
-                // 杀手被票选时阵营保持 BAD（身份欺诈）：显示成警察但实际仍是坏人。
-                io.wifi.starrailexpress.api.SRERole policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
-                if (policeRole == null) continue;
                 BlackoutRoleManager.Faction currentFaction =
                         BlackoutRoleManager.getFaction(currentLevel, player.getUUID());
-                BlackoutRoleManager.Faction factionOverride =
-                        (currentFaction == BlackoutRoleManager.Faction.BAD)
-                                ? BlackoutRoleManager.Faction.BAD
-                                : null;
-                BlackoutRoleManager.setSheriff(currentLevel, player.getUUID(), policeRole, factionOverride);
 
-                String roleName = policeRole.getName().getString();
-                String subtitle = policeRole.getDescription().getString();
-                String goal = policeRole.getGoal().getString();
-                ServerPlayNetworking.send(player, new BlackoutAnnouncePayload(
-                        roleName,
-                        subtitle,
-                        goal,
-                        BlackoutRoleManager.getRemainingBad(currentLevel),
-                        BlackoutRoleManager.getRemainingGood(currentLevel)
-                ));
+                if (wasKiller || currentFaction == BlackoutRoleManager.Faction.BAD) {
+                    // === 杀手被票选为警长：身份不变，直接给予一次性手枪 ===
+                    // 不切换职业（不调 gameWorld.addRole），不发 200 金币奖励，
+                    // 不走 setSheriff(level, playerId, policeRole, factionOverride) 路径。
+                    // 仅加入 sheriffs 集合以保留警长特权（/habi_api buy_gun 等）。
+                    // 投票广播保持不变（"当选警长：xxx"），玩家在投票中正常显示为警长。
+                    BlackoutRoleManager.setSheriff(currentLevel, player.getUUID());
 
-                if (wasKiller) {
+                    // 给予一把左轮手枪（trainmurdermystery:revolver）
+                    var revolverItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .get(net.minecraft.resources.ResourceLocation.parse("trainmurdermystery:revolver"));
+                    if (revolverItem != null && revolverItem != net.minecraft.world.item.Items.AIR) {
+                        net.minecraft.world.item.ItemStack gun = new net.minecraft.world.item.ItemStack(revolverItem, 1);
+                        boolean added = player.getInventory().add(gun);
+                        if (!added) {
+                            player.drop(gun, false);
+                        }
+                        SubtitleNotifier.sendTop(player,
+                                Component.literal("\u00a76\u8b66\u957f\u5165\u573a"),
+                                Component.literal("\u00a76\u4f60\u88ab\u7968\u9009\u4e3a\u8b66\u957f\uff0c\u83b7\u5f97\u4e86\u4e00\u628a\u5de6\u8f6e\u624b\u67aa\u3002"),
+                                80);
+                    }
+                    HabiTrainCore.LOGGER.info("[SheriffVote] killer {} voted as sheriff, kept killer identity + given revolver",
+                            player.getName().getString());
+                } else {
+                    // === 好人被票选为警长：保留原有逻辑 ===
+                    // 随机一个 SRE 原版警察职业作为被票选者的可见身份。
+                    io.wifi.starrailexpress.api.SRERole policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
+                    if (policeRole == null) continue;
+                    BlackoutRoleManager.setSheriff(currentLevel, player.getUUID(), policeRole, null);
+
+                    String roleName = policeRole.getName().getString();
+                    String subtitle = policeRole.getDescription().getString();
+                    String goal = policeRole.getGoal().getString();
+                    ServerPlayNetworking.send(player, new BlackoutAnnouncePayload(
+                            roleName,
+                            subtitle,
+                            goal,
+                            BlackoutRoleManager.getRemainingBad(currentLevel),
+                            BlackoutRoleManager.getRemainingGood(currentLevel)
+                    ));
+
                     var shop = SREPlayerShopComponent.KEY.get(player);
                     if (shop != null) {
                         shop.addToBalance(200);
