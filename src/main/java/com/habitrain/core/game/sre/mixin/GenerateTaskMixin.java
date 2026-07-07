@@ -8,6 +8,7 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.sre.SRETrainTaskWrapper;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.config.ConfigManager;
@@ -43,6 +44,22 @@ public abstract class GenerateTaskMixin {
             "pray", "prune_bush", "harvest_crop"
     );
 
+    private static final Set<String> BLACKOUT_SUPPLY_TASK_IDS = Set.of(
+            "habitrain_core:add_coal",
+            "habitrain_core:repair_wiring",
+            "habitrain_core:maintain_power"
+    );
+
+    private static final Set<String> BLACKOUT_DAILY_TASK_IDS = Set.of(
+            "habitrain_core:blackout_eat",
+            "habitrain_core:blackout_drink",
+            "habitrain_core:blackout_search_backpack",
+            "habitrain_core:blackout_betel_quest",
+            "habitrain_core:blackout_pet_cat",
+            "habitrain_core:blackout_be_alone",
+            "habitrain_core:blackout_look_my_eyes"
+    );
+
     @Shadow(remap = false) private Player player;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, SREPlayerTaskComponent.TrainTask> tasks;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, Integer> timesGotten;
@@ -50,6 +67,15 @@ public abstract class GenerateTaskMixin {
 
     @Shadow(remap = false)
     private Set<String> getDisabledTasks() {
+        throw new AssertionError("Shadowed");
+    }
+
+    /**
+     * 阴影 SRE 原版私有方法 getEnabledSceneTasks，用于场景任务派发（PRAY/LIGHT_STOVE 等）。
+     * 镜像 SRE 原版 SREPlayerTaskComponent.generateTaskInternal line 439-456。
+     */
+    @Shadow(remap = false)
+    private Set<String> getEnabledSceneTasks() {
         throw new AssertionError("Shadowed");
     }
 
@@ -110,6 +136,21 @@ public abstract class GenerateTaskMixin {
             LOGGER.info("[HabiDebug] Blackout GOOD player: forcing GOOD pool only");
         } else {
             currentIsFakeTask = false;
+        }
+
+        if (isBlackout && !killerDualTask && player instanceof ServerPlayer sp
+                && sp.level() instanceof ServerLevel level) {
+            TaskInstance activeTask = mgr.getActiveTask(sp.getUUID());
+            if (activeTask != null && "habitrain_core:restore_power".equals(activeTask.getFullId())
+                    && !activeTask.isFulfilled()) {
+                BlackoutTimerSystem.Phase phase = BlackoutTimerSystem.getPhase(level);
+                if (phase == BlackoutTimerSystem.Phase.FIRST_BLACKOUT
+                        || phase == BlackoutTimerSystem.Phase.SECOND_BLACKOUT) {
+                    LOGGER.info("[HabiDebug] Player has active restore_power task during blackout, skipping dispatch");
+                    cir.setReturnValue(null);
+                    return;
+                }
+            }
         }
 
         LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, killerDual={}, parallel={}",
@@ -203,6 +244,45 @@ public abstract class GenerateTaskMixin {
             total += weight;
             added++;
         }
+
+        // === 场景任务派发（镜像 SRE 原版 SREPlayerTaskComponent.generateTaskInternal line 439-456）===
+        // 之前 addOriginalTasks 只遍历 getAvailableTasksList（11 个非场景任务），漏掉
+        // getSceneTasksList（7 个场景任务：BREATHE/LIGHT_STOVE/CLEAN_DUST/TRANSPORT/PRAY/PRUNE_BUSH/HARVEST_CROP）。
+        // 这导致祷告(pray)等场景任务在 API 模组下永远派发不到玩家手里。
+        // 现补上场景任务循环，仅当当前地图启用了对应场景任务时才加入加权池。
+        Set<String> enabledSceneTasks = getEnabledSceneTasks();
+        if (enabledSceneTasks != null && !enabledSceneTasks.isEmpty()) {
+            for (SREPlayerTaskComponent.Task task : SREPlayerTaskComponent.Task.getSceneTasksList()) {
+                // PRAY 槽位被停电模式杀手假任务占用（见 dispatchCustomTask 中 fakeSlot = Task.PRAY），
+                // 为避免冲突这里跳过 PRAY，仅派发其它 6 个场景任务。
+                // TODO: 后续若想接入祷告任务，需为杀手假任务另选空槽位。
+                if (task == SREPlayerTaskComponent.Task.PRAY) continue;
+
+                if (this.tasks.containsKey(task)) continue;
+                if (!enabledSceneTasks.contains(task.name())) continue;  // 地图必须启用该场景任务
+                if (disabledTasks.contains(task.name())) continue;
+                if (mgr.isOriginalTaskDisabled(task.name(), mapName)) continue;
+
+                float weight = 1f / Math.max(1, this.timesGotten.getOrDefault(task, 1));
+                // 场景任务复用 mood 权重规则（与上方非场景任务一致）
+                if (currentMood < GameConstants.MID_MOOD_THRESHOLD) {
+                    if (task == SREPlayerTaskComponent.Task.LIGHT_STOVE) weight *= 2f;  // SOOTHING 类
+                } else if (currentMood > GameConstants.ANGRY_MOOD_THRESHOLD) {
+                    if (task == SREPlayerTaskComponent.Task.CLEAN_DUST
+                            || task == SREPlayerTaskComponent.Task.TRANSPORT
+                            || task == SREPlayerTaskComponent.Task.PRUNE_BUSH
+                            || task == SREPlayerTaskComponent.Task.HARVEST_CROP) {
+                        weight *= 1.5f;  // ACTIVE 类
+                    }
+                }
+
+                LOGGER.debug("[HabiDebug]   ADD scene original {}: weight={}", task.name(), weight);
+                entries.add(new AbstractMap.SimpleEntry<>(task, weight));
+                total += weight;
+                added++;
+            }
+        }
+
         LOGGER.debug("[HabiDebug] Original tasks added: {}, weight total={}", added, String.format("%.2f", total));
         return total;
     }
@@ -241,6 +321,28 @@ public abstract class GenerateTaskMixin {
             filteredDlc.add(def);
         }
 
+        if (activeMode instanceof BlackoutMode
+                && BlackoutMode.BLACKOUT_GOOD.equals(forcedCategory)
+                && !currentIsFakeTask
+                && !skipActiveTaskGuard) {
+            boolean wantDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
+            Set<String> targetPool = wantDaily ? BLACKOUT_DAILY_TASK_IDS : BLACKOUT_SUPPLY_TASK_IDS;
+            List<TaskDefinition> rotationFiltered = new ArrayList<>();
+            for (TaskDefinition def : filteredDlc) {
+                if (targetPool.contains(def.getFullId())) {
+                    rotationFiltered.add(def);
+                }
+            }
+            if (!rotationFiltered.isEmpty()) {
+                LOGGER.info("[HabiDebug] Blackout rotation: filtering to {} pool ({} candidates)",
+                        wantDaily ? "DAILY" : "SUPPLY", rotationFiltered.size());
+                filteredDlc = rotationFiltered;
+            } else {
+                LOGGER.info("[HabiDebug] Blackout rotation: {} pool empty, keeping full GOOD pool",
+                        wantDaily ? "DAILY" : "SUPPLY");
+            }
+        }
+
         int dlcCount = filteredDlc.size();
         if (dlcCount == 0) return 0f;
 
@@ -268,8 +370,19 @@ public abstract class GenerateTaskMixin {
             float baseWeight = getEffectiveWeight(def);
             float boostedWeight = baseWeight * autoBoost;
 
-            LOGGER.debug("[HabiDebug]   ADD DLC {}: baseWeight={} × autoBoost={} = finalWeight={}",
-                    def.getFullId(), baseWeight, autoBoost, boostedWeight);
+            if (activeMode instanceof BlackoutMode) {
+                boostedWeight *= computeBlackoutDynamicMultiplier(def);
+            }
+
+            int timesAssigned = mgr.getDlcTaskCount(player.getUUID(), def.getFullId());
+            float antiRepeat = 1f / Math.max(1, timesAssigned);
+            boostedWeight *= antiRepeat;
+
+            LOGGER.debug("[HabiDebug]   ADD DLC {}: baseWeight={} × autoBoost={} × dyn={} × antiRepeat={} = finalWeight={}",
+                    def.getFullId(), baseWeight, autoBoost,
+                    (activeMode instanceof BlackoutMode) ? String.format("%.2f", computeBlackoutDynamicMultiplier(def)) : "N/A",
+                    String.format("%.2f", antiRepeat),
+                    boostedWeight);
             entries.add(new AbstractMap.SimpleEntry<>(def, boostedWeight));
             total += boostedWeight;
         }
@@ -489,6 +602,8 @@ public abstract class GenerateTaskMixin {
         TaskInstance instance = new TaskInstance(def);
         def.onAssign(player, instance);
 
+        mgr.incrementDlcTaskCount(player.getUUID(), def.getFullId());
+
         if (isFakeTask) {
             // 杀手假任务单独追踪，不覆盖主任务。
             // 用 PRAY 原版枚举槽位（停电模式杀手不走原版任务池，PRAY 必定空闲），
@@ -500,6 +615,20 @@ public abstract class GenerateTaskMixin {
             }
             return new SRETrainTaskWrapper(instance, fakeSlot);
         } else {
+            if (!isFakeTask && player.level() instanceof ServerLevel level) {
+                GameMode activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
+                if (activeMode instanceof BlackoutMode
+                        && BlackoutMode.BLACKOUT_GOOD.equals(def.getCategory())
+                        && (BLACKOUT_SUPPLY_TASK_IDS.contains(def.getFullId())
+                            || BLACKOUT_DAILY_TASK_IDS.contains(def.getFullId()))) {
+                    boolean wasDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
+                    mgr.setBlackoutNextDailyPool(player.getUUID(), !wasDaily);
+                    LOGGER.info("[HabiDebug] Blackout rotation flag toggled: {} -> {} for player {}",
+                            wasDaily ? "DAILY" : "SUPPLY", !wasDaily ? "DAILY" : "SUPPLY",
+                            player.getName().getString());
+                }
+            }
+
             mgr.setActiveTask(player.getUUID(), instance);
             if (player instanceof ServerPlayer sp) {
                 ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
@@ -514,5 +643,85 @@ public abstract class GenerateTaskMixin {
             return entry.refreshWeight;
         }
         return def.getWeight() > 0 ? def.getWeight() : 1.0f;
+    }
+
+    private static final float DYNAMIC_WEIGHT_CAP = 4.0f;
+    /** 倒计时充足时供电池任务几乎不刷的最小权重（"几乎不刷"） */
+    private static final float DYNAMIC_WEIGHT_FLOOR = 0.05f;
+    private static final String ID_MAINTAIN_POWER = "habitrain_core:maintain_power";
+    private static final String ID_REPAIR_WIRING = "habitrain_core:repair_wiring";
+    private static final String ID_ADD_COAL = "habitrain_core:add_coal";
+
+    /**
+     * 停电模式动态权重倍率。
+     * 对供电池任务（add_coal/repair_wiring/maintain_power）按停电倒计时自适应调整：
+     *   - 倒计时 < 1 分钟 → 大增权重（接近 DYNAMIC_WEIGHT_CAP）
+     *   - 倒计时 > 3 分钟 → 几乎不刷（接近 DYNAMIC_WEIGHT_FLOOR）
+     *   - 中间用 smoothstep 反曲线插值
+     * 阈值从任务声明的 timeImpact.deltaSeconds 派生，未来改 delta 自动调整曲线。
+     */
+    private float computeBlackoutDynamicMultiplier(TaskDefinition def) {
+        if (!(player instanceof ServerPlayer sp)) return 1.0f;
+        if (!(sp.level() instanceof ServerLevel level)) return 1.0f;
+
+        String fullId = def.getFullId();
+        float multiplier = 1.0f;
+
+        // 供电池任务（增加停电时间的 GOOD 任务）走自适应反曲线
+        if (isSupplyTaskWithPositiveTimeImpact(def)) {
+            multiplier = computeUrgencyMultiplier(def, level);
+        } else if (ID_ADD_COAL.equals(fullId)) {
+            // add_coal 减对局总时间（不是停电倒计时），用存活率调整
+            multiplier = computeSurvivalMultiplier(level);
+        }
+
+        return Math.min(DYNAMIC_WEIGHT_CAP, Math.max(DYNAMIC_WEIGHT_FLOOR, multiplier));
+    }
+
+    /** 判断任务是否为"增加停电倒计时/维护时间"的供电池任务（用于自适应概率） */
+    private boolean isSupplyTaskWithPositiveTimeImpact(TaskDefinition def) {
+        if (def.getTimeImpact() == null) return false;
+        if (def.getTimeImpact().axis() != TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN) return false;
+        return def.getTimeImpact().deltaSeconds() > 0;
+    }
+
+    /**
+     * 反曲线 smoothstep：倒计时少 → 权重大；倒计时多 → 权重小。
+     * 阈值从 delta 派生：low = max(30, delta×0.75)，high = max(180, delta×3)。
+     * 例：maintain_power delta=80 → low=60s, high=240s
+     *     repair_wiring delta=40 → low=30s, high=120s
+     */
+    private float computeUrgencyMultiplier(TaskDefinition def, ServerLevel level) {
+        BlackoutTimerSystem.Phase phase = BlackoutTimerSystem.getPhase(level);
+        int remaining;
+        if (phase == BlackoutTimerSystem.Phase.NORMAL) {
+            remaining = BlackoutTimerSystem.getBlackoutCountdown(level);
+        } else if (phase == BlackoutTimerSystem.Phase.MAINTENANCE) {
+            remaining = BlackoutTimerSystem.getMaintenanceTime(level);
+        } else {
+            // 停电期（FIRST_BLACKOUT/SECOND_BLACKOUT）不调整，让 restore_power 主导
+            return 1.0f;
+        }
+
+        int delta = def.getTimeImpact().deltaSeconds();
+        int lowThreshold = Math.max(30, (int)(delta * 0.75));   // 倒计时 ≤ 此值 → 大增
+        int highThreshold = Math.max(180, delta * 3);          // 倒计时 ≥ 此值 → 几乎不刷
+
+        if (remaining <= lowThreshold) return DYNAMIC_WEIGHT_CAP;
+        if (remaining >= highThreshold) return DYNAMIC_WEIGHT_FLOOR;
+
+        // smoothstep 反插值
+        float t = (float)(remaining - lowThreshold) / (highThreshold - lowThreshold);
+        t = t * t * (3 - 2 * t);  // smoothstep: 0→1
+        // 反曲线：t=0(remaining=low) → CAP；t=1(remaining=high) → FLOOR
+        return DYNAMIC_WEIGHT_CAP * (1 - t) + DYNAMIC_WEIGHT_FLOOR * t;
+    }
+
+    private float computeSurvivalMultiplier(ServerLevel level) {
+        int remaining = BlackoutRoleManager.getRemainingGood(level);
+        int initial = BlackoutRoleManager.getInitialGoodCount(level);
+        if (initial <= 0) return 1.0f;
+        float ratio = Math.max(0f, (float) remaining / (float) initial);
+        return 1.0f + (1.0f - ratio) * (DYNAMIC_WEIGHT_CAP - 1.0f);
     }
 }

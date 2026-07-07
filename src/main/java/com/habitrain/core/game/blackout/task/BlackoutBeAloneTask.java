@@ -2,28 +2,23 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import net.minecraft.world.phys.AABB;
 
 /**
- * 停电模式好人任务：一个人静静（远离所有玩家持续60秒）。
- * <p>玩家与其他所有玩家距离均 &gt;15 格时，每秒进度 +1，累计 60 秒完成。
- * 进度只暂停累积不回退，避免玩家靠近一下就归零太苛刻。
- * <p>完成时增加供电时间 20 秒 + 发放金币 50 / 情绪 0.5 奖励。
+ * 停电模式好人任务：一个人静静（周围 6 格内无其他玩家持续 10 秒）。
+ * <p>玩家周围 6 格水平 / 3 格纵向范围内无其他玩家时，每秒进度 +1，累计 10 秒完成。
+ * 进度不回退，有人靠近时暂停累积，走开后继续。
  * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
  */
 public class BlackoutBeAloneTask {
 
-    private static final double MIN_DISTANCE = 15.0;
-    private static final int REQUIRED_SECONDS = 60;
+    private static final double HORIZONTAL_RADIUS = 6.0;
+    private static final double VERTICAL_RADIUS = 3.0;
+    private static final int REQUIRED_SECONDS = 10;
 
-    private static final Map<UUID, Integer> tickCounters = new HashMap<>();
+    private static final java.util.Map<java.util.UUID, Integer> tickCounters = new java.util.HashMap<>();
 
     public static void register() {
         TaskRegistry.register("habitrain_core", "blackout_be_alone", builder -> builder
@@ -35,14 +30,6 @@ public class BlackoutBeAloneTask {
             .onAssign((player, task) -> {
                 task.setMaxProgress(REQUIRED_SECONDS);
                 tickCounters.put(player.getUUID(), 0);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_be_alone"),
-                            Component.literal("§6【任务】远离所有人，独自待上 60 秒。"),
-                            80
-                    );
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -55,14 +42,9 @@ public class BlackoutBeAloneTask {
                 }
                 tickCounters.put(player.getUUID(), 0);
 
-                boolean alone = true;
-                for (ServerPlayer other : serverPlayer.serverLevel().players()) {
-                    if (other == serverPlayer || !other.isAlive()) continue;
-                    if (serverPlayer.distanceToSqr(other) <= MIN_DISTANCE * MIN_DISTANCE) {
-                        alone = false;
-                        break;
-                    }
-                }
+                AABB box = serverPlayer.getBoundingBox().inflate(HORIZONTAL_RADIUS, VERTICAL_RADIUS, HORIZONTAL_RADIUS);
+                boolean alone = serverPlayer.level().getEntitiesOfClass(Player.class, box,
+                        other -> other != serverPlayer && other.isAlive() && !other.isSpectator()).isEmpty();
 
                 if (alone) {
                     int newProgress = Math.min(task.getProgress() + 1, task.getMaxProgress());

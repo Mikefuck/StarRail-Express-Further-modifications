@@ -11,6 +11,9 @@
         "NunchuckCooldownMixin",
         "MinigameRewardMixin",
         "MinigameTaskAssignmentMixin",
-        "BlackoutEatMixin"
+        "BlackoutEatMixin",
+        "BlackoutCanEatMixin",
+        "BlackoutDrinkItemMixin",
+        "ExtraEffectRoleMixin"
     ]
 }

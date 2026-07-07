@@ -248,9 +248,10 @@ public final class BlackoutSheriffVoteManager {
             List<UUID> pool = goodCandidates.isEmpty()
                     ? candidates.stream().map(VoteCandidate::playerId).toList()
                     : goodCandidates;
-            Collections.shuffle(new ArrayList<>(pool), random);
-            int count = Math.min(sheriffCount, pool.size());
-            winnerIds = new ArrayList<>(pool.subList(0, count));
+            List<UUID> shuffled = new ArrayList<>(pool);
+            Collections.shuffle(shuffled, random);
+            int count = Math.min(sheriffCount, shuffled.size());
+            winnerIds = new ArrayList<>(shuffled.subList(0, count));
             reason = goodCandidates.isEmpty() ? "random_any" : "random_non_killer";
         }
 

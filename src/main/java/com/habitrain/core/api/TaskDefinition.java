@@ -38,12 +38,16 @@ public class TaskDefinition {
     private final boolean canRepeat;
     private final boolean shareProgress;
     private final List<String> tags;
+    /** 任务对停电计时器的影响（可选，供自适应刷新概率使用）。null 表示无时间影响。 */
+    private final TimeImpact timeImpact;
 
     // 回调函数
     private final BiConsumer<Player, TaskInstance> onAssignHandler;
     private final BiConsumer<Player, TaskInstance> onCompleteHandler;
     private final BiConsumer<Player, TaskInstance> onRemoveHandler;
     private final BiConsumer<Player, TaskInstance> onFailHandler;
+    /** 任务被取消/隐藏时回收发放的物理道具。区别于 onRemove（清效果），仅在取消路径调用。 */
+    private final BiConsumer<Player, TaskInstance> onReclaimHandler;
     private final BiFunction<Player, TaskInstance, Boolean> completionChecker;
     private final BiConsumer<Player, TaskInstance> tickHandler;
     private final BiPredicate<Player, TaskInstance> canAssignPredicate;
@@ -52,6 +56,27 @@ public class TaskDefinition {
     @FunctionalInterface
     public interface ProgressUpdateHandler {
         void onProgressUpdate(Player player, TaskInstance task, int oldProgress);
+    }
+
+    /**
+     * 任务对停电计时器的影响声明。
+     *  axis: 影响哪个时间轴
+     *  deltaSeconds: 增减秒数（正=增加停电时间，负=减少）
+     *
+     * 用于自适应刷新概率：computeUrgencyMultiplier 从 delta 派生阈值，
+     * 未来改 delta 自动调整概率曲线，无需改概率逻辑代码。
+     */
+    public record TimeImpact(TimeAxis axis, int deltaSeconds) {
+        public enum TimeAxis {
+            /** 增加/减少 停电倒计时或维护时间（delayMaintenanceOrCountdown / reduceMaintenanceOrCountdown） */
+            MAINTENANCE_OR_COUNTDOWN,
+            /** 增加/减少 对局总时间（addTime / reduceTime） */
+            TOTAL_TIME,
+            /** 触发恢复供电（restorePower，从停电拉回维护期） */
+            RESTORE_POWER,
+            /** 触发瞬时停电惩罚（triggerTransientBlackout） */
+            TRANSIENT
+        }
     }
 
     private TaskDefinition(Builder builder) {
@@ -72,10 +97,12 @@ public class TaskDefinition {
         this.canRepeat = builder.canRepeat;
         this.shareProgress = builder.shareProgress;
         this.tags = List.copyOf(builder.tags);
+        this.timeImpact = builder.timeImpact;
         this.onAssignHandler = builder.onAssignHandler;
         this.onCompleteHandler = builder.onCompleteHandler;
         this.onRemoveHandler = builder.onRemoveHandler;
         this.onFailHandler = builder.onFailHandler;
+        this.onReclaimHandler = builder.onReclaimHandler;
         this.completionChecker = builder.completionChecker;
         this.tickHandler = builder.tickHandler;
         this.canAssignPredicate = builder.canAssignPredicate;
@@ -100,12 +127,16 @@ public class TaskDefinition {
     public boolean canRepeat() { return canRepeat; }
     public boolean isShareProgress() { return shareProgress; }
     public List<String> getTags() { return Collections.unmodifiableList(tags); }
+    /** 任务对停电计时器的影响（可能为 null）。供自适应刷新概率使用。 */
+    public TimeImpact getTimeImpact() { return timeImpact; }
 
     // --- Callback dispatch ---
     public void onAssign(Player player, TaskInstance instance) { if (onAssignHandler != null) onAssignHandler.accept(player, instance); }
     public void onComplete(Player player, TaskInstance instance) { if (onCompleteHandler != null) onCompleteHandler.accept(player, instance); }
     public void onRemove(Player player, TaskInstance instance) { if (onRemoveHandler != null) onRemoveHandler.accept(player, instance); }
     public void onFail(Player player, TaskInstance instance) { if (onFailHandler != null) onFailHandler.accept(player, instance); }
+    /** 回收发放的物理道具。仅在任务被取消/隐藏路径调用，不在成功完成路径调用。 */
+    public void onReclaim(Player player, TaskInstance instance) { if (onReclaimHandler != null) onReclaimHandler.accept(player, instance); }
     public boolean checkCompletion(Player player, TaskInstance instance) { if (completionChecker != null) return completionChecker.apply(player, instance); return instance.isFulfilled(); }
     public void onTick(Player player, TaskInstance instance) { if (tickHandler != null) tickHandler.accept(player, instance); }
     public boolean canAssign(Player player, TaskInstance instance) { if (canAssignPredicate != null) return canAssignPredicate.test(player, instance); return true; }
@@ -131,11 +162,13 @@ public class TaskDefinition {
         private boolean canRepeat = false;
         private boolean shareProgress = false;
         private List<String> tags = List.of();
+        private TimeImpact timeImpact = null;
 
         private BiConsumer<Player, TaskInstance> onAssignHandler;
         private BiConsumer<Player, TaskInstance> onCompleteHandler;
         private BiConsumer<Player, TaskInstance> onRemoveHandler;
         private BiConsumer<Player, TaskInstance> onFailHandler;
+        private BiConsumer<Player, TaskInstance> onReclaimHandler;
         private BiFunction<Player, TaskInstance, Boolean> completionChecker;
         private BiConsumer<Player, TaskInstance> tickHandler;
         private BiPredicate<Player, TaskInstance> canAssignPredicate;
@@ -162,11 +195,23 @@ public class TaskDefinition {
         public Builder canRepeat(boolean v) { this.canRepeat = v; return this; }
         public Builder shareProgress(boolean v) { this.shareProgress = v; return this; }
         public Builder tags(String... t) { this.tags = List.of(t); return this; }
+        /**
+         * 声明任务对停电计时器的影响。供自适应刷新概率使用：
+         * computeUrgencyMultiplier 从 deltaSeconds 派生阈值，未来改 delta 自动调整曲线。
+         * 维护约定：时间 delta 必须在注册时声明，不要在 onComplete 写魔法数字。
+         */
+        public Builder timeImpact(TimeImpact.TimeAxis axis, int deltaSeconds) {
+            this.timeImpact = new TimeImpact(axis, deltaSeconds);
+            return this;
+        }
 
         public Builder onAssign(BiConsumer<Player, TaskInstance> h) { this.onAssignHandler = h; return this; }
         public Builder onComplete(BiConsumer<Player, TaskInstance> h) { this.onCompleteHandler = h; return this; }
         public Builder onRemove(BiConsumer<Player, TaskInstance> h) { this.onRemoveHandler = h; return this; }
         public Builder onFail(BiConsumer<Player, TaskInstance> h) { this.onFailHandler = h; return this; }
+        /** 注册任务道具回收回调。在任务被取消/隐藏时调用，用于扫描玩家背包移除带
+         *  habitrain_grant 标签的道具。成功完成路径不调用（玩家保留道具作为奖励）。 */
+        public Builder onReclaim(BiConsumer<Player, TaskInstance> h) { this.onReclaimHandler = h; return this; }
         public Builder completionChecker(BiFunction<Player, TaskInstance, Boolean> h) { this.completionChecker = h; return this; }
         public Builder onTick(BiConsumer<Player, TaskInstance> h) { this.tickHandler = h; return this; }
         public Builder canAssign(BiPredicate<Player, TaskInstance> h) { this.canAssignPredicate = h; return this; }

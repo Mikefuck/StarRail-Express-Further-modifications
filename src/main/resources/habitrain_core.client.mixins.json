@@ -10,11 +10,10 @@
         "StarRailExpressTitleScreenMixin",
         "FixTaskRendererMixin",
         "SubtitleHUDPrefixFixMixin",
-        "RoleIntroduceScreenMixin",
         "BlackoutLimitedInventoryScreenMixin",
         "InstinctKillerTeamMixin",
         "InstinctSheriffGateMixin",
         "BlackoutTimeRendererMixin",
-        "CameraBlockOverlayMixin"
+        "PlayerBodyEntityMixin"
     ]
 }

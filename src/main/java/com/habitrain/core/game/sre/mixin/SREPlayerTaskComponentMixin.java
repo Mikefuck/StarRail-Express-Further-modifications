@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
@@ -53,6 +54,8 @@ public class SREPlayerTaskComponentMixin {
             if (oldTask != null) {
                 LOGGER.debug("[HabiDebug] init() called - clearing activeCustomTask {} for player {}",
                         oldTask.getFullId(), player.getName().getString());
+                // 先回收发放的物理道具（任务被新角色 init 取消时）
+                ItemReclaimHelper.reclaimForTask(player, oldTask);
                 mgr.removeActiveTask(player.getUUID());
 
                 if (player instanceof ServerPlayer sp) {
@@ -70,6 +73,11 @@ public class SREPlayerTaskComponentMixin {
     private void habitrain$onClear(CallbackInfo ci) {
         if (player != null) {
             TaskManager mgr = TaskManager.getInstance();
+            TaskInstance oldTask = mgr.getActiveTask(player.getUUID());
+            if (oldTask != null) {
+                // 先回收发放的物理道具（任务被 clear 取消时）
+                ItemReclaimHelper.reclaimForTask(player, oldTask);
+            }
             mgr.removeActiveTask(player.getUUID());
             LOGGER.debug("[HabiDebug] clear() called - removed activeCustomTask for player {}",
                     player.getName().getString());
@@ -145,6 +153,8 @@ public class SREPlayerTaskComponentMixin {
             } catch (Throwable t) {
                 LOGGER.error("onRemove 回调执行失败: {}", customTask.getFullId(), t);
             }
+            // 任务失败时回收发放的物理道具（任务没正常完成，道具不该留下）
+            ItemReclaimHelper.reclaimForTask(player, customTask);
             mgr.removeActiveTask(player.getUUID());
             if (player instanceof ServerPlayer sp) {
                 ActiveTaskPayload.clearForPlayer(sp);
@@ -155,6 +165,7 @@ public class SREPlayerTaskComponentMixin {
                 mgr.handleTaskCompletion(sp, customTask);
                 ActiveTaskPayload.clearForPlayer(sp);
             }
+            // 成功完成路径不回收道具（玩家保留作为奖励）
         }
     }
 

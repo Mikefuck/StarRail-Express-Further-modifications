@@ -60,8 +60,11 @@ public class AddCoalHandler {
                 UUID uuid = entry.getKey();
                 CoalState state = entry.getValue();
 
+                ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+                TaskInstance task = sp != null ? TaskManager.getInstance().getActiveTask(uuid) : null;
+                boolean isAddCoalTask = task != null && "habitrain_core:add_coal".equals(task.getFullId());
+
                 if (state.slowUntilTick > tick) {
-                    ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
                     if (sp != null) {
                         int remaining = (int) (state.slowUntilTick - tick + 10);
                         sp.addEffect(new MobEffectInstance(
@@ -69,13 +72,26 @@ public class AddCoalHandler {
                     }
                 }
 
-                // 缓慢结束且阶段推进已完成，清理状态
-                if (state.slowUntilTick <= tick && state.phaseProgressed) {
-                    ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+                if (state.slowUntilTick <= tick) {
                     if (sp != null) {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     }
-                    it.remove();
+                    if (!state.phaseProgressed && isAddCoalTask && task.getProgress() == COAL_PHASE) {
+                        boolean added = sp.getInventory().add(new ItemStack(Items.COAL, 1));
+                        if (!added) {
+                            sp.drop(new ItemStack(Items.COAL, 1), false);
+                        }
+                        task.setProgress(GENERATOR_PHASE);
+                        state.phaseProgressed = true;
+                        sp.serverLevel().playSound(null, sp.blockPosition(),
+                                SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 1.0f, 1.0f);
+                        SubtitleNotifier.sendTop(sp,
+                                Component.translatable("task.add_coal"),
+                                Component.literal("§a已取得煤炭！手持煤炭右键 §e发电机 §a添煤。"),
+                                80);
+                    } else {
+                        it.remove();
+                    }
                 }
             }
         });
@@ -112,71 +128,40 @@ public class AddCoalHandler {
         UUID uuid = serverPlayer.getUUID();
 
         if (progress == COAL_PHASE && block == Blocks.COAL_BLOCK) {
-            // 阶段0：右键煤炭块
             CoalState existing = activeStates.get(uuid);
             if (existing != null && !existing.phaseProgressed) {
-                SubtitleNotifier.sendTop(serverPlayer,
-                        Component.translatable("task.add_coal"),
-                        Component.literal("§7正在挖掘煤炭，请稍候..."),
-                        45);
                 return InteractionResult.FAIL;
             }
 
-            giveSlow(serverPlayer, uuid, true);
-            // 发放 1 个煤炭
-            boolean added = serverPlayer.getInventory().add(new ItemStack(Items.COAL, 1));
-            if (!added) {
-                // 背包满 → 掉落在脚下
-                serverPlayer.drop(new ItemStack(Items.COAL, 1), false);
-            }
-            // 推进任务进度到阶段1
-            task.setProgress(GENERATOR_PHASE);
-            // 标记阶段0已完成，等待缓慢结束清理
+            giveSlow(serverPlayer, uuid, false);
             CoalState s = activeStates.get(uuid);
-            if (s != null) {
-                s.phaseProgressed = true;
-            } else {
+            if (s == null) {
                 s = new CoalState();
-                s.phaseProgressed = true;
                 s.slowUntilTick = serverPlayer.serverLevel().getServer().overworld().getGameTime() + SLOW_TICKS;
+                s.phaseProgressed = false;
                 activeStates.put(uuid, s);
             }
             serverPlayer.serverLevel().playSound(null, serverPlayer.blockPosition(),
                     SoundEvents.STONE_BREAK, SoundSource.PLAYERS, 1.0f, 1.0f);
-            SubtitleNotifier.sendTop(serverPlayer,
-                    Component.translatable("task.add_coal"),
-                    Component.literal("§a已取得煤炭！手持煤炭右键 §eyuushya:generator §a添煤。"),
-                    80);
             return InteractionResult.FAIL;
         }
 
         if (progress == GENERATOR_PHASE && isGeneratorBlock(block)) {
-            // 阶段1：手持煤炭右键发电机
             ItemStack mainHand = serverPlayer.getMainHandItem();
             if (!mainHand.is(Items.COAL)) {
-                SubtitleNotifier.sendTop(serverPlayer,
-                        Component.translatable("task.add_coal"),
-                        Component.literal("§c需要手持煤炭右键发电机！"),
-                        60);
                 return InteractionResult.FAIL;
             }
 
             CoalState existing = activeStates.get(uuid);
             if (existing != null && !existing.phaseProgressed) {
-                SubtitleNotifier.sendTop(serverPlayer,
-                        Component.translatable("task.add_coal"),
-                        Component.literal("§7正在添煤，请稍候..."),
-                        45);
                 return InteractionResult.FAIL;
             }
 
             giveSlow(serverPlayer, uuid, true);
-            // 消耗 1 个煤炭
             mainHand.shrink(1);
             if (mainHand.isEmpty()) {
                 serverPlayer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             }
-            // 任务完成
             task.setProgress(PROGRESS_DONE);
             CoalState s = activeStates.get(uuid);
             if (s != null) {

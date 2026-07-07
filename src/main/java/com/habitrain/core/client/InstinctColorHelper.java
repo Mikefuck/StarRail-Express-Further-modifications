@@ -11,7 +11,7 @@ import java.util.Map;
 
 public class InstinctColorHelper {
     private static final Map<Integer, Color> overrideColors = new HashMap<>();
-    private static boolean overrideColorsDirty = true;
+    private static volatile boolean overrideColorsDirty = true;
     // 配置颜色版本号：每次 markDirty 自增。供多个独立缓存（如 CustomTaskBlockRendererMixin）
     // 通过对比版本号判断是否需要重建，避免相互清脏导致的竞态。
     private static volatile int colorVersion = 0;

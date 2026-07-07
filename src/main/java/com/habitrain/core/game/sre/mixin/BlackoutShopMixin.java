@@ -37,14 +37,8 @@ public abstract class BlackoutShopMixin {
         }
 
         ResourceLocation roleId = role.getIdentifier();
-        if (!BlackoutShopService.isBlackoutRole(roleId)) {
-            return;
-        }
-
-        // 仅当停电模式为该角色定义了专属商店时才接管；否则回落 SRE 原版商店，
-        // 让复用的 SRE 原版角色（guard/patroller/swast/elf/executioner/silencer/cleaner）
-        // 使用 SRE 原版 RoleShopHandler 提供的商店。
-        if (BlackoutShopService.getDefinitions(roleId).isEmpty()) {
+        // 仅当停电模式为该角色定义了专属商店时才接管；否则回落 SRE 原版商店。
+        if (!BlackoutShopService.hasBlackoutShop(roleId)) {
             return;
         }
 

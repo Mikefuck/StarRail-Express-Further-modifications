@@ -74,7 +74,7 @@ public class BlackoutHudOverlay {
 
         int remainingW = barW - filledW;
         if (remainingW > 0) {
-            int color = blackoutActive ? 0xFFD84B4B : 0xFF4AC06A;
+            int color = blackoutActive ? 0xFFFFD84B : 0xFF4AC06A;
             g.fill(barX + filledW, barY, barX + barW, barY + barH, color);
         }
 
@@ -86,21 +86,23 @@ public class BlackoutHudOverlay {
         int warningX = barX + (int) ((float) (totalDuration - TIME_WARNING_SECONDS) / totalDuration * barW);
         g.fill(warningX, barY - 1, warningX + 1, barY + barH + 1, 0xFFFFFF00);
 
-        // 进度条右侧：游戏倒计时 + 停电/维护倒计时
+        // 进度条右侧：游戏倒计时 + 停电/维护倒计时（仅按住 shift 时显示）
         Font font = mc.font;
-        int textX = barX + barW + 6;
-        int textY = barY - 4;
+        if (mc.player.isShiftKeyDown()) {
+            int textX = barX + barW + 6;
+            int textY = barY - 4;
 
-        String gameText = "§f" + formatTime(totalTimeRemaining);
-        g.drawString(font, gameText, textX, textY, 0xFFFFFFFF, false);
+            String gameText = "§f对局剩余时间 " + formatTime(totalTimeRemaining);
+            g.drawString(font, gameText, textX, textY, 0xFFFFFFFF, false);
 
-        if (blackoutActive) {
-            String blackoutText = "§c停电中";
-            g.drawString(font, blackoutText, textX, textY + 10, 0xFFD84B4B, false);
-        } else if (blackoutCountdown > 0) {
-            String cdLabel = currentPhase == 2 ? "§e维护" : "§e停电";
-            String cdText = cdLabel + " " + formatTime(blackoutCountdown);
-            g.drawString(font, cdText, textX, textY + 10, 0xFFFFD84B, false);
+            if (blackoutActive) {
+                String blackoutText = "§c停电中";
+                g.drawString(font, blackoutText, textX, textY + 10, 0xFFD84B4B, false);
+            } else if (blackoutCountdown > 0) {
+                String cdLabel = currentPhase == 2 ? "§e剩余供电时间" : "§e停电";
+                String cdText = cdLabel + " " + formatTime(blackoutCountdown);
+                g.drawString(font, cdText, textX, textY + 10, 0xFFFFD84B, false);
+            }
         }
 
         // 警长投票进行中时，在 HUD 下方显示带实际绑定按键的提示。

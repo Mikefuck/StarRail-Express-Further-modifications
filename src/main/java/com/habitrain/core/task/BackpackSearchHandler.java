@@ -77,6 +77,12 @@ public class BackpackSearchHandler {
                             && ("habitrain_core:search_backpack".equals(stuckTask.getFullId())
                                     || "habitrain_core:blackout_search_backpack".equals(stuckTask.getFullId()))
                             && !stuckTask.isFulfilled()) {
+                        // 任务超时前回收发放的道具（虽然翻背包通常 onComplete 才发放，
+                        // 但若任务以某种方式提前发放了道具，这里回收保证安全）
+                        ServerPlayer stuckPlayer = server.getPlayerList().getPlayer(uuid);
+                        if (stuckPlayer != null) {
+                            com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(stuckPlayer, stuckTask);
+                        }
                         stuckTask.markFailed();
                         mgr.removeActiveTask(uuid);
                     }
@@ -143,25 +149,12 @@ public class BackpackSearchHandler {
 
         // 防止重复点击
         if (activeSearches.containsKey(uuid)) {
-            SubtitleNotifier.sendTop(
-                    serverPlayer,
-                    Component.translatable(taskKey),
-                    Component.literal("正在翻找背包中，请稍候..."),
-                    45
-            );
             return InteractionResult.FAIL;
         }
 
         // 给予缓慢3效果（6秒 = 120 ticks，+10 tick缓冲）
         serverPlayer.addEffect(new MobEffectInstance(
                 MobEffects.MOVEMENT_SLOWDOWN, SEARCH_TICKS + 10, 2, false, true, true));
-
-        SubtitleNotifier.sendTop(
-                serverPlayer,
-                Component.translatable(taskKey),
-                Component.literal("右键背包来翻找！"),
-                60
-        );
 
         // 记录翻找状态（onTick 会据此递增任务进度）
         // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差

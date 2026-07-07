@@ -27,14 +27,6 @@ public class BlackoutBetelQuestTask {
             .onAssign((player, task) -> {
                 BetelQuestState.markQuestAssigned(player.getUUID());
                 BetelQuestState.resetEatenStatus(player);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_betel_quest"),
-                            Component.literal("§6【任务】你想咀嚼...去找槟榔吃吧。"),
-                            80
-                    );
-                }
             })
             .completionChecker((player, task) ->
                 BetelQuestState.hasPlayerEatenBetelNut(player.getUUID()))

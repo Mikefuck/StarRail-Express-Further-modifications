@@ -2,6 +2,7 @@ package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.InstinctColorHelper;
 import io.wifi.starrailexpress.client.SREClient;
+import io.wifi.starrailexpress.content.block.CameraBlock;
 import io.wifi.starrailexpress.content.block.SecurityMonitorBlock;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
@@ -52,6 +53,7 @@ public class InstinctColorMixin {
 
                 if (!SREClient.isPlayerSpectatingOrCreative()) {
                     if (block instanceof SecurityMonitorBlock) return;
+                    if (block instanceof CameraBlock) return;
                     if (type == 11) return;
                 }
 

@@ -1,7 +1,6 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.util.TaskTextNormalizer;
-import com.habitrain.core.game.blackout.BlackoutRoles;
 import com.habitrain.core.game.sre.SRETrainTaskWrapper;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.api.TaskInstance;
@@ -49,7 +48,7 @@ public class FixTaskRendererMixin {
             var self = Minecraft.getInstance().player;
             if (gc != null && self != null) {
                 SRERole role = gc.getRole(self);
-                if (role != null && BlackoutRoles.SHERIFF_ID.equals(role.identifier())) {
+                if (role != null && role.isVigilanteTeam()) {
                     killer = false;
                 }
             }

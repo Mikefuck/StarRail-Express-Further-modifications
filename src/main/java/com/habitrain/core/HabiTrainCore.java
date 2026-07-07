@@ -84,7 +84,7 @@ public class HabiTrainCore implements ModInitializer {
     public static final SoundEvent BETEL_NUT_GET_SOUND = SoundEvent.createVariableRangeEvent(BETEL_NUT_GET_ID);
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
-    // NOTE: look_my_eyes.ogg is missing from assets — no sound will play at runtime
+    // look_my_eyes.ogg now bundled in assets
 
     // ===== 方块类型ID常量 =====
     private static final int GRASS_BLOCK_TYPE_ID = 12;
@@ -107,12 +107,9 @@ public class HabiTrainCore implements ModInitializer {
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
         GameModeRegistry.register(MOD_ID, "sre:repair", new SRERepairMode());
         GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
-        // 注册停电模式专用的 SRE GameMode（所有人 CIVILIAN）
+        // 注册停电模式专用的 SRE GameMode（复用 SRE 原版角色分配流程）。
         SREBlackoutGameMode.register();
-        // 注册停电模式角色到 SRE 角色系统（含复用 SRE 原版 6 个角色）。
-        // 服务端也必须注册，否则 BlackoutRoleRegistry 在专用服上为空，
-        // getRandomByFaction 会回退到固定的 KILLER/CIVILIAN，失去随机分配能力。
-        com.habitrain.core.game.blackout.BlackoutRoles.register();
+        // 按角色能力填充警长/杀手商店目录（canUseKiller=杀手商店, isVigilanteTeam=警长商店）
         com.habitrain.core.game.blackout.BlackoutShopService.bootstrapDefaults();
         // 3. 注册网络包
         TaskConfigPayload.register();
@@ -197,6 +194,9 @@ public class HabiTrainCore implements ModInitializer {
         // 注：fabric-api 此版本无 ServerLevelEvents.UNLOAD，故在 SERVER_STOPPING 遍历所有 level 清理。
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             for (ServerLevel level : server.getAllLevels()) {
+                if (GameModeRegistry.isActiveInLevel(level)) {
+                    GameModeRegistry.stop(level);
+                }
                 BlackoutRoleManager.clear(level);
                 BlackoutTimerSystem.reset(level);
                 BlackoutSheriffVoteManager.reset(level);
@@ -400,9 +400,6 @@ public class HabiTrainCore implements ModInitializer {
             .scanBlockIds(CAT_BLOCK_IDS)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.pet_cat"), Component.literal("§d去找一只猫猫摸一摸！盯着猫猫看5秒！"), 80);
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -460,9 +457,6 @@ public class HabiTrainCore implements ModInitializer {
                 !BackpackQuestState.hasCompleted(player.getUUID()))
             .onAssign((player, task) -> {
                 task.setMaxProgress(120);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.search_backpack"), Component.literal("§6【任务】翻找一下自己的背包...右键背包来翻找！"));
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -479,12 +473,18 @@ public class HabiTrainCore implements ModInitializer {
                 BackpackQuestState.markCompleted(serverPlayer.getUUID());
                 BackpackSearchHandler.stopSearching(serverPlayer.getUUID());
                 serverPlayer.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                giveRandomBackpackItem(serverPlayer);
+                ItemStack granted = giveRandomBackpackItem(serverPlayer);
+                // 记录发放的道具，供任务取消时回收
+                if (granted != null) {
+                    com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:search_backpack");
+                    task.addGrantedItem(granted);
+                }
                 SubtitleNotifier.sendTop(
                     serverPlayer,
                     Component.translatable("task.search_backpack"),
                     Component.literal("§a✔ 翻找背包完成！你找到了一些有用的东西！"));
             })
+            .onReclaim((player, task) -> com.habitrain.core.api.ItemReclaimHelper.reclaim(player, "habitrain_core:search_backpack"))
         );
 
         // 任务: look_my_eyes（LOOK MY EYES）
@@ -496,9 +496,6 @@ public class HabiTrainCore implements ModInitializer {
             .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
                 task.setMaxProgress(60);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.look_my_eyes"), Component.literal("§d【任务】找到一名玩家，和ta对视3秒！"));
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -568,6 +565,8 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.register();
         com.habitrain.core.game.blackout.task.MaintainPowerTask.register();
         com.habitrain.core.game.blackout.task.MaintainPowerHandler.register();
+        com.habitrain.core.game.blackout.task.RestorePowerTask.register();
+        com.habitrain.core.game.blackout.task.RestorePowerHandler.register();
 
         // 停电模式日常任务（7个，加入 BLACKOUT_GOOD 池，也自动成为坏人假任务池）
         com.habitrain.core.game.blackout.task.BlackoutEatTask.register();
@@ -588,15 +587,18 @@ public class HabiTrainCore implements ModInitializer {
      * 平民/中立: 合成世界槟榔、表情头盔、防御药水、毒药瓶、回形针、左轮手枪、螺丝刀
      * 警长:      撬锁器、钥匙
      * 杀手:      撬棍、双截棍、假左轮、消防斧、硫酸桶、飞刀
+     *
+     * @return 发放的 ItemStack（已加入玩家背包或掉落），如发放失败返回 null。
+     *         调用方可存入 TaskInstance.grantedItems 以便任务取消时回收。
      */
-    private void giveRandomBackpackItem(ServerPlayer player) {
+    public static ItemStack giveRandomBackpackItem(ServerPlayer player) {
         try {
             var gameWorld = SREGameWorldComponent.KEY.get(player.level());
             var roles = gameWorld.getRoles();
             var role = roles.get(player.getUUID());
             if (role == null) {
                 LOGGER.warn("玩家没有角色数据，无法发放背包奖励");
-                return;
+                return null;
             }
 
             int roleType = role.getRoleType();
@@ -659,12 +661,14 @@ public class HabiTrainCore implements ModInitializer {
                     Component.literal("§e你从背包中翻找到了: ").append(stack.getHoverName()), true);
                 LOGGER.info("玩家 {} 翻找背包获得: {} (阵营类型: {})",
                     player.getName().getString(), itemId, roleType);
+                return stack;
             } else {
                 LOGGER.warn("找不到背包奖励物品: {}", itemId);
             }
         } catch (Exception e) {
             LOGGER.error("发放背包奖励时出错", e);
         }
+        return null;
     }
 
     private static Set<Block> cachedCatBlocks = null;
@@ -710,13 +714,21 @@ public class HabiTrainCore implements ModInitializer {
 
     private void tickMoreMods(MinecraftServer server) {
         boolean anyGameActive = false;
+        boolean hasActiveGame = false;
         for (ServerLevel world : server.getAllLevels()) {
             BetelLeafHandler.tickHarvests(world);
             if (BetelQuestState.isGameActive(world)) {
                 anyGameActive = true;
+                hasActiveGame = true;
             }
         }
         GameLifecycleHandler.tickGameEndCheck(anyGameActive, server);
+
+        // 没有游戏进行中时，跳过逐玩家 tick，节省 CPU
+        if (!hasActiveGame) {
+            return;
+        }
+
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             BetelQuestState.tickPlayer(player);
             ExtraSlotComponent.KEY.get(player).serverTick();

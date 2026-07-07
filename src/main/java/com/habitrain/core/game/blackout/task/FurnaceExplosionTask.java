@@ -32,14 +32,6 @@ public class FurnaceExplosionTask {
             .scanBlocks(Blocks.TNT, Blocks.REDSTONE_TORCH)
             .onAssign((player, task) -> {
                 task.setMaxProgress(PROGRESS_DONE);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.furnace_explosion"),
-                            Component.literal("§6【任务】右键红石火把取火把，再持火把右键 TNT 引爆！"),
-                            80
-                    );
-                }
             })
             .completionChecker((player, task) -> task.getProgress() >= PROGRESS_DONE)
             .onComplete((player, task) -> {

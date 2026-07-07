@@ -34,14 +34,6 @@ public class BlackoutPetCatTask {
             .scanBlockIds(HabiTrainCore.CAT_BLOCK_IDS)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_pet_cat"),
-                            Component.literal("§d去找一只猫猫摸一摸！盯着猫猫看5秒！"),
-                            80
-                    );
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;

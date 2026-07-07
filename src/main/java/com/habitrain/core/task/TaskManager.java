@@ -46,6 +46,36 @@ public class TaskManager {
      */
     private final Map<UUID, TaskInstance> activeFakeTasks = new ConcurrentHashMap<>();
 
+    private final Map<UUID, Boolean> blackoutNextDailyPool = new ConcurrentHashMap<>();
+
+    private final Map<UUID, Map<String, Integer>> dlcTaskCounts = new ConcurrentHashMap<>();
+
+    public int getDlcTaskCount(UUID playerUuid, String fullId) {
+        Map<String, Integer> counts = dlcTaskCounts.get(playerUuid);
+        return counts == null ? 0 : counts.getOrDefault(fullId, 0);
+    }
+
+    public void incrementDlcTaskCount(UUID playerUuid, String fullId) {
+        dlcTaskCounts.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>())
+                .merge(fullId, 1, Integer::sum);
+    }
+
+    public void clearDlcTaskCounts(UUID playerUuid) {
+        dlcTaskCounts.remove(playerUuid);
+    }
+
+    public boolean isBlackoutNextDailyPool(UUID playerUuid) {
+        return blackoutNextDailyPool.getOrDefault(playerUuid, false);
+    }
+
+    public void setBlackoutNextDailyPool(UUID playerUuid, boolean dailyPool) {
+        blackoutNextDailyPool.put(playerUuid, dailyPool);
+    }
+
+    public void clearBlackoutRotationFlag(UUID playerUuid) {
+        blackoutNextDailyPool.remove(playerUuid);
+    }
+
     public TaskInstance getActiveTask(UUID playerUuid) { return activeCustomTasks.get(playerUuid); }
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
@@ -55,7 +85,7 @@ public class TaskManager {
     public void removeFakeTask(UUID playerUuid) { activeFakeTasks.remove(playerUuid); }
 
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
-    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); }
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); }
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);

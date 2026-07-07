@@ -17,8 +17,8 @@ public class BlackoutTimerSystem {
 
     private static final Map<ResourceKey<Level>, TimerState> instances = new HashMap<>();
 
-    private static final int TOTAL_TIME = 300;
-    private static final int FIRST_BLACKOUT_CD = 120;
+    private static final int TOTAL_TIME = 600;
+    private static final int FIRST_BLACKOUT_CD = 240;
     private static final int MAINTENANCE_DURATION = 60;
     private static final int TRANSIENT_TICKS = 140;
     private static final int TRANSIENT_PENALTY_SECONDS = 15;
@@ -97,7 +97,6 @@ public class BlackoutTimerSystem {
         if (s.blackoutCountdown <= 0) {
             s.phase = Phase.FIRST_BLACKOUT;
             if (s.onPermanentStart != null) s.onPermanentStart.run();
-            broadcast(level, "§c⚡ 永久停电已开始！");
             broadcast(level, "§e修理任务可以恢复电力供应。");
             LOGGER.info("Phase transition: NORMAL -> FIRST_BLACKOUT for level {}", level.dimension().location());
         }
@@ -207,6 +206,9 @@ public class BlackoutTimerSystem {
     public static boolean isTransientBlackoutActive(ServerLevel level) { return getOrCreate(level).transientBlackoutActive; }
     public static boolean isInMaintenance(ServerLevel level) { return getOrCreate(level).phase == Phase.MAINTENANCE; }
     public static boolean isTimeUp(ServerLevel level) { return getOrCreate(level).totalTimeRemaining <= 0; }
+
+    public static int getInitialBlackoutCD() { return FIRST_BLACKOUT_CD; }
+    public static int getInitialMaintenanceDuration() { return MAINTENANCE_DURATION; }
 
     private static void broadcast(ServerLevel level, String msg) {
         BlackoutMode.broadcast(level, msg);

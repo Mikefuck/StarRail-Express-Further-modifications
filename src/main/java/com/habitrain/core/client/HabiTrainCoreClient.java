@@ -11,7 +11,6 @@ import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.InstinctColorHelper;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.blackout.BlackoutRoles;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutSheriffVotePayload;
@@ -107,9 +106,15 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         //  Iris 光影包实时监测（加入时报告 + 游戏中轮询检测切换）
         // =========================================================
 
-        // 玩家加入服务器 → 报告当前光影包 + 启动监测
+        // 玩家加入服务器 → 清除上一局残留的 HUD 状态 + 报告当前光影包 + 启动监测
+        // ★ 必须在 JOIN 时重置停电 HUD：退出游戏时 DISCONNECT 与排队中的 timer payload
+        //   存在竞态，reset() 可能先于 payload 执行，导致 showHud 被重新置 true 并残留到下一世界。
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             client.execute(() -> {
+                BlackoutHudOverlay.reset();
+                BlackoutWelcomeRenderer.reset();
+                BlackoutSheriffVoteState.clear();
+
                 lastSentShaderPack = detectCurrentShaderPack();
                 if (!lastSentShaderPack.isEmpty()) {
                     HabiTrainCore.LOGGER.info("检测到当前光影包: {}", lastSentShaderPack);
@@ -140,7 +145,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             if (!FabricLoader.getInstance().isModLoaded("iris")) return;
 
             shaderMonitorTick++;
-            if (shaderMonitorTick % 20 != 0) return; // ~1秒检查一次
+            if (shaderMonitorTick % 100 != 0) return; // ~5秒检查一次（性能优化：反射检测昂贵，1秒太频繁）
 
             String currentPack = detectCurrentShaderPack();
             if (!currentPack.equals(lastSentShaderPack)) {
@@ -249,9 +254,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
         //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
 
-        // 注册停电角色到 SRE 角色系统
-        BlackoutRoles.register();
-        // 填充警长/杀手商店目录（否则 ROLE_SHOPS 为空，商店无商品可买）
+        // 填充警长/杀手商店目录（按角色能力绑定，否则 ROLE_SHOPS 为空，商店无商品可买）
         com.habitrain.core.game.blackout.BlackoutShopService.bootstrapDefaults();
     }
 

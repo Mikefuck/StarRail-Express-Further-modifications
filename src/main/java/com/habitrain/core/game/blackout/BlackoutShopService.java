@@ -1,5 +1,7 @@
 package com.habitrain.core.game.blackout;
 
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -21,18 +23,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 停电模式商店服务。
+ *
+ * 商店按角色能力绑定：canUseKiller()=true 的角色绑定杀手商店，
+ * isVigilanteTeam()=true 的角色绑定警长商店。商店接管通过 mixin 在停电模式
+ * 激活时注入 SRE 原版商店查询路径。
+ */
 public final class BlackoutShopService {
     private static final Map<ResourceLocation, List<BlackoutShopDefinition>> ROLE_SHOPS = new HashMap<>();
-    private static final Map<ResourceKey<Level>, Map<UUID, Set<String>>> PURCHASES = new HashMap<>();
+    private static final Map<ResourceKey<Level>, Map<UUID, Set<String>>> PURCHASES = new ConcurrentHashMap<>();
 
     private BlackoutShopService() {
     }
 
     public static void bootstrapDefaults() {
-        replaceRoleShop(BlackoutRoles.CIVILIAN_ID, List.of());
-        replaceRoleShop(BlackoutRoles.KILLER_ID, BlackoutShopCatalog.killerShop());
-        replaceRoleShop(BlackoutRoles.SHERIFF_ID, BlackoutShopCatalog.sheriffShop());
+        // 按角色能力绑定：所有 canUseKiller() 角色用杀手商店，所有 isVigilanteTeam() 角色用警长商店。
+        for (SRERole role : TMMRoles.ROLES.values()) {
+            ResourceLocation id = role.getIdentifier();
+            if (role.canUseKiller()) {
+                replaceRoleShop(id, BlackoutShopCatalog.killerShop());
+            } else if (role.isVigilanteTeam()) {
+                replaceRoleShop(id, BlackoutShopCatalog.sheriffShop());
+            }
+        }
     }
 
     public static void replaceRoleShop(ResourceLocation roleId, List<BlackoutShopDefinition> definitions) {
@@ -56,13 +72,12 @@ public final class BlackoutShopService {
     }
 
     public static List<io.wifi.starrailexpress.util.ShopEntry> getShopEntries(ResourceLocation roleId) {
-        if (roleId == null || !BlackoutRoleRegistry.isRegistered(roleId)) {
+        if (roleId == null || TMMRoles.getRole(roleId) == null) {
             return List.of();
         }
 
         return getDefinitions(roleId).stream()
                 .map(definition -> {
-                    // 疯狂模式需要调用 SRE 原版 usePsychoMode 而非发放物品堆
                     if (BlackoutShopCatalog.PSYCHO_MODE.key().equals(definition.key())) {
                         return (io.wifi.starrailexpress.util.ShopEntry) new BlackoutPsychoModeShopEntry(definition);
                     }
@@ -71,8 +86,8 @@ public final class BlackoutShopService {
                 .toList();
     }
 
-    public static boolean isBlackoutRole(ResourceLocation roleId) {
-        return BlackoutRoleRegistry.isRegistered(roleId);
+    public static boolean hasBlackoutShop(ResourceLocation roleId) {
+        return roleId != null && !getDefinitions(roleId).isEmpty();
     }
 
     public static boolean buySheriffRevolver(ServerPlayer player) {

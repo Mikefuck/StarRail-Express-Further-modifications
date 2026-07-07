@@ -26,14 +26,6 @@ public class BlackoutLookMyEyesTask {
             .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
                 task.setMaxProgress(60);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_look_my_eyes"),
-                            Component.literal("§d【任务】找到一名玩家，和ta对视3秒！"),
-                            80
-                    );
-                }
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;

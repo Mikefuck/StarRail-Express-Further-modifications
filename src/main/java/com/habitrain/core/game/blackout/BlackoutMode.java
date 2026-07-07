@@ -6,10 +6,13 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager.VoteResolution;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutTimerPayload;
+import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import io.wifi.starrailexpress.api.SREGameModes;
@@ -22,9 +25,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class BlackoutMode implements GameMode {
@@ -47,11 +53,26 @@ public class BlackoutMode implements GameMode {
     public static final TaskCategory BLACKOUT_BAD =
             new TaskCategory("habitrain:blackout_bad", "\u574f\u4eba\u4efb\u52a1", MODE_ID);
 
+    /**
+     * 每局只能出现一次的任务 ID 集合。
+     * 这些任务一旦被分配给任意玩家，本局内不再进入任务池。
+     * 当前：炸毁熔炉
+     */
+    public static final Set<String> ONCE_PER_GAME_TASK_IDS =
+            Collections.unmodifiableSet(new HashSet<>(List.of("habitrain_core:furnace_explosion")));
+
     private ServerLevel currentLevel;
     private int tickAccumulator = 0;
     private boolean gameEnded = false;
     private boolean sreGameRunning = false;
     private String pendingEndMessage = null;
+
+    /**
+     * 本局已经分配过的"每局一次"任务 ID 集合。
+     * 在 {@link #onPreStart} 中清空，在 {@link #onTaskAssign} 中标记，
+     * 在 {@link #filterAvailableTasks} 中过滤掉。
+     */
+    private final Set<String> assignedOncePerGameTasks = new HashSet<>();
 
     /**
      * 上一局结束时的获胜阵营，供 {@link com.habitrain.core.game.blackout.sre.SREBlackoutGameMode#finalizeGame}
@@ -89,6 +110,7 @@ public class BlackoutMode implements GameMode {
         sreGameRunning = false;
         pendingEndMessage = null;
         lastWinningFaction = null;
+        assignedOncePerGameTasks.clear();
 
         BlackoutRoleManager.clear(level);
         BlackoutSheriffVoteManager.reset(level);
@@ -182,6 +204,15 @@ public class BlackoutMode implements GameMode {
         checkVictory();
     }
 
+    @Override
+    public void onTaskAssign(ServerPlayer player, TaskInstance task) {
+        if (task != null && ONCE_PER_GAME_TASK_IDS.contains(task.getFullId())) {
+            assignedOncePerGameTasks.add(task.getFullId());
+            HabiTrainCore.LOGGER.info("[Blackout] Once-per-game task {} assigned to {}, will not reassign this round",
+                    task.getFullId(), player.getName().getString());
+        }
+    }
+
     /**
      * 杀手完成"真任务"(BLACKOUT_BAD)时的附属奖励钩子（暂时留空）。
      * 金币奖励已由 RoleMethodDispatcherMixin 发放，此处用于后续扩展专属附属奖励。
@@ -246,6 +277,15 @@ public class BlackoutMode implements GameMode {
                     TaskCategory cat = t.getCategory();
                     return BLACKOUT_GOOD.equals(cat) || BLACKOUT_BAD.equals(cat);
                 })
+                .filter(t -> {
+                    if (ONCE_PER_GAME_TASK_IDS.contains(t.getFullId())
+                            && assignedOncePerGameTasks.contains(t.getFullId())) {
+                        HabiTrainCore.LOGGER.debug("[Blackout] Excluding once-per-game task {} (already assigned this round)",
+                                t.getFullId());
+                        return false;
+                    }
+                    return true;
+                })
                 .toList();
     }
 
@@ -253,8 +293,70 @@ public class BlackoutMode implements GameMode {
         if (currentLevel == null) return;
         var blackout = io.wifi.starrailexpress.cca.SREWorldBlackoutComponent.KEY.get(currentLevel);
         if (blackout != null) {
-            // \u7528\u8fdc\u8d85\u4e00\u5c40\u65f6\u957f\u7684\u6301\u7eed\u65f6\u95f4\u4e00\u6b21\u6027\u89e6\u53d1\uff0c\u907f\u514d\u77ed\u671f\u5185\u53cd\u590d\u89e6\u53d1\u4ea7\u751f\u5173\u706f\u97f3\u6548\u5237\u5c4f\u3002
             blackout.triggerBlackout(true, 600000);
+        }
+
+        com.habitrain.core.game.blackout.task.RestorePowerHandler.resetCompleted();
+        forceAssignRestorePowerToAllGood();
+    }
+
+    private void forceAssignRestorePowerToAllGood() {
+        if (currentLevel == null) return;
+        TaskManager mgr = TaskManager.getInstance();
+        TaskDefinition restoreDef = TaskRegistry.get("habitrain_core:restore_power");
+        if (restoreDef == null) return;
+
+        for (UUID uuid : BlackoutRoleManager.getAllAlive(currentLevel)) {
+            if (BlackoutRoleManager.getFaction(currentLevel, uuid) != BlackoutRoleManager.Faction.GOOD) continue;
+
+            // 在派发 restore_power 之前，对正在做供电池任务的玩家先同步完成给奖励，
+            // 避免直接清空导致玩家在 add_coal/repair_wiring 中途任务消失无奖励。
+            // 注意：这里调用 syncCompletion 会让所有正在做同任务的好人玩家一起完成，
+            // 但此处是全员循环，每个玩家都触发一次 syncCompletion 是重复的——所以这里只
+            // 在 removeActiveTask 前先 fire 一次 onComplete 给该玩家自己（不广播同步）。
+            TaskInstance existing = mgr.getActiveTask(uuid);
+            if (existing != null && !existing.isFulfilled()
+                    && existing.getFullId() != null
+                    && existing.getFullId().startsWith("habitrain_core:")) {
+                ServerPlayer existingPlayer = currentLevel.getServer().getPlayerList().getPlayer(uuid);
+                if (existingPlayer != null) {
+                    try {
+                        existing.setFulfilled(true);
+                        existing.getDefinition().onComplete(existingPlayer, existing);
+                    } catch (Throwable t) {
+                        HabiTrainCore.LOGGER.error(
+                                "forceAssignRestorePowerToAllGood: failed to complete existing task {} for {}",
+                                existing.getFullId(), uuid, t);
+                    }
+                }
+            }
+
+            mgr.removeActiveTask(uuid);
+            mgr.clearBlackoutRotationFlag(uuid);
+
+            ServerPlayer sp = currentLevel.getServer().getPlayerList().getPlayer(uuid);
+
+            if (sp != null) {
+                try {
+                    io.wifi.starrailexpress.cca.SREPlayerTaskComponent taskComp =
+                            io.wifi.starrailexpress.cca.SREPlayerTaskComponent.KEY.get(sp);
+                    if (taskComp != null) {
+                        taskComp.clear();
+                    }
+                } catch (Throwable t) {
+                    HabiTrainCore.LOGGER.error("forceAssignRestorePowerToAllGood: failed to clear SRE tasks for {}", uuid, t);
+                }
+            }
+
+            TaskInstance instance = new TaskInstance(restoreDef);
+            if (sp != null) {
+                restoreDef.onAssign(sp, instance);
+            }
+            mgr.setActiveTask(uuid, instance);
+
+            if (sp != null) {
+                ActiveTaskPayload.sendToPlayer(sp, restoreDef.getFullId());
+            }
         }
     }
 
@@ -310,11 +412,10 @@ public class BlackoutMode implements GameMode {
                 if (mood == null) continue;
                 if (!mood.isLowerThanDepressed()) continue;
 
-                // 理智崩溃 → 判定对局死亡
+                // 理智崩溃 → 判定对局死亡（不广播提示，死因通过回放翻译键显示）
                 GameUtils.killPlayer(player, true, null,
                         ResourceLocation.fromNamespaceAndPath("habitrain_core", "sanity_collapse"));
                 BlackoutRoleManager.eliminate(currentLevel, id);
-                broadcast(currentLevel, "\u00a7c" + player.getName().getString() + " \u00a7c因理智崩溃而倒下。");
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.error("checkSanityDeaths: failed for player {}", id, t);
             }
@@ -384,15 +485,18 @@ public class BlackoutMode implements GameMode {
                 playerMap.put(player.getUUID(), player);
             }
 
+            var gameWorld = SREGameWorldComponent.KEY.get(currentLevel);
+
             for (int i = 0; i < resolution.winnerIds().size(); i++) {
                 UUID winnerId = resolution.winnerIds().get(i);
                 boolean wasKiller = resolution.winnerWasKillers().get(i);
                 ServerPlayer player = playerMap.get(winnerId);
                 if (player == null) continue;
 
-                // 随机一个警察职业作为被票选者的可见身份。
+                // 随机一个 SRE 原版警察职业作为被票选者的可见身份。
                 // 杀手被票选时阵营保持 BAD（身份欺诈）：显示成警察但实际仍是坏人。
-                BlackoutRoleDefinition policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
+                io.wifi.starrailexpress.api.SRERole policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
+                if (policeRole == null) continue;
                 BlackoutRoleManager.Faction currentFaction =
                         BlackoutRoleManager.getFaction(currentLevel, player.getUUID());
                 BlackoutRoleManager.Faction factionOverride =
@@ -401,10 +505,13 @@ public class BlackoutMode implements GameMode {
                                 : null;
                 BlackoutRoleManager.setSheriff(currentLevel, player.getUUID(), policeRole, factionOverride);
 
+                String roleName = policeRole.getName().getString();
+                String subtitle = policeRole.getDescription().getString();
+                String goal = policeRole.getGoal().getString();
                 ServerPlayNetworking.send(player, new BlackoutAnnouncePayload(
-                        policeRole.announcementName(),
-                        policeRole.announcementSubtitle(),
-                        policeRole.announcementGoal(),
+                        roleName,
+                        subtitle,
+                        goal,
                         BlackoutRoleManager.getRemainingBad(currentLevel),
                         BlackoutRoleManager.getRemainingGood(currentLevel)
                 ));

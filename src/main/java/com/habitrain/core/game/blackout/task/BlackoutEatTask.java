@@ -2,8 +2,6 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
@@ -20,18 +18,11 @@ public class BlackoutEatTask {
             .displayName("进食")
             .category(BlackoutMode.BLACKOUT_GOOD)
             .weight(3.0f)
-            .blockTypeId(-1)
-            .instinctColor(255, 180, 80, 200)
+            .blockTypeId(39)
+            .instinctColor(0, 255, 0, 200)
+            .scanBlockIds("trainmurdermystery:food_platter")
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_eat"),
-                            Component.literal("§6【任务】吃点东西补充体力！"),
-                            80
-                    );
-                }
             })
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {

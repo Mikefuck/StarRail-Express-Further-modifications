@@ -29,7 +29,7 @@ public class ActiveTaskCache {
 
     /** 当前活跃的自定义任务完整 ID，null = 无活跃任务 */
     @Nullable
-    private static String activeTaskFullId = null;
+    private static volatile String activeTaskFullId = null;
 
     private ActiveTaskCache() {}
 

@@ -1,17 +1,14 @@
 package com.habitrain.core.game.blackout.task;
 
+import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutTimerSystem;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /**
- * 停电模式好人任务：维持供电（持续右键发电机）。
- * <p>玩家每 5 秒右键发电机一次，累计 15 秒后完成。漏右键则进度重置。
- * <p>完成时增加供电时间 25 秒 + 发放金币 50 / 情绪 0.5 奖励。
+ * 停电模式好人任务：维持供电（右键发电机触发延迟奖励）。
+ * <p>玩家右键发电机 → 获得 10 秒缓慢 → 缓慢结束后发放奖励 + 断电倒计时增加 80 秒。
  * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
  */
 public class MaintainPowerTask {
@@ -20,32 +17,25 @@ public class MaintainPowerTask {
             .displayName("维持供电")
             .category(BlackoutMode.BLACKOUT_GOOD)
             .weight(3.0f)
-            .blockTypeId(-1)
+            .blockTypeId(38)
             .instinctColor(0, 200, 255, 200)
             .scanBlockIds("yuushya:generator")
+            // 声明时间影响：完成后增加停电倒计时/维护时间 80 秒。
+            // 自适应刷新概率会从 delta=80 派生阈值（low=60s, high=240s）。
+            .timeImpact(TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN, 80)
             .onAssign((player, task) -> {
-                task.setMaxProgress(15);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.maintain_power"),
-                            Component.literal("§6【任务】每 5 秒右键发电机一次，持续 15 秒完成。"),
-                            80
-                    );
-                }
+                task.setMaxProgress(1);
             })
             .onTick((player, task) -> MaintainPowerHandler.tickCheck(player, task))
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
-                    BlackoutTimerSystem.delayMaintenanceOrCountdown(serverPlayer.serverLevel(), 25);
+                    // 通过 applyTimeImpact 统一调用（替代硬编码 delayMaintenanceOrCountdown(level, 80)）
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), "habitrain_core:maintain_power");
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:maintain_power");
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.maintain_power"),
-                            Component.literal("§a供电已维持！供电时间增加 25 秒。"),
-                            80
-                    );
+                    // 同步完成其它正在做 maintain_power 的 GOOD 玩家
+                    SupplyTaskSyncHelper.syncCompletion(
+                            serverPlayer.serverLevel(), serverPlayer.getUUID(), "habitrain_core:maintain_power");
                 }
             })
             .onRemove((player, task) -> cleanup(player))

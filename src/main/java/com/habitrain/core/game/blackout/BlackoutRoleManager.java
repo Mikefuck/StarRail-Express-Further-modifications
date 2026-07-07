@@ -1,5 +1,7 @@
 package com.habitrain.core.game.blackout;
 
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
@@ -10,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,12 +19,14 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Blackout mode role state, isolated per ServerLevel.
+ * 停电模式阵营状态管理器，按 ServerLevel 隔离。
  *
- * Role identity is registry-backed so new roles can be added without changing
- * the manager's internal storage model.
+ * 角色分配完全复用 SRE 原版机制（SREMurderGameMode.assignRole → assignRolesToPlayers，
+ * 含 RoleCountManager/权重/forced role），本类仅负责从 SRE 分配结果同步阵营状态
+ * （canUseKiller=BAD, 其余=GOOD），并维护警长集合与角色历史用于回放结算。
  */
 public class BlackoutRoleManager {
 
@@ -32,7 +35,7 @@ public class BlackoutRoleManager {
         BAD
     }
 
-    private static final Map<ResourceKey<Level>, RoleState> INSTANCES = new HashMap<>();
+    private static final Map<ResourceKey<Level>, RoleState> INSTANCES = new ConcurrentHashMap<>();
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutRoleManager");
 
     private static RoleState getOrCreate(ServerLevel level) {
@@ -43,16 +46,8 @@ public class BlackoutRoleManager {
         final Map<UUID, ResourceLocation> roles = new HashMap<>();
         final Map<UUID, Faction> factions = new HashMap<>();
         final Set<UUID> sheriffs = new HashSet<>();
-        // 全员角色历史：assignRole/setSheriff 写入，eliminate 不清除，
-        // 供对局结束身份通报使用（被淘汰玩家也要在通报中显示原角色）。
         final Map<UUID, ResourceLocation> roleHistory = new HashMap<>();
-    }
-
-    public static void assignRole(ServerLevel level, UUID playerId, BlackoutRoleDefinition role) {
-        if (role == null) {
-            return;
-        }
-        assignRole(level, playerId, role.identifier(), role.faction());
+        int initialGoodCount = 0;
     }
 
     public static void assignRole(ServerLevel level, UUID playerId, ResourceLocation roleId, Faction faction) {
@@ -67,11 +62,7 @@ public class BlackoutRoleManager {
     }
 
     public static ResourceLocation getRoleId(ServerLevel level, UUID playerId) {
-        return getOrCreate(level).roles.getOrDefault(playerId, BlackoutRoles.CIVILIAN_ID);
-    }
-
-    public static BlackoutRoleDefinition getRoleDefinition(ServerLevel level, UUID playerId) {
-        return BlackoutRoleRegistry.get(getRoleId(level, playerId)).orElse(null);
+        return getOrCreate(level).roles.get(playerId);
     }
 
     public static boolean isAlive(ServerLevel level, UUID playerId) {
@@ -87,31 +78,25 @@ public class BlackoutRoleManager {
     }
 
     public static void setSheriff(ServerLevel level, UUID playerId) {
-        setSheriff(level, playerId, BlackoutRoles.SHERIFF, null);
+        RoleState state = getOrCreate(level);
+        state.sheriffs.add(playerId);
     }
 
     /**
-     * 投票选出的警长：把玩家的可见职业切换为 {@code role}（通常是随机警察职业），
+     * 投票选出的警长：把玩家的可见职业切换为 {@code sreRole}（通常是随机警察职业），
      * 同时把玩家加入 {@code sheriffs} 集合以保留警长特权（/habi_api buy_gun、回放标识）。
-     * <p>
-     * 阵营处理：
-     * <ul>
-     *   <li>{@code factionOverride == null} → 使用 {@code role.faction()}（好人被票选时）</li>
-     *   <li>{@code factionOverride != null} → 强制使用该阵营（杀手被票选时传 {@link Faction#BAD}
-     *       以实现身份欺诈：显示成警察但实际仍是坏人阵营）</li>
-     * </ul>
-     * 无论哪种情况，roleHistory 记录的是实际分配的 roleId（用于结束通报）。
      *
-     * @param role           被票选者要变成的停电角色（不能为 null）
-     * @param factionOverride 阵营覆盖；null 表示沿用 role 的阵营
+     * @param sreRole         被票选者要变成的 SRE 原版角色（不能为 null）
+     * @param factionOverride 阵营覆盖；null 表示沿用根据 sreRole 推导的阵营
      */
-    public static void setSheriff(ServerLevel level, UUID playerId, BlackoutRoleDefinition role,
+    public static void setSheriff(ServerLevel level, UUID playerId, SRERole sreRole,
                                   Faction factionOverride) {
-        if (role == null) {
-            role = BlackoutRoles.SHERIFF;
+        if (sreRole == null) {
+            return;
         }
-        Faction faction = factionOverride != null ? factionOverride : role.faction();
-        ResourceLocation roleId = role.identifier();
+        Faction faction = factionOverride != null ? factionOverride
+                : (sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD);
+        ResourceLocation roleId = sreRole.getIdentifier();
 
         RoleState state = getOrCreate(level);
         state.sheriffs.add(playerId);
@@ -121,9 +106,8 @@ public class BlackoutRoleManager {
 
         var gameWorld = SREGameWorldComponent.KEY.get(level);
         if (gameWorld != null) {
-            gameWorld.addRole(playerId, role.sreRole(), false);
+            gameWorld.addRole(playerId, sreRole, false);
             gameWorld.syncRoles();
-            // 同步 SRE 回放快照，使结束通报中警长身份可被识别
             try {
                 io.wifi.starrailexpress.SRE.REPLAY_MANAGER.updateRolesFromComponent(gameWorld);
             } catch (Throwable ignored) {}
@@ -131,26 +115,19 @@ public class BlackoutRoleManager {
     }
 
     /**
-     * 从警察职业池（{@link BlackoutRoles#POLICE_ROLE_IDS}）中随机一个已注册角色。
-     * 警长投票选出的玩家会被切换成这个职业。若警察池为空（SRE 角色缺失），
-     * 回退到 {@link BlackoutRoles#SHERIFF}。
+     * 从 SRE 原版警察职业池（isVigilanteTeam()=true）中随机一个角色。
+     * 警长投票选出的玩家会被切换成这个职业。若警察池为空，返回 null。
      */
     @org.jetbrains.annotations.Nullable
-    public static BlackoutRoleDefinition getRandomPoliceRole(java.util.Random random) {
-        if (!BlackoutRoles.POLICE_ROLE_IDS.isEmpty()) {
-            List<BlackoutRoleDefinition> candidates = BlackoutRoleRegistry.getByFaction(Faction.GOOD).stream()
-                    .filter(def -> BlackoutRoles.POLICE_ROLE_IDS.contains(def.identifier()))
-                    .toList();
-            if (!candidates.isEmpty()) {
-                return candidates.get(random.nextInt(candidates.size()));
-            }
-        }
-        return BlackoutRoles.SHERIFF;
+    public static SRERole getRandomPoliceRole(Random random) {
+        List<SRERole> police = TMMRoles.ROLES.values().stream()
+                .filter(SRERole::isVigilanteTeam)
+                .toList();
+        return police.isEmpty() ? null : police.get(random.nextInt(police.size()));
     }
 
     /**
      * 全员角色历史快照（含已淘汰玩家），用于对局结束身份通报。
-     * 返回 playerId -> roleId 的映射。
      */
     public static Map<UUID, ResourceLocation> getRoleHistory(ServerLevel level) {
         return new HashMap<>(getOrCreate(level).roleHistory);
@@ -182,6 +159,10 @@ public class BlackoutRoleManager {
         return getRemainingCount(level, Faction.BAD);
     }
 
+    public static int getInitialGoodCount(ServerLevel level) {
+        return getOrCreate(level).initialGoodCount;
+    }
+
     public static List<UUID> getAllAlive(ServerLevel level) {
         return new ArrayList<>(getOrCreate(level).roles.keySet());
     }
@@ -190,45 +171,28 @@ public class BlackoutRoleManager {
         INSTANCES.remove(level.dimension());
     }
 
-    public static void initRandomAssignment(ServerLevel level, List<ServerPlayer> players) {
-        clear(level);
-        List<ServerPlayer> shuffled = new ArrayList<>(players);
-        Collections.shuffle(shuffled);
-        Random random = new Random(level.getRandom().nextLong());
-
-        int killerCount = Math.max(1, (int) Math.ceil(shuffled.size() / 6.0));
-
-        for (int i = 0; i < shuffled.size(); i++) {
-            ServerPlayer p = shuffled.get(i);
-            UUID id = p.getUUID();
-            if (i < killerCount) {
-                BlackoutRoleDefinition role = BlackoutRoleRegistry.getRandomByFaction(Faction.BAD, random);
-                BlackoutRoleDefinition assigned = role != null ? role : BlackoutRoles.KILLER;
-                assignRole(level, id, assigned);
-                LOGGER.info("[BlackoutAssign] BAD slot {} -> player={} roleId={} displayName={} selectable={}",
-                        i, p.getName().getString(), assigned.identifier(), assigned.displayName(),
-                        assigned.selectableInRandomAssignment());
-            } else {
-                BlackoutRoleDefinition role = BlackoutRoleRegistry.getRandomByFaction(Faction.GOOD, random);
-                BlackoutRoleDefinition assigned = role != null ? role : BlackoutRoles.CIVILIAN;
-                assignRole(level, id, assigned);
-                LOGGER.info("[BlackoutAssign] GOOD slot {} -> player={} roleId={} displayName={} selectable={}",
-                        i, p.getName().getString(), assigned.identifier(), assigned.displayName(),
-                        assigned.selectableInRandomAssignment());
+    /**
+     * 从 SRE 原版分配结果同步停电阵营状态。
+     * 在 SREBlackoutGameMode.initializeGame 调用父类 assignRole 之后调用：
+     * 遍历每个玩家的 SRE 角色，按 canUseKiller()=BAD / 其余=GOOD 写入阵营状态，
+     * 并记录初始好人数供回放/任务进度使用。
+     */
+    public static void syncFactionsFromSreRoles(ServerLevel level, SREGameWorldComponent game,
+                                                List<ServerPlayer> players) {
+        RoleState state = getOrCreate(level);
+        for (ServerPlayer p : players) {
+            SRERole sreRole = game.getRole(p);
+            if (sreRole == null) {
+                continue;
             }
+            ResourceLocation roleId = sreRole.getIdentifier();
+            Faction faction = sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD;
+            state.roles.put(p.getUUID(), roleId);
+            state.factions.put(p.getUUID(), faction);
+            state.roleHistory.put(p.getUUID(), roleId);
         }
-
-        LOGGER.info("BlackoutRoleManager: Assigned {} BAD / {} GOOD ({} players, formula n/6 ceil)",
-                killerCount, shuffled.size() - killerCount, shuffled.size());
-        LOGGER.info("[BlackoutAssign] Registry GOOD selectable candidates: {}",
-                BlackoutRoleRegistry.getByFaction(Faction.GOOD).stream()
-                        .filter(BlackoutRoleDefinition::selectableInRandomAssignment)
-                        .map(d -> d.identifier() + "=" + d.displayName())
-                        .toList());
-        LOGGER.info("[BlackoutAssign] Registry BAD selectable candidates: {}",
-                BlackoutRoleRegistry.getByFaction(Faction.BAD).stream()
-                        .filter(BlackoutRoleDefinition::selectableInRandomAssignment)
-                        .map(d -> d.identifier() + "=" + d.displayName())
-                        .toList());
+        state.initialGoodCount = getRemainingGood(level);
+        LOGGER.info("[BlackoutSync] factions synced from SRE roles: {} players, initialGood={}",
+                players.size(), state.initialGoodCount);
     }
 }

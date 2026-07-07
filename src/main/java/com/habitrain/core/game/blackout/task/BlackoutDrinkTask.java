@@ -2,8 +2,6 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
@@ -20,18 +18,11 @@ public class BlackoutDrinkTask {
             .displayName("喝水")
             .category(BlackoutMode.BLACKOUT_GOOD)
             .weight(3.0f)
-            .blockTypeId(-1)
-            .instinctColor(80, 170, 255, 200)
+            .blockTypeId(40)
+            .instinctColor(234, 88, 88, 200)
+            .scanBlockIds("trainmurdermystery:drink_tray")
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.blackout_drink"),
-                            Component.literal("§6【任务】喝点什么解解渴！"),
-                            80
-                    );
-                }
             })
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {

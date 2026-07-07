@@ -3,14 +3,23 @@ package com.habitrain.core.game.sre.mixin;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.network.CustomTaskBlockPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
+import io.wifi.starrailexpress.content.block_entity.BeveragePlateBlockEntity;
+import io.wifi.starrailexpress.content.block.FoodPlatterBlock;
+import io.wifi.starrailexpress.content.item.CocktailItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.HoneyBottleItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.agmas.noellesroles.utils.MapScannerManager;
@@ -87,6 +96,15 @@ public class MapScannerMixin {
 
         CustomTaskBlockCache.clear();
 
+        // 缓存当前停电模式吃/喝任务的 typeId（39=eat, 40=drink），
+        // 用于盘子内容检查时决定加哪个 typeId。
+        int foodPlatterEatTypeId = -1;
+        int foodPlatterDrinkTypeId = -1;
+        for (TaskDefinition def : TaskRegistry.getAll()) {
+            if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = def.getBlockTypeId();
+            else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = def.getBlockTypeId();
+        }
+
         for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
             for (int y = areaBox.minY(); y <= areaBox.maxY(); y++) {
                 for (int z = areaBox.minZ(); z <= areaBox.maxZ(); z++) {
@@ -94,10 +112,39 @@ public class MapScannerMixin {
                     BlockState state = serverLevel.getBlockState(pos);
                     Block block = state.getBlock();
 
+                    // === 盘子内容检查（镜像 SRE 原版 MapScanner.java:108-125）===
+                    // FoodPlatterBlock（含 DrinkTrayBlock 子类）需检查内容物决定 type 39/40。
+                    // 空盘子不加入缓存（避免误导玩家到空盘子前无食物可吃）。
+                    if (block instanceof FoodPlatterBlock) {
+                        if (serverLevel.getBlockEntity(pos) instanceof BeveragePlateBlockEntity entity) {
+                            var items = entity.getStoredItems();
+                            if (items.isEmpty()) continue;  // 空盘子跳过
+                            ItemStack item0 = items.get(0);
+                            Item item = item0.getItem();
+                            if (item instanceof CocktailItem || item instanceof PotionItem || item instanceof HoneyBottleItem) {
+                                // 饮品 → typeId 40（drink）
+                                if (foodPlatterDrinkTypeId > 0) {
+                                    CustomTaskBlockCache.put(pos, foodPlatterDrinkTypeId);
+                                    totalAddedCount++;
+                                }
+                            } else {
+                                // 食物（需有 FOOD 组件）→ typeId 39（eat）
+                                FoodProperties foodPro = item0.get(net.minecraft.core.component.DataComponents.FOOD);
+                                if (foodPro != null && foodPlatterEatTypeId > 0) {
+                                    CustomTaskBlockCache.put(pos, foodPlatterEatTypeId);
+                                    totalAddedCount++;
+                                }
+                                // 其它物品（如非食物）跳过
+                            }
+                        }
+                        continue;  // 盘子类方块不走下方通用 blockToTypeIds 路径
+                    }
+
                     Set<Integer> typeIds = blockToTypeIds.get(block);
                     if (typeIds != null) {
                         for (int typeId : typeIds) {
-                            CustomTaskBlockCache.put(pos, typeId);
+                            // 性能优化：同时缓存 Block 实例，渲染时免查 getBlockState
+                            CustomTaskBlockCache.put(pos, typeId, block);
                         }
                         totalAddedCount++;
                     }
@@ -107,6 +154,7 @@ public class MapScannerMixin {
 
         if (totalAddedCount > 0) {
             MapScannerManager.saveArea(serverLevel);
+            CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
             LOGGER.info("[MapScannerMixin] updated custom task block cache with {} entries (multi-typeId)",
                     totalAddedCount);
         }

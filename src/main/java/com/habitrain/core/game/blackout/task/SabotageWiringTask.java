@@ -1,8 +1,8 @@
 package com.habitrain.core.game.blackout.task;
 
+import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -25,21 +25,15 @@ public class SabotageWiringTask {
             .blockTypeId(22)
             .instinctColor(255, 0, 0, 200)
             .scanBlocks(Blocks.REDSTONE_BLOCK)
+            // 声明时间影响：缩短供电倒计时/维护时间 25 秒（负值=减少）。
+            .timeImpact(TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN, -25)
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(
-                            serverPlayer,
-                            Component.translatable("task.sabotage_wiring"),
-                            Component.literal("§6【任务】右键红石块破坏线路！"),
-                            80
-                    );
-                }
             })
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
-                    BlackoutTimerSystem.reduceMaintenanceOrCountdown(serverPlayer.serverLevel(), 25);
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), "habitrain_core:sabotage_wiring");
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:sabotage_wiring");
                     SubtitleNotifier.sendTop(
                             serverPlayer,

@@ -18,19 +18,5 @@
     "task.blackout_pet_cat":  "摸猫猫",
     "task.blackout_be_alone":  "一个人静静",
     "task.blackout_look_my_eyes":  "LOOK MY EYES",
-    "sre.role.blackout_civilian.name":  "停电模式 · 平民",
-    "sre.role.blackout_civilian.desc":  "普通乘客。在停电中生存，通过完成任务帮助好人阵营获胜。",
-    "sre.role.blackout_killer.name":  "停电模式 · 杀手",
-    "sre.role.blackout_killer.desc":  "隐藏在人群中的杀手。利用黑暗掩护行动，消灭所有好人。",
-    "sre.role.blackout_sheriff.name":  "停电模式 · 警长",
-    "sre.role.blackout_sheriff.desc":  "唯一可以击杀杀手的好人。通过投票选出，谨慎选择目标。",
-    "announcement.star.role.blackout_civilian":  "平民",
-    "announcement.star.role.blackout_killer":  "杀手",
-    "announcement.star.role.blackout_sheriff":  "警长",
-    "announcement.star.goals.blackout_civilian":  "完成任务，存活到对局结束，并帮助好人阵营获胜",
-    "announcement.star.goals.blackout_killer":  "潜伏在平民之中，借助停电刺杀所有好人",
-    "announcement.star.goals.blackout_sheriff":  "找出并处决杀手，保护平民直到胜利",
-    "info.screen.roleid.blackout_civilian":  "普通乘客。黑暗中活下来，尽可能完成任务，为好人阵营争取胜利。",
-    "info.screen.roleid.blackout_killer":  "潜伏在人群中的杀手。借助黑暗掩护行动，消灭所有无辜者。",
-    "info.screen.roleid.blackout_sheriff":  "唯一能处决杀手的好人。通过投票选出，谨慎判断目标。"
+    "death_reason.habitrain_core.sanity_collapse":  "理智崩溃"
 }
