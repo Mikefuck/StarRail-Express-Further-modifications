@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.habitrain.core.betel.BetelFoodRestriction;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelQuestDefinition;
 import com.habitrain.core.betel.BetelQuestState;
@@ -352,7 +353,7 @@ public class HabiTrainCore implements ModInitializer {
         BetelQuestDefinition.register();
         BetelLeafHandler.register();
         BackpackSearchHandler.register();
-        BetelQuestState.registerFoodRestriction();
+        BetelFoodRestriction.register();
         GameLifecycleHandler.register();
     }
 

@@ -2,7 +2,7 @@ package com.habitrain.core;
 
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.betel.BetelLeafHandler;
-import com.habitrain.core.betel.BetelQuestState;
+import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.task.GameLifecycleHandler;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
@@ -26,7 +26,7 @@ public class ModTickHandler {
         boolean hasActiveGame = false;
         for (ServerLevel world : server.getAllLevels()) {
             BetelLeafHandler.tickHarvests(world);
-            if (BetelQuestState.isGameActive(world)) {
+            if (BetelTickEngine.isGameActive(world)) {
                 anyGameActive = true;
                 hasActiveGame = true;
             }
@@ -38,7 +38,7 @@ public class ModTickHandler {
         }
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            BetelQuestState.tickPlayer(player);
+            BetelTickEngine.tickPlayer(player);
             ExtraSlotComponent.KEY.get(player).serverTick();
         }
     }
