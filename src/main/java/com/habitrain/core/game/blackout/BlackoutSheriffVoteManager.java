@@ -6,7 +6,6 @@ import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -66,7 +65,7 @@ public final class BlackoutSheriffVoteManager {
         }
         changed |= state.candidateOrder.remove(playerId);
         if (changed && state.active) {
-            syncToAll(level);
+            SheriffVoteBroadcaster.broadcast(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
         }
     }
 
@@ -90,11 +89,11 @@ public final class BlackoutSheriffVoteManager {
         if (!state.active || justStarted) return Optional.empty();
 
         state.remainingSeconds = Math.max(0, state.remainingSeconds - 1);
-        syncToAll(level);
+        SheriffVoteBroadcaster.tickSecond(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
         if (state.remainingSeconds > 0) return Optional.empty();
 
         VoteResolution resolution = resolve(level, state);
-        syncToAll(level);
+        SheriffVoteBroadcaster.broadcast(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
         return Optional.of(resolution);
     }
 
@@ -109,7 +108,6 @@ public final class BlackoutSheriffVoteManager {
         if (slotIndex < 0) {
             targets.removeIf(id -> id.equals(targetId));
         } else if (slotIndex < state.sheriffCount) {
-            // 移除该槽位上现有的票
             if (slotIndex < targets.size()) {
                 targets.set(slotIndex, targetId);
             } else {
@@ -120,7 +118,7 @@ public final class BlackoutSheriffVoteManager {
         } else {
             return false;
         }
-        syncToAll(level);
+        SheriffVoteBroadcaster.broadcast(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
         return true;
     }
 
@@ -141,12 +139,7 @@ public final class BlackoutSheriffVoteManager {
     public static void syncToAll(ServerLevel level) {
         var state = STATES.get(level.dimension());
         if (state == null) return;
-        MinecraftServer server = level.getServer();
-        if (server == null) return;
-        var payload = buildPayload(level, state);
-        for (ServerPlayer player : level.players()) {
-            ServerPlayNetworking.send(player, payload);
-        }
+        SheriffVoteBroadcaster.broadcast(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
     }
 
     private static void startVote(ServerLevel level, VoteState state) {
@@ -172,7 +165,7 @@ public final class BlackoutSheriffVoteManager {
         }
 
         broadcast(level, "§e警长投票已开启，本局将选出 §b" + state.sheriffCount + " §e名警长。按绑定键打开投票页面。");
-        syncToAll(level);
+        SheriffVoteBroadcaster.broadcast(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
         LOGGER.info("Sheriff vote started in {} with {} candidates, sheriffCount={}",
                 level.dimension().location(), state.candidateOrder.size(), state.sheriffCount);
     }
