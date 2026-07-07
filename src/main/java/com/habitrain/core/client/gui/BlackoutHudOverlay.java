@@ -13,22 +13,20 @@ import net.minecraft.network.chat.Component;
 public class BlackoutHudOverlay {
 
     private static int totalTimeRemaining = 300;
-    private static int blackoutCountdown = 120;
     private static boolean blackoutActive = false;
     private static boolean showHud = false;
     private static boolean blackoutModeActive = false;
-    private static int currentPhase = 0;  // 0=NORMAL, 1=FIRST_BLACKOUT, 2=MAINTENANCE, 3=SECOND_BLACKOUT
-    // 当前对局的有效总时长（进度条分母）。服务端 BlackoutTimerSystem.TOTAL_TIME 固定为 300，
-    // 但 addTime 可使剩余时间超过 300，因此动态追踪已知的最大值，避免进度条比例失真。
+    private static int currentPhase = 0;
     private static int totalDuration = 300;
     private static final int TIME_WARNING_SECONDS = 60;
+    private static long cachedEndTimeTick;
 
-    public static void updateTime(int total, int cd, boolean active, int phase) {
+    public static void updateTime(int total, long endTimeTick, boolean active, int phase) {
         totalTimeRemaining = total;
         if (total > totalDuration) {
             totalDuration = total;
         }
-        blackoutCountdown = cd;
+        cachedEndTimeTick = endTimeTick;
         blackoutActive = active;
         currentPhase = phase;
         blackoutModeActive = true;
@@ -40,14 +38,21 @@ public class BlackoutHudOverlay {
 
     public static void setVisible(boolean visible) { showHud = visible; }
 
+    private static int getLocalCountdown() {
+        var level = Minecraft.getInstance().level;
+        if (level == null) return 0;
+        long now = level.getGameTime();
+        return (int) Math.max(0, cachedEndTimeTick - now);
+    }
+
     public static void reset() {
         totalTimeRemaining = 300;
-        blackoutCountdown = 120;
         blackoutActive = false;
         showHud = false;
         blackoutModeActive = false;
         currentPhase = 0;
         totalDuration = 300;
+        cachedEndTimeTick = 0;
     }
 
     public static void render(GuiGraphics g) {
@@ -78,8 +83,8 @@ public class BlackoutHudOverlay {
             g.fill(barX + filledW, barY, barX + barW, barY + barH, color);
         }
 
-        if (!blackoutActive && blackoutCountdown > 0) {
-            int markerX = barX + (int) ((float) (totalDuration - blackoutCountdown) / totalDuration * barW);
+        if (!blackoutActive && getLocalCountdown() > 0) {
+            int markerX = barX + (int) ((float) (totalDuration - getLocalCountdown()) / totalDuration * barW);
             g.fill(markerX, barY - 2, markerX + 1, barY + barH + 2, 0xFFFF6A6A);
         }
 
@@ -98,9 +103,9 @@ public class BlackoutHudOverlay {
             if (blackoutActive) {
                 String blackoutText = "§c停电中";
                 g.drawString(font, blackoutText, textX, textY + 10, 0xFFD84B4B, false);
-            } else if (blackoutCountdown > 0) {
+            } else if (getLocalCountdown() > 0) {
                 String cdLabel = currentPhase == 2 ? "§e剩余供电时间" : "§e停电";
-                String cdText = cdLabel + " " + formatTime(blackoutCountdown);
+                String cdText = cdLabel + " " + formatTime(getLocalCountdown());
                 g.drawString(font, cdText, textX, textY + 10, 0xFFFFD84B, false);
             }
         }

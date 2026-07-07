@@ -11,9 +11,9 @@ import net.minecraft.server.level.ServerPlayer;
 
 public record BlackoutTimerPayload(
     int totalTimeRemaining,
-    int blackoutCountdown,
+    long endTimeTick,
     boolean blackoutActive,
-    int phase                // 0=NORMAL, 1=FIRST_BLACKOUT, 2=MAINTENANCE, 3=SECOND_BLACKOUT
+    int phase
 ) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<BlackoutTimerPayload> TYPE =
             new CustomPacketPayload.Type<>(HabiTrainCore.id("blackout_timer"));
@@ -22,12 +22,12 @@ public record BlackoutTimerPayload(
             StreamCodec.ofMember(BlackoutTimerPayload::write, BlackoutTimerPayload::new);
 
     private BlackoutTimerPayload(FriendlyByteBuf buf) {
-        this(buf.readVarInt(), buf.readVarInt(), buf.readBoolean(), buf.readVarInt());
+        this(buf.readVarInt(), buf.readVarLong(), buf.readBoolean(), buf.readVarInt());
     }
 
     private void write(FriendlyByteBuf buf) {
         buf.writeVarInt(totalTimeRemaining);
-        buf.writeVarInt(blackoutCountdown);
+        buf.writeVarLong(endTimeTick);
         buf.writeBoolean(blackoutActive);
         buf.writeVarInt(phase);
     }
@@ -39,8 +39,8 @@ public record BlackoutTimerPayload(
         PayloadTypeRegistry.playS2C().register(TYPE, CODEC);
     }
 
-    public static void broadcastToAll(MinecraftServer server, int totalTime, int blackoutCD, boolean active, int phase) {
-        var payload = new BlackoutTimerPayload(totalTime, blackoutCD, active, phase);
+    public static void broadcastToAll(MinecraftServer server, int totalTime, long endTimeTick, boolean active, int phase) {
+        var payload = new BlackoutTimerPayload(totalTime, endTimeTick, active, phase);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ServerPlayNetworking.send(player, payload);
         }

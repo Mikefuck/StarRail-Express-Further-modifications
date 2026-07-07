@@ -198,7 +198,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 }
 
                 BlackoutHudOverlay.updateTime(
-                    payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
+                    payload.totalTimeRemaining(), payload.endTimeTick(), payload.blackoutActive(), payload.phase());
             });
         });
 
