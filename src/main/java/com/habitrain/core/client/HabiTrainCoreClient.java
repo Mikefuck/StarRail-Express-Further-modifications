@@ -48,6 +48,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
     private static boolean monitoringShaderPack = false;
     /** tick 计数器，每 20 tick 检查一次（≈1秒） */
     private static int shaderMonitorTick = 0;
+    private static Class<?> cachedIrisClass;
 
     @Override
     public void onInitializeClient() {
@@ -144,7 +145,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             if (!FabricLoader.getInstance().isModLoaded("iris")) return;
 
             shaderMonitorTick++;
-            if (shaderMonitorTick % 100 != 0) return; // ~5秒检查一次（性能优化：反射检测昂贵，1秒太频繁）
+            if (shaderMonitorTick % 600 != 0) return; // ~30秒检查一次（反射检测昂贵，降低频率）
 
             String currentPack = detectCurrentShaderPack();
             if (!currentPack.equals(lastSentShaderPack)) {
@@ -252,7 +253,10 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         try {
             // 使用反射避免对 Iris 的编译期依赖
-            Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
+            if (cachedIrisClass == null) {
+                cachedIrisClass = Class.forName("net.irisshaders.iris.Iris");
+            }
+            Class<?> irisClass = cachedIrisClass;
             Object irisConfig = irisClass.getMethod("getIrisConfig").invoke(null);
 
             // ★ 关键：先检查光影是否实际启用（玩家可能关闭了光影）
