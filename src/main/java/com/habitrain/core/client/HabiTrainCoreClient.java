@@ -14,8 +14,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutSheriffVotePayload;
-import com.habitrain.core.network.BlackoutStatusPayload;
-import com.habitrain.core.network.BlackoutStatusPayload.StatusType;
+
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
@@ -199,28 +198,6 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
                 BlackoutHudOverlay.updateTime(
                     payload.totalTimeRemaining(), payload.blackoutCountdown(), payload.blackoutActive(), payload.phase());
-            });
-        });
-
-        // 网络接收: 状态事件
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutStatusPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                var st = payload.statusType();
-                Component main;
-                Component sub;
-                if (st == StatusType.BLACKOUT_START) {
-                    main = Component.literal("§c停电");
-                    sub = Component.literal("§c⚡ 停电了！");
-                } else if (st == StatusType.BLACKOUT_END) {
-                    main = Component.literal("§a供电恢复");
-                    sub = Component.literal("§a⚡ 供电恢复");
-                } else if (st == StatusType.TIME_WARNING) {
-                    main = Component.literal("§e时间警告");
-                    sub = Component.literal("§e⚠ 仅剩 1 分钟！");
-                } else {
-                    return;
-                }
-                com.habitrain.core.client.util.ClientSubtitleNotifier.sendTop(main, sub, 80);
             });
         });
 

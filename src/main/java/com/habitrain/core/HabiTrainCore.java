@@ -118,7 +118,6 @@ public class HabiTrainCore implements ModInitializer {
         ShaderConfigPayload.register();
         ShaderInfoPayload.register();
         BlackoutTimerPayload.register();
-        BlackoutStatusPayload.register();
         BlackoutAnnouncePayload.register();
         BlackoutSheriffVotePayload.register();       // S2C: 投票状态同步
         BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
