@@ -173,7 +173,7 @@ import java.util.Set;
     }
 
     /** 强制刷新缓存（在 SRE 游戏开始/结束事件时调用） */
-    public static void invalidateGameRunningCache() {
+    private static void invalidateGameRunningCache() {
         gameRunningCacheExpireMs = 0;
     }
 
