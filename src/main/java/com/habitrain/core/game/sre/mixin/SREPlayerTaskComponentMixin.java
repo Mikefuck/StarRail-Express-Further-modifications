@@ -4,6 +4,7 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.sre.PerPlayerTaskTicker;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.task.TaskManager;
@@ -107,7 +108,7 @@ public class SREPlayerTaskComponentMixin {
                         && BlackoutRoleManager.getFaction(level, sp.getUUID()) == BlackoutRoleManager.Faction.BAD
                         && !this.parallelTaskGenerated
                         && !this.tasks.isEmpty()
-                        && mgrHasActiveDlcTask(sp)) {
+                        && PerPlayerTaskTicker.mgrHasActiveDlcTask(sp)) {
                     LOGGER.info("[KillerDualTask] forcing parallel task for killer {} (mainTaskCount={})",
                             sp.getName().getString(), this.tasks.size());
                     SREPlayerTaskComponent.TrainTask parallel = generateParallelTask();
@@ -123,69 +124,7 @@ public class SREPlayerTaskComponentMixin {
             LOGGER.error("[KillerDualTask] failed to force parallel task", t);
         }
 
-        TaskManager mgr = TaskManager.getInstance();
-        TaskInstance customTask = mgr.getActiveTask(player.getUUID());
-        TaskInstance fakeTask = mgr.getFakeTask(player.getUUID());
-
-        if (customTask != null) {
-            customTask.tick(player);
-            if (customTask.isFulfilled()) {
-                handleMainTaskDone(mgr, customTask);
-            }
-        }
-
-        if (fakeTask != null) {
-            fakeTask.tick(player);
-            if (fakeTask.isFulfilled()) {
-                handleFakeTaskDone(mgr, fakeTask);
-            }
-        }
+        new PerPlayerTaskTicker(player).tick();
     }
 
-    private void handleMainTaskDone(TaskManager mgr, TaskInstance customTask) {
-        if (customTask.isFailed()) {
-            LOGGER.debug("[HabiDebug] Custom task {} failed, removing tracking without completion reward",
-                    customTask.getFullId());
-            // DLC 通过 markFailed() 手动标记失败（非 tick 超时路径）时不会触发 onFail，
-            // 这里显式调用 onRemove 让 DLC 注册的清理逻辑（撤销效果/移除实体）得以执行。
-            try {
-                customTask.getDefinition().onRemove(player, customTask);
-            } catch (Throwable t) {
-                LOGGER.error("onRemove 回调执行失败: {}", customTask.getFullId(), t);
-            }
-            // 任务失败时回收发放的物理道具（任务没正常完成，道具不该留下）
-            ItemReclaimHelper.reclaimForTask(player, customTask);
-            mgr.removeActiveTask(player.getUUID());
-            if (player instanceof ServerPlayer sp) {
-                ActiveTaskPayload.clearForPlayer(sp);
-            }
-        } else {
-            LOGGER.debug("[HabiDebug] Custom task {} fulfilled, removing tracking", customTask.getFullId());
-            if (player instanceof ServerPlayer sp) {
-                mgr.handleTaskCompletion(sp, customTask);
-                ActiveTaskPayload.clearForPlayer(sp);
-            }
-            // 成功完成路径不回收道具（玩家保留作为奖励）
-        }
-    }
-
-    private void handleFakeTaskDone(TaskManager mgr, TaskInstance fakeTask) {
-        if (fakeTask.isFailed()) {
-            LOGGER.info("[KillerDualTask] fake task {} failed for {}",
-                    fakeTask.getFullId(), player.getName().getString());
-            mgr.removeFakeTask(player.getUUID());
-        } else {
-            LOGGER.info("[KillerDualTask] fake task {} fulfilled for {}, granting rewards",
-                    fakeTask.getFullId(), player.getName().getString());
-            if (player instanceof ServerPlayer sp) {
-                // 假任务完成走同一套完成处理（发金币、附属奖励钩子留空）
-                mgr.handleTaskCompletion(sp, fakeTask);
-            }
-            mgr.removeFakeTask(player.getUUID());
-        }
-    }
-
-    private static boolean mgrHasActiveDlcTask(ServerPlayer sp) {
-        return TaskManager.getInstance().getActiveTask(sp.getUUID()) != null;
-    }
 }
