@@ -49,6 +49,7 @@ import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
 import com.habitrain.core.task.GameLifecycleHandler;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import betel.nut.BetelNutConfig;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
@@ -129,7 +130,9 @@ public class HabiTrainCore implements ModInitializer {
         registerCommands();
         // 5. 注册生命周期事件
         registerLifecycleEvents();
-        // 6. 注册更多模组的任务和系统（合并自 HabiTrainMoreTasks）
+        // 6. 注册集中式缓慢重施管理器
+        SlownessReapplyManager.registerTickHandler();
+        // 7. 注册更多模组的任务和系统（合并自 HabiTrainMoreTasks）
         registerMoreTasks();
         registerMoreSounds();
         initBetelSystem();

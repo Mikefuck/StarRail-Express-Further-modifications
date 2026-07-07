@@ -6,6 +6,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.misc.EffectOwnershipTracker;
+import com.habitrain.core.task.SlownessReapplyManager;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -87,6 +88,7 @@ public class GameLifecycleHandler {
             }
         } finally {
             // 全局清理必须执行，即使某玩家清理抛异常也不应跳过
+            SlownessReapplyManager.clearAll();
             BetelQuestState.getInstance().resetAll();
             BetelLeafHandler.clearAllHarvests();
 

@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -16,7 +17,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -64,14 +64,6 @@ public class AddCoalHandler {
                 TaskInstance task = sp != null ? TaskManager.getInstance().getActiveTask(uuid) : null;
                 boolean isAddCoalTask = task != null && "habitrain_core:add_coal".equals(task.getFullId());
 
-                if (state.slowUntilTick > tick) {
-                    if (sp != null) {
-                        int remaining = (int) (state.slowUntilTick - tick + 10);
-                        sp.addEffect(new MobEffectInstance(
-                                MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                    }
-                }
-
                 if (state.slowUntilTick <= tick) {
                     if (sp != null) {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
@@ -89,9 +81,9 @@ public class AddCoalHandler {
                                 Component.translatable("task.add_coal"),
                                 Component.literal("§a已取得煤炭！手持煤炭右键 §e发电机 §a添煤。"),
                                 80);
-                    } else {
-                        it.remove();
                     }
+                    SlownessReapplyManager.unregisterAllLevels(uuid);
+                    it.remove();
                 }
             }
         });
@@ -100,11 +92,13 @@ public class AddCoalHandler {
     /** 清理某玩家的添煤状态（任务完成/失败/移除时调用）。 */
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
     /** 清空全部状态（游戏结束时调用）。 */
     public static void clearAll() {
         activeStates.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -176,8 +170,9 @@ public class AddCoalHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, boolean phaseProgressed) {
-        sp.addEffect(new MobEffectInstance(
-                MobEffects.MOVEMENT_SLOWDOWN, SLOW_TICKS + 10, 2, false, true, true));
+        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
+                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
+                        ResourceLocation.parse("habitrain_core:add_coal")));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         CoalState s = new CoalState();
         s.slowUntilTick = tick + SLOW_TICKS;

@@ -1,16 +1,15 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -18,8 +17,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -29,43 +26,16 @@ import java.util.UUID;
  */
 public class RepairWiringHandler {
 
-    private static final int SLOW_TICKS = 120; // 6 秒
-
-    private static final Map<UUID, Long> slowUntilTickMap = new HashMap<>();
-
     public static void register() {
         UseBlockCallback.EVENT.register(RepairWiringHandler::onUseBlock);
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (slowUntilTickMap.isEmpty()) return;
-            long tick = server.overworld().getGameTime();
-            for (var it = slowUntilTickMap.entrySet().iterator(); it.hasNext(); ) {
-                var entry = it.next();
-                UUID uuid = entry.getKey();
-                long slowUntil = entry.getValue();
-                if (slowUntil > tick) {
-                    ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-                    if (sp != null) {
-                        int remaining = (int) (slowUntil - tick + 10);
-                        sp.addEffect(new MobEffectInstance(
-                                MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                    }
-                } else {
-                    ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-                    if (sp != null) {
-                        sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    }
-                    it.remove();
-                }
-            }
-        });
     }
 
     public static void clearState(UUID uuid) {
-        slowUntilTickMap.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
     public static void clearAll() {
-        slowUntilTickMap.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -99,10 +69,9 @@ public class RepairWiringHandler {
         }
 
         // 给缓慢 III (6 秒)
-        serverPlayer.addEffect(new MobEffectInstance(
-                MobEffects.MOVEMENT_SLOWDOWN, SLOW_TICKS + 10, 2, false, true, true));
-        slowUntilTickMap.put(serverPlayer.getUUID(),
-                serverPlayer.serverLevel().getServer().overworld().getGameTime() + SLOW_TICKS);
+        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
+                new SlownessReapplyManager.EffectSpec(2, 130,
+                        ResourceLocation.parse("habitrain_core:repair_wiring")));
 
         // 推进任务完成
         task.setProgress(task.getMaxProgress());

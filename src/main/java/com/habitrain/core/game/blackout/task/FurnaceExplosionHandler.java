@@ -3,19 +3,20 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -51,21 +52,11 @@ public class FurnaceExplosionHandler {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             long tick = server.overworld().getGameTime();
 
-            // 重施缓慢对抗 betel-nut-mod
             if (!activeStates.isEmpty()) {
                 for (var it = activeStates.entrySet().iterator(); it.hasNext(); ) {
                     var entry = it.next();
                     UUID uuid = entry.getKey();
                     TorchState state = entry.getValue();
-
-                    if (state.slowUntilTick > tick) {
-                        ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-                        if (sp != null) {
-                            int remaining = (int) (state.slowUntilTick - tick + 10);
-                            sp.addEffect(new MobEffectInstance(
-                                    MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                        }
-                    }
 
                     // 缓慢结束且阶段推进完成，清理
                     if (state.slowUntilTick <= tick && state.phaseProgressed) {
@@ -73,6 +64,7 @@ public class FurnaceExplosionHandler {
                         if (sp != null) {
                             sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                         }
+                        SlownessReapplyManager.unregisterAllLevels(uuid);
                         it.remove();
                     }
                 }
@@ -105,11 +97,13 @@ public class FurnaceExplosionHandler {
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
         pendingExplosions.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
     public static void clearAll() {
         activeStates.clear();
         pendingExplosions.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -208,8 +202,9 @@ public class FurnaceExplosionHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
-        sp.addEffect(new MobEffectInstance(
-                MobEffects.MOVEMENT_SLOWDOWN, ticks + 10, 2, false, true, true));
+        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
+                new SlownessReapplyManager.EffectSpec(2, ticks + 10,
+                        ResourceLocation.parse("habitrain_core:furnace_explosion")));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;

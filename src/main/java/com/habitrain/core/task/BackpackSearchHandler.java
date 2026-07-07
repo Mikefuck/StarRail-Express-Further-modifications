@@ -2,6 +2,7 @@ package com.habitrain.core.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -14,7 +15,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -67,6 +67,7 @@ public class BackpackSearchHandler {
                     if (timedOut != null) {
                         timedOut.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     }
+                    SlownessReapplyManager.unregisterAllLevels(uuid);
                     it.remove();
                     // 同步清理任务实例：玩家可能因断线/切世界错过最后一 tick，
                     // 导致任务 progress 卡在 < max，本局再也无法获得新 DLC 任务。
@@ -89,14 +90,6 @@ public class BackpackSearchHandler {
                     continue;
                 }
 
-                // 在实体同步前重新施加缓慢，对抗betel-nut-mod的清除
-                // 直接用 PlayerList.getPlayer(uuid) 查找，避免遍历所有世界（原 O(N*M)）
-                ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-                if (sp != null) {
-                    int remaining = (int) (SEARCH_TICKS - (tick - startTick) + 10);
-                    sp.addEffect(new MobEffectInstance(
-                            MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                }
             }
         });
     }
@@ -113,6 +106,7 @@ public class BackpackSearchHandler {
      */
     public static void stopSearching(UUID uuid) {
         activeSearches.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
     /**
@@ -120,6 +114,7 @@ public class BackpackSearchHandler {
      */
     public static void clearAllSearches() {
         activeSearches.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -153,8 +148,9 @@ public class BackpackSearchHandler {
         }
 
         // 给予缓慢3效果（6秒 = 120 ticks，+10 tick缓冲）
-        serverPlayer.addEffect(new MobEffectInstance(
-                MobEffects.MOVEMENT_SLOWDOWN, SEARCH_TICKS + 10, 2, false, true, true));
+        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
+                new SlownessReapplyManager.EffectSpec(2, SEARCH_TICKS + 10,
+                        ResourceLocation.parse("habitrain_core:search_backpack")));
 
         // 记录翻找状态（onTick 会据此递增任务进度）
         // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差

@@ -3,16 +3,17 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -62,12 +63,6 @@ public class RestorePowerHandler {
                     continue;
                 }
 
-                if (sp != null && state.slowUntilTick > tick) {
-                    int remaining = (int) (state.slowUntilTick - tick + 10);
-                    sp.addEffect(new MobEffectInstance(
-                            MobEffects.MOVEMENT_SLOWDOWN, remaining, 2, false, true, true));
-                }
-
                 if (state.slowUntilTick <= tick) {
                     if (sp != null) {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
@@ -75,6 +70,7 @@ public class RestorePowerHandler {
                     if (!restoreCompleted) {
                         task.setProgress(task.getMaxProgress());
                     }
+                    SlownessReapplyManager.unregisterAllLevels(uuid);
                     it.remove();
                 }
             }
@@ -83,11 +79,18 @@ public class RestorePowerHandler {
 
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid);
+    }
+
+    public static void clearAll() {
+        activeStates.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     public static void resetCompleted() {
         restoreCompleted = false;
         activeStates.clear();
+        SlownessReapplyManager.clearAll();
     }
 
     public static boolean isRestoreCompleted() {
@@ -128,8 +131,9 @@ public class RestorePowerHandler {
         rs.slowUntilTick = tick + SLOW_TICKS;
         activeStates.put(uuid, rs);
 
-        serverPlayer.addEffect(new MobEffectInstance(
-                MobEffects.MOVEMENT_SLOWDOWN, SLOW_TICKS + 10, 2, false, true, true));
+        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
+                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
+                        ResourceLocation.parse("habitrain_core:restore_power")));
 
         return InteractionResult.FAIL;
     }
