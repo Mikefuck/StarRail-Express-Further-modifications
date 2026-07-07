@@ -285,6 +285,7 @@ public class ConfigManager {
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
         taskConfigs.put(fullId, entry);
         save();
+        com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
     }
 
     /**

@@ -2,15 +2,16 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
+import com.habitrain.core.game.sre.FactionFilter;
+import com.habitrain.core.game.sre.TaskWeightCurves;
 import com.habitrain.core.game.sre.SRETrainTaskWrapper;
 import com.habitrain.core.task.TaskManager;
+import com.habitrain.core.task.TaskPoolBuilder;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.network.ActiveTaskPayload;
@@ -31,7 +32,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Mixin(SREPlayerTaskComponent.class)
 public abstract class GenerateTaskMixin {
@@ -70,10 +70,6 @@ public abstract class GenerateTaskMixin {
         throw new AssertionError("Shadowed");
     }
 
-    /**
-     * 阴影 SRE 原版私有方法 getEnabledSceneTasks，用于场景任务派发（PRAY/LIGHT_STOVE 等）。
-     * 镜像 SRE 原版 SREPlayerTaskComponent.generateTaskInternal line 439-456。
-     */
     @Shadow(remap = false)
     private Set<String> getEnabledSceneTasks() {
         throw new AssertionError("Shadowed");
@@ -85,12 +81,6 @@ public abstract class GenerateTaskMixin {
         throw new AssertionError("Shadowed");
     }
 
-    /**
-     * 当前 generateTaskInternal 调用是否为杀手"假任务"（并行任务）路径。
-     * 通过方法参数传递（而非实例字段），避免 generateTaskInternal 嵌套调用时
-     * 内层覆盖外层状态导致主任务被误存为 fakeTask。
-     */
-
     @Inject(method = "generateTaskInternal", at = @At("HEAD"), cancellable = true, remap = false)
     private void onGenerateTaskInternal(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
         LOGGER.debug("[HabiDebug] ===== genTask CALLED! tasks.size={}, timesGotten={} =====",
@@ -101,44 +91,12 @@ public abstract class GenerateTaskMixin {
         TaskManager mgr = TaskManager.getInstance();
         String mapName = mgr.getCurrentMapName(player);
         TaskCategory currentCategory = mgr.getCurrentGameModeCategory(player);
-        GameMode activeMode = resolveActiveGameMode();
 
-        // ===== 阵营池过滤（停电模式核心）=====
-        // 停电模式下，所有玩家都按阵营强制分配任务池：
-        //   GOOD 玩家 → 只抽 BLACKOUT_GOOD 池（添煤/修理线路/维持供电）
-        //   BAD  玩家 → 主任务抽 BLACKOUT_BAD 池（破坏线路/炸毁熔炉），
-        //              并行调用(假任务)抽 BLACKOUT_GOOD 池以伪装身份
-        // 新增任务时，用 .category(BlackoutMode.BLACKOUT_GOOD) 或 .category(BlackoutMode.BLACKOUT_BAD) 归属阵营。
-        // 阵营归属只由注册时的 TaskCategory 决定，TaskConfigEntry 不重复存储 faction 字段。
-        boolean killerDualTask = isKillerDualTaskMode(activeMode);
-        boolean isParallelCall = !this.tasks.isEmpty();
-        TaskCategory forcedCategory = null;
-        boolean skipActiveTaskGuard = false;
-        boolean isBlackout = (activeMode instanceof BlackoutMode);
-        boolean currentIsFakeTask = false;
+        FactionFilter.FactionContext ctx = FactionFilter.determineFaction(player, !this.tasks.isEmpty());
 
-        if (killerDualTask) {
-            // BAD 玩家（杀手双任务）：保留原有逻辑
-            if (isParallelCall) {
-                forcedCategory = BlackoutMode.BLACKOUT_GOOD;
-                skipActiveTaskGuard = true;
-                currentIsFakeTask = true;
-                LOGGER.info("[HabiDebug] Killer dual-task: parallel call, forcing GOOD pool as fake task");
-            } else {
-                forcedCategory = BlackoutMode.BLACKOUT_BAD;
-                currentIsFakeTask = false;
-                LOGGER.info("[HabiDebug] Killer dual-task: main call, forcing BAD pool as real task");
-            }
-        } else if (isBlackout) {
-            // GOOD 玩家（停电模式非杀手）：强制只抽 GOOD 池，修复好人可能拿到坏人任务的漏洞
-            forcedCategory = BlackoutMode.BLACKOUT_GOOD;
-            currentIsFakeTask = false;
-            LOGGER.info("[HabiDebug] Blackout GOOD player: forcing GOOD pool only");
-        } else {
-            currentIsFakeTask = false;
-        }
+        boolean isBlackout = (ctx.activeMode() instanceof BlackoutMode);
 
-        if (isBlackout && !killerDualTask && player instanceof ServerPlayer sp
+        if (isBlackout && !ctx.killerDualTask() && player instanceof ServerPlayer sp
                 && sp.level() instanceof ServerLevel level) {
             TaskInstance activeTask = mgr.getActiveTask(sp.getUUID());
             if (activeTask != null && "habitrain_core:restore_power".equals(activeTask.getFullId())
@@ -154,44 +112,28 @@ public abstract class GenerateTaskMixin {
         }
 
         LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, killerDual={}, parallel={}",
-                mapName, currentMood, disabledTasks, currentCategory, killerDualTask, isParallelCall);
+                mapName, currentMood, disabledTasks, currentCategory, ctx.killerDualTask(), ctx.isParallelCall());
 
         List<Map.Entry<Object, Float>> weightEntries = new ArrayList<>();
         float total = 0f;
 
-        if (!killerDualTask) {
-            total += addOriginalTasks(weightEntries, currentMood, disabledTasks, mapName, mgr, activeMode);
+        if (!ctx.killerDualTask()) {
+            total += addOriginalTasks(weightEntries, currentMood, disabledTasks, mapName, mgr, ctx.activeMode());
         }
-        total += addDlcTasks(weightEntries, mgr, mapName, currentCategory, disabledTasks, activeMode,
-                forcedCategory, skipActiveTaskGuard, currentIsFakeTask);
+        total += addDlcTasks(weightEntries, mgr, mapName, currentCategory, disabledTasks, ctx.activeMode(),
+                ctx.forcedCategory(), ctx.skipActiveTaskGuard(), ctx.currentIsFakeTask());
 
         LOGGER.debug("[HabiDebug] Flat pool built: {} entries, total weight={}",
                 weightEntries.size(), String.format("%.2f", total));
 
-        cir.setReturnValue(weightedSelect(weightEntries, total, currentIsFakeTask));
-    }
-
-    /**
-     * 判断当前是否处于"杀手双任务"模式：玩家是停电模式的杀手(BAD)阵营。
-     */
-    private boolean isKillerDualTaskMode(@Nullable GameMode activeMode) {
-        if (!(player instanceof ServerPlayer sp)) return false;
-        if (!(sp.level() instanceof ServerLevel level)) return false;
-        if (activeMode == null) return false;
-        if (!(activeMode instanceof BlackoutMode)) return false;
-        try {
-            return BlackoutRoleManager.getFaction(level, sp.getUUID())
-                    == BlackoutRoleManager.Faction.BAD;
-        } catch (Throwable t) {
-            return false;
-        }
+        cir.setReturnValue(weightedSelect(weightEntries, total, ctx.currentIsFakeTask()));
     }
 
     private float addOriginalTasks(List<Map.Entry<Object, Float>> entries,
                                    float currentMood, Set<String> disabledTasks,
                                    String mapName, TaskManager mgr,
                                    @Nullable GameMode activeMode) {
-        if (!shouldIncludeOriginalTasks(activeMode)) {
+        if (!TaskWeightCurves.shouldIncludeOriginalTasks(activeMode, player, BUILTIN_SRE_TASK_IDS)) {
             LOGGER.debug("[HabiDebug] Original SRE tasks filtered out by active GameMode");
             return 0f;
         }
@@ -213,7 +155,6 @@ public abstract class GenerateTaskMixin {
                 continue;
             }
 
-            // 防止 timesGotten.get(task)==0 时 1f/0f=Infinity 污染加权随机
             float weight = 1f / Math.max(1, this.timesGotten.getOrDefault(task, 1));
 
             if (currentMood < GameConstants.MID_MOOD_THRESHOLD) {
@@ -245,34 +186,25 @@ public abstract class GenerateTaskMixin {
             added++;
         }
 
-        // === 场景任务派发（镜像 SRE 原版 SREPlayerTaskComponent.generateTaskInternal line 439-456）===
-        // 之前 addOriginalTasks 只遍历 getAvailableTasksList（11 个非场景任务），漏掉
-        // getSceneTasksList（7 个场景任务：BREATHE/LIGHT_STOVE/CLEAN_DUST/TRANSPORT/PRAY/PRUNE_BUSH/HARVEST_CROP）。
-        // 这导致祷告(pray)等场景任务在 API 模组下永远派发不到玩家手里。
-        // 现补上场景任务循环，仅当当前地图启用了对应场景任务时才加入加权池。
         Set<String> enabledSceneTasks = getEnabledSceneTasks();
         if (enabledSceneTasks != null && !enabledSceneTasks.isEmpty()) {
             for (SREPlayerTaskComponent.Task task : SREPlayerTaskComponent.Task.getSceneTasksList()) {
-                // PRAY 槽位被停电模式杀手假任务占用（见 dispatchCustomTask 中 fakeSlot = Task.PRAY），
-                // 为避免冲突这里跳过 PRAY，仅派发其它 6 个场景任务。
-                // TODO: 后续若想接入祷告任务，需为杀手假任务另选空槽位。
                 if (task == SREPlayerTaskComponent.Task.PRAY) continue;
 
                 if (this.tasks.containsKey(task)) continue;
-                if (!enabledSceneTasks.contains(task.name())) continue;  // 地图必须启用该场景任务
+                if (!enabledSceneTasks.contains(task.name())) continue;
                 if (disabledTasks.contains(task.name())) continue;
                 if (mgr.isOriginalTaskDisabled(task.name(), mapName)) continue;
 
                 float weight = 1f / Math.max(1, this.timesGotten.getOrDefault(task, 1));
-                // 场景任务复用 mood 权重规则（与上方非场景任务一致）
                 if (currentMood < GameConstants.MID_MOOD_THRESHOLD) {
-                    if (task == SREPlayerTaskComponent.Task.LIGHT_STOVE) weight *= 2f;  // SOOTHING 类
+                    if (task == SREPlayerTaskComponent.Task.LIGHT_STOVE) weight *= 2f;
                 } else if (currentMood > GameConstants.ANGRY_MOOD_THRESHOLD) {
                     if (task == SREPlayerTaskComponent.Task.CLEAN_DUST
                             || task == SREPlayerTaskComponent.Task.TRANSPORT
                             || task == SREPlayerTaskComponent.Task.PRUNE_BUSH
                             || task == SREPlayerTaskComponent.Task.HARVEST_CROP) {
-                        weight *= 1.5f;  // ACTIVE 类
+                        weight *= 1.5f;
                     }
                 }
 
@@ -298,9 +230,7 @@ public abstract class GenerateTaskMixin {
             return 0f;
         }
 
-        // forcedCategory 现在直接作为 getAvailableDlcTasks 的硬过滤参数；
-        // 停电模式(isBlackout=true)下该函数会跳过三级 fallback，阵营池空就返回空列表。
-        List<TaskDefinition> dlcCandidates = getAvailableDlcTasks(mgr, mapName, currentCategory, activeMode, forcedCategory);
+        List<TaskDefinition> dlcCandidates = TaskPoolBuilder.getPool(activeMode, mapName, forcedCategory, currentCategory, player, BUILTIN_SRE_TASK_IDS);
 
         if (dlcCandidates.isEmpty()) return 0f;
 
@@ -371,7 +301,7 @@ public abstract class GenerateTaskMixin {
             float boostedWeight = baseWeight * autoBoost;
 
             if (activeMode instanceof BlackoutMode) {
-                boostedWeight *= computeBlackoutDynamicMultiplier(def);
+                boostedWeight *= TaskWeightCurves.computeBlackoutDynamicMultiplier(def, player);
             }
 
             int timesAssigned = mgr.getDlcTaskCount(player.getUUID(), def.getFullId());
@@ -380,7 +310,7 @@ public abstract class GenerateTaskMixin {
 
             LOGGER.debug("[HabiDebug]   ADD DLC {}: baseWeight={} × autoBoost={} × dyn={} × antiRepeat={} = finalWeight={}",
                     def.getFullId(), baseWeight, autoBoost,
-                    (activeMode instanceof BlackoutMode) ? String.format("%.2f", computeBlackoutDynamicMultiplier(def)) : "N/A",
+                    (activeMode instanceof BlackoutMode) ? String.format("%.2f", TaskWeightCurves.computeBlackoutDynamicMultiplier(def, player)) : "N/A",
                     String.format("%.2f", antiRepeat),
                     boostedWeight);
             entries.add(new AbstractMap.SimpleEntry<>(def, boostedWeight));
@@ -456,145 +386,6 @@ public abstract class GenerateTaskMixin {
         return key.toString();
     }
 
-    /**
-     * 获取可分配的 DLC 任务候选列表。
-     * <p>
-     * 阵营过滤规则（停电模式核心）：
-     * <ul>
-     *   <li>{@code forcedCategory != null}（停电模式所有玩家）→ 作为硬过滤，只返回该阵营池的任务，
-     *       且<b>跳过三级 fallback</b>。阵营池空就直接返回空列表，绝不跨阵营兜底，
-     *       避免好人玩家抽到"破坏线路/炸毁熔炉"这类坏人任务。</li>
-     *   <li>{@code forcedCategory == null}（非停电模式）→ 保留原有三级 fallback 行为
-     *       （currentCategory → MURDER → ALL → 忽略 category）。</li>
-     * </ul>
-     * 新增好人任务请用 {@code .category(BlackoutMode.BLACKOUT_GOOD)}，
-     * 新增坏人任务请用 {@code .category(BlackoutMode.BLACKOUT_BAD)}。
-     */
-    private List<TaskDefinition> getAvailableDlcTasks(TaskManager mgr, String mapName,
-                                                      TaskCategory currentCategory,
-                                                      @Nullable GameMode activeMode,
-                                                      @Nullable TaskCategory forcedCategory) {
-        // 停电模式：阵营池作为硬过滤，禁用 fallback
-        if (forcedCategory != null) {
-            List<TaskDefinition> tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, currentCategory, activeMode))
-                    .filter(def -> forcedCategory.equals(def.getCategory()))
-                    .collect(Collectors.toList());
-            LOGGER.info("[HabiDebug] getAvailableDlcTasks: blackout faction filter={}, {} candidates (fallback disabled)",
-                    forcedCategory, tasks.size());
-            return tasks;
-        }
-
-        // 非停电模式：保留原有三级 fallback 逻辑
-        List<TaskDefinition> tasks = TaskRegistry.getAll().stream()
-                .filter(def -> !isBuiltinSreTask(def))
-                .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                .filter(def -> isTaskAllowedForPool(def, currentCategory, activeMode))
-                .collect(Collectors.toList());
-        if (!tasks.isEmpty()) {
-            LOGGER.debug("[HabiDebug] getAvailableDlcTasks: {} via category {}", tasks.size(), currentCategory);
-            return tasks;
-        }
-
-        if (currentCategory != TaskCategory.MURDER) {
-            tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, TaskCategory.MURDER, activeMode))
-                    .collect(Collectors.toList());
-            if (!tasks.isEmpty()) {
-                LOGGER.warn("[HabiDebug] getAvailableDlcTasks: fallback {}->MURDER, {}", currentCategory, tasks.size());
-                return tasks;
-            }
-        }
-
-        if (currentCategory != TaskCategory.ALL) {
-            tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, TaskCategory.ALL, activeMode))
-                    .collect(Collectors.toList());
-            if (!tasks.isEmpty()) {
-                LOGGER.warn("[HabiDebug] getAvailableDlcTasks: fallback {}->ALL, {}", currentCategory, tasks.size());
-                return tasks;
-            }
-        }
-
-        LOGGER.warn("[HabiDebug] getAvailableDlcTasks: ULTIMATE fallback (ignoring category)");
-        tasks = TaskRegistry.getAll().stream()
-                .filter(def -> !isBuiltinSreTask(def))
-                .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                .collect(Collectors.toList());
-        LOGGER.warn("[HabiDebug] getAvailableDlcTasks: ultimate found {} tasks", tasks.size());
-        return tasks;
-    }
-
-    private boolean shouldIncludeOriginalTasks(@Nullable GameMode activeMode) {
-        if (activeMode == null) {
-            return true;
-        }
-        if (!(player instanceof ServerPlayer sp)) {
-            return true;
-        }
-
-        Set<String> allowedTaskIds = activeMode.filterAvailableTasks(new ArrayList<>(TaskRegistry.getAll()), sp).stream()
-                .map(TaskDefinition::getTaskId)
-                .collect(Collectors.toSet());
-
-        for (String taskId : BUILTIN_SRE_TASK_IDS) {
-            if (allowedTaskIds.contains(taskId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isTaskAllowedForPool(TaskDefinition def, TaskCategory currentCategory,
-                                         @Nullable GameMode activeMode) {
-        if (activeMode != null && player instanceof ServerPlayer sp) {
-            if (activeMode.filterAvailableTasks(List.of(def), sp).isEmpty()) {
-                return false;
-            }
-        }
-
-        TaskCategory category = def.getCategory();
-        if (TaskCategory.ALL.equals(category)
-                || TaskCategory.CUSTOM.equals(category)
-                || category.equals(currentCategory)) {
-            return true;
-        }
-
-        return activeMode != null
-                && activeMode.getTaskCategories().stream().anyMatch(category::equals);
-    }
-
-    private boolean isBuiltinSreTask(TaskDefinition def) {
-        return BUILTIN_SRE_TASK_IDS.contains(def.getTaskId());
-    }
-
-    @Nullable
-    private GameMode resolveActiveGameMode() {
-        if (!(player.level() instanceof ServerLevel level)) {
-            return null;
-        }
-        return GameModeRegistry.getActiveForLevel(level).orElse(null);
-    }
-
-    private boolean isTaskMapEnabled(String fullId, String mapName) {
-        TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);
-        if (entry == null) return true;
-        if (!entry.enabled) return false;
-        if (entry.mapFilterMode == 0) return true;
-
-        boolean listEmpty = entry.enabledMaps == null || entry.enabledMaps.isEmpty();
-        boolean contained = !listEmpty && entry.enabledMaps.contains(mapName);
-
-        if (entry.mapFilterMode == 1) return listEmpty || contained;
-        return listEmpty || !contained;
-    }
-
     private SREPlayerTaskComponent.TrainTask createAndTrackDlcTask(TaskDefinition def, boolean isFakeTask) {
         TaskManager mgr = TaskManager.getInstance();
         LOGGER.debug("[HabiDebug] createAndTrackDlcTask: {} for {} (fake={})",
@@ -605,9 +396,6 @@ public abstract class GenerateTaskMixin {
         mgr.incrementDlcTaskCount(player.getUUID(), def.getFullId());
 
         if (isFakeTask) {
-            // 杀手假任务单独追踪，不覆盖主任务。
-            // 用 PRAY 原版枚举槽位（停电模式杀手不走原版任务池，PRAY 必定空闲），
-            // 这样 SRE 的 tasks map 里主任务(CUSTOM)和假任务(PRAY)各占一个槽位，互不冲突。
             mgr.setFakeTask(player.getUUID(), instance);
             SREPlayerTaskComponent.Task fakeSlot = SREPlayerTaskComponent.Task.PRAY;
             if (player instanceof ServerPlayer sp) {
@@ -643,85 +431,5 @@ public abstract class GenerateTaskMixin {
             return entry.refreshWeight;
         }
         return def.getWeight() > 0 ? def.getWeight() : 1.0f;
-    }
-
-    private static final float DYNAMIC_WEIGHT_CAP = 4.0f;
-    /** 倒计时充足时供电池任务几乎不刷的最小权重（"几乎不刷"） */
-    private static final float DYNAMIC_WEIGHT_FLOOR = 0.05f;
-    private static final String ID_MAINTAIN_POWER = "habitrain_core:maintain_power";
-    private static final String ID_REPAIR_WIRING = "habitrain_core:repair_wiring";
-    private static final String ID_ADD_COAL = "habitrain_core:add_coal";
-
-    /**
-     * 停电模式动态权重倍率。
-     * 对供电池任务（add_coal/repair_wiring/maintain_power）按停电倒计时自适应调整：
-     *   - 倒计时 < 1 分钟 → 大增权重（接近 DYNAMIC_WEIGHT_CAP）
-     *   - 倒计时 > 3 分钟 → 几乎不刷（接近 DYNAMIC_WEIGHT_FLOOR）
-     *   - 中间用 smoothstep 反曲线插值
-     * 阈值从任务声明的 timeImpact.deltaSeconds 派生，未来改 delta 自动调整曲线。
-     */
-    private float computeBlackoutDynamicMultiplier(TaskDefinition def) {
-        if (!(player instanceof ServerPlayer sp)) return 1.0f;
-        if (!(sp.level() instanceof ServerLevel level)) return 1.0f;
-
-        String fullId = def.getFullId();
-        float multiplier = 1.0f;
-
-        // 供电池任务（增加停电时间的 GOOD 任务）走自适应反曲线
-        if (isSupplyTaskWithPositiveTimeImpact(def)) {
-            multiplier = computeUrgencyMultiplier(def, level);
-        } else if (ID_ADD_COAL.equals(fullId)) {
-            // add_coal 减对局总时间（不是停电倒计时），用存活率调整
-            multiplier = computeSurvivalMultiplier(level);
-        }
-
-        return Math.min(DYNAMIC_WEIGHT_CAP, Math.max(DYNAMIC_WEIGHT_FLOOR, multiplier));
-    }
-
-    /** 判断任务是否为"增加停电倒计时/维护时间"的供电池任务（用于自适应概率） */
-    private boolean isSupplyTaskWithPositiveTimeImpact(TaskDefinition def) {
-        if (def.getTimeImpact() == null) return false;
-        if (def.getTimeImpact().axis() != TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN) return false;
-        return def.getTimeImpact().deltaSeconds() > 0;
-    }
-
-    /**
-     * 反曲线 smoothstep：倒计时少 → 权重大；倒计时多 → 权重小。
-     * 阈值从 delta 派生：low = max(30, delta×0.75)，high = max(180, delta×3)。
-     * 例：maintain_power delta=80 → low=60s, high=240s
-     *     repair_wiring delta=40 → low=30s, high=120s
-     */
-    private float computeUrgencyMultiplier(TaskDefinition def, ServerLevel level) {
-        BlackoutTimerSystem.Phase phase = BlackoutTimerSystem.getPhase(level);
-        int remaining;
-        if (phase == BlackoutTimerSystem.Phase.NORMAL) {
-            remaining = BlackoutTimerSystem.getBlackoutCountdown(level);
-        } else if (phase == BlackoutTimerSystem.Phase.MAINTENANCE) {
-            remaining = BlackoutTimerSystem.getMaintenanceTime(level);
-        } else {
-            // 停电期（FIRST_BLACKOUT/SECOND_BLACKOUT）不调整，让 restore_power 主导
-            return 1.0f;
-        }
-
-        int delta = def.getTimeImpact().deltaSeconds();
-        int lowThreshold = Math.max(30, (int)(delta * 0.75));   // 倒计时 ≤ 此值 → 大增
-        int highThreshold = Math.max(180, delta * 3);          // 倒计时 ≥ 此值 → 几乎不刷
-
-        if (remaining <= lowThreshold) return DYNAMIC_WEIGHT_CAP;
-        if (remaining >= highThreshold) return DYNAMIC_WEIGHT_FLOOR;
-
-        // smoothstep 反插值
-        float t = (float)(remaining - lowThreshold) / (highThreshold - lowThreshold);
-        t = t * t * (3 - 2 * t);  // smoothstep: 0→1
-        // 反曲线：t=0(remaining=low) → CAP；t=1(remaining=high) → FLOOR
-        return DYNAMIC_WEIGHT_CAP * (1 - t) + DYNAMIC_WEIGHT_FLOOR * t;
-    }
-
-    private float computeSurvivalMultiplier(ServerLevel level) {
-        int remaining = BlackoutRoleManager.getRemainingGood(level);
-        int initial = BlackoutRoleManager.getInitialGoodCount(level);
-        if (initial <= 0) return 1.0f;
-        float ratio = Math.max(0f, (float) remaining / (float) initial);
-        return 1.0f + (1.0f - ratio) * (DYNAMIC_WEIGHT_CAP - 1.0f);
     }
 }

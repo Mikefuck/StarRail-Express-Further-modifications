@@ -48,6 +48,9 @@ public class TaskRegistry {
                 .toList();
     }
 
-    public static void freeze() { frozen = true; }
+    public static void freeze() {
+        frozen = true;
+        com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+    }
     public static boolean isFrozen() { return frozen; }
 }
