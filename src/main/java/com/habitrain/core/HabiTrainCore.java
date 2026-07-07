@@ -34,6 +34,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -501,14 +502,16 @@ public class HabiTrainCore implements ModInitializer {
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
 
                 Vec3 eyePos = serverPlayer.getEyePosition();
-                Vec3 lookVec = serverPlayer.getLookAngle();
+                AABB searchBox = new AABB(eyePos.x - 3.0, eyePos.y - 3.0, eyePos.z - 3.0,
+                                           eyePos.x + 3.0, eyePos.y + 3.0, eyePos.z + 3.0);
+                List<ServerPlayer> nearby = serverPlayer.serverLevel()
+                        .getEntitiesOfClass(ServerPlayer.class, searchBox,
+                                p -> p != serverPlayer && p.isAlive());
 
+                Vec3 lookVec = serverPlayer.getLookAngle();
                 boolean eyeContact = false;
 
-                for (ServerPlayer otherPlayer : serverPlayer.serverLevel().players()) {
-                    if (otherPlayer == serverPlayer) continue;
-                    if (!otherPlayer.isAlive()) continue;
-
+                for (ServerPlayer otherPlayer : nearby) {
                     Vec3 toOther = otherPlayer.getEyePosition().subtract(eyePos);
                     double distance = toOther.length();
                     if (distance > 3.0) continue;
