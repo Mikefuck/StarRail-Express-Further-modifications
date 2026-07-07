@@ -120,47 +120,11 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
             }
             roundEnd.sync();
 
-            ensureDefaultReplayScreen(world);
+            // SRE 4.3.0 移除了 replay.screen 包（ReplayScreenSavedData/ReplayScreenService），
+            // 之前的 ensureDefaultReplayScreen 调用已失效。replay screen 是 SRE 内部功能，
+            // habitrain_core 不再自动创建默认 screen — 如需要请由地图作者在地图里配置。
         } catch (Throwable t) {
             LOGGER.error("finalizeGame: failed to populate blackout round-end data", t);
-        }
-    }
-
-    private static void ensureDefaultReplayScreen(ServerLevel world) {
-        try {
-            var savedData = io.wifi.starrailexpress.api.replay.screen.ReplayScreenSavedData.get(world);
-            if (savedData == null) return;
-
-            var existing = savedData.getDefaultScreen();
-            if (existing.isPresent()) {
-                LOGGER.info("[BlackoutReplayScreen] map already has default replay screen, skip auto-create");
-                return;
-            }
-
-            net.minecraft.core.BlockPos origin = world.getSharedSpawnPos();
-            if (origin == null) {
-                origin = new net.minecraft.core.BlockPos(0, 100, 0);
-            }
-            net.minecraft.core.BlockPos screenPos = origin.above(2).south(3);
-            String screenId = "habitrain_blackout_default";
-
-            var entry = io.wifi.starrailexpress.api.replay.screen.ReplayScreenService.createScreen(
-                    world,
-                    screenId,
-                    screenPos,
-                    7,
-                    5,
-                    net.minecraft.core.Direction.NORTH);
-            if (entry == null) {
-                LOGGER.warn("[BlackoutReplayScreen] createScreen returned null, replay screen will not show");
-                return;
-            }
-
-            boolean ok = savedData.setDefaultScreen(screenId);
-            LOGGER.info("[BlackoutReplayScreen] auto-created default replay screen at {} id={} setDefault={}",
-                    screenPos, screenId, ok);
-        } catch (Throwable t) {
-            LOGGER.error("[BlackoutReplayScreen] failed to ensure default replay screen", t);
         }
     }
 

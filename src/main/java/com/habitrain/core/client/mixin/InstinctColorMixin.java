@@ -9,7 +9,6 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import org.agmas.noellesroles.client.NoellesrolesClient;
 import org.agmas.noellesroles.client.TaskBlockOverlayRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -36,14 +35,14 @@ public class InstinctColorMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/agmas/noellesroles/client/TaskBlockOverlayRenderer;renderBlockOverlay(Lnet/fabricmc/fabric/api/client/rendering/v1/WorldRenderContext;Lnet/minecraft/core/BlockPos;Ljava/awt/Color;FZFLnet/minecraft/network/chat/Component;)V"
+                    target = "Lorg/agmas/noellesroles/client/TaskBlockOverlayRenderer;renderBlockOverlay(Lnet/fabricmc/fabric/api/client/rendering/v1/WorldRenderContext;Lnet/minecraft/core/BlockPos;Ljava/awt/Color;FZF)V"
             ),
             remap = false,
             require = 0
     )
     private static void habitrain$redirectOverlay(
             WorldRenderContext ctx, BlockPos pos, Color color, float alpha,
-            boolean colorize, float textScale, Component text) {
+            boolean colorize, float textScale) {
         Integer type = NoellesrolesClient.taskBlocks.get(pos);
         if (type != null) {
             var level = ctx.world();
@@ -59,7 +58,7 @@ public class InstinctColorMixin {
 
                 if (block instanceof TaskInstinctShowableInterface) {
                     TaskBlockOverlayRenderer.renderBlockOverlay(
-                            ctx, pos, color, alpha, colorize, textScale, text);
+                            ctx, pos, color, alpha, colorize, textScale);
                     return;
                 }
             }
@@ -67,12 +66,12 @@ public class InstinctColorMixin {
             Color override = InstinctColorHelper.getOverrideColors().get(type);
             if (override != null) {
                 TaskBlockOverlayRenderer.renderBlockOverlay(
-                        ctx, pos, override, alpha, colorize, textScale, text);
+                        ctx, pos, override, alpha, colorize, textScale);
                 return;
             }
         }
 
         TaskBlockOverlayRenderer.renderBlockOverlay(
-                ctx, pos, color, alpha, colorize, textScale, text);
+                ctx, pos, color, alpha, colorize, textScale);
     }
 }
