@@ -1,6 +1,6 @@
 package com.habitrain.core.game.blackout.task;
 
-import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.LootHelper;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.task.BackpackSearchHandler;
@@ -50,7 +50,7 @@ public class BlackoutSearchBackpackTask {
                 BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_search_backpack");
 
                 // 复用原版 search_backpack 的随机道具池（按角色分池：杀手/警长/平民）
-                net.minecraft.world.item.ItemStack granted = HabiTrainCore.giveRandomBackpackItem(serverPlayer);
+                net.minecraft.world.item.ItemStack granted = LootHelper.giveRandomBackpackItem(serverPlayer);
                 // 记录发放的道具，供任务取消时回收（打 NBT 标签 + 存入 TaskInstance）
                 if (granted != null) {
                     com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:blackout_search_backpack");

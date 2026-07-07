@@ -1,6 +1,6 @@
 package com.habitrain.core.game.blackout.task;
 
-import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.BuiltinTaskRegistrar;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -31,14 +31,14 @@ public class BlackoutPetCatTask {
             .weight(3.0f)
             .blockTypeId(37)
             .instinctColor(255, 182, 193, 200)
-            .scanBlockIds(HabiTrainCore.CAT_BLOCK_IDS)
+            .scanBlockIds(BuiltinTaskRegistrar.CAT_BLOCK_IDS)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
 
-                Set<Block> currentCatBlocks = HabiTrainCore.resolveCatBlocks();
+                Set<Block> currentCatBlocks = BuiltinTaskRegistrar.resolveCatBlocks();
                 if (currentCatBlocks.isEmpty()) return;
 
                 Vec3 eyePos = player.getEyePosition();
