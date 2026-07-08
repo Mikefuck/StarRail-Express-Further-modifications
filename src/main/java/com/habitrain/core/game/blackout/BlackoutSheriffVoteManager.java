@@ -80,13 +80,11 @@ public final class BlackoutSheriffVoteManager {
         if (state.finished) return Optional.empty();
 
         state.secondsSinceStart++;
-        boolean justStarted = false;
-        if (!state.started && state.secondsSinceStart >= VOTE_OPEN_DELAY_SECONDS) {
-            startVote(level, state);
-            justStarted = true;
-        }
+        // Auto-vote disabled — police are now hired via yuushya:street_phone after 120s.
+        // The startVote and sheriff resolve logic are retained for potential future use
+        // but never triggered automatically.
 
-        if (!state.active || justStarted) return Optional.empty();
+        if (!state.active) return Optional.empty();
 
         state.remainingSeconds = Math.max(0, state.remainingSeconds - 1);
         SheriffVoteBroadcaster.tickSecond(level, state.active, state.remainingSeconds, VOTE_DURATION_SECONDS, state.sheriffCount, state.candidateOrder, state.votesByVoter);
