@@ -4,6 +4,7 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.SREGameModeBase;
+import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.task.GameLifecycleHandler;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -40,6 +41,13 @@ public class ModTickHandler {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             BetelTickEngine.tickPlayer(player);
             ExtraSlotComponent.KEY.get(player).serverTick();
+        }
+
+        // 人数不足 8 人下雨（包含大厅→对局→对局结束全覆盖）
+        for (ServerLevel world : server.getAllLevels()) {
+            if (world.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                SREWeatherController.tick(world);
+            }
         }
     }
 }
