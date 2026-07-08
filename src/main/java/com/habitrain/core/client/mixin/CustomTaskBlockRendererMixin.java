@@ -343,9 +343,6 @@ import java.util.Set;
         // 只在 game running 时渲染（与生存/旁观模式公共前提一致）
         if (!isGameRunning()) return;
 
-        // 避免旁观模式下重复渲染（旁观模式走 renderAllCustomTaskBlocks，其中包含 type=90 的方块）
-        if (SREClient.isPlayerSpectatingOrCreative()) return;
-
         int rendered = 0;
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {
             Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
