@@ -7,6 +7,9 @@ import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutPhoneHireScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
+import com.habitrain.core.client.gui.BlackoutVoteScreen;
+import com.habitrain.core.client.gui.BlackoutVoteState;
+import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.InstinctColorHelper;
@@ -250,6 +253,22 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 BlackoutWelcomeRenderer.startWelcome(
                     payload.roleName(), payload.subtitle(), payload.goal(),
                     payload.killerCount(), payload.targetCount());
+            });
+        });
+
+        // 网络接收: 通用投票（放逐等）
+        ClientPlayNetworking.registerGlobalReceiver(BlackoutVotePayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                BlackoutVoteState.update(payload);
+                if (!payload.active() && ctx.client().screen instanceof BlackoutVoteScreen) {
+                    ctx.client().setScreen(null);
+                }
+                if (payload.active() && "EXILE".equals(payload.purpose())) {
+                    // 放逐投票自动打开 GUI（如果当前不在其他 screen）
+                    if (!(ctx.client().screen instanceof BlackoutVoteScreen) && ctx.client().screen == null) {
+                        ctx.client().setScreen(new BlackoutVoteScreen(null));
+                    }
+                }
             });
         });
 

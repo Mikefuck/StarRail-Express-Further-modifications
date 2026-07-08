@@ -52,4 +52,10 @@ public final class PayloadSenders {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutHirePolicePayload());
     }
+
+    /** 从客户端发送投票。purpose 指定投票类型，targetPlayerId 为投票目标（null=弃票）。 */
+    public static void sendVoteCast(String purpose, UUID targetPlayerId) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, targetPlayerId));
+    }
 }

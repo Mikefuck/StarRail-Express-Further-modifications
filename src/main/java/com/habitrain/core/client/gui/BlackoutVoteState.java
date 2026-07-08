@@ -1,0 +1,60 @@
+package com.habitrain.core.client.gui;
+
+import com.habitrain.core.network.BlackoutVotePayload;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+public final class BlackoutVoteState {
+    private static String purpose = "";
+    private static boolean active = false;
+    private static int remainingSeconds = 0;
+    private static int totalSeconds = 15;
+    private static int maxSelections = 1;
+    private static String title = "";
+    private static String description = "";
+    private static List<BlackoutVotePayload.Entry> candidates = List.of();
+    private static UUID selectedTargetId = null;
+
+    private BlackoutVoteState() {}
+
+    public static void update(BlackoutVotePayload payload) {
+        purpose = payload.purpose();
+        active = payload.active();
+        remainingSeconds = payload.remainingSeconds();
+        totalSeconds = payload.totalSeconds();
+        maxSelections = payload.maxSelections();
+        title = payload.title();
+        description = payload.description();
+        candidates = List.copyOf(payload.candidates());
+        if (!active) {
+            selectedTargetId = null;
+        }
+    }
+
+    public static void clear() {
+        active = false;
+        remainingSeconds = 0;
+        candidates = List.of();
+        selectedTargetId = null;
+    }
+
+    public static boolean isActive() { return active; }
+    public static int getRemainingSeconds() { return remainingSeconds; }
+    public static int getTotalSeconds() { return totalSeconds; }
+    public static String getTitle() { return title; }
+    public static String getDescription() { return description; }
+    public static String getPurpose() { return purpose; }
+    public static List<BlackoutVotePayload.Entry> getCandidates() { return candidates; }
+    public static UUID getSelectedTargetId() { return selectedTargetId; }
+    public static boolean isSelected(UUID id) { return id.equals(selectedTargetId); }
+
+    public static void toggleSelection(UUID targetId) {
+        if (selectedTargetId != null && selectedTargetId.equals(targetId)) {
+            selectedTargetId = null;
+        } else {
+            selectedTargetId = targetId;
+        }
+    }
+}

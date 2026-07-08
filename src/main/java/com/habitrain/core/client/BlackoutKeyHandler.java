@@ -1,7 +1,7 @@
 package com.habitrain.core.client;
 
-import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
-import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
+import com.habitrain.core.client.gui.BlackoutVoteScreen;
+import com.habitrain.core.client.gui.BlackoutVoteState;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -11,7 +11,6 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 public class BlackoutKeyHandler {
-
     private static boolean registered = false;
     private static KeyMapping openVoteKey;
 
@@ -24,7 +23,7 @@ public class BlackoutKeyHandler {
         registered = true;
 
         openVoteKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.habitrain_core.open_sheriff_vote",
+                "key.habitrain_core.open_vote",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_V,
                 "key.categories.habitrain_core"
@@ -40,15 +39,15 @@ public class BlackoutKeyHandler {
     private static void openVote(Minecraft client) {
         if (client.player == null) return;
 
-        if (!BlackoutSheriffVoteState.isActive()) {
+        if (!BlackoutVoteState.isActive()) {
             com.habitrain.core.client.util.ClientSubtitleNotifier.sendTop(
-                    Component.literal("§e警长投票"),
-                    Component.literal("§e当前没有进行中的警长投票。"),
+                    Component.literal("§e投票"),
+                    Component.literal("§e当前没有进行中的投票。"),
                     60);
             return;
         }
 
-        if (client.screen instanceof BlackoutSheriffVoteScreen) return;
-        client.setScreen(new BlackoutSheriffVoteScreen(client.screen));
+        if (client.screen instanceof BlackoutVoteScreen) return;
+        client.setScreen(new BlackoutVoteScreen(client.screen));
     }
 }

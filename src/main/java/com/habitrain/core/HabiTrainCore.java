@@ -99,6 +99,8 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
         BlackoutPhoneOpenPayload.register();
         BlackoutHirePolicePayload.register();
+        BlackoutVotePayload.register();
+        BlackoutVoteCastPayload.register();
         CustomTaskBlockPayload.register();
         FullConfigSyncPayload.register();
         // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
