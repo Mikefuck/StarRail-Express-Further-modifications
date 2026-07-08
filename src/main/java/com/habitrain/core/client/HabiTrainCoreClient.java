@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.BlackoutKeyHandler;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
+import com.habitrain.core.client.gui.BlackoutPhoneHireScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
@@ -17,6 +18,7 @@ import com.habitrain.core.network.BlackoutSheriffVotePayload;
 
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;
+import com.habitrain.core.network.FullConfigSyncPayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
 import com.habitrain.core.network.TaskConfigPayload;
@@ -99,6 +101,17 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                         payload.isEnabled() ? "启用, " + payload.getWhitelist().size() + "个光影" : "禁用");
                 ConfigManager cfg = ConfigManager.getInstance();
                 cfg.applyShaderWhitelistSync(payload.isEnabled(), payload.getWhitelist());
+            });
+        });
+
+        // 4) 接收服务端完整配置同步（global + tasks + gameModes + minigames），
+        //    让客户端配置界面显示服务端真实值，避免 OP 联机保存时用本地过期全局项覆盖服务端。
+        //    applySyncFromJson 抑制 save 回调，防止回环广播。
+        ClientPlayNetworking.registerGlobalReceiver(FullConfigSyncPayload.TYPE, (payload, context) -> {
+            context.client().execute(() -> {
+                HabiTrainCore.LOGGER.info("收到服务端完整配置同步 ({} 字节)", payload.getConfigJson().length());
+                ConfigManager.getInstance().applySyncFromJson(payload.getConfigJson());
+                InstinctColorHelper.markDirty();
             });
         });
 
@@ -210,6 +223,17 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                     ctx.client().setScreen(null);
                 }
             });
+        });
+
+        // S2C 电话打开状态接收器
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutPhoneOpenPayload.TYPE, (payload, ctx) -> {
+            // 如果当前已经是电话屏幕，更新状态
+            if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
+                phoneScreen.updateState(payload);
+            } else {
+                // 否则打开电话屏幕
+                ctx.client().setScreen(new BlackoutPhoneHireScreen(ctx.client().screen, payload));
+            }
         });
 
         OnGameFinishedClient.EVENT.register(() -> {

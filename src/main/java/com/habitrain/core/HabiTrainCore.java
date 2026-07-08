@@ -4,6 +4,8 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
+import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
 import com.habitrain.core.game.blackout.BlackoutShopService;
@@ -95,7 +97,10 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutAnnouncePayload.register();
         BlackoutSheriffVotePayload.register();       // S2C: 投票状态同步
         BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
+        BlackoutPhoneOpenPayload.register();
+        BlackoutHirePolicePayload.register();
         CustomTaskBlockPayload.register();
+        FullConfigSyncPayload.register();
         // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
         //     本模组不再重复注册；客户端接收、HUD tick/render 也由 SRE 接管。
         // 4. 注册命令
@@ -131,6 +136,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.blackout.task.BlackoutPetCatTask.register();
         com.habitrain.core.game.blackout.task.BlackoutBeAloneTask.register();
         com.habitrain.core.game.blackout.task.BlackoutLookMyEyesTask.register();
+        BlackoutPhoneHandler.register();
         registerMoreSounds();
         initBetelSystem();
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",
@@ -221,6 +227,9 @@ public class HabiTrainCore implements ModInitializer {
             TaskConfigPayload.sendToPlayer(player);
             CustomTaskBlockPayload.sendToPlayer(player);
             ShaderConfigPayload.sendToPlayer(player);
+            // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
+            // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
+            FullConfigSyncPayload.sendToPlayer(player);
             // 通知激活的 GameMode 玩家加入
             ServerLevel level = server.getLevel(Level.OVERWORLD);
             if (level != null) {
@@ -244,6 +253,8 @@ public class HabiTrainCore implements ModInitializer {
                 if (context.server().isSingleplayer()) return;
                 TaskConfigPayload.broadcastToAll(context.server());
                 ShaderConfigPayload.broadcastToAll(context.server());
+                // 广播完整配置，让所有客户端的全局项同步到服务端最新值。
+                FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });
         // C2S 光影包信息接收器
@@ -275,6 +286,22 @@ public class HabiTrainCore implements ModInitializer {
                 ServerLevel level = voter.serverLevel();
                 if (level == null) return;
                 BlackoutSheriffVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId(), payload.slotIndex());
+            });
+        });
+        // C2S 电话聘请警察接收器
+        ServerPlayNetworking.registerGlobalReceiver(BlackoutHirePolicePayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                ServerLevel level = player.serverLevel();
+                if (level == null) return;
+                Component error = BlackoutPoliceHireService.tryHire(level, player);
+                if (error != null) {
+                    player.sendSystemMessage(error);
+                } else {
+                    // 成功 — 关闭 GUI
+                    player.sendSystemMessage(Component.literal("§a已成功聘请警察！"));
+                }
             });
         });
     }

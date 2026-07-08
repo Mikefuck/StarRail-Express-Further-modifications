@@ -46,4 +46,10 @@ public final class PayloadSenders {
     public static void sendSheriffVoteCast(UUID targetPlayerId, int slotIndex) {
         ClientPlayNetworking.send(new BlackoutSheriffVoteCastPayload(targetPlayerId, slotIndex));
     }
+
+    /** 从客户端发送聘请警察请求到服务端。 */
+    public static void sendHirePolice() {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutHirePolicePayload());
+    }
 }
