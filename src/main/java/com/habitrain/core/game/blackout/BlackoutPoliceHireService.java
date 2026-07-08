@@ -13,7 +13,6 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -38,7 +37,7 @@ public final class BlackoutPoliceHireService {
 
     private static final class HireState {
         long gameStartTick = 0;
-        final Set<UUID> hasHired = new HashSet<>();
+        final Set<UUID> hasHired = ConcurrentHashMap.newKeySet();
     }
 
     private static HireState getOrCreate(ServerLevel level) {
