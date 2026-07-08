@@ -229,6 +229,7 @@ import java.util.Set;
         // ===== 旁观/创造模式 =====
         if (SREClient.isPlayerSpectatingOrCreative()) {
             renderAllCustomTaskBlocks(renderContext);
+            renderConstantOverlaysIfBlackout(renderContext);
             return;
         }
 
