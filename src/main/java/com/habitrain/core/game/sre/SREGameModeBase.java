@@ -7,6 +7,7 @@ import de.maxhenkel.voicechat.api.Group;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import io.wifi.starrailexpress.compat.TrainVoicePlugin;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.OnGameEnd;
 import io.wifi.starrailexpress.event.OnGameStarted;
 import net.minecraft.server.MinecraftServer;
@@ -37,6 +38,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     // 原版任务注册保护（防双重重叠）
     private static boolean builtinTasksRegistered = false;
+    // SRE 事件注册保护（SREMurderMode + SRERepairMode 构造时各调一次 super()，防重复注册监听器）
+    private static boolean sreEventsRegistered = false;
 
     protected final List<TaskCategory> taskCategories = new ArrayList<>();
 
@@ -91,6 +94,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     // ========== SRE 事件注册 ==========
 
     private void registerSREEvents() {
+        if (sreEventsRegistered) return;
+        sreEventsRegistered = true;
         OnGameStarted.EVENT.register(serverLevel -> {
             if (!pendingVoiceJoins.isEmpty()) {
                 pendingVoiceJoins.clear();
@@ -105,6 +110,62 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     }
 
     // ========== 语音群组管理 ==========
+
+    /**
+     * 玩家加入大厅语音群组的重试队列。
+     * 当玩家加入世界时无活跃游戏对局，将其加入队列等待 voicechat 连接就绪。
+     */
+    public static void queueLobbyGroupJoin(MinecraftServer server, UUID playerUUID) {
+        pendingVoiceJoins.put(playerUUID, MAX_VOICE_JOIN_RETRIES);
+        LOGGER.info("[VoiceGroup] queued {} for lobby group join", playerUUID);
+    }
+
+    /**
+     * 尝试将玩家加入大厅语音群组。
+     * @return true 表示成功加入或不需要加入（不在队列中），false 表示需要重试
+     */
+    private static boolean tryAddPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
+        if (TrainVoicePlugin.isVoiceChatMissing()) return false;
+        if (TrainVoicePlugin.SERVER_API == null) return false;
+
+        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
+        VoicechatConnection connection = api.getConnectionOf(playerUUID);
+        if (connection == null) return false;
+
+        try {
+            if (LOBBY_GROUP == null) {
+                LOBBY_GROUP = api.groupBuilder()
+                        .setId(LOBBY_GROUP_ID)
+                        .setName("LobbyChat")
+                        .setPersistent(true)
+                        .setType(Group.Type.OPEN)
+                        .setHidden(false)
+                        .build();
+            }
+            connection.setGroup(LOBBY_GROUP);
+            LOGGER.info("[VoiceGroup] successfully added {} to lobby group", playerUUID);
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("[VoiceGroup] failed to set group for player {}", playerUUID, e);
+            return false;
+        }
+    }
+
+    /**
+     * 检查服务器上当前是否有任何 SRE 对局正在运行。
+     * 用于 JOIN 事件判断是否应将玩家加入队列。
+     */
+    public static boolean isAnySreGameRunning(MinecraftServer server) {
+        for (ServerLevel level : server.getAllLevels()) {
+            try {
+                var gameWorld = SREGameWorldComponent.KEY.get(level);
+                if (gameWorld != null && gameWorld.isRunning()) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
 
     public static void addPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
         if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
@@ -135,12 +196,26 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         while (it.hasNext()) {
             Map.Entry<UUID, Integer> entry = it.next();
             UUID playerId = entry.getKey();
-            if (server.getPlayerList().getPlayer(playerId) == null) { it.remove(); continue; }
-            if (entry.getValue() <= 0) { it.remove(); continue; }
-            addPlayerToLobbyGroup(server, playerId);
-            entry.setValue(entry.getValue() - 1);
-            if (server.getPlayerList().getPlayer(playerId) != null) {
+
+            // 玩家离线 → 移除
+            if (server.getPlayerList().getPlayer(playerId) == null) {
                 it.remove();
+                LOGGER.info("[VoiceGroup] removed {} from pending queue (offline)", playerId);
+                continue;
+            }
+
+            // 重试次数耗尽 → 移除并记录日志
+            if (entry.getValue() <= 0) {
+                it.remove();
+                LOGGER.warn("[VoiceGroup] removed {} from pending queue (retries exhausted)", playerId);
+                continue;
+            }
+
+            // 尝试加入
+            if (tryAddPlayerToLobbyGroup(server, playerId)) {
+                it.remove();
+            } else {
+                entry.setValue(entry.getValue() - 1);
             }
         }
     }
@@ -148,8 +223,19 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     public static void processGameEndGroupJoin(MinecraftServer server) {
         if (!pendingGameEndGroupJoin) return;
         pendingGameEndGroupJoin = false;
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            addPlayerToLobbyGroup(server, player.getUUID());
+
+        // 等待对局完全结束（没有运行中的 SRE 游戏）
+        if (isAnySreGameRunning(server)) {
+            pendingGameEndGroupJoin = true; // 下一 tick 再试
+            return;
+        }
+
+        // 惰性入队：pendingVoiceJoins 为空时再入队所有人
+        if (pendingVoiceJoins.isEmpty()) {
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                queueLobbyGroupJoin(server, player.getUUID());
+            }
+            LOGGER.info("[VoiceGroup] queued all online players for lobby group join after game end");
         }
     }
 

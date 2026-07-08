@@ -220,15 +220,13 @@ public class HabiTrainCore implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
             try {
-                var gameLevel = server.getLevel(Level.OVERWORLD);
-                if (gameLevel != null) {
-                    SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(gameLevel);
-                    if (gameWorld != null && !gameWorld.isRunning()) {
-                        SREGameModeBase.addPlayerToLobbyGroup(server, player.getUUID());
-                    }
+                // 如果当前没有 SRE 对局运行 → 入队等待加入大厅语音群组
+                if (!SREGameModeBase.isAnySreGameRunning(server)) {
+                    SREGameModeBase.queueLobbyGroupJoin(server, player.getUUID());
                 }
+                // 如果有对局运行，不入队（避免把游戏中的玩家拉进大厅群组）
             } catch (Exception e) {
-                LOGGER.error("[VoiceGroup] 添加大厅玩家到语音群组失败", e);
+                LOGGER.error("[VoiceGroup] 处理语音群组加入失败", e);
             }
             // 同步配置
             TaskConfigPayload.sendToPlayer(player);
