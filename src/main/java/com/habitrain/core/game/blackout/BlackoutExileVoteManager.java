@@ -163,8 +163,10 @@ public final class BlackoutExileVoteManager {
         ServerPlayer exiled = level.getServer().getPlayerList().getPlayer(exiledId);
         String exiledName = exiled != null ? exiled.getName().getString() : exiledId.toString();
 
-        // 执行放逐
-        GameUtils.killPlayer(exiled, true, null, EXILE_DEATH_REASON);
+        // 执行放逐（玩家可能已离线，killPlayer 需要非空）
+        if (exiled != null) {
+            GameUtils.killPlayer(exiled, true, null, EXILE_DEATH_REASON);
+        }
         BlackoutRoleManager.eliminate(level, exiledId);
 
         broadcastResult(level, "§e投票结束，§b" + exiledName + " §e被放逐");
