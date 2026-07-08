@@ -9,5 +9,6 @@
     "task.sabotage_wiring":  "Sabotage Wiring",
     "task.furnace_explosion":  "Furnace Explosion",
     "task.maintain_power":  "Maintain Power",
-    "death_reason.habitrain_core.sanity_collapse":  "Sanity Collapse"
+    "death_reason.habitrain_core.sanity_collapse":  "Sanity Collapse",
+    "death_reason.habitrain_core.exile_vote":  "Exiled"
 }

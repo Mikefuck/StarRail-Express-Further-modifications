@@ -18,5 +18,6 @@
     "task.blackout_pet_cat":  "摸猫猫",
     "task.blackout_be_alone":  "一个人静静",
     "task.blackout_look_my_eyes":  "LOOK MY EYES",
-    "death_reason.habitrain_core.sanity_collapse":  "理智崩溃"
+    "death_reason.habitrain_core.sanity_collapse":  "理智崩溃",
+    "death_reason.habitrain_core.exile_vote":  "被放逐"
 }
