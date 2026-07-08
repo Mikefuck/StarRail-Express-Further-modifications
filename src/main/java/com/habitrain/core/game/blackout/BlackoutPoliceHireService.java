@@ -1,5 +1,6 @@
 package com.habitrain.core.game.blackout;
 
+import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.util.SubtitleNotifier;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -88,6 +89,11 @@ public final class BlackoutPoliceHireService {
         // 1. 停电模式对局检查
         var sreGame = SREGameWorldComponent.KEY.get(level);
         if (sreGame == null || !sreGame.isRunning()) {
+            return Component.literal("§c当前不在停电对局中");
+        }
+        // 1b. 必须是停电模式
+        var gameMode = GameModeRegistry.getActiveForLevel(level);
+        if (gameMode.isEmpty() || !"habitrains:blackout".equals(gameMode.get().getId())) {
             return Component.literal("§c当前不在停电对局中");
         }
 
