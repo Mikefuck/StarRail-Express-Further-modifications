@@ -76,6 +76,7 @@ public class BlackoutRoleManager {
         state.factions.remove(playerId);
         state.sheriffs.remove(playerId);
         BlackoutSheriffVoteManager.onPlayerRemoved(level, playerId);
+        BlackoutHornVoteHandler.onPlayerRemoved(playerId);
     }
 
     public static void setSheriff(ServerLevel level, UUID playerId) {

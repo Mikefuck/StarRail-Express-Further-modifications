@@ -80,6 +80,8 @@ public class BlackoutMode implements GameMode {
                 () -> victoryChecker.triggerSREPermanentBlackout(currentLevel),
                 () -> victoryChecker.endSREBlackout(currentLevel),
                 () -> {});
+        BlackoutPoliceHireService.reset(level);
+        BlackoutExileVoteManager.reset(level);
         BlackoutShopService.resetRound(level);
         syncManager.onPreStart();
         syncManager.syncReset(level);
@@ -157,6 +159,7 @@ public class BlackoutMode implements GameMode {
         BlackoutSheriffVoteManager.reset(level);
         BlackoutTimerSystem.reset(level);
         BlackoutShopService.resetRound(level);
+        BlackoutRoleManager.restoreVigilanteRoleMaxes();
         currentLevel = null;
         gameEnded = false;
         pendingEndMessage = null;

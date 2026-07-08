@@ -63,6 +63,7 @@ class BlackoutTickCoordinator {
             syncManager.tickSecond(level);
 
             // Auto sheriff vote removed — police hire and exile vote ticked separately.
+            BlackoutExileVoteManager.tickSecond(level);
 
             victoryChecker.tickSecond(level);
 

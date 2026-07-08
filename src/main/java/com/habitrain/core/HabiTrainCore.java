@@ -4,6 +4,8 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
+import com.habitrain.core.game.blackout.BlackoutHornVoteHandler;
 import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
@@ -139,6 +141,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.blackout.task.BlackoutBeAloneTask.register();
         com.habitrain.core.game.blackout.task.BlackoutLookMyEyesTask.register();
         BlackoutPhoneHandler.register();
+        BlackoutHornVoteHandler.register();
         registerMoreSounds();
         initBetelSystem();
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",
@@ -209,6 +212,8 @@ public class HabiTrainCore implements ModInitializer {
                 BlackoutTimerSystem.reset(level);
                 BlackoutSheriffVoteManager.reset(level);
                 BlackoutShopService.resetRound(level);
+                BlackoutPoliceHireService.cleanup(level);
+                BlackoutExileVoteManager.reset(level);
             }
         });
         // 玩家加入
@@ -303,6 +308,18 @@ public class HabiTrainCore implements ModInitializer {
                 } else {
                     // 聘请成功后服务端状态已更新，客户端下次右键电话会看到 hasHiredThisGame=true
                     player.sendSystemMessage(Component.literal("§a已成功聘请警察！"));
+                }
+            });
+        });
+        // C2S 通用投票接收器（用于放逐投票等）
+        ServerPlayNetworking.registerGlobalReceiver(BlackoutVoteCastPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer voter = context.player();
+                if (voter == null) return;
+                ServerLevel level = voter.serverLevel();
+                if (level == null) return;
+                if ("EXILE".equals(payload.purpose())) {
+                    BlackoutExileVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId());
                 }
             });
         });
