@@ -64,9 +64,6 @@ import java.util.Set;
     @Mixin(TaskBlockOverlayRenderer.class)
     public class CustomTaskBlockRendererMixin {
 
-    // 性能优化：渲染节流计数器（每 2 帧渲染一次）
-    private static int renderSkipCounter = 0;
-
     // ====== @Shadow: 访问 TaskBlockOverlayRenderer 的 private static 方法 ======
 
     @Shadow
@@ -220,11 +217,7 @@ import java.util.Set;
             remap = false
     )
     private static void habitrain$renderCustomTaskBlocks(WorldRenderContext renderContext, CallbackInfo ci) {
-        // 性能优化：节流渲染，每 2 帧渲染一次。方块描边是静态世界位置，
-        // 每帧重渲染意义不大但开销大（每位置 1 次 getBlockState + LevelRenderer.renderLineBox）。
-        renderSkipCounter = (renderSkipCounter + 1) & 0x1;  // 0 → 1 → 0 → 1 ...
-        if (renderSkipCounter != 0) return;
-
+        // 渲染节流已移除。现代显卡渲染方块描边开销可忽略，每帧渲染避免 30Hz 闪烁。
         var instance = Minecraft.getInstance();
         if (instance == null || instance.player == null || instance.level == null) return;
 
@@ -330,6 +323,41 @@ import java.util.Set;
         if (renderedCount > 0) {
             HabiTrainCore.LOGGER.debug("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for task {}",
                     renderedCount, taskName != null ? taskName : "unknown");
+        }
+
+        // 常量透视方块（非任务，不依赖 active task）
+        renderConstantOverlaysIfBlackout(renderContext);
+    }
+
+    // ====== 常量透视方块渲染 ======
+
+    /**
+     * 渲染常量透视方块（如 yuushya:street_phone）。
+     * 这些方块不注册为任务，但通过 MapScannerMixin 扫描并广播到客户端。
+     * 渲染不依赖 active task — 只要 game is running 且缓存中存在就渲染。
+     */
+    private static void renderConstantOverlaysIfBlackout(WorldRenderContext context) {
+        var level = context.world();
+        if (level == null) return;
+
+        // 只在 game running 时渲染（与生存/旁观模式公共前提一致）
+        if (!isGameRunning()) return;
+
+        // 避免旁观模式下重复渲染（旁观模式走 renderAllCustomTaskBlocks，其中包含 type=90 的方块）
+        if (SREClient.isPlayerSpectatingOrCreative()) return;
+
+        int rendered = 0;
+        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
+            Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
+            if (typeIds == null || !typeIds.contains(com.habitrain.core.game.blackout.BlackoutOverlayTypes.STREET_PHONE)) {
+                continue;
+            }
+            // 金色描边，5.0f 线宽，方便与任务方块区分
+            renderCustomOverlay(context, pos, new java.awt.Color(0xFFD700, true), 5.0f);
+            rendered++;
+        }
+        if (rendered > 0) {
+            HabiTrainCore.LOGGER.debug("[CustomTaskBlockRendererMixin] rendered {} constant overlay blocks", rendered);
         }
     }
 

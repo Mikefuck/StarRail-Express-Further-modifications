@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
@@ -103,6 +104,12 @@ public class MapScannerMixin {
         for (TaskDefinition def : TaskRegistry.getAll()) {
             if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = def.getBlockTypeId();
             else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = def.getBlockTypeId();
+        }
+
+        // 常量透视方块（非任务但在停电模式中需高亮）
+        Block phoneBlock = BlackoutOverlayTypes.getStreetPhoneBlock();
+        if (phoneBlock != null && phoneBlock != Blocks.AIR) {
+            blockToTypeIds.computeIfAbsent(phoneBlock, k -> new HashSet<>()).add(BlackoutOverlayTypes.STREET_PHONE);
         }
 
         for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
