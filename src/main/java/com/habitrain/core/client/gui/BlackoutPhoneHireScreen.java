@@ -26,6 +26,11 @@ public class BlackoutPhoneHireScreen extends Screen {
     /** 服务端推送了最新状态时调用 */
     public void updateState(BlackoutPhoneOpenPayload newState) {
         this.state = newState;
+        if (hireButton != null) {
+            boolean canHire = state.unlocked() && !state.hasHiredThisGame();
+            hireButton.active = canHire;
+            hireButton.setMessage(Component.literal(canHire ? "§e拨打110" : "§7拨打110"));
+        }
     }
 
     @Override

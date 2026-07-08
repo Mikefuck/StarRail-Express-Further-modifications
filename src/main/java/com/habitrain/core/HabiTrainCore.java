@@ -299,7 +299,7 @@ public class HabiTrainCore implements ModInitializer {
                 if (error != null) {
                     player.sendSystemMessage(error);
                 } else {
-                    // 成功 — 关闭 GUI
+                    // 聘请成功后服务端状态已更新，客户端下次右键电话会看到 hasHiredThisGame=true
                     player.sendSystemMessage(Component.literal("§a已成功聘请警察！"));
                 }
             });
