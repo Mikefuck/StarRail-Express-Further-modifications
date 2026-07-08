@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import org.agmas.harpymodloader.Harpymodloader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,6 +112,17 @@ public class BlackoutRoleManager {
             try {
                 io.wifi.starrailexpress.SRE.REPLAY_MANAGER.updateRolesFromComponent(gameWorld);
             } catch (Throwable ignored) {}
+
+            // 触发 ModdedRoleAssigned.EVENT 发放该角色的初始物品（如武术教官的双截棍）
+            ServerPlayer sp = level.getServer().getPlayerList().getPlayer(playerId);
+            if (sp != null) {
+                try {
+                    org.agmas.harpymodloader.events.ModdedRoleAssigned.EVENT.invoker()
+                            .assignModdedRole(sp, sreRole);
+                } catch (Throwable t) {
+                    LOGGER.error("setSheriff: failed to fire ModdedRoleAssigned for {}", playerId, t);
+                }
+            }
         }
     }
 
@@ -165,6 +177,60 @@ public class BlackoutRoleManager {
 
     public static List<UUID> getAllAlive(ServerLevel level) {
         return new ArrayList<>(getOrCreate(level).roles.keySet());
+    }
+
+    /**
+     * 从当前存活、好人阵营、非警察的玩家中随机选择一个。
+     * 供电话雇佣警察时选择转职目标。
+     * @return 目标 UUID，如果没有合适候选人则 null
+     */
+    @org.jetbrains.annotations.Nullable
+    public static UUID getRandomGoodNonSheriff(ServerLevel level, java.util.Random random) {
+        RoleState state = INSTANCES.get(level.dimension());
+        if (state == null) return null;
+        List<UUID> candidates = new ArrayList<>();
+        for (UUID id : state.roles.keySet()) {
+            if (!state.sheriffs.contains(id) && state.factions.get(id) == Faction.GOOD) {
+                candidates.add(id);
+            }
+        }
+        return candidates.isEmpty() ? null : candidates.get(random.nextInt(candidates.size()));
+    }
+
+    // ===== 警长角色禁用/恢复（修复 1：开局不分配警长阵营角色）=====
+    private static final Set<ResourceLocation> disabledVigilanteRoles = new HashSet<>();
+
+    /**
+     * 禁用所有警长阵营角色（isVigilanteTeam()=true）。
+     * 在 SREBlackoutGameMode.initializeGame 调用 assignRole 前执行，
+     * 使 SRE 的角色分配系统不分配任何警察/警卫角色。
+     * 投票选出警长后由 setSheriff 手动分配。
+     */
+    public static void disableAllVigilanteRoles() {
+        disabledVigilanteRoles.clear();
+        for (SRERole role : TMMRoles.ROLES.values()) {
+            if (role.isVigilanteTeam()) {
+                ResourceLocation id = role.getIdentifier();
+                disabledVigilanteRoles.add(id);
+                Harpymodloader.setRoleMaximum(id, 0);
+            }
+        }
+        LOGGER.info("Disabled {} vigilante roles for blackout mode", disabledVigilanteRoles.size());
+    }
+
+    /**
+     * 恢复之前禁用的警长角色配置。
+     * 在 BlackoutMode.onCleanup 中调用，移除 ROLE_MAX 限制让后续对局恢复正常。
+     */
+    public static void restoreVigilanteRoleMaxes() {
+        for (ResourceLocation id : disabledVigilanteRoles) {
+            Harpymodloader.ROLE_MAX.remove(id);
+        }
+        int count = disabledVigilanteRoles.size();
+        disabledVigilanteRoles.clear();
+        if (count > 0) {
+            LOGGER.info("Restored role max for {} vigilante roles", count);
+        }
     }
 
     public static void clear(ServerLevel level) {
