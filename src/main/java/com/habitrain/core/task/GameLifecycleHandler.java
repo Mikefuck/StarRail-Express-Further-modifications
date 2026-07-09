@@ -88,6 +88,9 @@ public class GameLifecycleHandler {
             BetelQuestState.resetGameState();
             BetelLeafHandler.clearAllHarvests();
 
+            // 清除任务池缓存，确保下一局任务重新计算
+            TaskPoolBuilder.invalidateAll();
+
             // 重置背包翻找任务状态（下一局可以再次刷新）
             BackpackQuestState.getInstance().resetAll();
             // 清除所有背包翻找动作（防止残留状态影响下一局）

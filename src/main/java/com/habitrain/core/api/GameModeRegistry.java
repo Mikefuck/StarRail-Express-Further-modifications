@@ -1,5 +1,6 @@
 package com.habitrain.core.api;
 
+import com.habitrain.core.task.TaskPoolBuilder;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 游戏模式注册中心。
@@ -18,6 +20,8 @@ public class GameModeRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("GameModeRegistry");
     private static final Map<String, GameMode> REGISTRY = new LinkedHashMap<>();
     private static final Map<ResourceKey<Level>, GameMode> ACTIVE_MODES = new HashMap<>();
+    /** Cache for passive isActive() fallback results. Invalidated on start/stop. */
+    private static final Map<ResourceKey<Level>, GameMode> PASSIVE_CACHE = new ConcurrentHashMap<>();
     private static boolean frozen = false;
 
     public static void register(String modId, String modeId, GameMode mode) {
@@ -58,6 +62,8 @@ public class GameModeRegistry {
             throw new IllegalArgumentException("GameMode '" + fullId + "' is not registered");
         }
         ACTIVE_MODES.put(levelKey, mode);
+        PASSIVE_CACHE.remove(levelKey);
+        TaskPoolBuilder.invalidate(mode.getId());
         try {
             mode.onPreStart(level);
             mode.onStart(level);
@@ -80,7 +86,9 @@ public class GameModeRegistry {
     public static void stop(ServerLevel level, WinResult result) {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode mode = ACTIVE_MODES.remove(levelKey);
+        PASSIVE_CACHE.remove(levelKey);
         if (mode != null) {
+            TaskPoolBuilder.invalidate(mode.getId());
             // 用 try/finally 保证 onEnd 抛异常时 onCleanup 仍会执行，
             // 避免 per-level 状态（角色/计时器/商店等 manager 的 map 条目）因异常泄漏。
             try {
@@ -122,15 +130,22 @@ public class GameModeRegistry {
 
     /**
      * Get the active GameMode in a level (also checks passive isActive() as fallback).
+     * Passive results are cached per level and invalidated on start/stop.
      */
     public static Optional<GameMode> getActiveForLevel(ServerLevel level) {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode explicit = ACTIVE_MODES.get(levelKey);
         if (explicit != null) return Optional.of(explicit);
-        // fallback: passive check
+        // fallback: passive check (cached)
+        GameMode cached = PASSIVE_CACHE.get(levelKey);
+        if (cached != null) return Optional.of(cached);
         return REGISTRY.values().stream()
                 .filter(m -> m.isActive(level))
-                .findFirst();
+                .findFirst()
+                .map(m -> {
+                    PASSIVE_CACHE.put(levelKey, m);
+                    return m;
+                });
     }
 
     public static boolean isActiveInLevel(ServerLevel level) {
