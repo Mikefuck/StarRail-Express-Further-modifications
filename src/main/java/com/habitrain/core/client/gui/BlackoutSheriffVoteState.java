@@ -46,10 +46,6 @@ public final class BlackoutSheriffVoteState {
         return remainingSeconds;
     }
 
-    public static int getTotalSeconds() {
-        return totalSeconds;
-    }
-
     public static int getSheriffCount() {
         return sheriffCount;
     }
@@ -78,7 +74,4 @@ public final class BlackoutSheriffVoteState {
         }
     }
 
-    public static String getTimerText() {
-        return remainingSeconds + "s";
-    }
 }

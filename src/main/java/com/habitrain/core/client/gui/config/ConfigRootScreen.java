@@ -2,7 +2,6 @@ package com.habitrain.core.client.gui.config;
 
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -181,8 +180,6 @@ public class ConfigRootScreen extends Screen {
     }
 
     public Screen getParent() { return parent; }
-    public Font font() { return font; }
-    public boolean isEditable() { return remoteEditable; }
 
     @Override
     public void onClose() {

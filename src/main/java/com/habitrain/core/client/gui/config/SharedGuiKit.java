@@ -1,7 +1,6 @@
 package com.habitrain.core.client.gui.config;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.util.Mth;
 
 /**
  * 共享 GUI 绘制工具 — 供配置页面各 Tab 复用。
@@ -27,29 +26,9 @@ public final class SharedGuiKit {
         g.fill(0, 3, width, 4, 0x408B6B47);
     }
 
-    /** 绘制圆角面板背景（近似 — 实为实心矩形 + 细边框） */
-    public static void drawPanel(GuiGraphics g, int x, int y, int w, int h, int bg, int border) {
-        g.fill(x, y, x + w, y + h, bg);
-        g.fill(x, y, x + w, y + 1, border);
-        g.fill(x, y, x + 1, y + h, border);
-        g.fill(x, y + h - 1, x + w, y + h, border);
-        g.fill(x + w - 1, y, x + w, y + h, border);
-    }
-
     /** 左侧色条（任务/小游戏行标识） */
     public static void drawAccentStripe(GuiGraphics g, int x, int y, int h, int color) {
         g.fill(x, y, x + 3, y + h, color);
-    }
-
-    /** 状态标签（"已启用"/"已停用"药丸） */
-    public static void drawStatusPill(GuiGraphics g, int x, int y, boolean enabled, int fontWidth) {
-        int w = 48;
-        int bg = enabled ? 0xFF1B3A2A : 0xFF3A1B1B;
-        int fg = enabled ? 0xFF55CC55 : 0xFFCC5555;
-        g.fill(x, y, x + w, y + 16, bg);
-        g.fill(x, y, x + w, y + 1, 0x20FFFFFF);
-        String text = enabled ? "已启用" : "已停用";
-        // 绘制文字需在外部完成（GuiGraphics 不持有 Font）
     }
 
     /** 自定义滚动条 */

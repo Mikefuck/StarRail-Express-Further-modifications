@@ -1,6 +1,5 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.config.ConfigManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -329,11 +328,6 @@ public class ShaderWhitelistScreen extends Screen {
                 removeEntry(i);
                 return true;
             }
-        }
-
-        // 点击添加按钮的键盘快捷键（回车）
-        if (addBox.isFocused() && button == 0) {
-            // 如果点击了添加按钮外部，但不处理
         }
 
         return false;

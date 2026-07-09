@@ -27,14 +27,6 @@ public final class LiveConfigAccess {
         return mc.player != null && mc.player.hasPermissions(4);
     }
 
-    public static boolean isRemoteLocked() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.getConnection() == null || mc.getSingleplayerServer() != null) {
-            return false;
-        }
-        return mc.player == null || !mc.player.hasPermissions(4);
-    }
-
     public static void showDeniedMessage() {
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {

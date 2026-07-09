@@ -36,8 +36,6 @@ public class BlackoutHudOverlay {
     public static void setBlackoutModeActive(boolean v) { blackoutModeActive = v; }
     public static boolean isBlackoutModeActive() { return blackoutModeActive; }
 
-    public static void setVisible(boolean visible) { showHud = visible; }
-
     private static int getLocalCountdown() {
         var level = Minecraft.getInstance().level;
         if (level == null) return 0;

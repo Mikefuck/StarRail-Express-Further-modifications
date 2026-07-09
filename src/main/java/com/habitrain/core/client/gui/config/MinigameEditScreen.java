@@ -317,7 +317,6 @@ public class MinigameEditScreen extends Screen {
         int contentBot = height - 30;
         if (my >= contentTop && my < contentBot) {
             int maxScroll = Math.max(0, contentHeight - (contentBot - contentTop));
-            scrollOffset = Mth.clamp(scrollOffset + (my - contentTop) * 0, 0, maxScroll);
             // 滚动条拖拽检测
             int scrollW = width - PAD * 2;
             int sbX = PAD + scrollW - 4;
