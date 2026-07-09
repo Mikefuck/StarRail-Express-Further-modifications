@@ -21,6 +21,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -29,7 +31,8 @@ public class RestorePowerHandler {
 
     private static final int SLOW_TICKS = 120;
     private static final Map<UUID, RestoreState> activeStates = new HashMap<>();
-    private static boolean restoreCompleted = false;
+    /** per-level: true 表示该维度下 restore_power 已完成，停电已恢复 */
+    private static final Map<ResourceKey<Level>, Boolean> restoreCompleted = new HashMap<>();
 
     public static void register() {
         UseBlockCallback.EVENT.register(RestorePowerHandler::onUseBlock);
@@ -57,7 +60,7 @@ public class RestorePowerHandler {
                     continue;
                 }
 
-                if (restoreCompleted) {
+                if (restoreCompleted.getOrDefault(sp.serverLevel().dimension(), false)) {
                     if (sp != null) sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     it.remove();
                     continue;
@@ -67,7 +70,7 @@ public class RestorePowerHandler {
                     if (sp != null) {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     }
-                    if (!restoreCompleted) {
+                    if (sp != null && !restoreCompleted.containsKey(sp.serverLevel().dimension())) {
                         task.setProgress(task.getMaxProgress());
                     }
                     SlownessReapplyManager.unregisterAllLevels(uuid);
@@ -87,18 +90,18 @@ public class RestorePowerHandler {
         SlownessReapplyManager.clearAll();
     }
 
-    public static void resetCompleted() {
-        restoreCompleted = false;
+    public static void resetCompleted(ServerLevel level) {
+        restoreCompleted.remove(level.dimension());
         activeStates.clear();
         SlownessReapplyManager.clearAll();
     }
 
-    public static boolean isRestoreCompleted() {
-        return restoreCompleted;
+    public static boolean isRestoreCompleted(ServerLevel level) {
+        return restoreCompleted.getOrDefault(level.dimension(), false);
     }
 
-    public static void markRestoreCompleted() {
-        restoreCompleted = true;
+    public static void markRestoreCompleted(ServerLevel level) {
+        restoreCompleted.put(level.dimension(), true);
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -114,7 +117,7 @@ public class RestorePowerHandler {
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
             return InteractionResult.PASS;
         }
-        if (restoreCompleted) return InteractionResult.PASS;
+        if (restoreCompleted.containsKey(serverPlayer.serverLevel().dimension())) return InteractionResult.PASS;
 
         BlockState state = world.getBlockState(hitResult.getBlockPos());
         if (state.getBlock() != Blocks.LEVER) {

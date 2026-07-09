@@ -1,38 +1,29 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.cache.ActiveTaskCache;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * 客户端 Mixin - 从同步数据中捕获自定义任务信息到 ActiveTaskCache
- * (移除了对旧 CustomTaskStore 的依赖)
+ * 客户端 Mixin — 原用于从同步数据中捕获自定义任务信息到 ActiveTaskCache。
+ * <p>
+ * 自 Batch 1 起，{@link com.habitrain.core.client.cache.ActiveTaskCache} 仅由
+ * {@link com.habitrain.core.network.ActiveTaskPayload} 接收器
+ * ({@link com.habitrain.core.client.HabiTrainCoreClient}) 写入，
+ * NBT 同步路径不再写入缓存，以避免双写导致的状态不一致。
+ * <p>
+ * 此 Mixin 保留空壳便于后续扩展的 mixin 目标引用。
  */
 @Mixin(SREPlayerTaskComponent.class)
 public class HudCustomTaskMixin {
 
     @Inject(method = "readFromSyncNbt", at = @At("TAIL"), remap = false)
     private void habitrain$onReadSyncNbt(CompoundTag tag, HolderLookup.Provider lookup, CallbackInfo ci) {
-        // 同步数据不含 tasks 列表时（可能是部分同步），不动缓存，避免透视高亮闪烁。
-        if (!tag.contains("tasks", Tag.TAG_LIST)) {
-            return;
-        }
-        for (Tag element : tag.getList("tasks", Tag.TAG_COMPOUND)) {
-            if (element instanceof CompoundTag compound && compound.contains("customId")) {
-                String cid = compound.getString("customId");
-                if (!cid.isEmpty()) {
-                    ActiveTaskCache.setActiveTask(cid);
-                    return;
-                }
-            }
-        }
-        // tasks 列表存在但无自定义任务条目 → 服务端确认玩家当前无自定义任务，清空缓存
-        ActiveTaskCache.clear();
+        // 空壳：ActiveTaskCache 现在仅由 ActiveTaskPayload 接收器写入。
+        // 保留方法签名以保持 mixin 引用稳定，不执行任何操作。
     }
 }

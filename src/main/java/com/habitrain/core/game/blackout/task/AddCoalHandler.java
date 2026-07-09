@@ -33,8 +33,10 @@ import java.util.UUID;
 
 /**
  * 添煤任务交互处理器（两阶段右键流程）。
- * <p>阶段0：右键煤炭块 → 给缓慢III(6秒) + 发放1个煤炭 → 进入阶段1
+ * <p>阶段0：右键煤炭块 → 给缓慢III(6秒) → 进入阶段1
  * <p>阶段1：手持煤炭右键 yuushya:generator → 给缓慢III(6秒) + 消耗煤炭 → 任务完成
+ * <p>煤炭的发放不在右键时立即执行，而是在 END_SERVER_TICK 中缓慢效果结束后发放，
+ * 确保缓慢效果先施加、玩家先被减速，防止快速连续操作跳过慢速阶段。
  * <p>缓慢效果会在 END_SERVER_TICK 中重新施加以对抗 betel-nut-mod 的每 tick 清除。
  */
 public class AddCoalHandler {

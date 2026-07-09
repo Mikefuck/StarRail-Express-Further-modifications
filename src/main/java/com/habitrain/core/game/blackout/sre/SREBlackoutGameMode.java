@@ -32,10 +32,14 @@ import java.util.UUID;
 public class SREBlackoutGameMode extends SREMurderGameMode {
     private static final Logger LOGGER = LoggerFactory.getLogger("SREBlackoutGameMode");
     public static final ResourceLocation MODE_ID = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
+    /** 最少玩家数 */
+    private static final int MIN_PLAYERS = 10;
+    /** 初始杀手数 */
+    private static final int KILLER_COUNT = 1;
     private static boolean registered = false;
 
     public SREBlackoutGameMode() {
-        super(MODE_ID, 10, 1);
+        super(MODE_ID, MIN_PLAYERS, KILLER_COUNT);
     }
 
     @Override
@@ -95,7 +99,11 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
             SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(world);
             if (roundEnd == null) return;
 
-            BlackoutRoleManager.Faction winner = BlackoutMode.getLastWinningFaction();
+            BlackoutRoleManager.Faction winner = null;
+            var modeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(world);
+            if (modeOpt.isPresent() && modeOpt.get() instanceof BlackoutMode bm) {
+                winner = bm.getLastWinningFaction();
+            }
             GameUtils.WinStatus winStatus;
             if (winner == BlackoutRoleManager.Faction.GOOD) {
                 winStatus = GameUtils.WinStatus.PASSENGERS;

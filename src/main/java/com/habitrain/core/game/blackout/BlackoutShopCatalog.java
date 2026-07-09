@@ -5,12 +5,12 @@ import dev.doctor4t.wathe.util.ShopEntry;
 import java.util.List;
 
 public final class BlackoutShopCatalog {
-    public static final String REVOLVER_KEY = "revolver";
+    private static final String REVOLVER_KEY = "revolver";
     public static final String REVOLVER_NAME = "左轮手枪";
     public static final String REVOLVER_ITEM_ID = "trainmurdermystery:revolver";
     public static final int REVOLVER_PRICE = 200;
 
-    public static final String HANDCUFFS_KEY = "handcuffs";
+    private static final String HANDCUFFS_KEY = "handcuffs";
     public static final String HANDCUFFS_NAME = "手铐";
     public static final String HANDCUFFS_ITEM_ID = "noellesroles:handcuffs";
     public static final int HANDCUFFS_PRICE = 80;
@@ -49,7 +49,7 @@ public final class BlackoutShopCatalog {
             true
     );
 
-    public static final String ACID_BUCKET_KEY = "acid_bucket";
+    private static final String ACID_BUCKET_KEY = "acid_bucket";
     public static final String ACID_BUCKET_NAME = "硫酸桶";
     public static final String ACID_BUCKET_ITEM_ID = "noellesroles:bucket_of_h2so4";
     public static final int ACID_BUCKET_PRICE = 30;
@@ -64,7 +64,7 @@ public final class BlackoutShopCatalog {
             true
     );
 
-    public static final String KNIFE_KEY = "knife";
+    private static final String KNIFE_KEY = "knife";
     public static final String KNIFE_NAME = "刀";
     public static final String KNIFE_ITEM_ID = "noellesroles:throwing_knife";
     public static final int KNIFE_PRICE = 130;
@@ -79,7 +79,7 @@ public final class BlackoutShopCatalog {
             false
     );
 
-    public static final String LOCKPICK_KEY = "lockpick";
+    private static final String LOCKPICK_KEY = "lockpick";
     public static final String LOCKPICK_NAME = "撬锁器";
     public static final String LOCKPICK_ITEM_ID = "trainmurdermystery:lockpick";
     public static final int LOCKPICK_PRICE = 80;
@@ -94,7 +94,7 @@ public final class BlackoutShopCatalog {
             false
     );
 
-    public static final String PSYCHO_MODE_KEY = "psycho_mode";
+    private static final String PSYCHO_MODE_KEY = "psycho_mode";
     public static final String PSYCHO_MODE_NAME = "疯狂模式";
     public static final String PSYCHO_MODE_ITEM_ID = "trainmurdermystery:psycho_mode";
     public static final int PSYCHO_MODE_PRICE = 400;

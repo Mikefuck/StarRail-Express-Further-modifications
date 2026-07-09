@@ -43,7 +43,7 @@ public class BlackoutMode implements GameMode {
     private final BlackoutTickCoordinator tickCoordinator =
             new BlackoutTickCoordinator(this, victoryChecker, syncManager);
 
-    private static volatile BlackoutRoleManager.Faction lastWinningFaction = null;
+    private BlackoutRoleManager.Faction lastWinningFaction = null;
 
     ServerLevel getCurrentLevel() { return currentLevel; }
     boolean isGameEnded() { return gameEnded; }
@@ -191,7 +191,7 @@ public class BlackoutMode implements GameMode {
                 .toList();
     }
 
-    public static BlackoutRoleManager.Faction getLastWinningFaction() {
+    public BlackoutRoleManager.Faction getLastWinningFaction() {
         return lastWinningFaction;
     }
 

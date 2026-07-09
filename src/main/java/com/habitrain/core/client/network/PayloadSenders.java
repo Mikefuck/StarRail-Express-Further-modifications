@@ -53,9 +53,15 @@ public final class PayloadSenders {
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutHirePolicePayload());
     }
 
-    /** 从客户端发送投票。purpose 指定投票类型，targetPlayerId 为投票目标（null=弃票）。 */
+    /** 从客户端发送投票。purpose 指定投票类型，targetPlayerId 为投票目标。 */
     public static void sendVoteCast(String purpose, UUID targetPlayerId) {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, targetPlayerId));
+    }
+
+    /** 从客户端撤销当前投票（弃票）。语义等价于 {@code sendVoteCast(purpose, null)} 但意图更清晰。 */
+    public static void sendVoteRevoke(String purpose) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, null));
     }
 }

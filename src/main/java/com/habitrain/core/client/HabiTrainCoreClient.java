@@ -9,6 +9,7 @@ import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
+import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.LiveConfigAccess;
@@ -131,7 +132,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 BlackoutWelcomeRenderer.reset();
                 BlackoutSheriffVoteState.clear();
                 BlackoutVoteState.clear();
-                BlackoutVoteState.setBlackoutModeActive(false);
+                ClientBlackoutState.setBlackoutModeActive(false);
 
                 lastSentShaderPack = detectCurrentShaderPack();
                 if (!lastSentShaderPack.isEmpty()) {
@@ -153,7 +154,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             BlackoutWelcomeRenderer.reset();
             BlackoutSheriffVoteState.clear();
             BlackoutVoteState.clear();
-            BlackoutVoteState.setBlackoutModeActive(false);
+            ClientBlackoutState.setBlackoutModeActive(false);
         });
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
@@ -214,11 +215,11 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 if (payload.totalTimeRemaining() <= 0) {
                     BlackoutHudOverlay.reset();
                     BlackoutWelcomeRenderer.reset();
-                    BlackoutVoteState.setBlackoutModeActive(false);
+                    ClientBlackoutState.setBlackoutModeActive(false);
                     return;
                 }
 
-                BlackoutVoteState.setBlackoutModeActive(true);
+                ClientBlackoutState.setBlackoutModeActive(true);
                 BlackoutHudOverlay.updateTime(
                     payload.totalTimeRemaining(), payload.endTimeTick(), payload.blackoutActive(), payload.phase());
             });
@@ -262,7 +263,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 BlackoutWelcomeRenderer.reset();
                 BlackoutSheriffVoteState.clear();
                 BlackoutVoteState.clear();
-                BlackoutVoteState.setBlackoutModeActive(false);
+                ClientBlackoutState.setBlackoutModeActive(false);
             });
         });
 

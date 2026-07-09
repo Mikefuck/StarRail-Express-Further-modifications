@@ -1,6 +1,6 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
+import com.habitrain.core.client.gui.ClientBlackoutState;
 import io.wifi.starrailexpress.client.gui.TimeRenderer;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.player.LocalPlayer;
@@ -29,7 +29,7 @@ public class BlackoutTimeRendererMixin {
     private static void habitrain$cancelDuringBlackout(Font font, LocalPlayer player,
                                                        io.wifi.utils.client.betterrender.FakeGuiGraphics g,
                                                        float partialTick, CallbackInfo ci) {
-        if (BlackoutHudOverlay.isBlackoutModeActive()) {
+        if (ClientBlackoutState.isBlackoutModeActive()) {
             ci.cancel();
         }
     }

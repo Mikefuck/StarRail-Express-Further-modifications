@@ -39,11 +39,11 @@ public class RestorePowerTask {
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
                 if (!(serverPlayer.level() instanceof ServerLevel level)) return;
 
-                if (RestorePowerHandler.isRestoreCompleted()) {
+                if (RestorePowerHandler.isRestoreCompleted(level)) {
                     return;
                 }
 
-                RestorePowerHandler.markRestoreCompleted();
+                RestorePowerHandler.markRestoreCompleted(level);
 
                 // 通过 applyTimeImpact 调用 restorePower（替代硬编码 BlackoutTimerSystem.restorePower(level)）
                 BlackoutTaskHelper.applyTimeImpact(level, "habitrain_core:restore_power");

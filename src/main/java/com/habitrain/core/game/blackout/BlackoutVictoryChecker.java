@@ -109,7 +109,7 @@ class BlackoutVictoryChecker {
         if (blackout != null) {
             blackout.triggerBlackout(true, 600000);
         }
-        com.habitrain.core.game.blackout.task.RestorePowerHandler.resetCompleted();
+        com.habitrain.core.game.blackout.task.RestorePowerHandler.resetCompleted(level);
         forceAssignRestorePowerToAllGood(level);
     }
 
