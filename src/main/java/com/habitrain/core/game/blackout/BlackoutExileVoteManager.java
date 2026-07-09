@@ -41,6 +41,7 @@ public final class BlackoutExileVoteManager {
         final List<UUID> candidateOrder = new ArrayList<>();
         final Map<UUID, UUID> votesByVoter = new HashMap<>(); // voter -> target
         UUID initiatorId = null;
+        int lastPayloadHash = 0;
     }
 
     private static VoteState getOrCreate(ServerLevel level) {
@@ -230,6 +231,12 @@ public final class BlackoutExileVoteManager {
     private static void broadcastState(ServerLevel level) {
         VoteState state = STATES.get(level.dimension());
         if (state == null) return;
+
+        // S5-001: Content hash gate — skip broadcast if state unchanged since last send.
+        int hash = Objects.hash(state.active, state.remainingSeconds, state.votesByVoter);
+        hash = 31 * hash + state.candidateOrder.hashCode();
+        if (hash == state.lastPayloadHash) return;
+        state.lastPayloadHash = hash;
 
         List<BlackoutVotePayload.Entry> entries = buildEntryList(level, state);
         BlackoutVotePayload.broadcastToAll(

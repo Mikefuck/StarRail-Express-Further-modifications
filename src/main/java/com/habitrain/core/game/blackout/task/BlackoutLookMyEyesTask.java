@@ -6,7 +6,10 @@ import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+
+import java.util.List;
 
 /**
  * 停电模式好人任务：LOOK MY EYES（与另一玩家3秒对视）。
@@ -32,14 +35,15 @@ public class BlackoutLookMyEyesTask {
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
 
                 Vec3 eyePos = serverPlayer.getEyePosition();
-                Vec3 lookVec = serverPlayer.getLookAngle();
+                AABB searchBox = serverPlayer.getBoundingBox().inflate(3.0);
+                List<ServerPlayer> nearby = serverPlayer.serverLevel()
+                        .getEntitiesOfClass(ServerPlayer.class, searchBox,
+                                p -> p != serverPlayer && p.isAlive());
 
+                Vec3 lookVec = serverPlayer.getLookAngle();
                 boolean eyeContact = false;
 
-                for (ServerPlayer otherPlayer : serverPlayer.serverLevel().players()) {
-                    if (otherPlayer == serverPlayer) continue;
-                    if (!otherPlayer.isAlive()) continue;
-
+                for (ServerPlayer otherPlayer : nearby) {
                     Vec3 toOther = otherPlayer.getEyePosition().subtract(eyePos);
                     double distance = toOther.length();
                     if (distance > 3.0) continue;

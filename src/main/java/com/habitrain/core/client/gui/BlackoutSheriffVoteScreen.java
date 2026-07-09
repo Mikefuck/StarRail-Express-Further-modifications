@@ -20,18 +20,23 @@ public class BlackoutSheriffVoteScreen extends Screen {
     private static final int ROW_GAP = 4;
     private static final int SCROLLBAR_W = 4;
 
+    // S11-012: Cache static text Components as fields to avoid per-frame allocation
+    private static final Component CLOSE_BUTTON_TEXT = Component.literal("关闭");
+    private static final Component TITLE = Component.literal("警长投票");
+    private static final Component VOTES_PREFIX = Component.literal("票数: ");
+
     private final Screen parent;
     private double scrollOffset = 0;
 
     public BlackoutSheriffVoteScreen(Screen parent) {
-        super(Component.literal("警长投票"));
+        super(TITLE);
         this.parent = parent;
     }
 
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("关闭"),
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(CLOSE_BUTTON_TEXT,
                 btn -> onClose())
                 .bounds(width / 2 - 40, height - 32, 80, 20)
                 .build());

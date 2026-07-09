@@ -6,8 +6,6 @@ import com.habitrain.core.game.blackout.BlackoutMode;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 
 /**
@@ -44,12 +42,9 @@ public class AddCoalTask {
                 task.setMaxProgress(PROGRESS_DONE);
             })
             .onTick((player, task) -> {
-                if (task.isFulfilled()) return;
-                if (task.getProgress() == GENERATOR_PHASE && hasPlayerCoal(player) == false) {
-                    task.markFailed();
-                    cleanup(player);
-                    return;
-                }
+                // S8-003: Per-tick full inventory scan removed.
+                // Coal validation happens exclusively in AddCoalHandler
+                // at generator interaction time, so no per-tick scan is needed.
             })
             .completionChecker((player, task) -> task.getProgress() >= PROGRESS_DONE)
             .onComplete((player, task) -> {
@@ -76,16 +71,5 @@ public class AddCoalTask {
         if (player instanceof ServerPlayer sp) {
             sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
         }
-    }
-
-    private static boolean hasPlayerCoal(Player player) {
-        if (player == null) return false;
-        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
-            ItemStack stack = player.getInventory().getItem(i);
-            if (!stack.isEmpty() && stack.is(Items.COAL)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

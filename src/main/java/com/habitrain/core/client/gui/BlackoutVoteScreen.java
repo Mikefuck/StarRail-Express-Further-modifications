@@ -19,6 +19,11 @@ public class BlackoutVoteScreen extends Screen {
     private static final int ROW_GAP = 4;
     private static final int SCROLLBAR_W = 4;
 
+    // S11-012: Cache static text Components as fields to avoid per-frame allocation
+    private static final Component CLOSE_BUTTON_TEXT = Component.literal("关闭");
+    private static final Component VOTES_PREFIX = Component.literal("票数: ");
+    private static final Component CHECK_MARK = Component.literal("✓");
+
     private final Screen parent;
     private double scrollOffset = 0;
 
@@ -30,7 +35,7 @@ public class BlackoutVoteScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("关闭"),
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(CLOSE_BUTTON_TEXT,
                 btn -> onClose())
                 .bounds(width / 2 - 40, height - 32, 80, 20)
                 .build());
@@ -114,7 +119,7 @@ public class BlackoutVoteScreen extends Screen {
 
         if (selected) {
             g.fill(x + w - 6, y + 4, x + w - 2, y + h - 4, 0xFFE6B566);
-            g.drawCenteredString(font, Component.literal("✓"),
+            g.drawCenteredString(font, CHECK_MARK,
                     x + w - 14, y + 9, 0xFFE6B566);
         }
     }
@@ -141,8 +146,8 @@ public class BlackoutVoteScreen extends Screen {
                 if (BlackoutVoteState.isSelected(entry.playerId())) {
                     PayloadSenders.sendVoteCast(BlackoutVoteState.getPurpose(), entry.playerId());
                 } else if (wasSelected) {
-                    // 取消投票：发送 null UUID 表示弃票
-                    PayloadSenders.sendVoteCast(BlackoutVoteState.getPurpose(), null);
+                    // 取消投票：使用意图明确的弃票方法
+                    PayloadSenders.sendVoteRevoke(BlackoutVoteState.getPurpose());
                 }
                 return true;
             }

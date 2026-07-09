@@ -15,9 +15,16 @@ public final class BlackoutVoteState {
     private static String description = "";
     private static List<BlackoutVotePayload.Entry> candidates = List.of();
     private static UUID selectedTargetId = null;
-    private static boolean blackoutModeActive = false;
 
     private BlackoutVoteState() {}
+
+    /** @deprecated Use {@link ClientBlackoutState#setBlackoutModeActive} directly. */
+    @Deprecated
+    public static void setBlackoutModeActive(boolean active) { ClientBlackoutState.setBlackoutModeActive(active); }
+
+    /** @deprecated Use {@link ClientBlackoutState#isBlackoutModeActive} directly. */
+    @Deprecated
+    public static boolean isBlackoutModeActive() { return ClientBlackoutState.isBlackoutModeActive(); }
 
     public static void update(BlackoutVotePayload payload) {
         purpose = payload.purpose();
@@ -41,9 +48,6 @@ public final class BlackoutVoteState {
         candidates = List.of();
         selectedTargetId = null;
     }
-
-    public static void setBlackoutModeActive(boolean active) { blackoutModeActive = active; }
-    public static boolean isBlackoutModeActive() { return blackoutModeActive; }
 
     public static boolean isActive() { return active; }
     public static int getRemainingSeconds() { return remainingSeconds; }
