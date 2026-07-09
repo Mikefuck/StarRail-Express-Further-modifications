@@ -1,8 +1,6 @@
 package com.habitrain.core.config;
 
 import com.google.gson.JsonObject;
-import com.habitrain.core.api.TaskDefinition;
-import com.habitrain.core.api.TaskRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,14 +63,11 @@ public class TaskConfigEntry {
             entry.mapFilterMode = 1;
         }
         if (json.has("disabledMaps")) {
-            // disabledMaps 已废弃：isTaskEnabledForMap 只看 enabledMaps + mapFilterMode，
-            // 旧配置的 disabledMaps 会被静默忽略。这里 log warn 提示用户迁移。
             var arr = json.getAsJsonArray("disabledMaps");
-            for (var el : arr) entry.disabledMaps.add(el.getAsString());
-            if (!entry.disabledMaps.isEmpty()) {
+            if (arr.size() > 0) {
                 LOGGER.warn("检测到已废弃的 'disabledMaps' 字段（{}项），当前版本仅读取 enabledMaps + mapFilterMode。"
                         + "如需禁用特定地图，请改用 mapFilterMode=2 + enabledMaps（黑名单语义）。",
-                        entry.disabledMaps.size());
+                        arr.size());
             }
         }
         if (json.has("instinctColor")) entry.instinctColor = json.get("instinctColor").getAsInt();
@@ -81,18 +76,6 @@ public class TaskConfigEntry {
         if (json.has("emotionReward")) entry.emotionReward = json.get("emotionReward").getAsFloat();
         if (json.has("refreshWeight")) entry.refreshWeight = json.get("refreshWeight").getAsFloat();
         return entry;
-    }
-
-    public int getEffectiveGoldReward(TaskDefinition def) {
-        return goldReward >= 0 ? goldReward : -1;
-    }
-
-    public float getEffectiveEmotionReward(TaskDefinition def) {
-        return emotionReward >= 0f ? emotionReward : -1f;
-    }
-
-    public float getEffectiveRefreshWeight(TaskDefinition def) {
-        return refreshWeight >= 0f ? refreshWeight : def.getWeight();
     }
 
     public int getColor() {

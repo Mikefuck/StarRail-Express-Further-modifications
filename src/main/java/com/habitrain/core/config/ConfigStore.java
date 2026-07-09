@@ -256,7 +256,4 @@ public class ConfigStore {
         return boost;
     }
 
-    float calculateCurrentBoost(ConfigRepository repo) {
-        return TaskBalancer.calcBoost(repo.getDlcProbabilityTarget(), countDlcTasks(), countOriginalTasks());
-    }
 }

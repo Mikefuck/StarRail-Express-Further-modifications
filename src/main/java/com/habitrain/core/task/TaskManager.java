@@ -122,26 +122,6 @@ public class TaskManager {
         }
     }
 
-    public List<TaskDefinition> getAvailableTasks(String mapName, TaskCategory currentCategory) {
-        List<TaskDefinition> available = new ArrayList<>();
-        ConfigManager config = ConfigManager.getInstance();
-
-        for (TaskDefinition def : TaskRegistry.getAll()) {
-            TaskConfigEntry entry = config.getTaskConfig(def.getFullId());
-            boolean mapEnabled = isTaskEnabledForMap(entry, mapName);
-            if (!mapEnabled) continue;
-
-            TaskCategory cat = def.getCategory();
-            boolean categoryMatch = (TaskCategory.ALL.equals(cat)
-                || TaskCategory.CUSTOM.equals(cat)
-                || cat.equals(currentCategory));
-            if (!categoryMatch) continue;
-
-            available.add(def);
-        }
-        return available;
-    }
-
     public boolean isOriginalTaskDisabled(String taskName, String mapName) {
         String fullId = "habitrain_core:" + taskName.toLowerCase();
         TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);

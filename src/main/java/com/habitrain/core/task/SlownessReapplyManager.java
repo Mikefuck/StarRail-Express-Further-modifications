@@ -46,22 +46,10 @@ public class SlownessReapplyManager {
         activeEntries.computeIfAbsent(levelKey, k -> new ConcurrentHashMap<>()).put(playerId, spec);
     }
 
-    public static void unregister(ResourceKey<Level> levelKey, UUID playerId) {
-        Map<UUID, EffectSpec> levelMap = activeEntries.get(levelKey);
-        if (levelMap != null) {
-            levelMap.remove(playerId);
-            if (levelMap.isEmpty()) activeEntries.remove(levelKey);
-        }
-    }
-
     public static void unregisterAllLevels(UUID playerId) {
         for (var levelMap : activeEntries.values()) {
             levelMap.remove(playerId);
         }
-    }
-
-    public static void clearAll(ResourceKey<Level> levelKey) {
-        activeEntries.remove(levelKey);
     }
 
     public static void clearAll() {

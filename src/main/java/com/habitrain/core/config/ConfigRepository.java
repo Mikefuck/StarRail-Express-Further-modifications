@@ -20,7 +20,7 @@ public class ConfigRepository {
     }
 
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
-        taskConfigs.put(fullId, entry);
+        putTaskConfig(fullId, entry);
     }
 
     public void putTaskConfig(String fullId, TaskConfigEntry entry) {

@@ -51,7 +51,6 @@ import com.habitrain.core.betel.BetelQuestDefinition;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
-import com.habitrain.core.task.GameLifecycleHandler;
 import com.habitrain.core.task.SlownessReapplyManager;
 import betel.nut.BetelNutConfig;
 import net.minecraft.core.Registry;
@@ -434,7 +433,6 @@ public class HabiTrainCore implements ModInitializer {
         BetelLeafHandler.register();
         BackpackSearchHandler.register();
         BetelFoodRestriction.register();
-        GameLifecycleHandler.register();
     }
 
 }

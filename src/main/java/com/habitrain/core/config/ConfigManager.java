@@ -80,10 +80,6 @@ public class ConfigManager {
         store.save(repository);
     }
 
-    public GameModeConfigScope getGameModeConfig(String gameModeId) {
-        return repository.getGameModeConfig(gameModeId);
-    }
-
     public Map<String, GameModeConfigScope> getAllGameModeConfigs() {
         return repository.getAllGameModeConfigs();
     }

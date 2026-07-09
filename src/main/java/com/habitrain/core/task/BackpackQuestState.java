@@ -24,13 +24,6 @@ public class BackpackQuestState {
     }
 
     public static BackpackQuestState getInstance() {
-        if (instance == null) {
-            synchronized (BackpackQuestState.class) {
-                if (instance == null) {
-                    instance = new BackpackQuestState();
-                }
-            }
-        }
         return instance;
     }
 

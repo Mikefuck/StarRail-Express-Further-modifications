@@ -24,10 +24,6 @@ public class GameLifecycleHandler {
     /** 记录上一tick是否处于游戏中（全局，不受多世界影响） */
     private static boolean wasGameActive = false;
 
-    public static void register() {
-        HabiTrainCore.LOGGER.info("已注册游戏生命周期处理器");
-    }
-
     /**
      * 每tick检测游戏状态，当游戏从活跃变为非活跃时清理效果
      * 注意：此方法在遍历所有世界后调用一次，而非每世界调用。
