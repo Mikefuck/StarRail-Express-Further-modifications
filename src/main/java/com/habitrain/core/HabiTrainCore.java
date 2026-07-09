@@ -101,6 +101,7 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
         BlackoutPhoneOpenPayload.register();
         BlackoutHirePolicePayload.register();
+        BlackoutHireResultPayload.register();
         BlackoutVotePayload.register();
         BlackoutVoteCastPayload.register();
         CustomTaskBlockPayload.register();
@@ -321,7 +322,18 @@ public class HabiTrainCore implements ModInitializer {
 
                 Component error = BlackoutPoliceHireService.tryHire(level, player);
 
-                // 聘请成功/失败后都回发电话状态，刷新客户端 GUI
+                // 发送聘请结果回执，客户端据此更新 statusText
+                if (error != null) {
+                    ServerPlayNetworking.send(player, new BlackoutHireResultPayload(false, error.getString()));
+                    com.habitrain.core.util.SubtitleNotifier.sendTop(
+                            player, Component.empty(), error, 60);
+                } else {
+                    ServerPlayNetworking.send(player, new BlackoutHireResultPayload(true, ""));
+                    com.habitrain.core.util.SubtitleNotifier.sendTop(
+                            player, Component.empty(), Component.literal("§a已成功聘请警察！"), 60);
+                }
+
+                // 同时刷新电话状态（更新余额、已聘请状态等）
                 boolean unlocked = BlackoutPoliceHireService.isPhoneUnlocked(level);
                 int remainingLock = BlackoutPoliceHireService.getRemainingLockSeconds(level);
                 int balance = 0;
@@ -334,14 +346,6 @@ public class HabiTrainCore implements ModInitializer {
                 int killerCount = BlackoutRoleManager.getRemainingBad(level);
                 ServerPlayNetworking.send(player, new BlackoutPhoneOpenPayload(
                         unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));
-
-                if (error != null) {
-                    com.habitrain.core.util.SubtitleNotifier.sendTop(
-                            player, Component.empty(), error, 60);
-                } else {
-                    com.habitrain.core.util.SubtitleNotifier.sendTop(
-                            player, Component.empty(), Component.literal("§a已成功聘请警察！"), 60);
-                }
             });
         });
         // C2S 通用投票接收器（用于放逐投票等）

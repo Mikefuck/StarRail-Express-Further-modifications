@@ -44,6 +44,24 @@ public class BlackoutPhoneHireScreen extends Screen {
         }
     }
 
+    /**
+     * 服务端聘请结果回执。
+     * 客户端据此更新 statusText 显示成功/失败信息，不再卡在"正在请求..."。
+     */
+    public void onHireResult(com.habitrain.core.network.BlackoutHireResultPayload result) {
+        if (result.success()) {
+            statusText = Component.literal("§a聘请成功");
+        } else {
+            statusText = Component.literal("§c聘请失败: " + result.reason());
+        }
+        // 恢复按钮可用状态
+        if (hireButton != null) {
+            boolean canHire = canHire();
+            hireButton.active = canHire;
+            hireButton.setMessage(Component.literal(canHire ? "§e拨打110" : "§7拨打110"));
+        }
+    }
+
     /** 综合判断是否可以聘请 */
     private boolean canHire() {
         // 服务端已解锁，或本地倒计时已到 0（屏幕打开期间解锁）

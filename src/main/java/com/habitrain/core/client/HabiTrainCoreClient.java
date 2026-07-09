@@ -247,6 +247,15 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             });
         });
 
+        // S2C 电话聘请结果接收器
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutHireResultPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
+                    phoneScreen.onHireResult(payload);
+                }
+            });
+        });
+
         OnGameFinishedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
                 BlackoutHudOverlay.reset();

@@ -39,6 +39,10 @@ public class BlackoutSheriffVoteScreen extends Screen {
 
     @Override
     public void tick() {
+        super.tick();
+        if (BlackoutSheriffVoteState.isActive() && BlackoutSheriffVoteState.getRemainingSeconds() > 0) {
+            BlackoutSheriffVoteState.setRemainingSeconds(BlackoutSheriffVoteState.getRemainingSeconds() - 1);
+        }
         if (!BlackoutSheriffVoteState.isActive()) {
             Minecraft.getInstance().setScreen(null);
         }
@@ -134,12 +138,17 @@ public class BlackoutSheriffVoteScreen extends Screen {
                 var entry = candidates.get(i);
                 UUID targetId = entry.playerId();
                 boolean wasSelected = BlackoutSheriffVoteState.isSelected(targetId);
-                BlackoutSheriffVoteState.toggleSelection(targetId);
+                UUID replaced = BlackoutSheriffVoteState.toggleSelection(targetId);
+                if (replaced != null) {
+                    // 替换场景：对旧目标发送撤回 payload，对新目标发送投票
+                    PayloadSenders.sendSheriffVoteCast(replaced, -1);
+                }
                 int slotIndex = BlackoutSheriffVoteState.getSelectedTargetIds().indexOf(targetId);
                 if (slotIndex >= 0) {
                     PayloadSenders.sendSheriffVoteCast(targetId, slotIndex);
-                } else if (wasSelected) {
+                } else if (wasSelected && replaced == null) {
                     // 取消投票：发送 slotIndex = -1 表示撤回（服务端按 slotIndex 移除该目标）
+                    // 注意：如果 replaced != null，已在上方发送了旧目标的撤回，这里不重复发送
                     PayloadSenders.sendSheriffVoteCast(targetId, -1);
                 }
                 return true;

@@ -1,5 +1,6 @@
 package com.habitrain.core.client.gui;
 
+import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.network.BlackoutSheriffVotePayload;
 
 import java.util.ArrayList;
@@ -49,6 +50,11 @@ public final class BlackoutSheriffVoteState {
         return remainingSeconds;
     }
 
+    /** 设置剩余秒数（供客户端 tick 本地递减） */
+    public static void setRemainingSeconds(int seconds) {
+        remainingSeconds = seconds;
+    }
+
     public static int getSheriffCount() {
         return sheriffCount;
     }
@@ -65,15 +71,25 @@ public final class BlackoutSheriffVoteState {
         return selectedTargetIds.contains(id);
     }
 
-    public static void toggleSelection(UUID targetId) {
+    /**
+     * 切换选择状态。
+     *
+     * @param targetId 要切换的候选人 UUID
+     * @return 如果因容量满替换而移除的旧目标 UUID，否则 null
+     */
+    public static UUID toggleSelection(UUID targetId) {
         int idx = selectedTargetIds.indexOf(targetId);
         if (idx >= 0) {
             selectedTargetIds.remove(idx);
+            return null;
         } else if (selectedTargetIds.size() < sheriffCount) {
             selectedTargetIds.add(targetId);
+            return null;
         } else {
-            // 已选满，替换第一个
+            // 已选满，替换第一个，并返回被替换的目标（供外层发送撤回 payload）
+            UUID replaced = selectedTargetIds.get(0);
             selectedTargetIds.set(0, targetId);
+            return replaced;
         }
     }
 

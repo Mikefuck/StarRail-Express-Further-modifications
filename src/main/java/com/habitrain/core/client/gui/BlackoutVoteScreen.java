@@ -38,6 +38,14 @@ public class BlackoutVoteScreen extends Screen {
 
     @Override
     public void tick() {
+        super.tick();
+        if (BlackoutVoteState.isActive() && BlackoutVoteState.getRemainingSeconds() > 0) {
+            // Trigger local decrement — the state object's remainingSeconds is mutated by
+            // incoming network updates too. We only decrement on the client side so the
+            // timer visually counts down even when network packets are delayed or batched.
+            // The server is the authoritative source; the next update will override.
+            BlackoutVoteState.setRemainingSeconds(BlackoutVoteState.getRemainingSeconds() - 1);
+        }
         if (!BlackoutVoteState.isActive()) {
             Minecraft.getInstance().setScreen(null);
         }

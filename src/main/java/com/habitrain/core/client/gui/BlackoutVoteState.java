@@ -47,6 +47,8 @@ public final class BlackoutVoteState {
 
     public static boolean isActive() { return active; }
     public static int getRemainingSeconds() { return remainingSeconds; }
+    /** 设置剩余秒数（供客户端 tick 本地递减） */
+    public static void setRemainingSeconds(int seconds) { remainingSeconds = seconds; }
     public static int getTotalSeconds() { return totalSeconds; }
     public static String getTitle() { return title; }
     public static String getDescription() { return description; }

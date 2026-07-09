@@ -85,7 +85,7 @@ public class TaskManager {
     public void removeFakeTask(UUID playerUuid) { activeFakeTasks.remove(playerUuid); }
 
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
-    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); }
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); dlcTaskCounts.clear(); }
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);
