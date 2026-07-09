@@ -54,7 +54,6 @@ public class BlackoutSearchBackpackTask {
                 // 记录发放的道具，供任务取消时回收（打 NBT 标签 + 存入 TaskInstance）
                 if (granted != null) {
                     com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:blackout_search_backpack");
-                    task.addGrantedItem(granted);
                 }
 
                 // 已删除完成弹窗（用户要求）— 仅金币/情绪奖励 + 道具，actionbar 文本由

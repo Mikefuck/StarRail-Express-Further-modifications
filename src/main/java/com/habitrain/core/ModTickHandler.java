@@ -23,16 +23,14 @@ public class ModTickHandler {
     }
 
     public static void tickMoreMods(MinecraftServer server) {
-        boolean anyGameActive = false;
-        boolean hasActiveGame = false;
+        boolean isGameActive = false;
         for (ServerLevel world : server.getAllLevels()) {
             BetelLeafHandler.tickHarvests(world);
             if (BetelTickEngine.isGameActive(world)) {
-                anyGameActive = true;
-                hasActiveGame = true;
+                isGameActive = true;
             }
         }
-        GameLifecycleHandler.tickGameEndCheck(anyGameActive, server);
+        GameLifecycleHandler.tickGameEndCheck(isGameActive, server);
 
         // 人数不足 8 人下雨（包含大厅→对局→对局结束全覆盖）
         for (ServerLevel world : server.getAllLevels()) {
@@ -41,7 +39,7 @@ public class ModTickHandler {
             }
         }
 
-        if (!hasActiveGame) {
+        if (!isGameActive) {
             return;
         }
 

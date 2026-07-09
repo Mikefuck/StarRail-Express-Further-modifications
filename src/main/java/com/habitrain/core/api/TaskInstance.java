@@ -3,17 +3,9 @@ package com.habitrain.core.api;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Runtime task instance that stores progress and lifecycle state.
- *
- * 性能/可维护性：本类还维护一份"任务发放给玩家的物理道具"清单（grantedItems），
- * 供 ItemReclaimHelper 在任务被取消/隐藏时回收。
  */
 public class TaskInstance {
 
@@ -29,10 +21,6 @@ public class TaskInstance {
     // 任务归属玩家（由 onAssign/tick 设置），保证 tick 外 setProgress 也能派发回调。
     private Player ownerPlayer = null;
 
-    /** 任务发放给玩家的物理道具清单（仅服务端维护，NBT 打过 habitrain_grant 标签）。
-     *  供 ItemReclaimHelper 在任务被取消/隐藏时扫描回收。 */
-    private final List<ItemStack> grantedItems = new ArrayList<>();
-
     public TaskInstance(TaskDefinition definition) {
         this.definition = definition;
     }
@@ -41,16 +29,8 @@ public class TaskInstance {
     public String getFullId() { return definition.getFullId(); }
     public int getProgress() { return progress; }
     public int getMaxProgress() { return maxProgress; }
-    public int getElapsedTicks() { return elapsedTicks; }
     public boolean isFulfilled() { return fulfilled; }
     public boolean isFailed() { return failed; }
-
-    /** 记录任务发放给玩家的物理道具。在 onComplete 调用 giveRandomBackpackItem 后存入。 */
-    public void addGrantedItem(ItemStack stack) {
-        if (stack != null && !stack.isEmpty()) grantedItems.add(stack.copy());
-    }
-    /** 只读视图，供 ItemReclaimHelper 使用。 */
-    public List<ItemStack> getGrantedItems() { return Collections.unmodifiableList(grantedItems); }
 
     public void setProgress(int progress) {
         int old = this.progress;
@@ -112,7 +92,6 @@ public class TaskInstance {
     }
 
     public String getName() { return definition.getDisplayName(); }
-    public String getCustomTaskId() { return definition.getFullId(); }
 
     public CompoundTag toNbt() {
         CompoundTag nbt = new CompoundTag();

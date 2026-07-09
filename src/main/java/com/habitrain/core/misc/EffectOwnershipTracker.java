@@ -135,6 +135,13 @@ public class EffectOwnershipTracker {
     }
 
     /**
+     * 清空所有追踪数据（服务器停止时调用）
+     */
+    public static void clearAll() {
+        ownership.clear();
+    }
+
+    /**
      * 获取跟踪统计信息（用于调试）
      */
     public static int getTrackedPlayerCount() {

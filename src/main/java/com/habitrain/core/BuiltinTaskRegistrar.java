@@ -172,7 +172,6 @@ public class BuiltinTaskRegistrar {
                 ItemStack granted = LootHelper.giveRandomBackpackItem(serverPlayer);
                 if (granted != null) {
                     ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:search_backpack");
-                    task.addGrantedItem(granted);
                 }
                 SubtitleNotifier.sendTop(
                     serverPlayer,

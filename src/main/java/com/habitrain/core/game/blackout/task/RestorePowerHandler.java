@@ -87,6 +87,7 @@ public class RestorePowerHandler {
 
     public static void clearAll() {
         activeStates.clear();
+        restoreCompleted.clear();
         SlownessReapplyManager.clearAll();
     }
 
