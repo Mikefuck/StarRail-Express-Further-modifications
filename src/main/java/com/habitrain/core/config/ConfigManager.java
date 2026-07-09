@@ -10,7 +10,7 @@ import java.io.File;
 import java.util.List;
 import java.util.Map;
 
-public class ConfigManager {
+public class ConfigManager implements ConfigQueryService {
     private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
     private static volatile ConfigManager INSTANCE;
 
@@ -57,8 +57,28 @@ public class ConfigManager {
         }
     }
 
+    @Override
     public TaskConfigEntry getTaskConfig(String fullId) {
         return repository.getTaskConfig(fullId);
+    }
+
+    @Override
+    public boolean isTaskEnabled(String fullId, String mapName) {
+        TaskConfigEntry entry = repository.getTaskConfig(fullId);
+        if (entry == null) return true;
+        if (!entry.enabled) return false;
+        return isMapAllowed(fullId, mapName);
+    }
+
+    @Override
+    public boolean isMapAllowed(String fullId, String mapName) {
+        TaskConfigEntry entry = repository.getTaskConfig(fullId);
+        if (entry == null) return true;
+        if (entry.mapFilterMode == 0) return true;
+        boolean listEmpty = entry.enabledMaps == null || entry.enabledMaps.isEmpty();
+        boolean contained = !listEmpty && entry.enabledMaps.contains(mapName);
+        if (entry.mapFilterMode == 1) return listEmpty || contained;
+        return listEmpty || !contained;
     }
 
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
@@ -92,6 +112,7 @@ public class ConfigManager {
         return store.countOriginalTasks();
     }
 
+    @Override
     public float getDlcWeightBoost() {
         return store.getDlcWeightBoost(repository);
     }
@@ -161,6 +182,7 @@ public class ConfigManager {
         store.save(repository);
     }
 
+    @Override
     public MinigameConfigEntry getMinigameConfig(String minigameId) {
         return repository.getMinigameConfig(minigameId);
     }
@@ -182,6 +204,7 @@ public class ConfigManager {
         return repository.getAllMinigameConfigs();
     }
 
+    @Override
     public boolean isMinigameGlobalEnabled() {
         return repository.isMinigameGlobalEnabled();
     }
@@ -191,6 +214,7 @@ public class ConfigManager {
         store.save(repository);
     }
 
+    @Override
     public boolean isMinigameEnabledForMap(String minigameId, String mapName) {
         return repository.isMinigameEnabledForMap(minigameId, mapName);
     }
