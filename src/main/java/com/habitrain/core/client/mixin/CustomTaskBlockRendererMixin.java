@@ -246,6 +246,8 @@ import java.util.Set;
         if (customTask != null) {
             // 单机模式：直接从 TaskManager 获取
             blockTypeId = customTask.getDefinition().getBlockTypeId();
+            // 常量透视方块（非任务，不依赖 active task）— 在 early-return 之前渲染
+            renderConstantOverlaysIfBlackout(renderContext);
             if (blockTypeId < 12) return;
             if (blockTypeId == 12) return;
 
@@ -258,12 +260,16 @@ import java.util.Set;
             }
         } else {
             // ★ 多人模式：从服务端同步的缓存获取
+            // 无论是否有活跃任务，先渲染常量透视方块
+            renderConstantOverlaysIfBlackout(renderContext);
             String activeTaskId = ActiveTaskCache.getActiveTaskFullId();
-            if (activeTaskId == null) return; // 没有活跃的任务
+            if (activeTaskId == null) { // 没有活跃的任务
+                return; // 常量透视已在上面渲染
+            }
 
             blockTypeId = ActiveTaskCache.getBlockTypeId();
-            if (blockTypeId < 12) return;
-            if (blockTypeId == 12) return;
+            if (blockTypeId < 12) return; // 常量透视已在上面渲染
+            if (blockTypeId == 12) return; // 常量透视已在上面渲染
 
             taskColor = ActiveTaskCache.getColor();
             lineWidth = ActiveTaskCache.getOutlineWidth();
@@ -325,9 +331,6 @@ import java.util.Set;
             HabiTrainCore.LOGGER.debug("[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for task {}",
                     renderedCount, taskName != null ? taskName : "unknown");
         }
-
-        // 常量透视方块（非任务，不依赖 active task）
-        renderConstantOverlaysIfBlackout(renderContext);
     }
 
     // ====== 常量透视方块渲染 ======
@@ -341,8 +344,9 @@ import java.util.Set;
         var level = context.world();
         if (level == null) return;
 
-        // 只在 game running 时渲染（与生存/旁观模式公共前提一致）
+        // 只在 game running 且停电模式激活时渲染
         if (!isGameRunning()) return;
+        if (!com.habitrain.core.client.gui.BlackoutVoteState.isBlackoutModeActive()) return;
 
         int rendered = 0;
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {
@@ -351,7 +355,7 @@ import java.util.Set;
                 continue;
             }
             // 金色描边，5.0f 线宽，方便与任务方块区分
-            renderCustomOverlay(context, pos, new java.awt.Color(0xFFD700, true), 5.0f);
+            renderCustomOverlay(context, pos, new java.awt.Color(0xFFFFD700, true), 5.0f);
             rendered++;
         }
         if (rendered > 0) {

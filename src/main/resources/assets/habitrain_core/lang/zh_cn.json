@@ -1,6 +1,8 @@
-﻿{
+{
     "category.habitrain.blackout":  "停电模式",
     "key.habitrain.blackout.role_intro":  "角色介绍",
+    "key.habitrain_core.open_vote": "打开放逐投票",
+    "key.categories.habitrain_core": "哈比列车",
     "task.test_grass":  "test_grass",
     "task.pet_cat":  "摸猫猫",
     "task.search_backpack":  "翻找一下自己的背包...",

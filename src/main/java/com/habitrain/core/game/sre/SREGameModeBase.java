@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SRE 游戏模式公共基类。
@@ -30,8 +31,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     // 大厅语音群组
     private static Group LOBBY_GROUP = null;
     private static final UUID LOBBY_GROUP_ID = UUID.randomUUID();
-    private static final Map<UUID, Integer> pendingVoiceJoins = new HashMap<>();
-    private static final int MAX_VOICE_JOIN_RETRIES = 200;
+    private static final Map<UUID, Integer> pendingVoiceJoins = new ConcurrentHashMap<>();
+    private static final int MAX_VOICE_JOIN_RETRIES = 400; // 每 tick 重试一次，约 20 秒（慢客户端留足握手时间）
 
     // 游戏结束语音群组恢复
     private static boolean pendingGameEndGroupJoin = false;
@@ -167,29 +168,6 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         return false;
     }
 
-    public static void addPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
-        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
-
-        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
-        VoicechatConnection connection = api.getConnectionOf(playerUUID);
-        if (connection == null) return;
-
-        try {
-            if (LOBBY_GROUP == null) {
-                LOBBY_GROUP = api.groupBuilder()
-                        .setId(LOBBY_GROUP_ID)
-                        .setName("LobbyChat")
-                        .setPersistent(true)
-                        .setType(Group.Type.OPEN)
-                        .setHidden(false)
-                        .build();
-            }
-            connection.setGroup(LOBBY_GROUP);
-        } catch (Exception e) {
-            LOGGER.error("[VoiceGroup] 添加玩家到语音群组失败", e);
-        }
-    }
-
     public static void processPendingVoiceJoins(MinecraftServer server) {
         if (pendingVoiceJoins.isEmpty()) return;
         Iterator<Map.Entry<UUID, Integer>> it = pendingVoiceJoins.entrySet().iterator();
@@ -230,13 +208,13 @@ public abstract class SREGameModeBase extends AbstractGameMode {
             return;
         }
 
-        // 惰性入队：pendingVoiceJoins 为空时再入队所有人
-        if (pendingVoiceJoins.isEmpty()) {
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                queueLobbyGroupJoin(server, player.getUUID());
-            }
-            LOGGER.info("[VoiceGroup] queued all online players for lobby group join after game end");
+        // 对局结束后把所有在线玩家入队等待加入大厅语音群组。
+        // 不再用 isEmpty() 门：若新玩家在对局结束同 tick JOIN 已先入队，此处对其余在线玩家补入队；
+        // queueLobbyGroupJoin 的 put 幂等（刷新重试计数），不会产生重复条目。
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            queueLobbyGroupJoin(server, player.getUUID());
         }
+        LOGGER.info("[VoiceGroup] queued all online players for lobby group join after game end");
     }
 
     // ========== 游戏结束清理 ==========

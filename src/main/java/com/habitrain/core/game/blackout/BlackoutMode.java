@@ -52,6 +52,11 @@ public class BlackoutMode implements GameMode {
     void setPendingEndMessage(String m) { pendingEndMessage = m; }
     void setLastWinningFaction(BlackoutRoleManager.Faction f) { lastWinningFaction = f; }
 
+    /** 供放逐投票调用：结算后立即检查胜负条件 */
+    void checkVictoryAfterExile(ServerLevel level) {
+        victoryChecker.checkVictory(level);
+    }
+
     @Override
     public String getId() { return MODE_ID; }
 
@@ -157,6 +162,8 @@ public class BlackoutMode implements GameMode {
     public void onCleanup(ServerLevel level) {
         syncManager.syncReset(level);
         BlackoutSheriffVoteManager.reset(level);
+        BlackoutPoliceHireService.cleanup(level);
+        BlackoutExileVoteManager.reset(level);
         BlackoutTimerSystem.reset(level);
         BlackoutShopService.resetRound(level);
         BlackoutRoleManager.restoreVigilanteRoleMaxes();

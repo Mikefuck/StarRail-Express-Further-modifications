@@ -92,6 +92,21 @@ public class MapScannerMixin {
 
         if (blockToTypeIds.isEmpty()) {
             LOGGER.info("[MapScannerMixin] 没有可扫描的自定义任务方块");
+            // 仍可能包含常量透视方块（如电话），继续扫描
+        }
+
+        // 常量透视方块（非任务但在停电模式中需高亮）
+        // ★ 始终加入扫描表，是否显示由客户端渲染 gate（isBlackoutModeActive）控制。
+        //   不能依赖扫描时的 active mode（扫描可能发生在大厅阶段或停电模式激活前）。
+        Block phoneBlock = BlackoutOverlayTypes.getStreetPhoneBlock();
+        if (phoneBlock != null && phoneBlock != Blocks.AIR) {
+            blockToTypeIds.computeIfAbsent(phoneBlock, k -> new HashSet<>()).add(BlackoutOverlayTypes.STREET_PHONE);
+        }
+
+        // 如果 blockToTypeIds 仍然为空（只有常量方块但停电模式未激活），提前返回
+        if (blockToTypeIds.isEmpty()) {
+            CustomTaskBlockCache.clear();
+            LOGGER.info("[MapScannerMixin] 没有可扫描的方块（常量透视方块不在停电模式中）");
             return;
         }
 
@@ -104,12 +119,6 @@ public class MapScannerMixin {
         for (TaskDefinition def : TaskRegistry.getAll()) {
             if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = def.getBlockTypeId();
             else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = def.getBlockTypeId();
-        }
-
-        // 常量透视方块（非任务但在停电模式中需高亮）
-        Block phoneBlock = BlackoutOverlayTypes.getStreetPhoneBlock();
-        if (phoneBlock != null && phoneBlock != Blocks.AIR) {
-            blockToTypeIds.computeIfAbsent(phoneBlock, k -> new HashSet<>()).add(BlackoutOverlayTypes.STREET_PHONE);
         }
 
         for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {

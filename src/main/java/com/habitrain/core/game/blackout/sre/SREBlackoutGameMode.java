@@ -45,6 +45,8 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
         addPlayersToTeam(world.getServer().createCommandSourceStack(), players, "harpymodloader_game");
 
+        // 开局不刷新警察阵营角色（需求：开局无警察，警察只能通过电话聘请产生）
+        BlackoutRoleManager.disableAllVigilanteRoles();
         // 复用 SRE 原版角色分配流程（含 RoleCountManager/权重/forced role）
         assignRole(world, game, players);
         // 从 SRE 分配结果同步停电阵营状态

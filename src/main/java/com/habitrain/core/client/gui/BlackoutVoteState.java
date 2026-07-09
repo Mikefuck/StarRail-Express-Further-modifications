@@ -16,6 +16,7 @@ public final class BlackoutVoteState {
     private static String description = "";
     private static List<BlackoutVotePayload.Entry> candidates = List.of();
     private static UUID selectedTargetId = null;
+    private static boolean blackoutModeActive = false;
 
     private BlackoutVoteState() {}
 
@@ -28,7 +29,10 @@ public final class BlackoutVoteState {
         title = payload.title();
         description = payload.description();
         candidates = List.copyOf(payload.candidates());
-        if (!active) {
+        // 投票结束（!active）或新投票开始（active 且 remainingSeconds==totalSeconds）时清空上次选择，
+        // 避免上一轮选中状态残留到下一轮（M2-L1）。
+        boolean freshVote = active && remainingSeconds == totalSeconds;
+        if (!active || freshVote) {
             selectedTargetId = null;
         }
     }
@@ -39,6 +43,9 @@ public final class BlackoutVoteState {
         candidates = List.of();
         selectedTargetId = null;
     }
+
+    public static void setBlackoutModeActive(boolean active) { blackoutModeActive = active; }
+    public static boolean isBlackoutModeActive() { return blackoutModeActive; }
 
     public static boolean isActive() { return active; }
     public static int getRemainingSeconds() { return remainingSeconds; }

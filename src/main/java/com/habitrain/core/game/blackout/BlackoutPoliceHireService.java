@@ -37,7 +37,7 @@ public final class BlackoutPoliceHireService {
     private BlackoutPoliceHireService() {}
 
     private static final class HireState {
-        long gameStartTick = 0;
+        long gameStartTick = -1; // -1 = game not yet started; set by onGameStarted when SRE game becomes running
         final Set<UUID> hasHired = ConcurrentHashMap.newKeySet();
     }
 
@@ -45,12 +45,19 @@ public final class BlackoutPoliceHireService {
         return STATES.computeIfAbsent(level.dimension(), k -> new HireState());
     }
 
-    /** 对局开始时调用，记录开始时间 */
+    /** 对局开始时调用，初始化状态（gameStartTick 由 onGameStarted 在 SRE game 实际运行时设置） */
     public static void reset(ServerLevel level) {
-        HireState state = new HireState();
-        state.gameStartTick = level.getGameTime();
-        STATES.put(level.dimension(), state);
-        LOGGER.info("[PoliceHire] reset for {}, startTick={}", level.dimension().location(), state.gameStartTick);
+        STATES.put(level.dimension(), new HireState());
+        LOGGER.info("[PoliceHire] reset for {}, waiting for game start", level.dimension().location());
+    }
+
+    /** SRE 游戏实际开始运行时调用，记录起始刻 */
+    public static void onGameStarted(ServerLevel level) {
+        HireState state = STATES.get(level.dimension());
+        if (state != null) {
+            state.gameStartTick = level.getGameTime();
+            LOGGER.info("[PoliceHire] game start detected, recording startTick={}", state.gameStartTick);
+        }
     }
 
     /** 对局清理时调用，移除状态 */
@@ -63,6 +70,7 @@ public final class BlackoutPoliceHireService {
     public static boolean isPhoneUnlocked(ServerLevel level) {
         HireState state = STATES.get(level.dimension());
         if (state == null) return false;
+        if (state.gameStartTick < 0) return false; // 游戏尚未真正开始
         return level.getGameTime() - state.gameStartTick >= UNLOCK_SECONDS * 20L;
     }
 
@@ -70,6 +78,7 @@ public final class BlackoutPoliceHireService {
     public static int getRemainingLockSeconds(ServerLevel level) {
         HireState state = STATES.get(level.dimension());
         if (state == null) return UNLOCK_SECONDS;
+        if (state.gameStartTick < 0) return UNLOCK_SECONDS; // 游戏尚未真正开始
         long elapsed = (level.getGameTime() - state.gameStartTick) / 20;
         return (int) Math.max(0, UNLOCK_SECONDS - elapsed);
     }

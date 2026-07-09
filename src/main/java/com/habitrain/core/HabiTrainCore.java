@@ -242,6 +242,23 @@ public class HabiTrainCore implements ModInitializer {
                     .ifPresent(mode -> mode.onPlayerJoin(player));
             }
         });
+        // 玩家断线：通知激活的 GameMode 处理。
+        // 停电模式据此把断线玩家移出存活阵营，避免其继续被计为放逐候选人或卡住胜负判定（Q8）。
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayer player = handler.getPlayer();
+            if (player == null) return;
+            try {
+                // 清除汽笛确认窗口（断线后无需保留）
+                BlackoutHornVoteHandler.onPlayerRemoved(player.getUUID());
+                ServerLevel disconnectLevel = player.serverLevel();
+                if (disconnectLevel != null) {
+                    GameModeRegistry.getActiveForLevel(disconnectLevel)
+                        .ifPresent(mode -> mode.onPlayerLeave(player));
+                }
+            } catch (Exception e) {
+                LOGGER.error("[GameMode] 处理玩家断线失败", e);
+            }
+        });
         // C2S 配置更新接收器
         ServerPlayNetworking.registerGlobalReceiver(ConfigUpdatePayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -300,12 +317,29 @@ public class HabiTrainCore implements ModInitializer {
                 if (player == null) return;
                 ServerLevel level = player.serverLevel();
                 if (level == null) return;
+
                 Component error = BlackoutPoliceHireService.tryHire(level, player);
+
+                // 聘请成功/失败后都回发电话状态，刷新客户端 GUI
+                boolean unlocked = BlackoutPoliceHireService.isPhoneUnlocked(level);
+                int remainingLock = BlackoutPoliceHireService.getRemainingLockSeconds(level);
+                int balance = 0;
+                try {
+                    var shop = io.wifi.starrailexpress.cca.SREPlayerShopComponent.KEY.get(player);
+                    if (shop != null) balance = shop.balance;
+                } catch (Exception ignored) {}
+                boolean hasHired = BlackoutPoliceHireService.hasHired(level, player.getUUID());
+                int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
+                int killerCount = BlackoutRoleManager.getRemainingBad(level);
+                ServerPlayNetworking.send(player, new BlackoutPhoneOpenPayload(
+                        unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));
+
                 if (error != null) {
-                    player.sendSystemMessage(error);
+                    com.habitrain.core.util.SubtitleNotifier.sendTop(
+                            player, Component.empty(), error, 60);
                 } else {
-                    // 聘请成功后服务端状态已更新，客户端下次右键电话会看到 hasHiredThisGame=true
-                    player.sendSystemMessage(Component.literal("§a已成功聘请警察！"));
+                    com.habitrain.core.util.SubtitleNotifier.sendTop(
+                            player, Component.empty(), Component.literal("§a已成功聘请警察！"), 60);
                 }
             });
         });

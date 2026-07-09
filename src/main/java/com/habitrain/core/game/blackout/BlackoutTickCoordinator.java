@@ -46,6 +46,8 @@ class BlackoutTickCoordinator {
 
         if (cachedSreActive && !sreGameRunning) {
             sreGameRunning = true;
+            // 通知警察聘请服务：SRE 游戏实际开始运行，记录计时起点
+            BlackoutPoliceHireService.onGameStarted(level);
         }
 
         if (!cachedSreActive && sreGameRunning) {

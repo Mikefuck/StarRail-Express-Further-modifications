@@ -93,17 +93,30 @@ public final class BlackoutHornVoteHandler {
                 }
 
                 shop.addToBalance(-EXILE_COST);
-                BlackoutExileVoteManager.startVote(serverLevel, serverPlayer);
+                boolean voteStarted = BlackoutExileVoteManager.startVote(serverLevel, serverPlayer);
+                if (!voteStarted) {
+                    // 投票未能发起，退款
+                    shop.addToBalance(EXILE_COST);
+                    SubtitleNotifier.sendTop(serverPlayer, Component.empty(),
+                            Component.literal("§c放逐投票发起失败，已退还金币"), 60);
+                    return InteractionResult.SUCCESS;
+                }
 
                 HabiTrainCore.LOGGER.info("[HornVote] {} initiated exile vote (cost: {})",
                         serverPlayer.getName().getString(), EXILE_COST);
+                return InteractionResult.SUCCESS;
             } else {
-                // 第一次拉动
+                // 第一次拉动：使用 MC 原生 Title 提示
                 confirmWindows.put(playerId, now + CONFIRM_WINDOW_SECONDS * 20L);
-                serverPlayer.sendSystemMessage(Component.literal("§e再次拉动发动投票"), true);
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(
+                        Component.literal("§e再次拉动发动投票")));
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket(
+                        Component.literal("§7再次拉动花费§e500§7发起放逐投票")));
+                serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(10, 60, 10));
+                // 返回 SUCCESS 取消原版 horn use → 不播放原版汽笛音效；改以 MC 原生标题作为拉杆反馈
+                // （Mike 2026-07-09：第一次拉杆不要原版汽笛音效，但要有拉杆反馈；第二次拉杆才返回确认发起投票）
+                return InteractionResult.SUCCESS;
             }
-
-            return InteractionResult.SUCCESS;
         });
 
         HabiTrainCore.LOGGER.info("[HornVoteHandler] registered for trainmurdermystery:horn");

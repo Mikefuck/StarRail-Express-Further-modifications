@@ -130,6 +130,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 BlackoutHudOverlay.reset();
                 BlackoutWelcomeRenderer.reset();
                 BlackoutSheriffVoteState.clear();
+                BlackoutVoteState.clear();
+                BlackoutVoteState.setBlackoutModeActive(false);
 
                 lastSentShaderPack = detectCurrentShaderPack();
                 if (!lastSentShaderPack.isEmpty()) {
@@ -150,6 +152,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
             BlackoutHudOverlay.reset();
             BlackoutWelcomeRenderer.reset();
             BlackoutSheriffVoteState.clear();
+            BlackoutVoteState.clear();
+            BlackoutVoteState.setBlackoutModeActive(false);
         });
 
         // 客户端 tick 轮询：检测光影包切换（每秒检查一次）
@@ -210,9 +214,11 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 if (payload.totalTimeRemaining() <= 0) {
                     BlackoutHudOverlay.reset();
                     BlackoutWelcomeRenderer.reset();
+                    BlackoutVoteState.setBlackoutModeActive(false);
                     return;
                 }
 
+                BlackoutVoteState.setBlackoutModeActive(true);
                 BlackoutHudOverlay.updateTime(
                     payload.totalTimeRemaining(), payload.endTimeTick(), payload.blackoutActive(), payload.phase());
             });
@@ -230,13 +236,15 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         // S2C 电话打开状态接收器
         ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutPhoneOpenPayload.TYPE, (payload, ctx) -> {
-            // 如果当前已经是电话屏幕，更新状态
-            if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
-                phoneScreen.updateState(payload);
-            } else {
-                // 否则打开电话屏幕
-                ctx.client().setScreen(new BlackoutPhoneHireScreen(ctx.client().screen, payload));
-            }
+            ctx.client().execute(() -> {
+                // 如果当前已经是电话屏幕，更新状态
+                if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
+                    phoneScreen.updateState(payload);
+                } else {
+                    // 否则打开电话屏幕
+                    ctx.client().setScreen(new BlackoutPhoneHireScreen(ctx.client().screen, payload));
+                }
+            });
         });
 
         OnGameFinishedClient.EVENT.register(() -> {
@@ -244,6 +252,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 BlackoutHudOverlay.reset();
                 BlackoutWelcomeRenderer.reset();
                 BlackoutSheriffVoteState.clear();
+                BlackoutVoteState.clear();
+                BlackoutVoteState.setBlackoutModeActive(false);
             });
         });
 

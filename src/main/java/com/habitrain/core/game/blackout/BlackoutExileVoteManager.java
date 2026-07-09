@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentMap;
  *
  * 按 dimension 隔离，每次最多一个 active 投票。
  * 候选人 = 当前对局内存活玩家（含发起者）。
- * 每人 1 票，不可改票。
+ * 每人 1 票，允许改票（新票覆盖旧票）和弃票（投票 null 表示取消投票）。
  */
 public final class BlackoutExileVoteManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutExileVoteManager");
@@ -61,8 +61,9 @@ public final class BlackoutExileVoteManager {
     /**
      * 发起放逐投票。
      * 调用前需校验：金钱、对局状态、无 active 投票。
+     * @return true 表示投票成功发起，false 表示失败
      */
-    public static void startVote(ServerLevel level, ServerPlayer initiator) {
+    public static boolean startVote(ServerLevel level, ServerPlayer initiator) {
         VoteState state = getOrCreate(level);
         state.active = true;
         state.remainingSeconds = VOTE_DURATION_SECONDS;
@@ -78,7 +79,7 @@ public final class BlackoutExileVoteManager {
         if (state.candidateOrder.isEmpty()) {
             state.active = false;
             broadcastResult(level, "§e当前没有存活玩家，无法发起放逐投票。");
-            return;
+            return false;
         }
 
         LOGGER.info("[ExileVote] {} started exile vote with {} candidates",
@@ -86,6 +87,7 @@ public final class BlackoutExileVoteManager {
 
         broadcastState(level);
         broadcastResult(level, "§e放逐投票已开启！按 V 键打开投票页面。");
+        return true;
     }
 
     /** 每 tick 处理（每秒调用一次） */
@@ -111,6 +113,8 @@ public final class BlackoutExileVoteManager {
         if (!BlackoutRoleManager.isAlive(level, voterId)) return;
 
         if (targetId != null && !state.candidateOrder.contains(targetId)) return;
+        // 目标必须在投票开始后仍存活（投票期间死亡者不可被投票）
+        if (targetId != null && !BlackoutRoleManager.isAlive(level, targetId)) return;
 
         if (targetId != null) {
             state.votesByVoter.put(voterId, targetId);
@@ -139,6 +143,7 @@ public final class BlackoutExileVoteManager {
 
         if (totalVotes == 0) {
             broadcastResult(level, "§e无人投票，本轮无人被放逐");
+            broadcastState(level);
             return;
         }
 
@@ -151,19 +156,36 @@ public final class BlackoutExileVoteManager {
             }
         }
 
+        // 仅在仍存活且在线的最高票候选中放逐：
+        //   - 投票期间死亡者（M2-M1）：避免对已死亡/旁观者调用 killPlayer
+        //   - 断线者（Q8）：离线无法走 SRE 原生死亡链（回放缺死亡），改为本轮不放逐
+        List<UUID> validTop = new ArrayList<>();
+        for (UUID id : topCandidates) {
+            if (BlackoutRoleManager.isAlive(level, id)
+                    && level.getServer().getPlayerList().getPlayer(id) != null) {
+                validTop.add(id);
+            }
+        }
+
+        if (validTop.isEmpty()) {
+            broadcastResult(level, "§e最高票玩家已离线或死亡，本轮无人被放逐");
+            broadcastState(level);
+            return;
+        }
+
         UUID exiledId;
-        if (topCandidates.size() == 1) {
-            exiledId = topCandidates.get(0);
+        if (validTop.size() == 1) {
+            exiledId = validTop.get(0);
         } else {
-            // 平票随机
+            // 平票随机（仅在并列最高票的存活在线候选中随机）
             Random random = new Random(level.getRandom().nextLong());
-            exiledId = topCandidates.get(random.nextInt(topCandidates.size()));
+            exiledId = validTop.get(random.nextInt(validTop.size()));
         }
 
         ServerPlayer exiled = level.getServer().getPlayerList().getPlayer(exiledId);
         String exiledName = exiled != null ? exiled.getName().getString() : exiledId.toString();
 
-        // 执行放逐（玩家可能已离线，killPlayer 需要非空）
+        // 执行放逐（exiled 已确认在线存活）
         if (exiled != null) {
             GameUtils.killPlayer(exiled, true, null, EXILE_DEATH_REASON);
         }
@@ -173,11 +195,14 @@ public final class BlackoutExileVoteManager {
 
         LOGGER.info("[ExileVote] {} exiled ({}/{} votes)", exiledName, maxVotes, totalVotes);
 
-        // 通知胜负检查
+        // 放逐后立即检查胜负条件
         var mode = findBlackoutMode(level);
         if (mode != null) {
-            mode.setPendingEndMessage("放逐后胜负条件变化");
+            mode.checkVictoryAfterExile(level);
         }
+
+        // 通知所有客户端投票结束，关闭投票 GUI（M2-H1：此前 active=false 从不广播导致 GUI 卡住）
+        broadcastState(level);
     }
 
     /** 广播投票状态到所有客户端 */

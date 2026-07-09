@@ -1,4 +1,6 @@
-﻿{
+{
+    "key.habitrain_core.open_vote": "Open Exile Vote",
+    "key.categories.habitrain_core": "HabiTrain",
     "task.test_grass":  "test_grass",
     "task.pet_cat":  "Pet a Cat",
     "task.search_backpack":  "Search Your Backpack...",
