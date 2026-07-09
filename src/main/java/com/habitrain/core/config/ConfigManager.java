@@ -46,12 +46,13 @@ public class ConfigManager implements ConfigQueryService {
     }
 
     public void save() {
-        store.save(repository);
-        if (!repository.isSuppressCallback()) {
-            Runnable cb = repository.getOnSaveCallback();
-            if (cb != null) {
-                try { cb.run(); } catch (Exception e) {
-                    LOGGER.error("保存回调执行失败", e);
+        if (store.commit(repository)) {
+            if (!repository.isSuppressCallback()) {
+                Runnable cb = repository.getOnSaveCallback();
+                if (cb != null) {
+                    try { cb.run(); } catch (Exception e) {
+                        LOGGER.error("保存回调执行失败", e);
+                    }
                 }
             }
         }
@@ -83,7 +84,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
         repository.setTaskConfig(fullId, entry);
-        store.save(repository);
+        store.markDirty();
         TaskPoolBuilder.invalidateAll();
     }
 
@@ -97,7 +98,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setAllConfigs(Map<String, TaskConfigEntry> entries) {
         repository.setAllConfigs(entries);
-        store.save(repository);
+        store.markDirty();
     }
 
     public Map<String, GameModeConfigScope> getAllGameModeConfigs() {
@@ -123,7 +124,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setDlcProbabilityTarget(float target) {
         repository.setDlcProbabilityTarget((float) Math.max(0.1, Math.min(0.8, target)));
-        store.save(repository);
+        store.markDirty();
     }
 
     public boolean isShaderWhitelistEnabled() {
@@ -132,7 +133,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setShaderWhitelistEnabled(boolean enabled) {
         repository.setShaderWhitelistEnabled(enabled);
-        store.save(repository);
+        store.markDirty();
     }
 
     public List<String> getShaderWhitelist() {
@@ -141,12 +142,12 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setShaderWhitelist(List<String> list) {
         repository.setShaderWhitelist(list);
-        store.save(repository);
+        store.markDirty();
     }
 
     public void setShaderWhitelistConfig(boolean enabled, List<String> list) {
         repository.setShaderWhitelistConfig(enabled, list);
-        store.save(repository);
+        store.markDirty();
     }
 
     public void applyShaderWhitelistSync(boolean enabled, List<String> list) {
@@ -159,6 +160,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void loadFromJsonString(String json) {
         sync.loadFromJsonString(repository, json);
+        store.markDirty();
     }
 
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
@@ -179,7 +181,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setSheriffCountDivisor(int divisor) {
         repository.setSheriffCountDivisor(divisor);
-        store.save(repository);
+        store.markDirty();
     }
 
     @Override
@@ -193,7 +195,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setMinigameConfig(String minigameId, MinigameConfigEntry entry) {
         repository.setMinigameConfig(minigameId, entry);
-        store.save(repository);
+        store.markDirty();
     }
 
     public void putMinigameConfig(String minigameId, MinigameConfigEntry entry) {
@@ -211,7 +213,7 @@ public class ConfigManager implements ConfigQueryService {
 
     public void setMinigameGlobalEnabled(boolean enabled) {
         repository.setMinigameGlobalEnabled(enabled);
-        store.save(repository);
+        store.markDirty();
     }
 
     @Override

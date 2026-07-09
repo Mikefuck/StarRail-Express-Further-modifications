@@ -19,6 +19,7 @@ public class ConfigStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConfigStore.class.getSimpleName());
     private final File configFile;
     private final Gson gson;
+    private boolean dirty = false;
 
     public ConfigStore() {
         this.configFile = new File(
@@ -30,7 +31,23 @@ public class ConfigStore {
 
     public File getConfigFile() { return configFile; }
 
+    public void markDirty() {
+        this.dirty = true;
+    }
+
+    /**
+     * Save to file only if dirty. Resets the dirty flag on success.
+     * @return true if the file was actually written, false if no-op
+     */
+    public boolean commit(ConfigRepository repo) {
+        if (!dirty) return false;
+        dirty = false;
+        save(repo);
+        return true;
+    }
+
     public void load(ConfigRepository repo) {
+        this.dirty = false;
         repo.getMutableTaskConfigs().clear();
         repo.getMutableGameModeConfigs().clear();
         repo.getMutableMinigameConfigs().clear();

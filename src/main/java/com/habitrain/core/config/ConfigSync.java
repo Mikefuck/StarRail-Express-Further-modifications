@@ -112,7 +112,8 @@ public class ConfigSync {
         repo.setSuppressCallback(true);
         try {
             loadFromJsonString(repo, json);
-            store.save(repo);
+            store.markDirty();
+            store.commit(repo);
         } finally {
             repo.setSuppressCallback(false);
         }
