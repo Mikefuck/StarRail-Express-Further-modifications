@@ -4,7 +4,9 @@ import com.habitrain.core.network.BlackoutSheriffVotePayload;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public final class BlackoutSheriffVoteState {
     private static boolean active = false;
@@ -26,7 +28,8 @@ public final class BlackoutSheriffVoteState {
             selectedTargetIds.clear();
             return;
         }
-        selectedTargetIds.removeIf(id -> candidates.stream().noneMatch(entry -> entry.playerId().equals(id)));
+        Set<UUID> candidateIds = candidates.stream().map(BlackoutSheriffVotePayload.Entry::playerId).collect(Collectors.toSet());
+        selectedTargetIds.removeIf(id -> !candidateIds.contains(id));
     }
 
     public static void clear() {

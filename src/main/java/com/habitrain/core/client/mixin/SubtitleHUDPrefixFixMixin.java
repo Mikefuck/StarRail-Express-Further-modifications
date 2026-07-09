@@ -12,6 +12,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(SubtitleHUD.class)
 public abstract class SubtitleHUDPrefixFixMixin {
+    private static final int SUBTITLE_OFFSET_X = 12;
+    private static final int SUBTITLE_OFFSET_Y = 18;
+
     @Shadow
     public abstract void enqueue(SubtitleEntry entry);
 
@@ -23,8 +26,8 @@ public abstract class SubtitleHUDPrefixFixMixin {
                 normalizedMain,
                 subText,
                 durationTicks,
-                12,
-                18,
+                SUBTITLE_OFFSET_X,
+                SUBTITLE_OFFSET_Y,
                 color,
                 typewriter,
                 screenPosition

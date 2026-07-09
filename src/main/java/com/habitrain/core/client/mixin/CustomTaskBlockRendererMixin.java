@@ -248,8 +248,7 @@ import java.util.Set;
             blockTypeId = customTask.getDefinition().getBlockTypeId();
             // 常量透视方块（非任务，不依赖 active task）— 在 early-return 之前渲染
             renderConstantOverlaysIfBlackout(renderContext);
-            if (blockTypeId < 12) return;
-            if (blockTypeId == 12) return;
+            if (blockTypeId <= 12) return;
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(customTask.getFullId());
             if (cfg != null) {

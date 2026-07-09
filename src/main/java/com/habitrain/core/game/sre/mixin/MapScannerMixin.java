@@ -60,9 +60,15 @@ public class MapScannerMixin {
         int totalAddedCount = 0;
 
         Map<Block, Set<Integer>> blockToTypeIds = new HashMap<>();
+        int foodPlatterEatTypeId = -1;
+        int foodPlatterDrinkTypeId = -1;
 
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int blockTypeId = def.getBlockTypeId();
+            // 同时记录停电模式吃/喝的 typeId（盘子内容检查用），
+            // 与首循环合并以消除二次遍历。
+            if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
+            else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
             if (blockTypeId < 12) continue;
 
             boolean anyResolved = false;
@@ -112,16 +118,7 @@ public class MapScannerMixin {
 
         CustomTaskBlockCache.clear();
 
-        // 缓存当前停电模式吃/喝任务的 typeId（39=eat, 40=drink），
-        // 用于盘子内容检查时决定加哪个 typeId。
-        int foodPlatterEatTypeId = -1;
-        int foodPlatterDrinkTypeId = -1;
-        for (TaskDefinition def : TaskRegistry.getAll()) {
-            if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = def.getBlockTypeId();
-            else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = def.getBlockTypeId();
-        }
-
-        for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
+for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
             for (int y = areaBox.minY(); y <= areaBox.maxY(); y++) {
                 for (int z = areaBox.minZ(); z <= areaBox.maxZ(); z++) {
                     BlockPos pos = new BlockPos(x, y, z);

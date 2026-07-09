@@ -122,15 +122,16 @@ class BlackoutVictoryChecker {
         for (UUID uuid : BlackoutRoleManager.getAllAlive(level)) {
             if (BlackoutRoleManager.getFaction(level, uuid) != BlackoutRoleManager.Faction.GOOD) continue;
 
+            ServerPlayer sp = level.getServer().getPlayerList().getPlayer(uuid);
+
             TaskInstance existing = mgr.getActiveTask(uuid);
             if (existing != null && !existing.isFulfilled()
                     && existing.getFullId() != null
                     && existing.getFullId().startsWith("habitrain_core:")) {
-                ServerPlayer existingPlayer = level.getServer().getPlayerList().getPlayer(uuid);
-                if (existingPlayer != null) {
+                if (sp != null) {
                     try {
                         existing.setFulfilled(true);
-                        existing.getDefinition().onComplete(existingPlayer, existing);
+                        existing.getDefinition().onComplete(sp, existing);
                     } catch (Throwable t) {
                         HabiTrainCore.LOGGER.error(
                                 "forceAssignRestorePowerToAllGood: failed to complete existing task {} for {}",
@@ -142,7 +143,6 @@ class BlackoutVictoryChecker {
             mgr.removeActiveTask(uuid);
             mgr.clearBlackoutRotationFlag(uuid);
 
-            ServerPlayer sp = level.getServer().getPlayerList().getPlayer(uuid);
             if (sp != null) {
                 try {
                     var taskComp = io.wifi.starrailexpress.cca.SREPlayerTaskComponent.KEY.get(sp);

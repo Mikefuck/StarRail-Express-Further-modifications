@@ -19,13 +19,11 @@ public class BlackoutHudOverlay {
     private static int currentPhase = 0;
     private static int totalDuration = 300;
     private static final int TIME_WARNING_SECONDS = 60;
-    private static long cachedEndTimeTick;
+    private static long cachedEndTimeTick = -1;
 
     public static void updateTime(int total, long endTimeTick, boolean active, int phase) {
         totalTimeRemaining = total;
-        if (total > totalDuration) {
-            totalDuration = total;
-        }
+        totalDuration = total;
         cachedEndTimeTick = endTimeTick;
         blackoutActive = active;
         currentPhase = phase;
@@ -50,7 +48,7 @@ public class BlackoutHudOverlay {
         blackoutModeActive = false;
         currentPhase = 0;
         totalDuration = 300;
-        cachedEndTimeTick = 0;
+        cachedEndTimeTick = -1;
     }
 
     public static void render(GuiGraphics g) {
@@ -81,7 +79,7 @@ public class BlackoutHudOverlay {
             g.fill(barX + filledW, barY, barX + barW, barY + barH, color);
         }
 
-        if (!blackoutActive && getLocalCountdown() > 0) {
+        if (!blackoutActive && getLocalCountdown() >= 0) {
             int markerX = barX + (int) ((float) (totalDuration - getLocalCountdown()) / totalDuration * barW);
             g.fill(markerX, barY - 2, markerX + 1, barY + barH + 2, 0xFFFF6A6A);
         }
@@ -101,7 +99,7 @@ public class BlackoutHudOverlay {
             if (blackoutActive) {
                 String blackoutText = "§c停电中";
                 g.drawString(font, blackoutText, textX, textY + 10, 0xFFD84B4B, false);
-            } else if (getLocalCountdown() > 0) {
+            } else if (getLocalCountdown() >= 0) {
                 String cdLabel = currentPhase == 2 ? "§e剩余供电时间" : "§e停电";
                 String cdText = cdLabel + " " + formatTime(getLocalCountdown());
                 g.drawString(font, cdText, textX, textY + 10, 0xFFFFD84B, false);

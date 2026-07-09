@@ -292,13 +292,13 @@ public class MinigameEditScreen extends Screen {
 
         contentHeight = y - contentTop + (int) scrollOffset;
 
+        // 底部按钮（在 super.render 前更新位置，确保渲染在裁剪区内外正确）
+        saveBtn.setX(width / 2 - 110); saveBtn.setY(height - 26); saveBtn.setWidth(100);
+        resetBtn.setX(width / 2 + 10); resetBtn.setY(height - 26); resetBtn.setWidth(60);
+
         // 渲染 widgets（在裁剪区内）
         super.render(g, mx, my, delta);
         g.disableScissor();
-
-        // 底部按钮
-        saveBtn.setX(width / 2 - 110); saveBtn.setY(height - 26); saveBtn.setWidth(100);
-        resetBtn.setX(width / 2 + 10); resetBtn.setY(height - 26); resetBtn.setWidth(60);
 
         // 滚动条
         int maxScroll = Math.max(0, contentHeight - contentH);
