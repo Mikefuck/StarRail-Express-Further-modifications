@@ -1,13 +1,14 @@
 package com.habitrain.core.client.gui;
 
 import com.habitrain.core.network.BlackoutVotePayload;
+import com.habitrain.core.network.VotePurpose;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 public final class BlackoutVoteState {
-    private static String purpose = "";
+    private static VotePurpose purpose = VotePurpose.EXILE;
     private static boolean active = false;
     private static int remainingSeconds = 0;
     private static int totalSeconds = 15;
@@ -56,7 +57,7 @@ public final class BlackoutVoteState {
     public static int getTotalSeconds() { return totalSeconds; }
     public static String getTitle() { return title; }
     public static String getDescription() { return description; }
-    public static String getPurpose() { return purpose; }
+    public static VotePurpose getPurpose() { return purpose; }
     public static List<BlackoutVotePayload.Entry> getCandidates() { return candidates; }
     public static UUID getSelectedTargetId() { return selectedTargetId; }
     public static boolean isSelected(UUID id) { return id.equals(selectedTargetId); }

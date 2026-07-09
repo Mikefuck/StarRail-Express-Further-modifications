@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record BlackoutVotePayload(
-        String purpose,         // "EXILE" | future: "SHERIFF"
+        VotePurpose purpose,
         boolean active,
         int remainingSeconds,
         int totalSeconds,
@@ -36,8 +36,14 @@ public record BlackoutVotePayload(
     }
 
     private BlackoutVotePayload(FriendlyByteBuf buf) {
-        this(buf.readUtf(32), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
+        this(readPurpose(buf), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
                 buf.readVarInt(), buf.readUtf(128), buf.readUtf(256), readCandidates(buf));
+    }
+
+    private static VotePurpose readPurpose(FriendlyByteBuf buf) {
+        String raw = buf.readUtf(32);
+        VotePurpose p = VotePurpose.fromString(raw);
+        return p != null ? p : VotePurpose.EXILE; // fallback for forward compatibility
     }
 
     private static List<Entry> readCandidates(FriendlyByteBuf buf) {
@@ -53,7 +59,7 @@ public record BlackoutVotePayload(
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeUtf(purpose, 32);
+        buf.writeUtf(purpose.name(), 32);
         buf.writeBoolean(active);
         buf.writeVarInt(remainingSeconds);
         buf.writeVarInt(totalSeconds);
@@ -76,7 +82,7 @@ public record BlackoutVotePayload(
     }
 
     public static void broadcastToAll(net.minecraft.server.MinecraftServer server,
-                                       String purpose, boolean active, int remainingSeconds,
+                                       VotePurpose purpose, boolean active, int remainingSeconds,
                                        int totalSeconds, int maxSelections,
                                        String title, String description,
                                        List<Entry> candidates) {

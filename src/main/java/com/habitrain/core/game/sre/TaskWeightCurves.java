@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
@@ -16,9 +17,9 @@ import java.util.Set;
 public class TaskWeightCurves {
     public static final float DYNAMIC_WEIGHT_CAP = 4.0f;
     public static final float DYNAMIC_WEIGHT_FLOOR = 0.05f;
-    public static final String ID_MAINTAIN_POWER = "habitrain_core:maintain_power";
-    public static final String ID_REPAIR_WIRING = "habitrain_core:repair_wiring";
-    public static final String ID_ADD_COAL = "habitrain_core:add_coal";
+    public static final String ID_MAINTAIN_POWER = HabiTrainCore.TASK_MAINTAIN_POWER;
+    public static final String ID_REPAIR_WIRING = HabiTrainCore.TASK_REPAIR_WIRING;
+    public static final String ID_ADD_COAL = HabiTrainCore.TASK_ADD_COAL;
 
     public static float computeBlackoutDynamicMultiplier(TaskDefinition def, Player player) {
         if (!(player instanceof ServerPlayer sp)) return 1.0f;

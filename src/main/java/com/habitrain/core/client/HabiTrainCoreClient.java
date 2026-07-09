@@ -11,6 +11,7 @@ import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.network.BlackoutVotePayload;
+import com.habitrain.core.network.VotePurpose;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.InstinctColorHelper;
@@ -282,7 +283,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 if (!payload.active() && ctx.client().screen instanceof BlackoutVoteScreen) {
                     ctx.client().setScreen(null);
                 }
-                if (payload.active() && "EXILE".equals(payload.purpose())) {
+                if (payload.active() && VotePurpose.EXILE.equals(payload.purpose())) {
                     // 放逐投票自动打开 GUI（如果当前不在其他 screen）
                     if (!(ctx.client().screen instanceof BlackoutVoteScreen) && ctx.client().screen == null) {
                         ctx.client().setScreen(new BlackoutVoteScreen(null));

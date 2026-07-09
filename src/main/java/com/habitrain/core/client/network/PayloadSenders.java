@@ -3,6 +3,7 @@ package com.habitrain.core.client.network;
 import com.habitrain.core.network.BlackoutSheriffVoteCastPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ShaderInfoPayload;
+import com.habitrain.core.network.VotePurpose;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -54,13 +55,13 @@ public final class PayloadSenders {
     }
 
     /** 从客户端发送投票。purpose 指定投票类型，targetPlayerId 为投票目标。 */
-    public static void sendVoteCast(String purpose, UUID targetPlayerId) {
+    public static void sendVoteCast(VotePurpose purpose, UUID targetPlayerId) {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, targetPlayerId));
     }
 
     /** 从客户端撤销当前投票（弃票）。语义等价于 {@code sendVoteCast(purpose, null)} 但意图更清晰。 */
-    public static void sendVoteRevoke(String purpose) {
+    public static void sendVoteRevoke(VotePurpose purpose) {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, null));
     }

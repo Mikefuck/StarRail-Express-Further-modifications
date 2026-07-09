@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
@@ -67,8 +68,8 @@ public class MapScannerMixin {
             int blockTypeId = def.getBlockTypeId();
             // 同时记录停电模式吃/喝的 typeId（盘子内容检查用），
             // 与首循环合并以消除二次遍历。
-            if ("habitrain_core:blackout_eat".equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
-            else if ("habitrain_core:blackout_drink".equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
+            if (HabiTrainCore.TASK_BLACKOUT_EAT.equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
+            else if (HabiTrainCore.TASK_BLACKOUT_DRINK.equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
             if (blockTypeId < 12) continue;
 
             boolean anyResolved = false;

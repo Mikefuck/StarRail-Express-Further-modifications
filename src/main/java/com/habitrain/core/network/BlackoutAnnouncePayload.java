@@ -17,14 +17,19 @@ public record BlackoutAnnouncePayload(
     public static final StreamCodec<FriendlyByteBuf, BlackoutAnnouncePayload> CODEC =
             StreamCodec.ofMember(BlackoutAnnouncePayload::write, BlackoutAnnouncePayload::new);
 
+    // Display-oriented max lengths (not byte-size limits — FriendlyByteBuf.writeUtf caps at 65535 internally)
+    private static final int ROLE_NAME_MAX = 64;
+    private static final int SUBTITLE_MAX = 128;
+    private static final int GOAL_MAX = 256;
+
     private BlackoutAnnouncePayload(FriendlyByteBuf buf) {
-        this(buf.readUtf(32767), buf.readUtf(32767), buf.readUtf(32767), buf.readVarInt(), buf.readVarInt());
+        this(buf.readUtf(ROLE_NAME_MAX), buf.readUtf(SUBTITLE_MAX), buf.readUtf(GOAL_MAX), buf.readVarInt(), buf.readVarInt());
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeUtf(roleName, 32767);
-        buf.writeUtf(subtitle, 32767);
-        buf.writeUtf(goal, 32767);
+        buf.writeUtf(roleName, ROLE_NAME_MAX);
+        buf.writeUtf(subtitle, SUBTITLE_MAX);
+        buf.writeUtf(goal, GOAL_MAX);
         buf.writeVarInt(killerCount);
         buf.writeVarInt(targetCount);
     }

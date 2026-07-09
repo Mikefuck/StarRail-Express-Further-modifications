@@ -1,5 +1,6 @@
 package com.habitrain.core.client.gui;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.TaskConfigEntry;
@@ -189,7 +190,7 @@ public class TaskEditScreen extends Screen {
         String breadcrumb = "§7" + modeDisplayName + " §f> §r§l" + def.getDisplayName();
         g.drawString(f, Component.literal(breadcrumb), PAD, 4, 0xFFFFFF, false);
         g.drawString(f, Component.literal("§8" + def.getFullId()), PAD, 17, 0x555555, false);
-        boolean builtin = "habitrain_taskapi".equals(def.getModId());
+        boolean builtin = HabiTrainCore.MOD_ID.equals(def.getModId());
         g.drawString(f, Component.literal(builtin ? "§8[内置任务]" : "§e[外部/DLC任务]"),
                 PAD, 30, 0, false);
         if (!remoteEditable) {

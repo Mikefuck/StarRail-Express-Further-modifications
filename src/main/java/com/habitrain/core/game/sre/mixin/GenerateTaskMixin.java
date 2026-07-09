@@ -85,7 +85,7 @@ public abstract class GenerateTaskMixin {
 
         LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, killerDual={}, parallel={}",
                 mapName, currentMood, disabledTasks, currentCategory,
-                ctx.killerDualTask(), ctx.isParallelCall());
+                ctx.killerDualTask(), ctx.hasExistingTask());
 
         List<Map.Entry<Object, Float>> weightEntries = new ArrayList<>();
         float total = 0f;

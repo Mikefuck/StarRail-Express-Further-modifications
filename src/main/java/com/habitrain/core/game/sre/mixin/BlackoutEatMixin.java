@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerPlayer;
@@ -29,14 +30,14 @@ public class BlackoutEatMixin {
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
         if (task == null) return;
 
-        if ("habitrain_core:blackout_eat".equals(task.getFullId())) {
+        if (HabiTrainCore.TASK_BLACKOUT_EAT.equals(task.getFullId())) {
             if (!task.isFulfilled() && task.getProgress() < task.getMaxProgress()) {
                 task.setProgress(task.getMaxProgress());
             }
             return;
         }
 
-        if ("habitrain_core:blackout_drink".equals(task.getFullId())) {
+        if (HabiTrainCore.TASK_BLACKOUT_DRINK.equals(task.getFullId())) {
             if (!task.isFulfilled() && task.getProgress() < task.getMaxProgress()) {
                 if (stack.getItem() instanceof PotionItem || stack.getItem() instanceof HoneyBottleItem) {
                     task.setProgress(task.getMaxProgress());

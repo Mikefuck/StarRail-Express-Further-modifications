@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.network.BlackoutVotePayload;
+import com.habitrain.core.network.VotePurpose;
 import com.habitrain.core.util.SubtitleNotifier;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.network.chat.Component;
@@ -241,7 +242,7 @@ public final class BlackoutExileVoteManager {
         List<BlackoutVotePayload.Entry> entries = buildEntryList(level, state);
         BlackoutVotePayload.broadcastToAll(
                 level.getServer(),
-                "EXILE",
+                VotePurpose.EXILE,
                 state.active,
                 state.remainingSeconds,
                 VOTE_DURATION_SECONDS,

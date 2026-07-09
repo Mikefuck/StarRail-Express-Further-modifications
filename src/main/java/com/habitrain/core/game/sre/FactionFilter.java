@@ -15,7 +15,7 @@ public class FactionFilter {
     public record FactionContext(
             @Nullable TaskCategory forcedCategory,
             boolean killerDualTask,
-            boolean isParallelCall,
+            boolean hasExistingTask,
             boolean currentIsFakeTask,
             boolean skipActiveTaskGuard,
             @Nullable GameMode activeMode
@@ -24,13 +24,13 @@ public class FactionFilter {
     public static FactionContext determineFaction(Player player, boolean hasActiveTasks) {
         GameMode activeMode = resolveActiveGameMode(player);
         boolean killerDualTask = isKillerDualTaskMode(activeMode, player);
-        boolean isParallelCall = hasActiveTasks;
+        boolean hasExistingTask = hasActiveTasks;
         TaskCategory forcedCategory = null;
         boolean skipActiveTaskGuard = false;
         boolean currentIsFakeTask = false;
 
         if (killerDualTask) {
-            if (isParallelCall) {
+            if (hasExistingTask) {
                 forcedCategory = BlackoutMode.BLACKOUT_GOOD;
                 skipActiveTaskGuard = true;
                 currentIsFakeTask = true;
@@ -43,7 +43,7 @@ public class FactionFilter {
             currentIsFakeTask = false;
         }
 
-        return new FactionContext(forcedCategory, killerDualTask, isParallelCall, currentIsFakeTask, skipActiveTaskGuard, activeMode);
+        return new FactionContext(forcedCategory, killerDualTask, hasExistingTask, currentIsFakeTask, skipActiveTaskGuard, activeMode);
     }
 
     public static boolean isKillerDualTaskMode(@Nullable GameMode activeMode, Player player) {

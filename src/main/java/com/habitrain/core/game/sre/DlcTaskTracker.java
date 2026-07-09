@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskDefinition;
@@ -21,19 +22,19 @@ public final class DlcTaskTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger("DlcTaskTracker");
 
     private static final Set<String> BLACKOUT_SUPPLY_TASK_IDS = Set.of(
-            "habitrain_core:add_coal",
-            "habitrain_core:repair_wiring",
-            "habitrain_core:maintain_power"
+            HabiTrainCore.TASK_ADD_COAL,
+            HabiTrainCore.TASK_REPAIR_WIRING,
+            HabiTrainCore.TASK_MAINTAIN_POWER
     );
 
     private static final Set<String> BLACKOUT_DAILY_TASK_IDS = Set.of(
-            "habitrain_core:blackout_eat",
-            "habitrain_core:blackout_drink",
-            "habitrain_core:blackout_search_backpack",
-            "habitrain_core:blackout_betel_quest",
-            "habitrain_core:blackout_pet_cat",
-            "habitrain_core:blackout_be_alone",
-            "habitrain_core:blackout_look_my_eyes"
+            HabiTrainCore.TASK_BLACKOUT_EAT,
+            HabiTrainCore.TASK_BLACKOUT_DRINK,
+            HabiTrainCore.TASK_BLACKOUT_SEARCH_BACKPACK,
+            HabiTrainCore.TASK_BLACKOUT_BETEL_QUEST,
+            HabiTrainCore.TASK_BLACKOUT_PET_CAT,
+            HabiTrainCore.TASK_BLACKOUT_BE_ALONE,
+            HabiTrainCore.TASK_BLACKOUT_LOOK_MY_EYES
     );
 
     private DlcTaskTracker() {}

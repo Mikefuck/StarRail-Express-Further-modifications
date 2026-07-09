@@ -75,6 +75,18 @@ public class HabiTrainCore implements ModInitializer {
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
     // look_my_eyes.ogg now bundled in assets
 
+    // ===== 任务 ID 常量（全限定字符串，供 mixin/追踪器按 getFullId() 匹配） =====
+    public static final String TASK_BLACKOUT_EAT = MOD_ID + ":blackout_eat";
+    public static final String TASK_BLACKOUT_DRINK = MOD_ID + ":blackout_drink";
+    public static final String TASK_BLACKOUT_SEARCH_BACKPACK = MOD_ID + ":blackout_search_backpack";
+    public static final String TASK_BLACKOUT_BETEL_QUEST = MOD_ID + ":blackout_betel_quest";
+    public static final String TASK_BLACKOUT_PET_CAT = MOD_ID + ":blackout_pet_cat";
+    public static final String TASK_BLACKOUT_BE_ALONE = MOD_ID + ":blackout_be_alone";
+    public static final String TASK_BLACKOUT_LOOK_MY_EYES = MOD_ID + ":blackout_look_my_eyes";
+    public static final String TASK_ADD_COAL = MOD_ID + ":add_coal";
+    public static final String TASK_REPAIR_WIRING = MOD_ID + ":repair_wiring";
+    public static final String TASK_MAINTAIN_POWER = MOD_ID + ":maintain_power";
+
     @Override
     public void onInitialize() {
         LOGGER.info("哈比列车核心 (HabiTrain Core) 初始化中...");
@@ -355,7 +367,7 @@ public class HabiTrainCore implements ModInitializer {
                 if (voter == null) return;
                 ServerLevel level = voter.serverLevel();
                 if (level == null) return;
-                if ("EXILE".equals(payload.purpose())) {
+                if (VotePurpose.EXILE.equals(payload.purpose())) {
                     BlackoutExileVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId());
                 }
             });
