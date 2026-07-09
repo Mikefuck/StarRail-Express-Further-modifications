@@ -32,11 +32,8 @@ public class MinigameRewardMixin {
             index = 0
     )
     private int habitrain$overrideTokenReward(int originalReward) {
-        try {
-            return 0;
-        } catch (Throwable t) {
-            return originalReward;
-        }
+        // 默认不替换 SRE token；自定义金币/情绪仍由 RETURN 注入发放
+        return originalReward;
     }
 
     @Inject(
