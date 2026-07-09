@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 /**
@@ -78,18 +79,29 @@ public class ShaderMonitor {
                 ClientStateHolder.cachedIrisClass = Class.forName("net.irisshaders.iris.Iris");
             }
             Class<?> irisClass = ClientStateHolder.cachedIrisClass;
-            Object irisConfig = irisClass.getMethod("getIrisConfig").invoke(null);
+
+            // 缓存 Method 对象 (S9-012)，避免每 30 秒调用 getMethod
+            if (ClientStateHolder.getIrisConfigMethod == null) {
+                ClientStateHolder.getIrisConfigMethod = irisClass.getMethod("getIrisConfig");
+            }
+            Object irisConfig = ClientStateHolder.getIrisConfigMethod.invoke(null);
+
+            Class<?> configClass = irisConfig.getClass();
 
             // ★ 关键：先检查光影是否实际启用（玩家可能关闭了光影）
-            boolean shadersEnabled = (boolean) irisConfig.getClass()
-                    .getMethod("areShadersEnabled").invoke(irisConfig);
+            if (ClientStateHolder.areShadersEnabledMethod == null) {
+                ClientStateHolder.areShadersEnabledMethod = configClass.getMethod("areShadersEnabled");
+            }
+            boolean shadersEnabled = (boolean) ClientStateHolder.areShadersEnabledMethod.invoke(irisConfig);
             if (!shadersEnabled) {
                 return "";
             }
 
             // 获取光影包名称
-            Optional<String> packName = (Optional<String>) irisConfig.getClass()
-                    .getMethod("getShaderPackName").invoke(irisConfig);
+            if (ClientStateHolder.getShaderPackNameMethod == null) {
+                ClientStateHolder.getShaderPackNameMethod = configClass.getMethod("getShaderPackName");
+            }
+            Optional<String> packName = (Optional<String>) ClientStateHolder.getShaderPackNameMethod.invoke(irisConfig);
             return packName.orElse("");
         } catch (Exception e) {
             HabiTrainCore.LOGGER.warn("无法通过反射检测 Iris 光影包", e);

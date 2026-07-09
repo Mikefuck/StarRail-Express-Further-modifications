@@ -38,6 +38,8 @@ public class GlobalTabScreen {
     private int sliderX, sliderY, sliderW;
 
     private Button shaderBtn, mgToggleBtn, sheriffApplyBtn;
+    /** 标记 widgets 是否已初始化 (S10-014) */
+    private boolean widgetsInitialized = false;
 
     public GlobalTabScreen(ConfigRootScreen root, Font font, boolean editable) {
         this.root = root;
@@ -48,41 +50,48 @@ public class GlobalTabScreen {
         this.sheriffDivisor = ConfigManager.getInstance().getSheriffCountDivisor();
     }
 
+    /**
+     * 一次性初始化 widgets (S10-014)。
+     * 替代在 render() 中每帧检查 null 创建的模式。
+     */
+    private void ensureWidgetsInitialized() {
+        if (widgetsInitialized) return;
+        widgetsInitialized = true;
+
+        sheriffField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
+        sheriffField.setMaxLength(3);
+        sheriffField.setValue(String.valueOf(sheriffDivisor));
+        sheriffField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
+        sheriffField.setEditable(editable);
+
+        shaderBtn = Button.builder(Component.literal("光影白名单设置"), b -> {
+            Minecraft.getInstance().setScreen(new ShaderWhitelistScreen(root));
+        }).bounds(-10000, -10000, 140, 20).build();
+        shaderBtn.active = editable;
+
+        mgToggleBtn = Button.builder(mgToggleLabel(), b -> {
+            if (!editable) { LiveConfigAccess.showDeniedMessage(); return; }
+            mgGlobal = !mgGlobal;
+            ConfigManager.getInstance().setMinigameGlobalEnabled(mgGlobal);
+            ConfigManager.getInstance().applyMinigameEnforcement(Minecraft.getInstance().getSingleplayerServer());
+            mgToggleBtn.setMessage(mgToggleLabel());
+        }).bounds(-10000, -10000, 120, 20).build();
+        mgToggleBtn.active = editable;
+
+        sheriffApplyBtn = Button.builder(Component.literal("应用"), b -> {
+            if (!editable) { LiveConfigAccess.showDeniedMessage(); return; }
+            try {
+                int v = Integer.parseInt(sheriffField.getValue().trim());
+                sheriffDivisor = Math.max(1, v);
+                ConfigManager.getInstance().setSheriffCountDivisor(sheriffDivisor);
+            } catch (NumberFormatException ignored) {}
+        }).bounds(-10000, -10000, 50, 18).build();
+        sheriffApplyBtn.active = editable;
+    }
+
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
-        if (sheriffField == null) {
-            sheriffField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
-            sheriffField.setMaxLength(3);
-            sheriffField.setValue(String.valueOf(sheriffDivisor));
-            sheriffField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
-            sheriffField.setEditable(editable);
-        }
-        if (shaderBtn == null) {
-            shaderBtn = Button.builder(Component.literal("光影白名单设置"), b -> {
-                Minecraft.getInstance().setScreen(new ShaderWhitelistScreen(root));
-            }).bounds(-10000, -10000, 140, 20).build();
-            shaderBtn.active = editable;
-        }
-        if (mgToggleBtn == null) {
-            mgToggleBtn = Button.builder(mgToggleLabel(), b -> {
-                if (!editable) { LiveConfigAccess.showDeniedMessage(); return; }
-                mgGlobal = !mgGlobal;
-                ConfigManager.getInstance().setMinigameGlobalEnabled(mgGlobal);
-                ConfigManager.getInstance().applyMinigameEnforcement(Minecraft.getInstance().getSingleplayerServer());
-                mgToggleBtn.setMessage(mgToggleLabel());
-            }).bounds(-10000, -10000, 120, 20).build();
-            mgToggleBtn.active = editable;
-        }
-        if (sheriffApplyBtn == null) {
-            sheriffApplyBtn = Button.builder(Component.literal("应用"), b -> {
-                if (!editable) { LiveConfigAccess.showDeniedMessage(); return; }
-                try {
-                    int v = Integer.parseInt(sheriffField.getValue().trim());
-                    sheriffDivisor = Math.max(1, v);
-                    ConfigManager.getInstance().setSheriffCountDivisor(sheriffDivisor);
-                } catch (NumberFormatException ignored) {}
-            }).bounds(-10000, -10000, 50, 18).build();
-            sheriffApplyBtn.active = editable;
-        }
+        // 一次性初始化 widgets (S10-014)，从 render() 移至 init() 语义
+        ensureWidgetsInitialized();
 
         int cy = y + 8;
         int labelX = x + PAD;

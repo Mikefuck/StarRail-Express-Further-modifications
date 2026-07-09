@@ -27,9 +27,9 @@ import java.util.Set;
 public final class PhoneOverlayRenderer {
 
     /** 电话方块描边颜色：金色 */
-    private static final Color PHONE_OVERLAY_COLOR = new Color(0xFFFFD700, true);
+    public static final Color PHONE_OVERLAY_COLOR = new Color(0xFFFFD700, true);
     /** 电话方块描边线宽 */
-    private static final float PHONE_OVERLAY_LINE_WIDTH = 5.0f;
+    public static final float PHONE_OVERLAY_LINE_WIDTH = 5.0f;
 
     private PhoneOverlayRenderer() {}
 

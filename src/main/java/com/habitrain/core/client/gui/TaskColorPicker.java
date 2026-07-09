@@ -28,7 +28,7 @@ public class TaskColorPicker {
         this.remoteEditable = remoteEditable;
         this.onSave = onSave;
 
-        this.colorBtn = Button.builder(Component.literal("点击切换"), b -> cycleColor())
+        this.colorBtn = Button.builder(Component.literal(colorBtnLabel()), b -> cycleColor())
                 .bounds(-10000, -10000, 88, 20).build();
 
         this.outlineMinusBtn = Button.builder(Component.literal("§c−"), b -> {
@@ -102,11 +102,20 @@ public class TaskColorPicker {
             if ((color(i) & 0x00FFFFFF) == cur) {
                 cfg.instinctColor = color((i + 1) % n);
                 onSave.run();
+                colorBtn.setMessage(Component.literal(colorBtnLabel())); // S10-019
                 return;
             }
         }
         cfg.instinctColor = color(0);
         onSave.run();
+        colorBtn.setMessage(Component.literal(colorBtnLabel())); // S10-019
+    }
+
+    /** 当前颜色对应的按钮标签文字 (S10-019) */
+    private String colorBtnLabel() {
+        int idx = getColorIndex();
+        if (idx >= 0) return "§l● " + SharedGuiConstants.COLOR_NAMES[idx];
+        return "点击切换";
     }
 
     public boolean handleMouseClick(double mx, double my, int button) {

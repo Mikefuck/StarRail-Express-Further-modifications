@@ -3,6 +3,7 @@ package com.habitrain.core.client.gui.config;
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.gui.SharedGuiConstants;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.ConfigQueryService;
 import com.habitrain.core.config.MinigameConfigEntry;
 import io.wifi.starrailexpress.content.minigame.QuestMinigame;
 import io.wifi.starrailexpress.content.minigame.QuestMinigames;
@@ -43,6 +44,8 @@ public class MinigameTabScreen {
     private double dragStartScroll = 0;
 
     private final List<CardHit> cardHits = new ArrayList<>();
+    /** 每帧快照的 ConfigQueryService 代理 (S10-007/S10-008) */
+    private ConfigQueryService configSnapshot;
 
     private record CardHit(QuestMinigame minigame, int x, int y, int w, int h, int toggleX, int toggleW, int editX, int editW) {}
 
@@ -67,6 +70,9 @@ public class MinigameTabScreen {
     // ==================== 渲染 ====================
 
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
+        // 每帧快照 ConfigQueryService (S10-007/S10-008)，替代逐任务 getInstance() 调用
+        configSnapshot = ConfigManager.getInstance();
+
         if (!sreAvailable()) {
             g.drawString(font, Component.literal("§c未检测到 SRE（星穹列车）模组，小游戏功能不可用"),
                     x + 8, y + 10, 0xFF5555, false);
@@ -99,7 +105,7 @@ public class MinigameTabScreen {
             String displayName = mg.displayName() != null ? mg.displayName().getString() : mg.id();
             if (!matchesSearch(displayName, mg.id())) continue;
             filtered++;
-            MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(mg.id());
+            MinigameConfigEntry cfg = configSnapshot.getMinigameConfig(mg.id());
             boolean isOn = cfg == null || cfg.enabled;
             if (isOn) enabled++;
             int col = idx % COLUMNS;
@@ -150,12 +156,12 @@ public class MinigameTabScreen {
         // 开关
         int toggleX = x + w - 60;
         int toggleW = 40;
-        g.fill(toggleX, y + 6, toggleX + toggleW, y + 20, enabled ? 0xFF1B3A2A : 0xFF3A1B1B);
+        g.fill(toggleX, y + 6, toggleX + toggleW, y + 20, enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
         g.drawString(font, enabled ? "§a启用" : "§c停用", toggleX + 4, y + 8, 0xFFFFFFFF, false);
         // 编辑齿轮
         int editX = x + w - 60;
         int editW = 40;
-        g.fill(editX, y + 28, editX + editW, y + 42, 0xFF222B36);
+        g.fill(editX, y + 28, editX + editW, y + 42, SharedGuiKit.BG_EDIT);
         g.drawString(font, "§e编辑", editX + (editW - font.width("编辑")) / 2, y + 30, 0xFFFFFFFF, false);
 
         cardHits.add(new CardHit(mg, x, y, w, CARD_H, toggleX, toggleW, editX, editW));

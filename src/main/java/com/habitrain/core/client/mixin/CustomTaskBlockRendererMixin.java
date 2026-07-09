@@ -1,7 +1,6 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.render.BlockStageScanner;
 import com.habitrain.core.client.render.GameRunningCache;
@@ -9,8 +8,10 @@ import com.habitrain.core.client.render.PhoneOverlayRenderer;
 import com.habitrain.core.client.render.ViewModeDispatcher;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.task.TaskManager;
+import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -173,15 +174,17 @@ import java.util.Set;
         TaskManager mgr = TaskManager.getInstance();
         var customTask = mgr.getActiveTask(instance.player.getUUID());
 
+        // 确定任务颜色和 type
         int blockTypeId;
         Color taskColor;
         float lineWidth = 4.0f;
 
         if (customTask != null) {
             blockTypeId = customTask.getDefinition().getBlockTypeId();
-            PhoneOverlayRenderer.render(renderContext);
-            if (blockTypeId <= 12) return;
-
+            if (blockTypeId <= 12) {
+                PhoneOverlayRenderer.render(renderContext);
+                return;
+            }
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(customTask.getFullId());
             if (cfg != null) {
                 taskColor = new Color(cfg.getColor(), true);
@@ -190,16 +193,20 @@ import java.util.Set;
                 taskColor = new Color(customTask.getDefinition().getInstinctColorRGB(), true);
             }
         } else {
-            PhoneOverlayRenderer.render(renderContext);
             String activeTaskId = ActiveTaskCache.getActiveTaskFullId();
             if (activeTaskId == null) {
+                PhoneOverlayRenderer.render(renderContext);
                 return;
             }
-
             blockTypeId = ActiveTaskCache.getBlockTypeId();
-            if (blockTypeId < 12) return;
-            if (blockTypeId == 12) return;
-
+            if (blockTypeId < 12) {
+                PhoneOverlayRenderer.render(renderContext);
+                return;
+            }
+            if (blockTypeId == 12) {
+                PhoneOverlayRenderer.render(renderContext);
+                return;
+            }
             taskColor = ActiveTaskCache.getColor();
             lineWidth = ActiveTaskCache.getOutlineWidth();
         }
@@ -212,11 +219,24 @@ import java.util.Set;
         boolean isFurnaceExplosionTask = "habitrain_core:furnace_explosion".equals(taskName);
         boolean hasTorch = isFurnaceExplosionTask && BlockStageScanner.hasPlayerRedstoneTorch(instance.player);
 
+        // 检查是否需要渲染电话方块（停电模式下常量透视）— 不依赖 active task
+        boolean shouldRenderPhone = BlackoutVoteState.isBlackoutModeActive();
+
         int renderedCount = 0;
         var level = renderContext.world();
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {
             Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
-            if (typeIds == null || !typeIds.contains(blockTypeId)) continue;
+            if (typeIds == null) continue;
+
+            // 先检查电话方块（常量透视）— S9-004：合并到单次 keySet 遍历
+            if (shouldRenderPhone && typeIds.contains(BlackoutOverlayTypes.STREET_PHONE)) {
+                renderCustomOverlay(renderContext, pos, PhoneOverlayRenderer.PHONE_OVERLAY_COLOR, PhoneOverlayRenderer.PHONE_OVERLAY_LINE_WIDTH);
+                renderedCount++;
+                continue;
+            }
+
+            // 检查任务方块
+            if (!typeIds.contains(blockTypeId)) continue;
 
             Block cachedBlock = CustomTaskBlockCache.getBlockAt(pos);
             Block block = cachedBlock;

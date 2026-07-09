@@ -7,8 +7,10 @@ import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.network.PayloadSenders;
+import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
 import io.wifi.starrailexpress.event.client.OnGameFinishedClient;
+import io.wifi.starrailexpress.event.client.OnGameStartedClient;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -67,11 +69,17 @@ public class ClientLifecycleHandler {
             PayloadSenders.sendConfigUpdate(configJson);
         });
 
-        // 监听 SRE 游戏结束事件 → 立即隐藏 HUD
+        // 监听 SRE 游戏结束事件 → 立即隐藏 HUD + 刷新游戏运行缓存
         OnGameFinishedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
+                GameRunningCache.invalidate();
                 resetState();
             });
+        });
+
+        // 监听 SRE 游戏开始事件 → 刷新游戏运行缓存 (S9-002)
+        OnGameStartedClient.EVENT.register(() -> {
+            Minecraft.getInstance().execute(GameRunningCache::invalidate);
         });
     }
 

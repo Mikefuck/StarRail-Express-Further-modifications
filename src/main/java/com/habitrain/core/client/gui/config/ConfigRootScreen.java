@@ -46,10 +46,16 @@ public class ConfigRootScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        // 重建子 Tab
-        taskTab = new TaskTabScreen(this, font, remoteEditable);
-        minigameTab = new MinigameTabScreen(this, font, remoteEditable);
-        globalTab = new GlobalTabScreen(this, font, remoteEditable);
+        // 懒初始化子 Tab (S10-018)：只在首次 init 时创建，缓存实例避免重建
+        if (taskTab == null) {
+            taskTab = new TaskTabScreen(this, font, remoteEditable);
+        }
+        if (minigameTab == null) {
+            minigameTab = new MinigameTabScreen(this, font, remoteEditable);
+        }
+        if (globalTab == null) {
+            globalTab = new GlobalTabScreen(this, font, remoteEditable);
+        }
 
         // 计算 Tab 宽度（等分）
         int totalW = width - PAD * 2;

@@ -8,6 +8,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.gui.TaskEditScreen;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.ConfigQueryService;
 import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import net.minecraft.client.Minecraft;
@@ -50,6 +51,9 @@ public class TaskTabScreen {
     private boolean draggingContent = false;
     private double dragStartY = 0;
     private double dragStartScroll = 0;
+
+    /** 每帧快照的 ConfigQueryService 代理 (S10-007)，避免 render 内反复 getInstance */
+    private ConfigQueryService configSnapshot;
 
     private final List<RowHit> sidebarHits = new ArrayList<>();
     private final List<TaskRowHit> taskHits = new ArrayList<>();
@@ -174,6 +178,9 @@ public class TaskTabScreen {
     // ==================== 渲染 ====================
 
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
+        // 每帧快照 ConfigQueryService (S10-007/S10-008)，替代逐任务 getInstance() 调用
+        configSnapshot = ConfigManager.getInstance();
+
         int sidebarX = x;
         int contentX = x + SIDEBAR_W + 4;
         int contentW = w - SIDEBAR_W - 4;
@@ -253,7 +260,7 @@ public class TaskTabScreen {
     }
 
     private void drawTaskRow(GuiGraphics g, TaskDefinition def, int x, int y, int w) {
-        TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
+        TaskConfigEntry cfg = configSnapshot.getTaskConfig(def.getFullId());
         boolean enabled = cfg == null || cfg.enabled;
         int color = cfg != null ? cfg.instinctColor : SharedGuiKit.accentFor(def.getFullId());
         // 色条
@@ -270,19 +277,19 @@ public class TaskTabScreen {
             boolean isGood = BlackoutMode.BLACKOUT_GOOD.equals(def.getCategory());
             factionPillW = 36;
             int fpX = x + w - 168;
-            g.fill(fpX, y + 4, fpX + factionPillW, y + 18, isGood ? 0xFF1B3A2A : 0xFF3A1B1B);
+            g.fill(fpX, y + 4, fpX + factionPillW, y + 18, isGood ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
             g.drawString(font, factionLabel, fpX + (factionPillW - font.width(factionLabel)) / 2, y + 6,
                     0xFFFFFFFF, false);
         }
         // 状态药丸
         int pillX = x + w - 120;
         int pillW = 48;
-        g.fill(pillX, y + 4, pillX + pillW, y + 18, enabled ? 0xFF1B3A2A : 0xFF3A1B1B);
+        g.fill(pillX, y + 4, pillX + pillW, y + 18, enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
         g.drawString(font, enabled ? "§a已启用" : "§c已停用", pillX + 6, y + 6, 0xFFFFFFFF, false);
         // 编辑按钮
         int editX = x + w - 64;
         int editW = 54;
-        g.fill(editX, y + 4, editX + editW, y + 18, 0xFF222B36);
+        g.fill(editX, y + 4, editX + editW, y + 18, SharedGuiKit.BG_EDIT);
         g.drawString(font, "§e编辑", editX + (editW - font.width("编辑")) / 2, y + 6, 0xFFFFFFFF, false);
         taskHits.add(new TaskRowHit(def, pillX, pillW, editX, editW, y, ROW_H));
     }
@@ -305,7 +312,7 @@ public class TaskTabScreen {
     private int countEnabled(List<TaskDefinition> tasks) {
         int n = 0;
         for (TaskDefinition d : tasks) {
-            TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(d.getFullId());
+            TaskConfigEntry cfg = configSnapshot.getTaskConfig(d.getFullId());
             if (cfg == null || cfg.enabled) n++;
         }
         return n;

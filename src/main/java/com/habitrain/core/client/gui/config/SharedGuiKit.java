@@ -19,6 +19,11 @@ public final class SharedGuiKit {
     public static final int ACCENT_BROWN = 0xFF8B6B47;
     public static final int SEPARATOR = 0x30FFFFFF;
 
+    // Semantic colors: enable/disable/edit backgrounds (S10-013)
+    public static final int BG_ENABLED = 0xFF1B3A2A;
+    public static final int BG_DISABLED = 0xFF3A1B1B;
+    public static final int BG_EDIT = 0xFF222B36;
+
     /** 绘制深色全屏背景 + 顶部装饰条 */
     public static void drawBackdrop(GuiGraphics g, int width, int height, int accent) {
         g.fill(0, 0, width, height, BG_DARK);
