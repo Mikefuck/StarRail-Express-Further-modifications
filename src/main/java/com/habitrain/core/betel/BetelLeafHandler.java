@@ -1,7 +1,6 @@
 package com.habitrain.core.betel;
 
 import com.habitrain.core.HabiTrainCore;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -29,9 +28,13 @@ import java.util.UUID;
 /**
  * 槟榔叶交互处理器
  * 玩家右键槟榔叶后给予缓慢3效果，3秒后解除缓慢并获得一颗槟榔（100%）
+ * <p>
+ * 驱动方式：由 ModTickHandler 统一驱动 tickHarvests（每世界调用一次），
+ * 不再自注册 END_SERVER_TICK 回调，避免与 ModTickHandler 的双遍历冗余。
  */
 public class BetelLeafHandler {
-    private static final Map<UUID, HarvestTask> activeHarvests = new HashMap<>();
+    /** 按世界维度分桶的活跃采集任务映射，避免跨世界全量遍历 */
+    private static final Map<ResourceKey<Level>, Map<UUID, HarvestTask>> activeHarvests = new HashMap<>();
     private static final int HARVEST_TICKS = 60; // 3秒 (20 ticks/秒 × 3)
 
     private static final String BETEL_LEAF_ID = "betel-nut-mod:betel_palm_leaves";
@@ -42,35 +45,7 @@ public class BetelLeafHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(BetelLeafHandler::onUseBlock);
-        // 注册END_SERVER_TICK重施缓慢
-        // betel-nut-mod 每tick会清除MOVEMENT_SLOWDOWN，必须在实体同步前重新施加
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (activeHarvests.isEmpty()) return;
-            for (net.minecraft.server.level.ServerLevel world : server.getAllLevels()) {
-                applyHarvestSlowness(world);
-            }
-        });
-    }
-
-    /**
-     * 对活跃采集任务的玩家重施缓慢（应对槟榔mod清除SLOWNESS）
-     */
-    private static void applyHarvestSlowness(Level world) {
-        long currentTick = world.getGameTime();
-        for (HarvestTask task : activeHarvests.values()) {
-            // 只处理属于这个世界的任务
-            if (!task.worldKey.equals(world.dimension())) continue;
-
-            // 还没到完成时间的，需要保持缓慢效果
-            if (currentTick - task.startTick < HARVEST_TICKS) {
-                Player player = world.getPlayerByUUID(task.playerUuid);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    // 重施缓慢3（持续70ticks，比采集时间略长作为缓冲）
-                    serverPlayer.addEffect(new MobEffectInstance(
-                            MobEffects.MOVEMENT_SLOWDOWN, HARVEST_TICKS + 10, 2, false, true, true));
-                }
-            }
-        }
+        // 不再注册 END_SERVER_TICK — tickHarvests + 重施缓慢由 ModTickHandler 统一驱动
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -97,8 +72,10 @@ public class BetelLeafHandler {
             return InteractionResult.FAIL;
         }
 
-        // 防止重复点击采集
-        if (activeHarvests.containsKey(uuid)) {
+        // 防止重复点击采集（按世界分桶查询，避免全量遍历）
+        ResourceKey<Level> dimension = world.dimension();
+        Map<UUID, HarvestTask> worldTasks = activeHarvests.get(dimension);
+        if (worldTasks != null && worldTasks.containsKey(uuid)) {
             serverPlayer.displayClientMessage(Component.literal("§7正在采集中，请稍候..."), true);
             return InteractionResult.FAIL;
         }
@@ -107,39 +84,55 @@ public class BetelLeafHandler {
         serverPlayer.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, HARVEST_TICKS + 10, 2, false, true, true));
         serverPlayer.displayClientMessage(Component.literal("§7正在采集槟榔叶... 3秒后完成"), true);
 
-        // 记录采集任务（包含世界key，用于tick时匹配正确世界）
-        activeHarvests.put(uuid, new HarvestTask(uuid, pos, world.dimension(), world.getGameTime()));
+        // 记录采集任务（按世界分桶存储，避免跨世界遍历）
+        activeHarvests.computeIfAbsent(dimension, k -> new HashMap<>())
+                .put(uuid, new HarvestTask(uuid, pos, dimension, world.getGameTime()));
 
         return InteractionResult.FAIL;
     }
 
     /**
-     * 每tick检查采集任务是否完成
+     * 每tick检查采集任务是否完成，同时对未到完成时间的任务重施缓慢。
+     * 合并 applyHarvestSlowness 逻辑到此方法，消除每tick双遍历。
+     * <p>
+     * betel-nut-mod 每tick会清除MOVEMENT_SLOWDOWN，因此需要在实体同步前重新施加。
+     * 对仍未到完成时间的任务，每tick重新施加缓慢3；到完成时间的则完成采集。
      */
     public static void tickHarvests(Level world) {
         if (activeHarvests.isEmpty()) return;
 
+        ResourceKey<Level> dimension = world.dimension();
+        Map<UUID, HarvestTask> worldTasks = activeHarvests.get(dimension);
+        if (worldTasks == null || worldTasks.isEmpty()) return;
+
         long currentTick = world.getGameTime();
-        Iterator<Map.Entry<UUID, HarvestTask>> it = activeHarvests.entrySet().iterator();
+        Iterator<Map.Entry<UUID, HarvestTask>> it = worldTasks.entrySet().iterator();
 
         while (it.hasNext()) {
             Map.Entry<UUID, HarvestTask> entry = it.next();
             UUID uuid = entry.getKey();
             HarvestTask task = entry.getValue();
 
-            // 只处理属于这个世界的任务
-            if (!task.worldKey.equals(world.dimension())) continue;
+            if (currentTick - task.startTick < HARVEST_TICKS) {
+                // 还没到完成时间 — 重施缓慢（槟榔mod每tick会清除SLOWNESS）
+                Player player = world.getPlayerByUUID(uuid);
+                if (player instanceof ServerPlayer serverPlayer) {
+                    serverPlayer.addEffect(new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN, HARVEST_TICKS + 10, 2, false, true, true));
+                }
+                continue;
+            }
 
-            if (currentTick - task.startTick < HARVEST_TICKS) continue;
-
+            // 采集完成 — 移除任务
             it.remove();
 
             Player player = world.getPlayerByUUID(uuid);
             if (!(player instanceof ServerPlayer serverPlayer)) continue;
             if (!player.isAlive()) continue;
 
-            // 检查槟榔叶是否还在
-            if (!world.getBlockState(task.leafPos).is(betelLeafBlock)) {
+            // 检查槟榔叶是否还在（null-guard for unregistered block）
+            Block currentBlock = world.getBlockState(task.leafPos).getBlock();
+            if (betelLeafBlock == null || currentBlock != betelLeafBlock) {
                 serverPlayer.displayClientMessage(Component.literal("§7采集被中断：槟榔叶已消失"), true);
                 serverPlayer.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                 continue;
@@ -181,6 +174,11 @@ public class BetelLeafHandler {
             );
             serverPlayer.displayClientMessage(Component.literal("§a§o你从槟榔叶中获取了一颗槟榔"), true);
             HabiTrainCore.LOGGER.info("玩家 {} 从槟榔叶中获得了一颗槟榔", player.getName().getString());
+        }
+
+        // 清理空桶
+        if (worldTasks.isEmpty()) {
+            activeHarvests.remove(dimension);
         }
     }
 
