@@ -1,6 +1,7 @@
 package com.habitrain.core.network;
 
 import com.habitrain.core.HabiTrainCore;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -21,6 +22,8 @@ public record BlackoutVotePayload(
         List<Entry> candidates
 ) implements CustomPacketPayload {
 
+    private static final int MAX_CANDIDATES = 64;
+
     public record Entry(UUID playerId, String playerName, int votes) {}
 
     public static final CustomPacketPayload.Type<BlackoutVotePayload> TYPE =
@@ -39,6 +42,9 @@ public record BlackoutVotePayload(
 
     private static List<Entry> readCandidates(FriendlyByteBuf buf) {
         int size = buf.readVarInt();
+        if (size < 0 || size > MAX_CANDIDATES) {
+            throw new DecoderException("Invalid vote candidate count: " + size);
+        }
         List<Entry> list = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             list.add(new Entry(buf.readUUID(), buf.readUtf(64), buf.readVarInt()));

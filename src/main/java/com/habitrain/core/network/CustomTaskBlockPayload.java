@@ -2,6 +2,7 @@ package com.habitrain.core.network;
 
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
@@ -17,6 +18,9 @@ import java.util.Map;
 import java.util.Set;
 
 public class CustomTaskBlockPayload implements CustomPacketPayload {
+
+    private static final int MAX_ENTRIES = 1024;
+    private static final int MAX_MAPS_PER_ENTRY = 64;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "custom_task_blocks");
     public static final CustomPacketPayload.Type<CustomTaskBlockPayload> TYPE = new CustomPacketPayload.Type<>(ID);
@@ -35,7 +39,9 @@ public class CustomTaskBlockPayload implements CustomPacketPayload {
         @Override
         public CustomTaskBlockPayload decode(ByteBuf buf) {
             int entryCount = buf.readInt();
-            if (entryCount < 0) entryCount = 0;
+            if (entryCount < 0 || entryCount > MAX_ENTRIES) {
+                throw new DecoderException("Invalid entryCount: " + entryCount);
+            }
             Map<BlockPos, Set<Integer>> data = new HashMap<>();
             for (int i = 0; i < entryCount; i++) {
                 int x = buf.readInt();
@@ -43,7 +49,9 @@ public class CustomTaskBlockPayload implements CustomPacketPayload {
                 int z = buf.readInt();
                 BlockPos pos = new BlockPos(x, y, z);
                 int setCount = buf.readInt();
-                if (setCount < 0) setCount = 0;
+                if (setCount < 0 || setCount > MAX_MAPS_PER_ENTRY) {
+                    throw new DecoderException("Invalid setCount: " + setCount);
+                }
                 Set<Integer> typeIds = new HashSet<>();
                 for (int j = 0; j < setCount; j++) {
                     typeIds.add(buf.readInt());

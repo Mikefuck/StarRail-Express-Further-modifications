@@ -2,6 +2,7 @@ package com.habitrain.core.network;
 
 import com.habitrain.core.config.ConfigManager;
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.codec.StreamCodec;
@@ -25,6 +26,7 @@ import java.util.List;
  * - whitelist (String[]): 允许的光影包名称列表
  */
 public class ShaderConfigPayload implements CustomPacketPayload {
+    private static final int MAX_SHADERS = 256;
     private static final int MAX_STRING_LENGTH = 65536;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "shader_config_sync");
@@ -52,10 +54,15 @@ public class ShaderConfigPayload implements CustomPacketPayload {
         public ShaderConfigPayload decode(ByteBuf buf) {
             boolean enabled = buf.readBoolean();
             int count = buf.readInt();
+            if (count < 0 || count > MAX_SHADERS) {
+                throw new DecoderException("Invalid shader config count: " + count);
+            }
             List<String> whitelist = new ArrayList<>();
             for (int i = 0; i < count; i++) {
                 int len = buf.readInt();
-                len = Math.min(len, MAX_STRING_LENGTH);
+                if (len < 0 || len > MAX_STRING_LENGTH) {
+                    throw new DecoderException("Invalid shader name length: " + len);
+                }
                 byte[] bytes = new byte[len];
                 buf.readBytes(bytes);
                 whitelist.add(new String(bytes, StandardCharsets.UTF_8));
