@@ -5,14 +5,16 @@ import com.habitrain.core.HabiTrainCore;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
 
-import java.util.*;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public class BetelQuestState {
     private static volatile BetelQuestState instance;
 
     private boolean revealUsedThisRound = false;
 
-    private final Map<UUID, PlayerBetelData> playerData = new HashMap<>();
+    private final ConcurrentMap<UUID, PlayerBetelData> playerData = new ConcurrentHashMap<>();
 
     private BetelQuestState() {}
 
@@ -22,7 +24,11 @@ public class BetelQuestState {
 
     public static BetelQuestState getInstance() {
         if (instance == null) {
-            instance = new BetelQuestState();
+            synchronized (BetelQuestState.class) {
+                if (instance == null) {
+                    instance = new BetelQuestState();
+                }
+            }
         }
         return instance;
     }

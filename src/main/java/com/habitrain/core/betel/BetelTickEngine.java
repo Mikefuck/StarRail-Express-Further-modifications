@@ -7,21 +7,24 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class BetelTickEngine {
     private static final int SRE_ROLE_CIVILIAN = 1;
@@ -38,6 +41,29 @@ public class BetelTickEngine {
     private static final int MIN_WITHDRAWAL_VALUE = 1;
     private static final int MAX_WITHDRAWAL_VALUE = 25;
     private static final int DARKNESS_DURATION_TICKS = 600;
+
+    // Startup-cached registry lookups
+    private static final ResourceLocation NOELLES_EFFECT_ID = ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles");
+    private static final ResourceKey<MobEffect> NOELLES_EFFECT_KEY = ResourceKey.create(Registries.MOB_EFFECT, NOELLES_EFFECT_ID);
+    private static final Holder<MobEffect> NOELLES_EFFECT_HOLDER;
+    private static final Item BETEL_NUT_RESIDUE_ITEM;
+
+    static {
+        Holder<MobEffect> effectHolder = null;
+        try {
+            var holderOpt = BuiltInRegistries.MOB_EFFECT.getHolder(NOELLES_EFFECT_KEY);
+            if (holderOpt.isPresent()) {
+                effectHolder = holderOpt.get();
+            }
+        } catch (Exception ignored) {}
+        NOELLES_EFFECT_HOLDER = effectHolder;
+
+        Item residueItem = Items.AIR;
+        try {
+            residueItem = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("betel-nut-mod", "betel_nut_residue"));
+        } catch (Exception ignored) {}
+        BETEL_NUT_RESIDUE_ITEM = residueItem;
+    }
 
     public static void tickPlayer(ServerPlayer player) {
         BetelQuestState state = BetelQuestState.getInstance();
@@ -97,10 +123,12 @@ public class BetelTickEngine {
             data.lastDetectedEatTime = currentLastEatTime;
         }
 
+        long currentGameTime = player.level().getGameTime();
+
         if (detectedEating) {
             data.ateBetelNutToRelieve = true;
             data.betelNutsEatenThisGame++;
-            data.ownLastEatGameTime = player.level().getGameTime();
+            data.ownLastEatGameTime = currentGameTime;
 
             BetelWithdrawal.removeHeavyAddictionEffects(player);
 
@@ -143,7 +171,7 @@ public class BetelTickEngine {
 
             boolean inWithdrawal = false;
             if (ownStage >= 3 && data.ownLastEatGameTime > 0) {
-                long ticksSinceLastEat = player.level().getGameTime() - data.ownLastEatGameTime;
+                long ticksSinceLastEat = currentGameTime - data.ownLastEatGameTime;
                 inWithdrawal = ticksSinceLastEat >= WITHDRAWAL_TICK_THRESHOLD;
             }
             if (ownStage != data.lastDiagnosticStage) {
@@ -160,7 +188,7 @@ public class BetelTickEngine {
 
         if (shouldReveal) {
             executeReveal(player, gameWorld);
-            BetelQuestState.getInstance().setRevealUsed(true);
+            state.setRevealUsed(true);
         }
 
         if (currentStage >= 3 && !data.hasFoodRestriction) {
@@ -210,6 +238,7 @@ public class BetelTickEngine {
                 return gc.isRunning();
             }
         } catch (Exception e) {
+            HabiTrainCore.LOGGER.warn("isGameActive check failed: {}", e.getMessage());
         }
         return false;
     }
@@ -228,16 +257,16 @@ public class BetelTickEngine {
         }
 
         try {
-            ResourceLocation noellesId = ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles");
-            BuiltInRegistries.MOB_EFFECT.getHolder(
-                    ResourceKey.create(Registries.MOB_EFFECT, noellesId)
-            ).ifPresent(player::removeEffect);
+            if (NOELLES_EFFECT_HOLDER != null) {
+                player.removeEffect(NOELLES_EFFECT_HOLDER);
+            }
         } catch (Exception ignored) {}
 
         try {
             BetelNutAddictionComponent addiction = BetelNutEntityComponents.ADDICTION.get(player);
             addiction.clearAddiction(player);
         } catch (Exception e) {
+            HabiTrainCore.LOGGER.warn("clearAddictionForPlayer failed for player {}: {}", player.getUUID(), e.getMessage());
         }
 
         HabiTrainCore.LOGGER.debug("已清除玩家 {} 的槟榔成瘾效果", player.getName().getString());
@@ -253,26 +282,18 @@ public class BetelTickEngine {
     }
 
     private static void applyNoellesrolesEffect(ServerPlayer player) {
-        try {
-            ResourceLocation id = ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles");
-            BuiltInRegistries.MOB_EFFECT.getHolder(
-                    ResourceKey.create(Registries.MOB_EFFECT, id)
-            ).ifPresent(holder ->
-                player.addEffect(new MobEffectInstance(holder, 200, 0, false, true, true))
-            );
-        } catch (Exception e) {
-            HabiTrainCore.LOGGER.warn("找不到 noellesroles:noellesroles 效果，跳过");
+        if (NOELLES_EFFECT_HOLDER != null) {
+            player.addEffect(new MobEffectInstance(NOELLES_EFFECT_HOLDER, 200, 0, false, true, true));
         }
     }
 
     private static void giveBetelNutResidue(ServerPlayer player) {
         try {
-            var residueItem = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("betel-nut-mod", "betel_nut_residue"));
-            if (residueItem == null || residueItem == Items.AIR) {
+            if (BETEL_NUT_RESIDUE_ITEM == null || BETEL_NUT_RESIDUE_ITEM == Items.AIR) {
                 HabiTrainCore.LOGGER.warn("槟榔渣物品未找到");
                 return;
             }
-            ItemStack residue = new ItemStack(residueItem, 1);
+            ItemStack residue = new ItemStack(BETEL_NUT_RESIDUE_ITEM, 1);
             if (!player.getInventory().add(residue)) {
                 player.drop(residue, false);
             }
@@ -292,8 +313,7 @@ public class BetelTickEngine {
 
             if (allPlayers.isEmpty()) return;
 
-            Random random = new Random();
-            ServerPlayer target = allPlayers.get(random.nextInt(allPlayers.size()));
+            ServerPlayer target = allPlayers.get(ThreadLocalRandom.current().nextInt(allPlayers.size()));
 
             String roleName = getRoleDisplayName(target, gameWorld);
 
