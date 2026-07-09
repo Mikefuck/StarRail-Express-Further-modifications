@@ -10,9 +10,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public class TaskWeightCurves {
     public static final float DYNAMIC_WEIGHT_CAP = 4.0f;
@@ -83,15 +82,12 @@ public class TaskWeightCurves {
             return true;
         }
 
-        Set<String> allowedTaskIds = activeMode.filterAvailableTasks(new ArrayList<>(TaskRegistry.getAll()), sp).stream()
-                .map(TaskDefinition::getTaskId)
-                .collect(Collectors.toSet());
-
-        for (String taskId : builtinSreTaskIds) {
-            if (allowedTaskIds.contains(taskId)) {
-                return true;
-            }
-        }
-        return false;
+        // Examine only the builtinSreTaskIds against the mode's filter, avoiding
+        // constructing a full Set from the entire task registry every call.
+        List<TaskDefinition> allTasks = com.habitrain.core.api.TaskRegistry.getAll().stream()
+                .filter(t -> builtinSreTaskIds.contains(t.getTaskId()))
+                .toList();
+        List<TaskDefinition> filtered = activeMode.filterAvailableTasks(allTasks, sp);
+        return !filtered.isEmpty();
     }
 }

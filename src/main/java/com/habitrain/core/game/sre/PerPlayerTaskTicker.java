@@ -12,13 +12,10 @@ import org.slf4j.LoggerFactory;
 public class PerPlayerTaskTicker {
     private static final Logger LOGGER = LoggerFactory.getLogger("PerPlayerTaskTicker");
 
-    private final Player player;
-
-    public PerPlayerTaskTicker(Player player) {
-        this.player = player;
+    private PerPlayerTaskTicker() {
     }
 
-    public void tick() {
+    public static void tick(Player player) {
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance customTask = mgr.getActiveTask(player.getUUID());
         TaskInstance fakeTask = mgr.getFakeTask(player.getUUID());
@@ -26,19 +23,19 @@ public class PerPlayerTaskTicker {
         if (customTask != null) {
             customTask.tick(player);
             if (customTask.isFulfilled()) {
-                handleMainTaskDone(mgr, customTask);
+                handleMainTaskDone(mgr, customTask, player);
             }
         }
 
         if (fakeTask != null) {
             fakeTask.tick(player);
             if (fakeTask.isFulfilled()) {
-                handleFakeTaskDone(mgr, fakeTask);
+                handleFakeTaskDone(mgr, fakeTask, player);
             }
         }
     }
 
-    private void handleMainTaskDone(TaskManager mgr, TaskInstance customTask) {
+    private static void handleMainTaskDone(TaskManager mgr, TaskInstance customTask, Player player) {
         if (customTask.isFailed()) {
             LOGGER.debug("[HabiDebug] Custom task {} failed, removing tracking without completion reward",
                     customTask.getFullId());
@@ -61,7 +58,7 @@ public class PerPlayerTaskTicker {
         }
     }
 
-    private void handleFakeTaskDone(TaskManager mgr, TaskInstance fakeTask) {
+    private static void handleFakeTaskDone(TaskManager mgr, TaskInstance fakeTask, Player player) {
         if (fakeTask.isFailed()) {
             LOGGER.info("[KillerDualTask] fake task {} failed for {}",
                     fakeTask.getFullId(), player.getName().getString());

@@ -195,6 +195,9 @@ public class BuiltinTaskRegistrar {
                 if (task.getProgress() >= task.getMaxProgress()) return;
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
 
+                // Throttle: only run the expensive AABB + getEntitiesOfClass every 5 ticks
+                if (serverPlayer.tickCount % 5 != 0) return;
+
                 Vec3 eyePos = serverPlayer.getEyePosition();
                 AABB searchBox = new AABB(eyePos.x - 3.0, eyePos.y - 3.0, eyePos.z - 3.0,
                                            eyePos.x + 3.0, eyePos.y + 3.0, eyePos.z + 3.0);

@@ -124,7 +124,7 @@ public class SREPlayerTaskComponentMixin {
             LOGGER.error("[KillerDualTask] failed to force parallel task", t);
         }
 
-        new PerPlayerTaskTicker(player).tick();
+        PerPlayerTaskTicker.tick(player);
     }
 
 }
