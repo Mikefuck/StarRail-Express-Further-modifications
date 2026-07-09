@@ -140,8 +140,8 @@ public class MinigameTabScreen {
         // 奖励预览
         StringBuilder reward = new StringBuilder();
         if (cfg != null) {
-            if (cfg.goldReward >= 0) reward.append("§6金").append(cfg.goldReward).append(" ");
-            if (cfg.emotionReward >= 0f) reward.append("§b情").append(String.format("%.1f", cfg.emotionReward));
+            if (cfg.hasGoldReward) reward.append("§6金").append(cfg.goldReward).append(" ");
+            if (cfg.hasEmotionReward) reward.append("§b情").append(String.format("%.1f", cfg.emotionReward));
         }
         if (reward.length() > 0) {
             g.drawString(font, reward.toString(), x + 8, y + 34, 0xFFAAAAAA, false);

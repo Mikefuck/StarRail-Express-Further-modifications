@@ -7,8 +7,6 @@ import com.google.gson.JsonParser;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.task.TaskBalancer;
-import io.wifi.starrailexpress.content.minigame.QuestMinigame;
-import io.wifi.starrailexpress.content.minigame.QuestMinigames;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -189,8 +187,7 @@ public class ConfigStore {
         JsonObject minigames = new JsonObject();
         minigames.addProperty("globalEnabled", repo.isMinigameGlobalEnabled());
         JsonObject mgEntries = new JsonObject();
-        for (QuestMinigame mg : safeGetAllMinigames()) {
-            String id = mg.id();
+        for (String id : safeGetAllMinigameIds()) {
             MinigameConfigEntry entry = repo.getMinigameConfig(id);
             if (entry == null) entry = MinigameConfigEntry.createDefault();
             mgEntries.add(id, entry.toJson());
@@ -210,8 +207,8 @@ public class ConfigStore {
         repo.setDlcProbabilityTarget(0.5f);
         Map<String, MinigameConfigEntry> mgMap = repo.getMutableMinigameConfigs();
         mgMap.clear();
-        for (QuestMinigame mg : safeGetAllMinigames()) {
-            mgMap.put(mg.id(), MinigameConfigEntry.createDefault());
+        for (String id : safeGetAllMinigameIds()) {
+            mgMap.put(id, MinigameConfigEntry.createDefault());
         }
         repo.setMinigameGlobalEnabled(true);
     }
@@ -220,13 +217,8 @@ public class ConfigStore {
         return gson.toJson(buildJsonRoot(repo, false));
     }
 
-    public List<QuestMinigame> safeGetAllMinigames() {
-        try {
-            return QuestMinigames.getAll();
-        } catch (Throwable t) {
-            LOGGER.warn("无法读取 QuestMinigames.getAll()，SRE 可能未安装", t);
-            return List.of();
-        }
+    public List<String> safeGetAllMinigameIds() {
+        return SREIntegration.getAllMinigameIds();
     }
 
     public long countDlcTasks() {

@@ -95,7 +95,7 @@ public class MinigameEditScreen extends Screen {
 
         goldField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
         goldField.setMaxLength(8);
-        goldField.setValue(cfg.goldReward >= 0 ? String.valueOf(cfg.goldReward) : "");
+        goldField.setValue(cfg.hasGoldReward ? String.valueOf(cfg.goldReward) : "");
         goldField.setHint(Component.literal("默认"));
         goldField.setFilter(s -> s.isEmpty() || s.matches("-?\\d*"));
         goldField.setEditable(remoteEditable);
@@ -103,7 +103,7 @@ public class MinigameEditScreen extends Screen {
 
         emotionField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
         emotionField.setMaxLength(8);
-        emotionField.setValue(cfg.emotionReward >= 0f ? String.format("%.2f", cfg.emotionReward) : "");
+        emotionField.setValue(cfg.hasEmotionReward ? String.format("%.2f", cfg.emotionReward) : "");
         emotionField.setHint(Component.literal("默认"));
         emotionField.setFilter(s -> s.isEmpty() || s.matches("-?\\d*\\.?\\d*"));
         emotionField.setEditable(remoteEditable);
@@ -111,7 +111,7 @@ public class MinigameEditScreen extends Screen {
 
         weightField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
         weightField.setMaxLength(8);
-        weightField.setValue(cfg.refreshWeight >= 0f ? String.format("%.2f", cfg.refreshWeight) : "");
+        weightField.setValue(cfg.hasRefreshWeight ? String.format("%.2f", cfg.refreshWeight) : "");
         weightField.setHint(Component.literal("默认"));
         weightField.setFilter(s -> s.isEmpty() || s.matches("\\d*\\.?\\d*"));
         weightField.setEditable(remoteEditable);
@@ -143,9 +143,12 @@ public class MinigameEditScreen extends Screen {
             cfg.enabled = true;
             cfg.instinctColor = 0xB4C8C8C8;
             cfg.outlineWidth = 4.0f;
-            cfg.goldReward = -1;
-            cfg.emotionReward = -1f;
-            cfg.refreshWeight = -1f;
+            cfg.hasGoldReward = false;
+            cfg.goldReward = 0;
+            cfg.hasEmotionReward = false;
+            cfg.emotionReward = 0f;
+            cfg.hasRefreshWeight = false;
+            cfg.refreshWeight = 0f;
             cfg.mapFilterMode = 0;
             cfg.enabledMaps.clear();
             goldField.setValue("");
@@ -196,21 +199,27 @@ public class MinigameEditScreen extends Screen {
         String v;
         v = goldField.getValue().trim();
         try {
-            cfg.goldReward = v.isEmpty() ? -1 : Math.max(-1, Integer.parseInt(v));
+            cfg.hasGoldReward = !v.isEmpty();
+            cfg.goldReward = v.isEmpty() ? 0 : Integer.parseInt(v);
         } catch (NumberFormatException e) {
-            cfg.goldReward = -1;
+            cfg.hasGoldReward = false;
+            cfg.goldReward = 0;
         }
         v = emotionField.getValue().trim();
         try {
-            cfg.emotionReward = v.isEmpty() ? -1f : Math.max(-1f, Float.parseFloat(v));
+            cfg.hasEmotionReward = !v.isEmpty();
+            cfg.emotionReward = v.isEmpty() ? 0f : Float.parseFloat(v);
         } catch (NumberFormatException e) {
-            cfg.emotionReward = -1f;
+            cfg.hasEmotionReward = false;
+            cfg.emotionReward = 0f;
         }
         v = weightField.getValue().trim();
         try {
-            cfg.refreshWeight = v.isEmpty() ? -1f : Math.max(0f, Float.parseFloat(v));
+            cfg.hasRefreshWeight = !v.isEmpty();
+            cfg.refreshWeight = v.isEmpty() ? 0f : Math.max(0f, Float.parseFloat(v));
         } catch (NumberFormatException e) {
-            cfg.refreshWeight = -1f;
+            cfg.hasRefreshWeight = false;
+            cfg.refreshWeight = 0f;
         }
         v = mapField.getValue().trim();
         cfg.enabledMaps.clear();

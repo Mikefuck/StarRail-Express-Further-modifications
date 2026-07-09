@@ -27,15 +27,18 @@ public class TaskSaveController {
     private void parseNumFields(EditBox goldField, EditBox emotionField, EditBox weightField) {
         try {
             String v = goldField.getValue().trim();
-            cfg.goldReward = v.isEmpty() ? -1 : Math.max(-1, Integer.parseInt(v));
+            cfg.hasGoldReward = !v.isEmpty();
+            cfg.goldReward = v.isEmpty() ? 0 : Integer.parseInt(v);
         } catch (NumberFormatException ignored) {}
         try {
             String v = emotionField.getValue().trim();
-            cfg.emotionReward = v.isEmpty() ? -1f : Math.max(-1f, Float.parseFloat(v));
+            cfg.hasEmotionReward = !v.isEmpty();
+            cfg.emotionReward = v.isEmpty() ? 0f : Float.parseFloat(v);
         } catch (NumberFormatException ignored) {}
         try {
             String v = weightField.getValue().trim();
-            cfg.refreshWeight = v.isEmpty() ? -1f : Math.max(-1f, Float.parseFloat(v));
+            cfg.hasRefreshWeight = !v.isEmpty();
+            cfg.refreshWeight = v.isEmpty() ? 0f : Float.parseFloat(v);
         } catch (NumberFormatException ignored) {}
     }
 
@@ -46,9 +49,12 @@ public class TaskSaveController {
         cfg.mapFilterMode = 0;
         cfg.instinctColor = 0xB4C8C8C8;
         cfg.outlineWidth = 4.0f;
-        cfg.goldReward = -1;
-        cfg.emotionReward = -1f;
-        cfg.refreshWeight = -1f;
+        cfg.hasGoldReward = false;
+        cfg.goldReward = 0;
+        cfg.hasEmotionReward = false;
+        cfg.emotionReward = 0f;
+        cfg.hasRefreshWeight = false;
+        cfg.refreshWeight = 0f;
         saveCurrent();
     }
 

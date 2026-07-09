@@ -31,7 +31,7 @@ public class MinigameRewardMixin {
             MinigameConfigEntry entry = ConfigManager.getInstance().getMinigameConfig(minigameId);
             if (entry == null) return;
 
-            if (entry.goldReward >= 0) {
+            if (entry.hasGoldReward) {
                 var shop = SREPlayerShopComponent.KEY.get(player);
                 if (shop != null) {
                     shop.addToBalance(entry.goldReward);
@@ -39,7 +39,7 @@ public class MinigameRewardMixin {
                             entry.goldReward, player.getName().getString(), minigameId);
                 }
             }
-            if (entry.emotionReward >= 0f) {
+            if (entry.hasEmotionReward) {
                 var mood = SREPlayerMoodComponent.KEY.get(player);
                 if (mood != null) {
                     mood.addMood(entry.emotionReward);

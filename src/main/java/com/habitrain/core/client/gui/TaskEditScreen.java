@@ -77,19 +77,19 @@ public class TaskEditScreen extends Screen {
 
         goldField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         goldField.setMaxLength(8);
-        if (cfg.goldReward >= 0) goldField.setValue(String.valueOf(cfg.goldReward));
+        if (cfg.hasGoldReward) goldField.setValue(String.valueOf(cfg.goldReward));
         goldField.setHint(Component.literal("默认"));
         goldField.setEditable(remoteEditable);
 
         emotionField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         emotionField.setMaxLength(8);
-        if (cfg.emotionReward >= 0f) emotionField.setValue(String.format("%.2f", cfg.emotionReward));
+        if (cfg.hasEmotionReward) emotionField.setValue(String.format("%.2f", cfg.emotionReward));
         emotionField.setHint(Component.literal("默认"));
         emotionField.setEditable(remoteEditable);
 
         weightField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         weightField.setMaxLength(8);
-        if (cfg.refreshWeight >= 0f) weightField.setValue(String.format("%.1f", cfg.refreshWeight));
+        if (cfg.hasRefreshWeight) weightField.setValue(String.format("%.1f", cfg.refreshWeight));
         weightField.setHint(Component.literal("默认"));
         weightField.setEditable(remoteEditable);
 
@@ -272,7 +272,7 @@ public class TaskEditScreen extends Screen {
         weightField.setY(r3 + 4);
         weightField.setWidth(60);
         weightField.render(g, mx, my, delta);
-        float effW = cfg.refreshWeight >= 0f ? cfg.refreshWeight : def.getWeight();
+        float effW = cfg.hasRefreshWeight ? cfg.refreshWeight : def.getWeight();
         String effWStr = String.format("§7生效: §e%.1f", effW);
         g.drawString(f, Component.literal(effWStr), rowX + 66, r3 + 4, 0x777777, false);
 

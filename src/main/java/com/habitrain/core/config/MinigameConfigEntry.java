@@ -20,9 +20,12 @@ public class MinigameConfigEntry {
     public int instinctColor = 0xB4C8C8C8;
     public float outlineWidth = 4.0f;
 
-    public int goldReward = -1;
-    public float emotionReward = -1f;
-    public float refreshWeight = -1f;
+    public int goldReward = 0;
+    public boolean hasGoldReward = false;
+    public float emotionReward = 0f;
+    public boolean hasEmotionReward = false;
+    public float refreshWeight = 0f;
+    public boolean hasRefreshWeight = false;
 
     public MinigameConfigEntry() {}
 
@@ -41,9 +44,9 @@ public class MinigameConfigEntry {
         if (mapFilterMode != 0) json.addProperty("mapFilterMode", mapFilterMode);
         json.addProperty("instinctColor", instinctColor);
         json.addProperty("outlineWidth", outlineWidth);
-        if (goldReward >= 0) json.addProperty("goldReward", goldReward);
-        if (emotionReward >= 0f) json.addProperty("emotionReward", emotionReward);
-        if (refreshWeight >= 0f) json.addProperty("refreshWeight", refreshWeight);
+        if (hasGoldReward) json.addProperty("goldReward", goldReward);
+        if (hasEmotionReward) json.addProperty("emotionReward", emotionReward);
+        if (hasRefreshWeight) json.addProperty("refreshWeight", refreshWeight);
 
         return json;
     }
@@ -62,9 +65,18 @@ public class MinigameConfigEntry {
         }
         if (json.has("instinctColor")) entry.instinctColor = json.get("instinctColor").getAsInt();
         if (json.has("outlineWidth")) entry.outlineWidth = json.get("outlineWidth").getAsFloat();
-        if (json.has("goldReward")) entry.goldReward = json.get("goldReward").getAsInt();
-        if (json.has("emotionReward")) entry.emotionReward = json.get("emotionReward").getAsFloat();
-        if (json.has("refreshWeight")) entry.refreshWeight = json.get("refreshWeight").getAsFloat();
+        if (json.has("goldReward")) {
+            entry.hasGoldReward = true;
+            entry.goldReward = json.get("goldReward").getAsInt();
+        }
+        if (json.has("emotionReward")) {
+            entry.hasEmotionReward = true;
+            entry.emotionReward = json.get("emotionReward").getAsFloat();
+        }
+        if (json.has("refreshWeight")) {
+            entry.hasRefreshWeight = true;
+            entry.refreshWeight = json.get("refreshWeight").getAsFloat();
+        }
         return entry;
     }
 

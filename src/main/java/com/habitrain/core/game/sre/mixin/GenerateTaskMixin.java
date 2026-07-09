@@ -427,7 +427,7 @@ public abstract class GenerateTaskMixin {
 
     private float getEffectiveWeight(TaskDefinition def) {
         var entry = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-        if (entry != null && entry.refreshWeight >= 0f) {
+        if (entry != null && entry.hasRefreshWeight) {
             return entry.refreshWeight;
         }
         return def.getWeight() > 0 ? def.getWeight() : 1.0f;

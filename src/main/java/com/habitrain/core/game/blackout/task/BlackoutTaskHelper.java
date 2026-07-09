@@ -20,8 +20,8 @@ final class BlackoutTaskHelper {
 
     static void grantRewards(ServerPlayer player, String taskFullId, int defaultGold, float defaultEmotion) {
         TaskConfigEntry config = ConfigManager.getInstance().getTaskConfig(taskFullId);
-        int gold = (config != null && config.goldReward >= 0) ? config.goldReward : defaultGold;
-        float emotion = (config != null && config.emotionReward >= 0f)
+        int gold = (config != null && config.hasGoldReward) ? config.goldReward : defaultGold;
+        float emotion = (config != null && config.hasEmotionReward)
                 ? config.emotionReward : defaultEmotion;
         boolean goldSuccess = false;
         boolean moodSuccess = false;
