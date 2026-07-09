@@ -52,8 +52,10 @@ public class SRETrainTaskWrapper implements TrainTask {
         if (typeOverride != null) {
             return typeOverride;
         }
-        SREPlayerTaskComponent.Task custom = TaskEnumHelper.getCustom();
-        return custom != null ? custom : SREPlayerTaskComponent.Task.SLEEP;
+        // S6-004: When CUSTOM isn't available (older SRE version), return null instead of SLEEP.
+        // SLEEP conflicts with the vanilla sleep-task slot; null tells callers
+        // "no slot available" and they must handle it (e.g. fall back to display-only).
+        return TaskEnumHelper.getCustom();
     }
 
     @Override

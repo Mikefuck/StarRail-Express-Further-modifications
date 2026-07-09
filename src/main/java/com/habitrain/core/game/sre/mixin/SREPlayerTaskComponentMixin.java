@@ -22,12 +22,21 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(SREPlayerTaskComponent.class)
-public class SREPlayerTaskComponentMixin {
+public abstract class SREPlayerTaskComponentMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("SREPlayerTaskComponentMixin");
 
+    // S6-010 @Shadow evaluation:
+    //   player                → getPlayer() method shadow (public API, least fragile)
+    //   parallelTaskGenerated → public boolean field; no public getter in SRE, kept as @Shadow
+    //   playerMoodComponent   → public field; no public getter in SRE, kept as @Shadow
+    //   tasks                 → public Map field; no public getter in SRE, kept as @Shadow
+    //   generateParallelTask() → public API method, least fragile form of @Shadow
+    // If SRE renames these public members in a future version, the mixin config should
+    // set required=false to degrade gracefully instead of crashing on load.
+
     @Shadow(remap = false)
-    private Player player;
+    public abstract Player getPlayer();
 
     @Shadow(remap = false)
     public boolean parallelTaskGenerated;
@@ -49,17 +58,18 @@ public class SREPlayerTaskComponentMixin {
             remap = false
     )
     private void habitrain$onInit(CallbackInfo ci) {
-        if (player != null) {
+        Player p = getPlayer();
+        if (p != null) {
             TaskManager mgr = TaskManager.getInstance();
-            TaskInstance oldTask = mgr.getActiveTask(player.getUUID());
+            TaskInstance oldTask = mgr.getActiveTask(p.getUUID());
             if (oldTask != null) {
                 LOGGER.debug("[HabiDebug] init() called - clearing activeCustomTask {} for player {}",
-                        oldTask.getFullId(), player.getName().getString());
+                        oldTask.getFullId(), p.getName().getString());
                 // 先回收发放的物理道具（任务被新角色 init 取消时）
-                ItemReclaimHelper.reclaimForTask(player, oldTask);
-                mgr.removeActiveTask(player.getUUID());
+                ItemReclaimHelper.reclaimForTask(p, oldTask);
+                mgr.removeActiveTask(p.getUUID());
 
-                if (player instanceof ServerPlayer sp) {
+                if (p instanceof ServerPlayer sp) {
                     ActiveTaskPayload.clearForPlayer(sp);
                 }
             }
@@ -72,18 +82,19 @@ public class SREPlayerTaskComponentMixin {
             remap = false
     )
     private void habitrain$onClear(CallbackInfo ci) {
-        if (player != null) {
+        Player p = getPlayer();
+        if (p != null) {
             TaskManager mgr = TaskManager.getInstance();
-            TaskInstance oldTask = mgr.getActiveTask(player.getUUID());
+            TaskInstance oldTask = mgr.getActiveTask(p.getUUID());
             if (oldTask != null) {
                 // 先回收发放的物理道具（任务被 clear 取消时）
-                ItemReclaimHelper.reclaimForTask(player, oldTask);
+                ItemReclaimHelper.reclaimForTask(p, oldTask);
             }
-            mgr.removeActiveTask(player.getUUID());
+            mgr.removeActiveTask(p.getUUID());
             LOGGER.debug("[HabiDebug] clear() called - removed activeCustomTask for player {}",
-                    player.getName().getString());
+                    p.getName().getString());
 
-            if (player instanceof ServerPlayer sp) {
+            if (p instanceof ServerPlayer sp) {
                 ActiveTaskPayload.clearForPlayer(sp);
             }
         }
@@ -95,6 +106,7 @@ public class SREPlayerTaskComponentMixin {
             remap = false
     )
     private void habitrain$onServerTick(CallbackInfo ci) {
+        Player player = getPlayer();
         if (player == null) return;
 
         // 杀手双任务强制派发：停电模式杀手一旦有了主任务(BAD)但还没有并行任务(GOOD假任务)，

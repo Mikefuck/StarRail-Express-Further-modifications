@@ -17,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SRE 游戏模式公共基类。
@@ -28,19 +27,11 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     private static final Logger LOGGER = LoggerFactory.getLogger("SREGameModeBase");
     private static final String CORE_MOD_ID = "habitrain_core";
 
-    // 大厅语音群组
-    private static Group LOBBY_GROUP = null;
+    // ========== Converged static state via service object ==========
+    private static final SREGameModeState STATE = new SREGameModeState();
+
     private static final UUID LOBBY_GROUP_ID = UUID.randomUUID();
-    private static final Map<UUID, Integer> pendingVoiceJoins = new ConcurrentHashMap<>();
     private static final int MAX_VOICE_JOIN_RETRIES = 400; // 每 tick 重试一次，约 20 秒（慢客户端留足握手时间）
-
-    // 游戏结束语音群组恢复
-    private static boolean pendingGameEndGroupJoin = false;
-
-    // 原版任务注册保护（防双重重叠）
-    private static boolean builtinTasksRegistered = false;
-    // SRE 事件注册保护（SREMurderMode + SRERepairMode 构造时各调一次 super()，防重复注册监听器）
-    private static boolean sreEventsRegistered = false;
 
     protected final List<TaskCategory> taskCategories = new ArrayList<>();
 
@@ -52,8 +43,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     // ========== 原版任务注册 ==========
 
     private static void registerBuiltinTasksOnce() {
-        if (builtinTasksRegistered) return;
-        builtinTasksRegistered = true;
+        if (STATE.isBuiltinTasksRegistered()) return;
+        STATE.setBuiltinTasksRegistered(true);
 
         // Murder mode tasks
         registerBuiltin("sleep", "睡觉", TaskCategory.MURDER, 1.0f, 4);
@@ -95,12 +86,12 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     // ========== SRE 事件注册 ==========
 
     private void registerSREEvents() {
-        if (sreEventsRegistered) return;
-        sreEventsRegistered = true;
+        if (STATE.isSreEventsRegistered()) return;
+        STATE.setSreEventsRegistered(true);
         OnGameStarted.EVENT.register(serverLevel -> {
             // 清空待入队：对局已开始不再把人拉进大厅群
-            if (!pendingVoiceJoins.isEmpty()) {
-                pendingVoiceJoins.clear();
+            if (!STATE.getPendingVoiceJoins().isEmpty()) {
+                STATE.getPendingVoiceJoins().clear();
                 LOGGER.info("[VoiceGroup] 游戏开始，已清理待加入语音群组的队列");
             }
             // 已在 LobbyChat 的在线玩家离开大厅群（对局中不应停留在大厅语音）
@@ -108,7 +99,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         });
 
         OnGameEnd.EVENT.register((serverLevel, gameWorldComponent) -> {
-            pendingGameEndGroupJoin = true;
+            STATE.setPendingGameEndGroupJoin(true);
             LOGGER.info("[VoiceGroup] 游戏结束，标记待处理");
         });
     }
@@ -120,7 +111,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * 当玩家加入世界时无活跃游戏对局，将其加入队列等待 voicechat 连接就绪。
      */
     public static void queueLobbyGroupJoin(MinecraftServer server, UUID playerUUID) {
-        pendingVoiceJoins.put(playerUUID, MAX_VOICE_JOIN_RETRIES);
+        STATE.getPendingVoiceJoins().put(playerUUID, MAX_VOICE_JOIN_RETRIES);
         LOGGER.info("[VoiceGroup] queued {} for lobby group join", playerUUID);
     }
 
@@ -137,16 +128,16 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         if (connection == null) return false;
 
         try {
-            if (LOBBY_GROUP == null) {
-                LOBBY_GROUP = api.groupBuilder()
+            if (STATE.getLobbyGroup() == null) {
+                STATE.setLobbyGroup(api.groupBuilder()
                         .setId(LOBBY_GROUP_ID)
                         .setName("LobbyChat")
                         .setPersistent(true)
                         .setType(Group.Type.OPEN)
                         .setHidden(false)
-                        .build();
+                        .build());
             }
-            connection.setGroup(LOBBY_GROUP);
+            connection.setGroup(STATE.getLobbyGroup());
             LOGGER.info("[VoiceGroup] successfully added {} to lobby group", playerUUID);
             return true;
         } catch (Exception e) {
@@ -221,18 +212,18 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     /** 断线时立刻从 pending 队列移除（不必等下一 tick 扫描）。 */
     public static void removePendingVoiceJoin(UUID playerUUID) {
         if (playerUUID == null) return;
-        pendingVoiceJoins.remove(playerUUID);
+        STATE.getPendingVoiceJoins().remove(playerUUID);
     }
 
     public static void processPendingVoiceJoins(MinecraftServer server) {
-        if (pendingVoiceJoins.isEmpty()) return;
+        if (STATE.getPendingVoiceJoins().isEmpty()) return;
         // 对局已进入 STARTING/ACTIVE/STOPPING：不再把任何人拉进大厅群，直接清空队列
         if (isAnySreGameStartingOrRunning(server)) {
-            pendingVoiceJoins.clear();
+            STATE.getPendingVoiceJoins().clear();
             LOGGER.info("[VoiceGroup] cleared pending queue (game starting/running)");
             return;
         }
-        Iterator<Map.Entry<UUID, Integer>> it = pendingVoiceJoins.entrySet().iterator();
+        Iterator<Map.Entry<UUID, Integer>> it = STATE.getPendingVoiceJoins().entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<UUID, Integer> entry = it.next();
             UUID playerId = entry.getKey();
@@ -261,12 +252,12 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     }
 
     public static void processGameEndGroupJoin(MinecraftServer server) {
-        if (!pendingGameEndGroupJoin) return;
-        pendingGameEndGroupJoin = false;
+        if (!STATE.isPendingGameEndGroupJoin()) return;
+        STATE.setPendingGameEndGroupJoin(false);
 
         // 等待对局完全结束（没有运行中的 SRE 游戏）
         if (isAnySreGameRunning(server)) {
-            pendingGameEndGroupJoin = true; // 下一 tick 再试
+            STATE.setPendingGameEndGroupJoin(true); // 下一 tick 再试
             return;
         }
 
