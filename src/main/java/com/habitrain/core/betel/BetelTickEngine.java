@@ -30,6 +30,15 @@ public class BetelTickEngine {
     private static final int SRE_ROLE_KILLER = 4;
     private static final int SRE_ROLE_SHERIFF = 5;
 
+    private static final int ADDICTION_STAGE_THRESHOLD_1 = 80;
+    private static final int ADDICTION_STAGE_THRESHOLD_2 = 60;
+    private static final int ADDICTION_STAGE_THRESHOLD_3 = 40;
+    private static final int ADDICTION_STAGE_THRESHOLD_4 = 20;
+    private static final int WITHDRAWAL_TICK_THRESHOLD = 600;
+    private static final int MIN_WITHDRAWAL_VALUE = 1;
+    private static final int MAX_WITHDRAWAL_VALUE = 25;
+    private static final int DARKNESS_DURATION_TICKS = 600;
+
     public static void tickPlayer(ServerPlayer player) {
         BetelQuestState state = BetelQuestState.getInstance();
         BetelQuestState.PlayerBetelData data = BetelQuestState.getPlayerData(player.getUUID());
@@ -125,17 +134,17 @@ public class BetelTickEngine {
         } else {
             int ownValue = data.betelNutsEatenThisGame * 5;
             int ownStage = 0;
-            if (ownValue >= 80)      ownStage = 5;
-            else if (ownValue >= 60) ownStage = 4;
-            else if (ownValue >= 40) ownStage = 3;
-            else if (ownValue >= 20) ownStage = 2;
+            if (ownValue >= ADDICTION_STAGE_THRESHOLD_1)      ownStage = 5;
+            else if (ownValue >= ADDICTION_STAGE_THRESHOLD_2) ownStage = 4;
+            else if (ownValue >= ADDICTION_STAGE_THRESHOLD_3) ownStage = 3;
+            else if (ownValue >= ADDICTION_STAGE_THRESHOLD_4) ownStage = 2;
             else if (ownValue > 0)   ownStage = 1;
             currentStage = ownStage;
 
             boolean inWithdrawal = false;
             if (ownStage >= 3 && data.ownLastEatGameTime > 0) {
                 long ticksSinceLastEat = player.level().getGameTime() - data.ownLastEatGameTime;
-                inWithdrawal = ticksSinceLastEat >= 600;
+                inWithdrawal = ticksSinceLastEat >= WITHDRAWAL_TICK_THRESHOLD;
             }
             if (ownStage != data.lastDiagnosticStage) {
                 data.lastDiagnosticStage = ownStage;
@@ -171,11 +180,11 @@ public class BetelTickEngine {
         int betelAddictionStage = addiction.getAddictionStage();
         int betelWithdrawalSeverity = addiction.getWithdrawalSeverity();
         int betelWithdrawalValue = addiction.getWithdrawalValue();
-        int visibleThreshold = Math.max(1, Math.min(25, config.maxWithdrawalValue));
+        int visibleThreshold = Math.max(MIN_WITHDRAWAL_VALUE, Math.min(MAX_WITHDRAWAL_VALUE, config.maxWithdrawalValue));
 
         if (betelWithdrawalValue >= visibleThreshold && betelWithdrawalSeverity > 0) {
             if (!data.darknessAppliedThisTrigger) {
-                player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 600, 0, false, true, true));
+                player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, DARKNESS_DURATION_TICKS, 0, false, true, true));
                 EffectOwnershipTracker.claim(player.getUUID(), MobEffects.DARKNESS, "betel_quest");
                 data.darknessAppliedThisTrigger = true;
                 HabiTrainCore.LOGGER.debug("玩家 {} 成瘾发作，给予黑暗效果", player.getName().getString());

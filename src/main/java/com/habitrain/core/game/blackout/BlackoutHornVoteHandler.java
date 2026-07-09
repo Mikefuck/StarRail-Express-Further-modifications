@@ -6,9 +6,7 @@ import com.habitrain.core.util.SubtitleNotifier;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -27,20 +25,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * 第二次拉动（扣 500 金）：发起放逐投票。
  */
 public final class BlackoutHornVoteHandler {
-    private static final ResourceLocation HORN_ID = ResourceLocation.parse("trainmurdermystery:horn");
     private static final int CONFIRM_WINDOW_SECONDS = 10;
     private static final int EXILE_COST = 500;
 
     // player UUID -> tick when confirmation expires
     private static final Map<UUID, Long> confirmWindows = new ConcurrentHashMap<>();
 
-    private static Block cachedHorn = null;
-
     private static Block getHornBlock() {
-        if (cachedHorn == null || cachedHorn == Blocks.AIR) {
-            cachedHorn = BuiltInRegistries.BLOCK.get(HORN_ID);
-        }
-        return cachedHorn;
+        return BlackoutOverlayTypes.getHornBlock();
     }
 
     public static void register() {

@@ -7,8 +7,6 @@ import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -20,14 +18,8 @@ import net.minecraft.world.level.block.Blocks;
  * 监听 yuushya:street_phone 方块右键，打开电话聘请 GUI。
  */
 public final class BlackoutPhoneHandler {
-    private static final ResourceLocation STREET_PHONE_ID = ResourceLocation.parse("yuushya:street_phone");
-    private static Block cachedStreetPhone = null;
-
     private static Block getStreetPhoneBlock() {
-        if (cachedStreetPhone == null || cachedStreetPhone == Blocks.AIR) {
-            cachedStreetPhone = BuiltInRegistries.BLOCK.get(STREET_PHONE_ID);
-        }
-        return cachedStreetPhone;
+        return BlackoutOverlayTypes.getStreetPhoneBlock();
     }
 
     public static void register() {

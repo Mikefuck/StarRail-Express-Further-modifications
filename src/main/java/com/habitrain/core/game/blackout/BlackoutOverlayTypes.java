@@ -13,8 +13,11 @@ import net.minecraft.world.level.block.Blocks;
 public final class BlackoutOverlayTypes {
     /** yuushya:street_phone 方块在透视缓存中的 typeId */
     public static final int STREET_PHONE = 90;
+    /** trainmurdermystery:horn 方块在透视缓存中的 typeId */
+    public static final int HORN = 91;
 
     private static Block cachedStreetPhone = null;
+    private static Block cachedHorn = null;
 
     /** 获取 yuushya:street_phone 方块实例（缓存版） */
     public static Block getStreetPhoneBlock() {
@@ -23,6 +26,15 @@ public final class BlackoutOverlayTypes {
                     ResourceLocation.parse("yuushya:street_phone"));
         }
         return cachedStreetPhone;
+    }
+
+    /** 获取 trainmurdermystery:horn 方块实例（缓存版） */
+    public static Block getHornBlock() {
+        if (cachedHorn == null || cachedHorn == Blocks.AIR) {
+            cachedHorn = BuiltInRegistries.BLOCK.get(
+                    ResourceLocation.parse("trainmurdermystery:horn"));
+        }
+        return cachedHorn;
     }
 
     private BlackoutOverlayTypes() {}

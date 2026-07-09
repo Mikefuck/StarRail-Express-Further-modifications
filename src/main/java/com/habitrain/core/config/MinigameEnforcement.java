@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashSet;
 
 public class MinigameEnforcement {
-    private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
+    private static final Logger LOGGER = LoggerFactory.getLogger(MinigameEnforcement.class.getSimpleName());
     private final ConfigStore store;
 
     public MinigameEnforcement(ConfigStore store) {

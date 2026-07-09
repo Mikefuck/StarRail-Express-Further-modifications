@@ -21,7 +21,7 @@ public class BlackoutWelcomeRenderer {
     private static int welcomeTime = 0;
 
     /** 启动报幕动画 */
-    public static void startWelcome(String name, String sub, String g, int killers, int targets) {
+    public static void startWelcome(String name, String sub, String g) {
         roleName = "§6§l你是 " + name;
         subtitle = sub;
         goal = g;

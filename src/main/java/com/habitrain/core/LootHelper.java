@@ -15,6 +15,11 @@ import java.util.List;
 public class LootHelper {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|LootHelper");
 
+    private static final int ROLE_TYPE_GOOD_POLICE = 4;
+    private static final int ROLE_TYPE_BAD = 5;
+    private static final int NUNCHUCK_COOLDOWN_GOOD_POLICE = 1000;
+    private static final int NUNCHUCK_COOLDOWN_BAD = 200;
+
     public static ItemStack giveRandomBackpackItem(ServerPlayer player) {
         try {
             var gameWorld = SREGameWorldComponent.KEY.get(player.level());
@@ -28,7 +33,7 @@ public class LootHelper {
             int roleType = role.getRoleType();
             List<String> itemPool;
 
-            if (roleType == 4) {
+            if (roleType == ROLE_TYPE_GOOD_POLICE) {
                 itemPool = List.of(
                     "trainmurdermystery:crowbar",
                     "trainmurdermystery:nunchuck",
@@ -45,7 +50,7 @@ public class LootHelper {
                     "exposure_polaroid:instant_camera",
                     "noellesroles:extinguisher"
                 );
-            } else if (roleType == 5) {
+            } else if (roleType == ROLE_TYPE_BAD) {
                 itemPool = List.of(
                     "trainmurdermystery:lockpick",
                     "trainmurdermystery:firecracker",
@@ -74,7 +79,7 @@ public class LootHelper {
                 }
 
                 if ("trainmurdermystery:nunchuck".equals(itemId)) {
-                    int initialCooldown = (roleType == 4) ? 1000 : 200;
+                    int initialCooldown = (roleType == ROLE_TYPE_GOOD_POLICE) ? NUNCHUCK_COOLDOWN_GOOD_POLICE : NUNCHUCK_COOLDOWN_BAD;
                     player.getCooldowns().addCooldown(item, initialCooldown);
                     LOGGER.debug("双节棍初始冷却: {} ticks ({}秒, roleType={})",
                             initialCooldown, initialCooldown / 20, roleType);

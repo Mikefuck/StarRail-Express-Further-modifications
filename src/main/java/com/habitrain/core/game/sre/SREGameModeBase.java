@@ -166,7 +166,9 @@ public abstract class SREGameModeBase extends AbstractGameMode {
                 if (gameWorld != null && gameWorld.isRunning()) {
                     return true;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.debug("isAnySreGameRunning failed: {}", e.getMessage());
+            }
         }
         return false;
     }
@@ -186,12 +188,13 @@ public abstract class SREGameModeBase extends AbstractGameMode {
                         || status == SREGameWorldComponent.GameStatus.STOPPING) {
                     return true;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.debug("isAnySreGameStartingOrRunning failed: {}", e.getMessage());
+            }
         }
         return false;
     }
 
-    /** 让所有在线玩家离开 LobbyChat（对局开始时调用）。connection 未就绪则跳过。 */
     private static void leaveLobbyGroupForAllOnline(MinecraftServer server) {
         if (server == null) return;
         if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;

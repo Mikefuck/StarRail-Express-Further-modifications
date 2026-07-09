@@ -261,8 +261,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(BlackoutAnnouncePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 BlackoutWelcomeRenderer.startWelcome(
-                    payload.roleName(), payload.subtitle(), payload.goal(),
-                    payload.killerCount(), payload.targetCount());
+                    payload.roleName(), payload.subtitle(), payload.goal());
             });
         });
 

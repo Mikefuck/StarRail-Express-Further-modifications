@@ -20,7 +20,8 @@ public class BlackoutTimerSystem {
     private static final int TOTAL_TIME = 600;
     private static final int FIRST_BLACKOUT_CD = 240;
     private static final int MAINTENANCE_DURATION = 60;
-    private static final int TRANSIENT_TICKS = 140;
+    /** Duration of a transient blackout, in seconds */
+    private static final int TRANSIENT_SECONDS = 140;
     private static final int TRANSIENT_PENALTY_SECONDS = 15;
 
     public enum Phase {
@@ -124,9 +125,9 @@ public class BlackoutTimerSystem {
         var s = getOrCreate(level);
         if (!s.initialized || s.transientBlackoutActive) return;
         s.transientBlackoutActive = true;
-        s.transientBlackoutTicks = TRANSIENT_TICKS;
+        s.transientBlackoutTicks = TRANSIENT_SECONDS;
         broadcast(level, "§c⚡ 短暂停电！");
-        LOGGER.info("Transient blackout triggered for level {} ({} ticks)", level.dimension().location(), TRANSIENT_TICKS);
+        LOGGER.info("Transient blackout triggered for level {} ({} seconds)", level.dimension().location(), TRANSIENT_SECONDS);
 
         if (s.phase == Phase.MAINTENANCE) {
             s.maintenanceTime = Math.max(0, s.maintenanceTime - TRANSIENT_PENALTY_SECONDS);

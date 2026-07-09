@@ -195,12 +195,15 @@ public class BetelLeafHandler {
                 if (betelLeafBlock == null || betelLeafBlock == Blocks.AIR) {
                     HabiTrainCore.LOGGER.warn("槟榔叶方块未找到: {}", BETEL_LEAF_ID);
                     betelLeafBlock = null;
+                    // Don't cache failure — allow retry next time
+                } else {
+                    blockChecked = true; // Only cache success
                 }
             } catch (Exception e) {
                 HabiTrainCore.LOGGER.error("查找槟榔叶方块时出错: {}", BETEL_LEAF_ID, e);
                 betelLeafBlock = null;
+                // blockChecked stays false — allow retry
             }
-            blockChecked = true;
         }
         return betelLeafBlock != null && block == betelLeafBlock;
     }

@@ -18,7 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class ConfigStore {
-    private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigStore.class.getSimpleName());
     private final File configFile;
     private final Gson gson;
 

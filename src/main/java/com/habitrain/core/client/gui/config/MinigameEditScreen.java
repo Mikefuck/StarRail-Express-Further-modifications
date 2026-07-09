@@ -195,11 +195,23 @@ public class MinigameEditScreen extends Screen {
     private void commitFields() {
         String v;
         v = goldField.getValue().trim();
-        cfg.goldReward = v.isEmpty() ? -1 : Math.max(-1, Integer.parseInt(v));
+        try {
+            cfg.goldReward = v.isEmpty() ? -1 : Math.max(-1, Integer.parseInt(v));
+        } catch (NumberFormatException e) {
+            cfg.goldReward = -1;
+        }
         v = emotionField.getValue().trim();
-        cfg.emotionReward = v.isEmpty() ? -1f : Math.max(-1f, Float.parseFloat(v));
+        try {
+            cfg.emotionReward = v.isEmpty() ? -1f : Math.max(-1f, Float.parseFloat(v));
+        } catch (NumberFormatException e) {
+            cfg.emotionReward = -1f;
+        }
         v = weightField.getValue().trim();
-        cfg.refreshWeight = v.isEmpty() ? -1f : Math.max(0f, Float.parseFloat(v));
+        try {
+            cfg.refreshWeight = v.isEmpty() ? -1f : Math.max(0f, Float.parseFloat(v));
+        } catch (NumberFormatException e) {
+            cfg.refreshWeight = -1f;
+        }
         v = mapField.getValue().trim();
         cfg.enabledMaps.clear();
         if (!v.isEmpty()) {

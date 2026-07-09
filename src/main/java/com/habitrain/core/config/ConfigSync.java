@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 
 public class ConfigSync {
-    private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigSync.class.getSimpleName());
     private final ConfigStore store;
 
     public ConfigSync(ConfigStore store) {

@@ -8,7 +8,7 @@ import net.minecraft.world.entity.player.Player;
 import java.util.*;
 
 public class BetelQuestState {
-    private static BetelQuestState instance;
+    private static volatile BetelQuestState instance;
 
     private boolean revealUsedThisRound = false;
 
@@ -71,8 +71,8 @@ public class BetelQuestState {
 
     private static MinecraftServer getCurrentServer() {
         try {
-            var instance = net.fabricmc.loader.api.FabricLoader.getInstance().getGameInstance();
-            if (instance instanceof MinecraftServer server) {
+            var gameInstance = net.fabricmc.loader.api.FabricLoader.getInstance().getGameInstance();
+            if (gameInstance instanceof MinecraftServer server) {
                 return server;
             }
         } catch (Exception ignored) {}
