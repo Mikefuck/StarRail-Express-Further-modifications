@@ -31,7 +31,18 @@ public class ActiveTaskCache {
     @Nullable
     private static volatile String activeTaskFullId = null;
 
+    /**
+     * 当前活跃的杀手假任务完整 ID，null = 无假任务。
+     * 杀手双任务机制：杀手的"假任务"来自好人任务池，单独追踪。
+     */
+    @Nullable
+    private static volatile String fakeTaskFullId = null;
+
     private ActiveTaskCache() {}
+
+    // ========================================================================
+    //  真实任务缓存
+    // ========================================================================
 
     /**
      * 设置活跃自定义任务 ID
@@ -59,11 +70,51 @@ public class ActiveTaskCache {
         return activeTaskFullId != null;
     }
 
+    // ========================================================================
+    //  假任务缓存（杀手双任务机制）
+    // ========================================================================
+
     /**
-     * 清空活跃任务
+     * 设置杀手假任务 ID
+     * @param taskFullId 假任务完整 ID，null 或空字符串表示清空
+     */
+    public static void setFakeTask(@Nullable String taskFullId) {
+        fakeTaskFullId = (taskFullId != null && !taskFullId.isEmpty()) ? taskFullId : null;
+        HabiTrainCore.LOGGER.info("[ActiveTaskCache] 设置假任务: {}",
+                fakeTaskFullId != null ? fakeTaskFullId : "(无)");
+    }
+
+    /**
+     * 获取杀手假任务 ID
+     * @return 假任务完整 ID，null 表示无假任务
+     */
+    @Nullable
+    public static String getFakeTaskFullId() {
+        return fakeTaskFullId;
+    }
+
+    /**
+     * 判断指定任务完整 ID 是否为当前假任务
+     * @param taskFullId 任务完整 ID
+     * @return true 如果是假任务
+     */
+    public static boolean isFakeTask(@Nullable String taskFullId) {
+        return taskFullId != null && taskFullId.equals(fakeTaskFullId);
+    }
+
+    /**
+     * 清空所有缓存（真实任务 + 假任务）
      */
     public static void clear() {
         activeTaskFullId = null;
+        fakeTaskFullId = null;
+    }
+
+    /**
+     * 清空假任务缓存
+     */
+    public static void clearFakeTask() {
+        fakeTaskFullId = null;
     }
 
     // ========================================================================

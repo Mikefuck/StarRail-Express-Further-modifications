@@ -63,11 +63,15 @@ public class PerPlayerTaskTicker {
             LOGGER.info("[KillerDualTask] fake task {} failed for {}",
                     fakeTask.getFullId(), player.getName().getString());
             mgr.removeFakeTask(player.getUUID());
+            if (player instanceof ServerPlayer sp) {
+                ActiveTaskPayload.clearForPlayer(sp, true);
+            }
         } else {
             LOGGER.info("[KillerDualTask] fake task {} fulfilled for {}, granting rewards",
                     fakeTask.getFullId(), player.getName().getString());
             if (player instanceof ServerPlayer sp) {
                 mgr.handleTaskCompletion(sp, fakeTask);
+                ActiveTaskPayload.clearForPlayer(sp, true);
             }
             mgr.removeFakeTask(player.getUUID());
         }

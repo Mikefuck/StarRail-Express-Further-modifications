@@ -83,12 +83,20 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(ActiveTaskPayload.TYPE, (payload, context) -> {
             context.client().execute(() -> {
                 if (payload.isClear()) {
-                    HabiTrainCore.LOGGER.info("收到活跃自定义任务清空信号");
-                    ActiveTaskCache.clear();
+                    HabiTrainCore.LOGGER.info("收到活跃自定义任务清空信号 (isFake={})", payload.isFake());
+                    if (payload.isFake()) {
+                        ActiveTaskCache.clearFakeTask();
+                    } else {
+                        ActiveTaskCache.clear();
+                    }
                 } else {
-                    HabiTrainCore.LOGGER.info("收到活跃自定义任务同步: {}",
-                            payload.getTaskFullId());
-                    ActiveTaskCache.setActiveTask(payload.getTaskFullId());
+                    HabiTrainCore.LOGGER.info("收到活跃自定义任务同步: {} (isFake={})",
+                            payload.getTaskFullId(), payload.isFake());
+                    if (payload.isFake()) {
+                        ActiveTaskCache.setFakeTask(payload.getTaskFullId());
+                    } else {
+                        ActiveTaskCache.setActiveTask(payload.getTaskFullId());
+                    }
                 }
             });
         });

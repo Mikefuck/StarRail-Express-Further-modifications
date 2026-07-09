@@ -1,8 +1,8 @@
 package com.habitrain.core.client.mixin;
 
+import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.util.TaskTextNormalizer;
 import com.habitrain.core.game.sre.SRETrainTaskWrapper;
-import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.api.TaskInstance;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -55,15 +55,16 @@ public class FixTaskRendererMixin {
         }
 
         // 杀手双任务区分：只有假任务（来自好人任务池，包装为 SRETrainTaskWrapper 且
-        // 在 TaskManager.fakeTasks 中追踪）才显示"你可以假装去..."前缀；
+        // 在 ActiveTaskCache.fakeTaskFullId 中追踪）才显示"你可以假装去..."前缀；
         // 真任务（坏人任务池）显示"感觉要去..."前缀，避免两个任务都带"假装"。
+        // ★ 使用客户端 ActiveTaskCache 代替服务端 TaskManager 单例，
+        //   避免专用服务器上客户端 JVM 的空 TaskManager 导致假任务前缀永不出现在多人模式。
         boolean isFakeTask = false;
         if (killer && task instanceof SRETrainTaskWrapper wrapper) {
             TaskInstance instance = wrapper.unwrap();
-            var self = Minecraft.getInstance().player;
-            if (self != null && instance != null) {
-                TaskInstance fake = TaskManager.getInstance().getFakeTask(self.getUUID());
-                isFakeTask = (fake == instance);
+            if (instance != null) {
+                String fakeFullId = ActiveTaskCache.getFakeTaskFullId();
+                isFakeTask = fakeFullId != null && fakeFullId.equals(instance.getFullId());
             }
         }
         boolean useFakePrefix = killer && isFakeTask;

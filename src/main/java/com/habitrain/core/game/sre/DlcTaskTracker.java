@@ -62,7 +62,7 @@ public final class DlcTaskTracker {
             mgr.setFakeTask(player.getUUID(), instance);
             SREPlayerTaskComponent.Task fakeSlot = SREPlayerTaskComponent.Task.PRAY;
             if (player instanceof ServerPlayer sp) {
-                ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
+                ActiveTaskPayload.sendToPlayer(sp, def.getFullId(), true);
             }
             return new SRETrainTaskWrapper(instance, fakeSlot);
         } else {

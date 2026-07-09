@@ -35,12 +35,30 @@ public class ActiveTaskPayload implements CustomPacketPayload {
     /** 活跃任务的完整 ID（如 "test_more_tasks:pet_cat"），空=无活跃任务 */
     private final String taskFullId;
 
-    public ActiveTaskPayload(String taskFullId) {
+    /** true=杀手假任务（来自好人任务池），false=真实任务（来自本人任务池） */
+    private final boolean isFake;
+
+    public ActiveTaskPayload(String taskFullId, boolean isFake) {
         this.taskFullId = taskFullId != null ? taskFullId : "";
+        this.isFake = isFake;
+    }
+
+    /**
+     * @deprecated Use {@link #ActiveTaskPayload(String, boolean)} instead.
+     *             Kept for source compat; defaults isFake to false.
+     */
+    @Deprecated
+    public ActiveTaskPayload(String taskFullId) {
+        this(taskFullId, false);
     }
 
     public String getTaskFullId() {
         return taskFullId;
+    }
+
+    /** 是否为杀手假任务（来自好人任务池的并行任务） */
+    public boolean isFake() {
+        return isFake;
     }
 
     /** 是否为清空信号（无活跃任务） */
@@ -51,21 +69,23 @@ public class ActiveTaskPayload implements CustomPacketPayload {
     public static final StreamCodec<ByteBuf, ActiveTaskPayload> CODEC = new StreamCodec<>() {
         @Override
         public ActiveTaskPayload decode(ByteBuf buf) {
+            boolean isFake = buf.readBoolean();
             int len = buf.readInt();
             if (len < 0) {
                 throw new DecoderException("ActiveTaskPayload: negative length " + len);
             }
-            if (len == 0) return new ActiveTaskPayload("");
+            if (len == 0) return new ActiveTaskPayload("", isFake);
             if (len > MAX_STRING_LENGTH) {
                 throw new DecoderException("ActiveTaskPayload: length " + len + " exceeds max " + MAX_STRING_LENGTH);
             }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
-            return new ActiveTaskPayload(new String(bytes, StandardCharsets.UTF_8));
+            return new ActiveTaskPayload(new String(bytes, StandardCharsets.UTF_8), isFake);
         }
 
         @Override
         public void encode(ByteBuf buf, ActiveTaskPayload payload) {
+            buf.writeBoolean(payload.isFake);
             byte[] bytes = payload.taskFullId.getBytes(StandardCharsets.UTF_8);
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
@@ -87,17 +107,36 @@ public class ActiveTaskPayload implements CustomPacketPayload {
     }
 
     /**
-     * 发送激活任务信息到指定客户端
+     * 发送激活/假任务信息到指定客户端
+     *
+     * @param taskFullId 任务完整 ID，空字符串=清空
+     * @param isFake     true=杀手假任务，false=真实任务
      */
-    public static void sendToPlayer(ServerPlayer player, String taskFullId) {
+    public static void sendToPlayer(ServerPlayer player, String taskFullId, boolean isFake) {
         if (player == null) return;
-        ServerPlayNetworking.send(player, new ActiveTaskPayload(taskFullId));
+        ServerPlayNetworking.send(player, new ActiveTaskPayload(taskFullId, isFake));
     }
 
     /**
-     * 发送清空活跃任务信号到指定客户端
+     * 发送激活任务信号到指定客户端（默认 isFake=false）
+     */
+    public static void sendToPlayer(ServerPlayer player, String taskFullId) {
+        sendToPlayer(player, taskFullId, false);
+    }
+
+    /**
+     * 清空指定任务槽位的缓存
+     *
+     * @param isFake true=清空假任务缓存，false=清空真实任务缓存
+     */
+    public static void clearForPlayer(ServerPlayer player, boolean isFake) {
+        sendToPlayer(player, "", isFake);
+    }
+
+    /**
+     * 清空真实任务缓存（保留假任务缓存不变）
      */
     public static void clearForPlayer(ServerPlayer player) {
-        sendToPlayer(player, "");
+        clearForPlayer(player, false);
     }
 }
