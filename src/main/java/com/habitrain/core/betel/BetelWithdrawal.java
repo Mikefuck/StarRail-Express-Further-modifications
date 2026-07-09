@@ -10,8 +10,8 @@ import java.util.UUID;
 public class BetelWithdrawal {
 
     public static void applyHeavyAddictionEffects(ServerPlayer player, BetelQuestState.PlayerBetelData data) {
-        data.hasHeavyAddiction = true;
-        if (!data.ateBetelNutToRelieve) {
+        data.addictionStage = BetelQuestState.AddictionStage.SEVERE;
+        if (data.effectState != BetelQuestState.EffectState.WITHDRAWAL_ACTIVE) {
             player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 1, false, true, true));
             EffectOwnershipTracker.claim(player.getUUID(), MobEffects.MOVEMENT_SLOWDOWN, "betel_quest");
             player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 100, 0, false, true, true));

@@ -126,7 +126,7 @@ public class BetelTickEngine {
         long currentGameTime = player.level().getGameTime();
 
         if (detectedEating) {
-            data.ateBetelNutToRelieve = true;
+            data.effectState = BetelQuestState.EffectState.WITHDRAWAL_ACTIVE;
             data.betelNutsEatenThisGame++;
             data.ownLastEatGameTime = currentGameTime;
 
@@ -198,9 +198,10 @@ public class BetelTickEngine {
         }
 
         if (!config.enableAddictionSystem) {
-            if (data.ateBetelNutToRelieve && data.hasHeavyAddiction) {
-                data.hasHeavyAddiction = false;
-                data.ateBetelNutToRelieve = false;
+            if (data.addictionStage != BetelQuestState.AddictionStage.NONE
+                    && data.effectState == BetelQuestState.EffectState.WITHDRAWAL_ACTIVE) {
+                data.addictionStage = BetelQuestState.AddictionStage.NONE;
+                data.effectState = BetelQuestState.EffectState.NONE;
             }
             return;
         }
@@ -211,22 +212,25 @@ public class BetelTickEngine {
         int visibleThreshold = Math.max(MIN_WITHDRAWAL_VALUE, Math.min(MAX_WITHDRAWAL_VALUE, config.maxWithdrawalValue));
 
         if (betelWithdrawalValue >= visibleThreshold && betelWithdrawalSeverity > 0) {
-            if (!data.darknessAppliedThisTrigger) {
+            if (data.effectState != BetelQuestState.EffectState.DARKNESS_APPLIED) {
                 player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, DARKNESS_DURATION_TICKS, 0, false, true, true));
                 EffectOwnershipTracker.claim(player.getUUID(), MobEffects.DARKNESS, "betel_quest");
-                data.darknessAppliedThisTrigger = true;
+                data.effectState = BetelQuestState.EffectState.DARKNESS_APPLIED;
                 HabiTrainCore.LOGGER.debug("玩家 {} 成瘾发作，给予黑暗效果", player.getName().getString());
             }
         } else {
-            data.darknessAppliedThisTrigger = false;
+            if (data.effectState == BetelQuestState.EffectState.DARKNESS_APPLIED) {
+                data.effectState = BetelQuestState.EffectState.NONE;
+            }
         }
 
         if (betelAddictionStage >= 3) {
+            data.addictionStage = BetelQuestState.AddictionStage.SEVERE;
             BetelWithdrawal.applyHeavyAddictionEffects(player, data);
         } else {
-            if (data.hasHeavyAddiction && betelAddictionStage < 3) {
-                data.hasHeavyAddiction = false;
-                data.ateBetelNutToRelieve = false;
+            if (data.addictionStage != BetelQuestState.AddictionStage.NONE && betelAddictionStage < 3) {
+                data.addictionStage = BetelQuestState.AddictionStage.NONE;
+                data.effectState = BetelQuestState.EffectState.NONE;
             }
         }
     }

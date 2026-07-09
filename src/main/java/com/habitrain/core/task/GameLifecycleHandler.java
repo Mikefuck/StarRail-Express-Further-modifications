@@ -85,7 +85,7 @@ public class GameLifecycleHandler {
         } finally {
             // 全局清理必须执行，即使某玩家清理抛异常也不应跳过
             SlownessReapplyManager.clearAll();
-            BetelQuestState.getInstance().resetAll();
+            BetelQuestState.resetGameState();
             BetelLeafHandler.clearAllHarvests();
 
             // 重置背包翻找任务状态（下一局可以再次刷新）

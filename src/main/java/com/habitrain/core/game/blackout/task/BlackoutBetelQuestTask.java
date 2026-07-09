@@ -1,7 +1,7 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.betel.BetelQuestState;
+import com.habitrain.core.betel.BetelTaskFacade;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
@@ -25,11 +25,11 @@ public class BlackoutBetelQuestTask {
             .instinctColor(46, 139, 87, 180)
             .scanBlockIds("betel-nut-mod:betel_palm_leaves")
             .onAssign((player, task) -> {
-                BetelQuestState.markQuestAssigned(player.getUUID());
-                BetelQuestState.resetEatenStatus(player);
+                BetelTaskFacade.markQuestAssigned(player);
+                BetelTaskFacade.resetEatenStatus((ServerPlayer) player);
             })
             .completionChecker((player, task) ->
-                BetelQuestState.hasPlayerEatenBetelNut(player.getUUID()))
+                BetelTaskFacade.hasPlayerEatenBetelNut(player))
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_betel_quest");
