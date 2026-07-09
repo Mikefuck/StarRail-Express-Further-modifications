@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -36,6 +37,7 @@ public class RestorePowerHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(RestorePowerHandler::onUseBlock);
+        ClearableHandlerRegistry.register(RestorePowerHandler::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeStates.isEmpty()) return;
             long tick = server.overworld().getGameTime();

@@ -52,7 +52,7 @@ public final class BlackoutHornVoteHandler {
 
             // 停电模式对局检查
             var gameMode = GameModeRegistry.getActiveForLevel(serverLevel);
-            if (gameMode.isEmpty() || !"habitrains:blackout".equals(gameMode.get().getId())) {
+            if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
                 return InteractionResult.PASS;
             }
 

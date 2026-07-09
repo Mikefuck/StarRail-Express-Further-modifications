@@ -12,12 +12,16 @@ import com.habitrain.core.game.blackout.BlackoutHornVoteHandler;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
 import com.habitrain.core.game.blackout.BlackoutShopService;
+import com.habitrain.core.game.blackout.sre.SREBlackoutGameLauncher;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
+import com.habitrain.core.game.sre.SREGameStateProvider;
 import com.habitrain.core.game.sre.SREMurderMode;
 import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
+import com.habitrain.core.task.TaskManager;
 import betel.nut.BetelNutConfig;
 import net.fabricmc.api.ModInitializer;
 import net.minecraft.core.Registry;
@@ -72,9 +76,13 @@ public class HabiTrainCore implements ModInitializer {
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
         GameModeRegistry.register(MOD_ID, "sre:repair", new SRERepairMode());
-        GameModeRegistry.register(MOD_ID, "habitrains:blackout", new BlackoutMode());
+        BlackoutMode blackoutMode = new BlackoutMode();
+        blackoutMode.setSreGameLauncher(SREBlackoutGameLauncher.INSTANCE);
+        GameModeRegistry.register(MOD_ID, "habitrain:blackout", blackoutMode);
         // 注册停电模式专用的 SRE GameMode（复用 SRE 原版角色分配流程）。
         SREBlackoutGameMode.register();
+        // 装配 SRE 游戏状态提供者到 TaskManager（解除对 SRE 具体类的编译依赖）
+        TaskManager.getInstance().setGameStateProvider(SREGameStateProvider.INSTANCE);
         // 按角色能力填充警长/杀手商店目录（canUseKiller=杀手商店, isVigilanteTeam=警长商店）
         BlackoutShopService.bootstrapDefaults();
         // 3. 网络包注册（16 个 payload type）

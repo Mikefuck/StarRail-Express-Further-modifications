@@ -113,7 +113,7 @@ public final class BlackoutPoliceHireService {
         }
         // 1b. 必须是停电模式
         var gameMode = GameModeRegistry.getActiveForLevel(level);
-        if (gameMode.isEmpty() || !"habitrains:blackout".equals(gameMode.get().getId())) {
+        if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
             return Component.literal("§c当前不在停电对局中");
         }
 

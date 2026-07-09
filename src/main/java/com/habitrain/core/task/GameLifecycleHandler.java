@@ -6,7 +6,6 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.misc.EffectOwnershipTracker;
-import com.habitrain.core.task.SlownessReapplyManager;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -84,6 +83,7 @@ public class GameLifecycleHandler {
             }
         } finally {
             // 全局清理必须执行，即使某玩家清理抛异常也不应跳过
+            ClearableHandlerRegistry.clearAll();
             SlownessReapplyManager.clearAll();
             BetelQuestState.resetGameState();
             BetelLeafHandler.clearAllHarvests();
@@ -95,14 +95,6 @@ public class GameLifecycleHandler {
             BackpackQuestState.getInstance().resetAll();
             // 清除所有背包翻找动作（防止残留状态影响下一局）
             BackpackSearchHandler.clearAllSearches();
-            // 清除所有添煤任务交互状态（防止残留缓慢/阶段影响下一局）
-            com.habitrain.core.game.blackout.task.AddCoalHandler.clearAll();
-            // 清除其他停电任务的交互状态
-            com.habitrain.core.game.blackout.task.RepairWiringHandler.clearAll();
-            com.habitrain.core.game.blackout.task.MaintainPowerHandler.clearAll();
-            com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.clearAll();
-            com.habitrain.core.game.blackout.task.SabotageWiringHandler.clearAll();
-            // 清除停电日常任务的交互状态
 
             HabiTrainCore.LOGGER.info("游戏结束，已清除所有槟榔效果");
         }

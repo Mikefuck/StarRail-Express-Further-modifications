@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -40,6 +41,7 @@ public class MaintainPowerHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(MaintainPowerHandler::onUseBlock);
+        ClearableHandlerRegistry.register(MaintainPowerHandler::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeStates.isEmpty()) return;
             long tick = server.overworld().getGameTime();

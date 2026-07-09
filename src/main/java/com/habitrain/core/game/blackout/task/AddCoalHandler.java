@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -54,6 +55,7 @@ public class AddCoalHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(AddCoalHandler::onUseBlock);
+        ClearableHandlerRegistry.register(AddCoalHandler::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeStates.isEmpty()) return;
             long tick = server.overworld().getGameTime();

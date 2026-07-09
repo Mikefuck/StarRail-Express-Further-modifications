@@ -6,6 +6,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 
 import java.awt.Color;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,7 +23,7 @@ public class InstinctColorHelper {
     }
 
     public static Map<Integer, Color> getOverrideColors() {
-        return overrideColors;
+        return Collections.unmodifiableMap(overrideColors);
     }
 
     public static boolean isDirty() {

@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -49,6 +50,7 @@ public class FurnaceExplosionHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(FurnaceExplosionHandler::onUseBlock);
+        ClearableHandlerRegistry.register(FurnaceExplosionHandler::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             long tick = server.overworld().getGameTime();
 

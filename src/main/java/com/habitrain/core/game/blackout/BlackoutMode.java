@@ -2,15 +2,11 @@ package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
+import com.habitrain.core.api.SREGameLauncher;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.WinResult;
-import io.wifi.starrailexpress.api.SREGameModes;
-import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.game.GameConstants;
-import io.wifi.starrailexpress.game.GameUtils;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -21,7 +17,7 @@ import java.util.Set;
 
 public class BlackoutMode implements GameMode {
 
-    public static final String MODE_ID = "habitrains:blackout";
+    public static final String MODE_ID = "habitrain:blackout";
     public static final String MODE_DISPLAY = "停电模式";
 
     public static final TaskCategory BLACKOUT_GOOD =
@@ -44,6 +40,9 @@ public class BlackoutMode implements GameMode {
             new BlackoutTickCoordinator(this, victoryChecker, syncManager);
 
     private BlackoutRoleManager.Faction lastWinningFaction = null;
+
+    /** SRE 游戏启动器 — 通过 setter 注入以解除对 SRE 具体类的编译依赖。 */
+    private SREGameLauncher sreGameLauncher;
 
     ServerLevel getCurrentLevel() { return currentLevel; }
     boolean isGameEnded() { return gameEnded; }
@@ -94,16 +93,8 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onStart(ServerLevel level) {
-        ResourceLocation blackoutModeId = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
-        var sreMode = SREGameModes.GAME_MODES.get(blackoutModeId);
-        if (sreMode == null) {
-            HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found!");
-            return;
-        }
-        var sreGame = SREGameWorldComponent.KEY.get(level);
-        if (sreGame != null && !sreGame.isRunning()) {
-            GameUtils.startGame(level, sreMode,
-                    GameConstants.getInTicks(((io.wifi.starrailexpress.api.GameMode) sreMode).defaultStartTime, 0));
+        if (sreGameLauncher != null) {
+            sreGameLauncher.startBlackoutGame(level);
         }
     }
 
@@ -193,6 +184,14 @@ public class BlackoutMode implements GameMode {
 
     public BlackoutRoleManager.Faction getLastWinningFaction() {
         return lastWinningFaction;
+    }
+
+    /**
+     * 设置 SRE 游戏启动器。应在模组初始化时调用一次。
+     * 解除 BlackoutMode 对 SRE 具体类的直接编译依赖。
+     */
+    public void setSreGameLauncher(SREGameLauncher launcher) {
+        this.sreGameLauncher = launcher;
     }
 
     public static String formatTime(int seconds) {

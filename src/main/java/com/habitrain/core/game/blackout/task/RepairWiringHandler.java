@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -28,6 +29,7 @@ public class RepairWiringHandler {
 
     public static void register() {
         UseBlockCallback.EVENT.register(RepairWiringHandler::onUseBlock);
+        ClearableHandlerRegistry.register(RepairWiringHandler::clearAll);
     }
 
     public static void clearState(UUID uuid) {

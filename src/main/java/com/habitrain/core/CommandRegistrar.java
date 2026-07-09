@@ -36,7 +36,7 @@ public final class CommandRegistrar {
                             .executes(ctx -> {
                                 ServerLevel level = ctx.getSource().getLevel();
                                 try {
-                                    GameModeRegistry.start("habitrain_core:habitrains:blackout", level);
+                                    GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
                                     ctx.getSource().sendSuccess(
                                             () -> Component.literal("§a✅ 停电模式已启动！"), true);
                                 } catch (Exception e) {

@@ -41,7 +41,7 @@ public final class BlackoutPhoneHandler {
 
             // 必须是停电模式对局中
             var gameMode = GameModeRegistry.getActiveForLevel(serverLevel);
-            if (gameMode.isEmpty() || !"habitrains:blackout".equals(gameMode.get().getId())) {
+            if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
                 return InteractionResult.PASS;
             }
 

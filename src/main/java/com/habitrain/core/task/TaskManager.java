@@ -4,9 +4,7 @@ import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
-import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -25,6 +23,12 @@ public class TaskManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskManager");
     private static volatile TaskManager INSTANCE;
 
+    /** 自定义胜利后缀常量。 */
+    public static final String WIN_SUFFIX = "_win";
+
+    /** SRE 游戏状态提供者 — 通过 setter 注入以解除对 SRE 具体类的编译依赖。 */
+    private GameStateProvider gameStateProvider;
+
     public static TaskManager getInstance() {
         if (INSTANCE == null) {
             synchronized (TaskManager.class) {
@@ -34,6 +38,14 @@ public class TaskManager {
             }
         }
         return INSTANCE;
+    }
+
+    /**
+     * 设置 SRE 游戏状态提供者。应在模组初始化时调用一次。
+     * 解除 TaskManager 对 SRE 具体类的直接编译依赖。
+     */
+    public void setGameStateProvider(GameStateProvider provider) {
+        this.gameStateProvider = provider;
     }
 
     // ConcurrentHashMap：避免单机模式下 Netty IO 线程编码与主线程修改导致 CME，
@@ -164,15 +176,10 @@ public class TaskManager {
 
     private void triggerDirectWin(ServerPlayer player, TaskInstance instance) {
         try {
-            SREGameRoundEndComponent roundEnd =
-                    SREGameRoundEndComponent.KEY.get(player.level());
-            if (roundEnd != null) {
-                roundEnd.CustomWinnerID = instance.getDefinition().getModId()
-                        + "_" + instance.getDefinition().getTaskId() + "_win";
-                roundEnd.CustomWinnerPlayers.add(player.getUUID());
-                roundEnd.setWinStatus(
-                        io.wifi.starrailexpress.game.GameUtils.WinStatus.CUSTOM);
-                roundEnd.sync();
+            String winnerId = instance.getDefinition().getModId()
+                    + "_" + instance.getDefinition().getTaskId() + WIN_SUFFIX;
+            if (gameStateProvider != null && player.level() instanceof ServerLevel sl) {
+                gameStateProvider.triggerCustomWin(sl, winnerId, player.getUUID());
             }
         } catch (Exception e) {
             LOGGER.error("Failed to trigger direct win: " + instance.getFullId(), e);
