@@ -52,6 +52,23 @@ public final class BlackoutExileVoteManager {
         STATES.remove(level.dimension());
     }
 
+    /**
+     * 玩家淘汰/断线时清理其选票：
+     * - 删除其作为 voter 的票
+     * - 删除指向其作为 target 的票
+     * - active 时 rebroadcast（对齐 BlackoutSheriffVoteManager.onPlayerRemoved）
+     */
+    public static void onPlayerRemoved(ServerLevel level, UUID playerId) {
+        VoteState state = STATES.get(level.dimension());
+        if (state == null) return;
+        boolean changed = state.votesByVoter.remove(playerId) != null;
+        changed |= state.votesByVoter.entrySet().removeIf(e -> playerId.equals(e.getValue()));
+        changed |= state.candidateOrder.remove(playerId);
+        if (changed && state.active) {
+            broadcastState(level);
+        }
+    }
+
     /** 当前是否有 active 的放逐投票 */
     public static boolean isVoteActive(ServerLevel level) {
         VoteState state = STATES.get(level.dimension());
@@ -65,6 +82,10 @@ public final class BlackoutExileVoteManager {
      */
     public static boolean startVote(ServerLevel level, ServerPlayer initiator) {
         VoteState state = getOrCreate(level);
+        if (state.active) {
+            LOGGER.warn("[ExileVote] startVote ignored: vote already active");
+            return false;
+        }
         state.active = true;
         state.remainingSeconds = VOTE_DURATION_SECONDS;
         state.votesByVoter.clear();

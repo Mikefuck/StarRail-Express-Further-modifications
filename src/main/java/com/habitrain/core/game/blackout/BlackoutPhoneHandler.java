@@ -53,6 +53,11 @@ public final class BlackoutPhoneHandler {
                 return InteractionResult.PASS;
             }
 
+            // 发起者必须存活（旁观者/已淘汰不可开电话 GUI）
+            if (serverPlayer.isSpectator() || !BlackoutRoleManager.isAlive(serverLevel, serverPlayer.getUUID())) {
+                return InteractionResult.PASS;
+            }
+
             // 构造状态包
             boolean unlocked = BlackoutPoliceHireService.isPhoneUnlocked(serverLevel);
             int remainingLock = BlackoutPoliceHireService.getRemainingLockSeconds(serverLevel);

@@ -127,5 +127,10 @@ public final class BlackoutHornVoteHandler {
         confirmWindows.remove(playerId);
     }
 
+    /** 对局开始/清理时清空所有确认窗口，避免跨局二次拉动直接扣费 */
+    public static void clearAll() {
+        confirmWindows.clear();
+    }
+
     private BlackoutHornVoteHandler() {}
 }

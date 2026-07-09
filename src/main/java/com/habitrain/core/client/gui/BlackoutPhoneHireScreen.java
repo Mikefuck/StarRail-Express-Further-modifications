@@ -129,7 +129,7 @@ public class BlackoutPhoneHireScreen extends Screen {
         g.drawCenteredString(font, reason, width / 2, panelY + 40, 0xB9C7D9);
 
         // 按钮下方固定常驻费用提示（需求：下方写"花费300话费拨打110"，不论可否聘请都显示）
-        g.drawCenteredString(font, Component.literal("§7花费 " + HIRE_COST + " 话费拨打110"),
+        g.drawCenteredString(font, Component.literal("§7花费" + HIRE_COST + "话费拨打110"),
                 width / 2, panelY + 100, 0xB9C7D9);
 
         // 警察/杀手数

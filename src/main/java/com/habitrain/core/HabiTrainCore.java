@@ -4,6 +4,7 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.blackout.BlackoutDeathHandler;
 import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.game.blackout.BlackoutHornVoteHandler;
 import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
@@ -141,6 +142,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.blackout.task.BlackoutBeAloneTask.register();
         com.habitrain.core.game.blackout.task.BlackoutLookMyEyesTask.register();
         BlackoutPhoneHandler.register();
+        BlackoutDeathHandler.register();
         BlackoutHornVoteHandler.register();
         registerMoreSounds();
         initBetelSystem();
@@ -221,7 +223,7 @@ public class HabiTrainCore implements ModInitializer {
             ServerPlayer player = handler.getPlayer();
             try {
                 // 如果当前没有 SRE 对局运行 → 入队等待加入大厅语音群组
-                if (!SREGameModeBase.isAnySreGameRunning(server)) {
+                if (!SREGameModeBase.isAnySreGameStartingOrRunning(server)) {
                     SREGameModeBase.queueLobbyGroupJoin(server, player.getUUID());
                 }
                 // 如果有对局运行，不入队（避免把游戏中的玩家拉进大厅群组）
@@ -250,6 +252,8 @@ public class HabiTrainCore implements ModInitializer {
             try {
                 // 清除汽笛确认窗口（断线后无需保留）
                 BlackoutHornVoteHandler.onPlayerRemoved(player.getUUID());
+                // 立刻从语音 pending 队列移除（不必等下一 tick）
+                SREGameModeBase.removePendingVoiceJoin(player.getUUID());
                 ServerLevel disconnectLevel = player.serverLevel();
                 if (disconnectLevel != null) {
                     GameModeRegistry.getActiveForLevel(disconnectLevel)

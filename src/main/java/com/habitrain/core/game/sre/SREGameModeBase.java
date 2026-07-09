@@ -98,10 +98,13 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         if (sreEventsRegistered) return;
         sreEventsRegistered = true;
         OnGameStarted.EVENT.register(serverLevel -> {
+            // 清空待入队：对局已开始不再把人拉进大厅群
             if (!pendingVoiceJoins.isEmpty()) {
                 pendingVoiceJoins.clear();
                 LOGGER.info("[VoiceGroup] 游戏开始，已清理待加入语音群组的队列");
             }
+            // 已在 LobbyChat 的在线玩家离开大厅群（对局中不应停留在大厅语音）
+            leaveLobbyGroupForAllOnline(serverLevel.getServer());
         });
 
         OnGameEnd.EVENT.register((serverLevel, gameWorldComponent) -> {
@@ -156,6 +159,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * 检查服务器上当前是否有任何 SRE 对局正在运行。
      * 用于 JOIN 事件判断是否应将玩家加入队列。
      */
+    /**
+     * 检查服务器上当前是否有任何 SRE 对局正在运行（ACTIVE/STOPPING）。
+     * 用于 JOIN 事件判断是否应将玩家加入队列。
+     */
     public static boolean isAnySreGameRunning(MinecraftServer server) {
         for (ServerLevel level : server.getAllLevels()) {
             try {
@@ -168,8 +175,64 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         return false;
     }
 
+    /**
+     * 检查是否有 SRE 对局处于 STARTING / ACTIVE / STOPPING。
+     * STARTING 阶段 isRunning()=false，但已不应对新玩家拉进大厅群。
+     */
+    public static boolean isAnySreGameStartingOrRunning(MinecraftServer server) {
+        for (ServerLevel level : server.getAllLevels()) {
+            try {
+                var gameWorld = SREGameWorldComponent.KEY.get(level);
+                if (gameWorld == null) continue;
+                var status = gameWorld.getGameStatus();
+                if (status == SREGameWorldComponent.GameStatus.STARTING
+                        || status == SREGameWorldComponent.GameStatus.ACTIVE
+                        || status == SREGameWorldComponent.GameStatus.STOPPING) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    /** 让所有在线玩家离开 LobbyChat（对局开始时调用）。connection 未就绪则跳过。 */
+    private static void leaveLobbyGroupForAllOnline(MinecraftServer server) {
+        if (server == null) return;
+        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
+        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
+        int left = 0;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            try {
+                VoicechatConnection connection = api.getConnectionOf(player.getUUID());
+                if (connection == null) continue;
+                Group group = connection.getGroup();
+                if (group != null && LOBBY_GROUP_ID.equals(group.getId())) {
+                    connection.setGroup(null);
+                    left++;
+                }
+            } catch (Exception e) {
+                LOGGER.debug("[VoiceGroup] failed to leave lobby group for {}", player.getUUID(), e);
+            }
+        }
+        if (left > 0) {
+            LOGGER.info("[VoiceGroup] removed {} players from LobbyChat on game start", left);
+        }
+    }
+
+    /** 断线时立刻从 pending 队列移除（不必等下一 tick 扫描）。 */
+    public static void removePendingVoiceJoin(UUID playerUUID) {
+        if (playerUUID == null) return;
+        pendingVoiceJoins.remove(playerUUID);
+    }
+
     public static void processPendingVoiceJoins(MinecraftServer server) {
         if (pendingVoiceJoins.isEmpty()) return;
+        // 对局已进入 STARTING/ACTIVE/STOPPING：不再把任何人拉进大厅群，直接清空队列
+        if (isAnySreGameStartingOrRunning(server)) {
+            pendingVoiceJoins.clear();
+            LOGGER.info("[VoiceGroup] cleared pending queue (game starting/running)");
+            return;
+        }
         Iterator<Map.Entry<UUID, Integer>> it = pendingVoiceJoins.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<UUID, Integer> entry = it.next();

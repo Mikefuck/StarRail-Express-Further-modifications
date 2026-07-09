@@ -76,6 +76,7 @@ public class BlackoutRoleManager {
         state.factions.remove(playerId);
         state.sheriffs.remove(playerId);
         BlackoutSheriffVoteManager.onPlayerRemoved(level, playerId);
+        BlackoutExileVoteManager.onPlayerRemoved(level, playerId);
         BlackoutHornVoteHandler.onPlayerRemoved(playerId);
     }
 
@@ -187,11 +188,43 @@ public class BlackoutRoleManager {
      */
     @org.jetbrains.annotations.Nullable
     public static UUID getRandomGoodNonSheriff(ServerLevel level, java.util.Random random) {
+        return getRandomGoodNonSheriff(level, random, null);
+    }
+
+    /**
+     * 从当前存活、好人阵营、非警察的玩家中随机选择一个。
+     * @param excludeId 可选，排除的 UUID（用于禁止自雇）；null 表示不排除
+     * @return 目标 UUID，如果没有合适候选人则 null
+     */
+    @org.jetbrains.annotations.Nullable
+    public static UUID getRandomGoodNonSheriff(ServerLevel level, java.util.Random random,
+                                               @org.jetbrains.annotations.Nullable UUID excludeId) {
         RoleState state = INSTANCES.get(level.dimension());
         if (state == null) return null;
         List<UUID> candidates = new ArrayList<>();
         for (UUID id : state.roles.keySet()) {
+            if (excludeId != null && excludeId.equals(id)) continue;
             if (!state.sheriffs.contains(id) && state.factions.get(id) == Faction.GOOD) {
+                candidates.add(id);
+            }
+        }
+        return candidates.isEmpty() ? null : candidates.get(random.nextInt(candidates.size()));
+    }
+
+    /**
+     * 电话雇佣候选：当前存活、非警察，可含好人与杀手。
+     * 抽到杀手时由调用方保留杀手身份并发放奖励，不转职。
+     * @param excludeId 可选，排除的 UUID（禁止自雇）；null 表示不排除
+     */
+    @org.jetbrains.annotations.Nullable
+    public static UUID getRandomHireTarget(ServerLevel level, java.util.Random random,
+                                           @org.jetbrains.annotations.Nullable UUID excludeId) {
+        RoleState state = INSTANCES.get(level.dimension());
+        if (state == null) return null;
+        List<UUID> candidates = new ArrayList<>();
+        for (UUID id : state.roles.keySet()) {
+            if (excludeId != null && excludeId.equals(id)) continue;
+            if (!state.sheriffs.contains(id)) {
                 candidates.add(id);
             }
         }

@@ -26,7 +26,7 @@ public final class SREWeatherController {
     /**
      * 每秒调用一次（每 20 tick）。
      * 对局内活跃人数 &lt; 8 → 下雨；≥ 8 → 恢复晴天。
-     * 只在停电模式对局中生效。
+     * 对所有 SRE 对局生效（凶杀/修理/停电），不局限于停电模式。
      * 只操作主世界。
      */
     public static void tick(ServerLevel overworld) {

@@ -6,10 +6,13 @@ import com.habitrain.core.util.SubtitleNotifier;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +28,18 @@ import java.util.concurrent.ConcurrentMap;
  *
  * 每局每个 {@link ServerLevel#dimension()} 隔离运行。
  * 局未开始前电话不可用（check {@link #isPhoneUnlocked} 需先调用 reset 设置开始时间）。
+ *
+ * 候选 = 存活非警察（含杀手）。抽到好人 → 转警察 GOOD；抽到杀手 → 保留杀手身份，
+ * 仅记入 sheriffs 特权集，并奖励 200 金 + 一次性手枪。
  */
 public final class BlackoutPoliceHireService {
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutPoliceHireService");
 
     private static final int UNLOCK_SECONDS = 120;
     private static final int HIRE_COST = 300;
+    private static final int KILLER_HIT_REWARD = 200;
+    private static final ResourceLocation ONCE_REVOLVER_ID =
+            ResourceLocation.parse("noellesroles:once_revolver");
 
     private static final ConcurrentMap<ResourceKey<Level>, HireState> STATES = new ConcurrentHashMap<>();
 
@@ -39,6 +48,8 @@ public final class BlackoutPoliceHireService {
     private static final class HireState {
         long gameStartTick = -1; // -1 = game not yet started; set by onGameStarted when SRE game becomes running
         final Set<UUID> hasHired = ConcurrentHashMap.newKeySet();
+        /** 串行化同 dimension 内并发 tryHire，防止同 tick 突破 police≤killer */
+        final Object hireLock = new Object();
     }
 
     private static HireState getOrCreate(ServerLevel level) {
@@ -111,82 +122,127 @@ public final class BlackoutPoliceHireService {
             return Component.literal("§c电话系统尚未就绪");
         }
 
+        // 1c. 发起者必须存活（旁观者/已淘汰不可雇）
+        if (initiator.isSpectator() || !BlackoutRoleManager.isAlive(level, initiator.getUUID())) {
+            return Component.literal("§c你已淘汰，无法拨打110");
+        }
+
         // 2. 是否解锁
         if (!isPhoneUnlocked(level)) {
             return Component.literal("§c报警线路尚未接通（剩余 " + getRemainingLockSeconds(level) + " 秒）");
         }
 
-        // 3. 本局已雇佣
-        if (state.hasHired.contains(initiator.getUUID())) {
-            return Component.literal("§c你本局已经拨打过110");
+        // 串行化扣款/转职，避免同 tick 并发突破 police≤killer
+        synchronized (state.hireLock) {
+            // 3. 本局已雇佣
+            if (state.hasHired.contains(initiator.getUUID())) {
+                return Component.literal("§c你本局已经拨打过110");
+            }
+
+            // 4. 金币余额
+            var shop = SREPlayerShopComponent.KEY.get(initiator);
+            if (shop == null || shop.balance < HIRE_COST) {
+                return Component.literal("§c话费不足，需要 " + HIRE_COST + " 金币");
+            }
+
+            // 5. 杀手阵营人数
+            int killerCount = BlackoutRoleManager.getRemainingBad(level);
+            if (killerCount <= 0) {
+                return Component.literal("§c当前没有杀手，无需聘请警察");
+            }
+
+            // 6. 警察不超杀手（成功前再读一遍）
+            int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
+            if (sheriffCount + 1 > killerCount) {
+                return Component.literal("§c当前警力已足够，无法继续聘请");
+            }
+
+            // 7. 候选：存活非警察（含杀手）；排除发起者（禁自雇）
+            Random random = new Random(level.getRandom().nextLong());
+            UUID targetId = BlackoutRoleManager.getRandomHireTarget(level, random, initiator.getUUID());
+            if (targetId == null) {
+                return Component.literal("§c当前没有可调查的目标");
+            }
+
+            ServerPlayer target = level.getServer().getPlayerList().getPlayer(targetId);
+            if (target == null) {
+                return Component.literal("§c目标玩家已离线");
+            }
+
+            BlackoutRoleManager.Faction targetFaction = BlackoutRoleManager.getFaction(level, targetId);
+            boolean targetIsKiller = targetFaction == BlackoutRoleManager.Faction.BAD;
+
+            // 好人路径需要警察职业池；杀手路径不转职，无需职业
+            io.wifi.starrailexpress.api.SRERole policeRole = null;
+            if (!targetIsKiller) {
+                policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
+                if (policeRole == null) {
+                    return Component.literal("§c当前警察职业池为空");
+                }
+            }
+
+            // ===== 成功流程 =====
+            shop.addToBalance(-HIRE_COST);
+            state.hasHired.add(initiator.getUUID());
+
+            if (targetIsKiller) {
+                // 杀手：保留原身份与 BAD 计数，仅加入 sheriffs 特权集
+                BlackoutRoleManager.setSheriff(level, targetId);
+
+                // 奖励 200 金
+                var targetShop = SREPlayerShopComponent.KEY.get(target);
+                if (targetShop != null) {
+                    targetShop.addToBalance(KILLER_HIT_REWARD);
+                }
+
+                // 一次性手枪
+                giveOnceRevolver(target);
+
+                SubtitleNotifier.sendTop(target, Component.empty(),
+                        Component.literal("§c你被举报调查，但身份未暴露。获得 " + KILLER_HIT_REWARD + " 金币与一次性手枪。"),
+                        80);
+
+                LOGGER.info("[PoliceHire] {} hired -> killer {} kept identity + once_revolver + {}",
+                        initiator.getName().getString(), target.getName().getString(), KILLER_HIT_REWARD);
+            } else {
+                // 好人：转警察，强制 GOOD 阵营
+                BlackoutRoleManager.setSheriff(level, targetId, policeRole, BlackoutRoleManager.Faction.GOOD);
+
+                ServerPlayNetworking.send(target, new BlackoutAnnouncePayload(
+                        policeRole.getName().getString(),
+                        policeRole.getDescription().getString(),
+                        policeRole.getGoal().getString(),
+                        BlackoutRoleManager.getRemainingBad(level),
+                        BlackoutRoleManager.getRemainingGood(level)
+                ));
+
+                LOGGER.info("[PoliceHire] {} hired police -> {} (role={})",
+                        initiator.getName().getString(), target.getName().getString(),
+                        policeRole.getIdentifier());
+            }
+
+            // 全图顶部通报（对外统一口径，不暴露杀手是否被抽中）
+            String initName = initiator.getName().getString();
+            String targetName = target.getName().getString();
+            Component notify = Component.literal("§e收到 §b" + initName + " §e举报，§b" + targetName + " §e警长前来调查");
+            for (ServerPlayer player : level.players()) {
+                SubtitleNotifier.sendTop(player, Component.empty(), notify, 80);
+            }
+
+            return null; // success
         }
+    }
 
-        // 4. 金币余额
-        var shop = SREPlayerShopComponent.KEY.get(initiator);
-        if (shop == null || shop.balance < HIRE_COST) {
-            return Component.literal("§c话费不足，需要 " + HIRE_COST + " 金币");
+    private static void giveOnceRevolver(ServerPlayer target) {
+        var item = BuiltInRegistries.ITEM.get(ONCE_REVOLVER_ID);
+        if (item == null || item == net.minecraft.world.item.Items.AIR) {
+            LOGGER.warn("[PoliceHire] noellesroles:once_revolver missing, skip gun grant for {} (gold reward still applied)",
+                    target.getName().getString());
+            return;
         }
-
-        // 5. 杀手阵营人数
-        int killerCount = BlackoutRoleManager.getRemainingBad(level);
-        if (killerCount <= 0) {
-            return Component.literal("§c当前没有杀手，无需聘请警察");
+        ItemStack gun = new ItemStack(item, 1);
+        if (!target.getInventory().add(gun)) {
+            target.drop(gun, false);
         }
-
-        // 6. 警察不超杀手
-        int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
-        if (sheriffCount + 1 > killerCount) {
-            return Component.literal("§c当前警力已足够，无法继续聘请");
-        }
-
-        // 7. 随机警察职业
-        Random random = new Random(level.getRandom().nextLong());
-        var policeRole = BlackoutRoleManager.getRandomPoliceRole(random);
-        if (policeRole == null) {
-            return Component.literal("§c当前警察职业池为空");
-        }
-
-        // 8. 候选好人
-        UUID targetId = BlackoutRoleManager.getRandomGoodNonSheriff(level, random);
-        if (targetId == null) {
-            return Component.literal("§c当前没有可转职的好人");
-        }
-
-        // ===== 成功流程 =====
-        ServerPlayer target = level.getServer().getPlayerList().getPlayer(targetId);
-        if (target == null) {
-            return Component.literal("§c目标玩家已离线");
-        }
-
-        // 扣金币
-        shop.addToBalance(-HIRE_COST);
-
-        // 标记已雇佣
-        state.hasHired.add(initiator.getUUID());
-
-        // 转职
-        BlackoutRoleManager.setSheriff(level, targetId, policeRole, null);
-
-        // 给目标发送职业介绍
-        ServerPlayNetworking.send(target, new BlackoutAnnouncePayload(
-                policeRole.getName().getString(),
-                policeRole.getDescription().getString(),
-                policeRole.getGoal().getString(),
-                BlackoutRoleManager.getRemainingBad(level),
-                BlackoutRoleManager.getRemainingGood(level)
-        ));
-
-        // 全图顶部通报
-        String initName = initiator.getName().getString();
-        String targetName = target.getName().getString();
-        Component notify = Component.literal("§e收到 §b" + initName + " §e举报，§b" + targetName + " §e警长前来调查");
-        for (ServerPlayer player : level.players()) {
-            SubtitleNotifier.sendTop(player, Component.empty(), notify, 80);
-        }
-
-        LOGGER.info("[PoliceHire] {} hired police -> {} (role={})", initName, targetName,
-                policeRole.getIdentifier());
-
-        return null; // success
     }
 }

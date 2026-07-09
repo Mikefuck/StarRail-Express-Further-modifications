@@ -87,6 +87,7 @@ public class BlackoutMode implements GameMode {
                 () -> {});
         BlackoutPoliceHireService.reset(level);
         BlackoutExileVoteManager.reset(level);
+        BlackoutHornVoteHandler.clearAll();
         BlackoutShopService.resetRound(level);
         syncManager.onPreStart();
         syncManager.syncReset(level);
@@ -164,6 +165,7 @@ public class BlackoutMode implements GameMode {
         BlackoutSheriffVoteManager.reset(level);
         BlackoutPoliceHireService.cleanup(level);
         BlackoutExileVoteManager.reset(level);
+        BlackoutHornVoteHandler.clearAll();
         BlackoutTimerSystem.reset(level);
         BlackoutShopService.resetRound(level);
         BlackoutRoleManager.restoreVigilanteRoleMaxes();
