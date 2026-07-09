@@ -168,10 +168,6 @@ public class BetelTickEngine {
             return;
         }
 
-        if (currentLastEatTime > 0 && currentLastEatTime != data.lastKnownLastEatTime) {
-            data.lastKnownLastEatTime = currentLastEatTime;
-        }
-
         int betelAddictionStage = addiction.getAddictionStage();
         int betelWithdrawalSeverity = addiction.getWithdrawalSeverity();
         int betelWithdrawalValue = addiction.getWithdrawalValue();
@@ -207,15 +203,6 @@ public class BetelTickEngine {
         } catch (Exception e) {
         }
         return false;
-    }
-
-    public static void clearHechengTianxiaData(ServerPlayer player) {
-        try {
-            BetelNutAddictionComponent addiction = BetelNutEntityComponents.ADDICTION.get(player);
-            addiction.clearHechengTianxiaData(player);
-        } catch (Exception e) {
-            HabiTrainCore.LOGGER.error("清除合成天下槟榔数据失败", e);
-        }
     }
 
     private static void clearAddictionForPlayer(ServerPlayer player) {

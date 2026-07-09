@@ -61,5 +61,4 @@ class SheriffVoteBroadcaster {
         BlackoutSheriffVotePayload.broadcastToAll(level.getServer(), active, windowSeconds, totalSeconds, sheriffCount, entries);
     }
 
-    static void resetCache() { lastPayloadHash = 0; }
 }

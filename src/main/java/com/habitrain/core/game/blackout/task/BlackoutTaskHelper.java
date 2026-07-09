@@ -2,29 +2,15 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
-import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
-
-import java.util.HashSet;
-import java.util.Set;
 
 final class BlackoutTaskHelper {
-    private static final double DEFAULT_REACH = 5.0;
 
     static final int DEFAULT_GOLD_REWARD = 25;
     static final float DEFAULT_EMOTION_REWARD = 0.5f;
@@ -101,67 +87,5 @@ final class BlackoutTaskHelper {
             case RESTORE_POWER -> BlackoutTimerSystem.restorePower(level);
             case TRANSIENT -> BlackoutTimerSystem.triggerTransientBlackout(level);
         }
-    }
-
-    static boolean advanceOnLook(Player player, TaskInstance task) {
-        if (player == null || task == null || task.isFulfilled()) {
-            return false;
-        }
-
-        Set<Block> targets = resolveTargets(task.getDefinition());
-        if (targets.isEmpty() || task.getProgress() >= task.getMaxProgress()) {
-            return false;
-        }
-
-        Vec3 eyePos = player.getEyePosition();
-        Vec3 lookVec = player.getLookAngle();
-        Vec3 targetPos = eyePos.add(
-                lookVec.x * DEFAULT_REACH,
-                lookVec.y * DEFAULT_REACH,
-                lookVec.z * DEFAULT_REACH
-        );
-
-        BlockHitResult hitResult = player.level().clip(new ClipContext(
-                eyePos,
-                targetPos,
-                ClipContext.Block.OUTLINE,
-                ClipContext.Fluid.NONE,
-                player
-        ));
-        if (hitResult.getType() != HitResult.Type.BLOCK) {
-            return false;
-        }
-
-        Block lookedBlock = player.level().getBlockState(hitResult.getBlockPos()).getBlock();
-        if (!targets.contains(lookedBlock)) {
-            return false;
-        }
-
-        task.setProgress(Math.min(task.getProgress() + 1, task.getMaxProgress()));
-        return true;
-    }
-
-    private static Set<Block> resolveTargets(TaskDefinition def) {
-        Set<Block> targets = new HashSet<>();
-        if (def == null) {
-            return targets;
-        }
-
-        if (def.getScanBlocks() != null) {
-            targets.addAll(def.getScanBlocks());
-        }
-        if (def.getScanBlockIds() != null) {
-            for (String blockId : def.getScanBlockIds()) {
-                if (blockId == null || blockId.isBlank()) {
-                    continue;
-                }
-
-                Block resolved = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(blockId));
-                if (resolved != Blocks.AIR) {
-                    targets.add(resolved);
-                }
-            }
-        }
-        return targets;
     }
 }

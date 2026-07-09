@@ -188,21 +188,6 @@ public class BetelLeafHandler {
         activeHarvests.clear();
     }
 
-    /**
-     * 玩家是否正在采集中
-     */
-    public static boolean hasActiveHarvest(UUID playerUuid) {
-        return activeHarvests.containsKey(playerUuid);
-    }
-
-    /**
-     * 检查活跃采集是否在指定世界中
-     */
-    public static boolean hasActiveHarvestInWorld(UUID playerUuid, ResourceKey<Level> worldKey) {
-        HarvestTask task = activeHarvests.get(playerUuid);
-        return task != null && task.worldKey.equals(worldKey);
-    }
-
     private static boolean isBetelLeafBlock(Block block) {
         if (!blockChecked) {
             try {

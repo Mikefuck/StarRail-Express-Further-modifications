@@ -45,15 +45,13 @@ public class BlackoutTimerSystem {
         boolean initialized = false;
         Runnable onPermanentStart = null;
         Runnable onPermanentEnd = null;
-        Runnable onTimeWarning = null;
     }
 
-    public static void init(ServerLevel level, Runnable permanentStartCb, Runnable permanentEndCb, Runnable timeWarningCb) {
+    public static void init(ServerLevel level, Runnable permanentStartCb, Runnable permanentEndCb) {
         var s = new TimerState();
         s.initialized = true;
         s.onPermanentStart = permanentStartCb;
         s.onPermanentEnd = permanentEndCb;
-        s.onTimeWarning = timeWarningCb;
         instances.put(level.dimension(), s);
         LOGGER.info("BlackoutTimerSystem initialized for level {}: phase=NORMAL, {}s total, {}s blackout CD",
                 level.dimension().location(), TOTAL_TIME, FIRST_BLACKOUT_CD);
@@ -68,11 +66,6 @@ public class BlackoutTimerSystem {
         if (!s.initialized) return;
 
         s.totalTimeRemaining--;
-
-        if (s.totalTimeRemaining <= 60 && !s.warningSent) {
-            s.warningSent = true;
-            if (s.onTimeWarning != null) s.onTimeWarning.run();
-        }
 
         if (s.totalTimeRemaining <= 0) return;
 
@@ -203,12 +196,7 @@ public class BlackoutTimerSystem {
         var s = getOrCreate(level);
         return s.phase == Phase.FIRST_BLACKOUT || s.phase == Phase.SECOND_BLACKOUT;
     }
-    public static boolean isTransientBlackoutActive(ServerLevel level) { return getOrCreate(level).transientBlackoutActive; }
-    public static boolean isInMaintenance(ServerLevel level) { return getOrCreate(level).phase == Phase.MAINTENANCE; }
     public static boolean isTimeUp(ServerLevel level) { return getOrCreate(level).totalTimeRemaining <= 0; }
-
-    public static int getInitialBlackoutCD() { return FIRST_BLACKOUT_CD; }
-    public static int getInitialMaintenanceDuration() { return MAINTENANCE_DURATION; }
 
     private static void broadcast(ServerLevel level, String msg) {
         BlackoutMode.broadcast(level, msg);

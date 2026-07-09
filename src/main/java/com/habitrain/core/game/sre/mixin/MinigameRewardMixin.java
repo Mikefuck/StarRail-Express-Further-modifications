@@ -5,49 +5,17 @@ import com.habitrain.core.config.MinigameConfigEntry;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(targets = "io.wifi.starrailexpress.cca.SREPlayerMinigameTaskComponent", remap = false)
 public class MinigameRewardMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("MinigameReward");
-
-    private String habitrain$capturedMinigameId;
-    private ServerPlayer habitrain$capturedPlayer;
-
-    @ModifyArg(
-            method = "onMinigameBlockCompleted",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lio/wifi/starrailexpress/cca/SREPlayerMinigameTaskComponent;addTokens(I)V",
-                    remap = false
-            ),
-            index = 0
-    )
-    private int habitrain$overrideTokenReward(int originalReward) {
-        // 默认不替换 SRE token；自定义金币/情绪仍由 RETURN 注入发放
-        return originalReward;
-    }
-
-    @Inject(
-            method = "onMinigameBlockCompleted",
-            at = @At("HEAD"),
-            remap = false
-    )
-    private void habitrain$captureContext(ServerPlayer player,
-                                          net.minecraft.core.BlockPos pos,
-                                          int reward, String minigameId,
-                                          CallbackInfoReturnable<Boolean> cir) {
-        habitrain$capturedMinigameId = minigameId;
-        habitrain$capturedPlayer = player;
-    }
 
     @Inject(
             method = "onMinigameBlockCompleted",

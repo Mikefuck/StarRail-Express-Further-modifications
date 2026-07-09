@@ -90,9 +90,6 @@ public class MaintainPowerHandler {
         SlownessReapplyManager.clearAll();
     }
 
-    public static void tickCheck(Player player, TaskInstance task) {
-    }
-
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
                                                  BlockHitResult hitResult) {
         if (world.isClientSide()) return InteractionResult.PASS;

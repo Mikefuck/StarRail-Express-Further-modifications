@@ -41,8 +41,6 @@ public class FactionFilter {
         } else if (activeMode instanceof BlackoutMode) {
             forcedCategory = BlackoutMode.BLACKOUT_GOOD;
             currentIsFakeTask = false;
-        } else {
-            currentIsFakeTask = false;
         }
 
         return new FactionContext(forcedCategory, killerDualTask, isParallelCall, currentIsFakeTask, skipActiveTaskGuard, activeMode);

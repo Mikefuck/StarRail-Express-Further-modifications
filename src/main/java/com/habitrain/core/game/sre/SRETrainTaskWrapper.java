@@ -56,10 +56,8 @@ public class SRETrainTaskWrapper implements TrainTask {
         return custom != null ? custom : SREPlayerTaskComponent.Task.SLEEP;
     }
 
+    @Override
     public CompoundTag toNbt() {
-        CompoundTag nbt = instance.toNbt();
-        SREPlayerTaskComponent.Task t = getType();
-        nbt.putInt("type", t.ordinal());
-        return nbt;
+        return instance.toNbt();
     }
 }

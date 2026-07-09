@@ -48,10 +48,6 @@ public class BetelQuestState {
         return getPlayerData(uuid).hasFoodRestriction;
     }
 
-    public static void setFoodRestriction(UUID uuid, boolean restricted) {
-        getPlayerData(uuid).hasFoodRestriction = restricted;
-    }
-
     public static void resetEatenStatus(Player player) {
         if (player == null) return;
         PlayerBetelData data = getPlayerData(player.getUUID());
@@ -111,7 +107,6 @@ public class BetelQuestState {
         boolean hasBeenProcessed = false;
         boolean wasGameNotRunning = false;
         boolean wasSpectating = false;
-        long lastKnownLastEatTime = 0;
         long lastDetectedEatTime = 0;
         boolean hasEatenBetelNut = false;
         int betelNutsEatenThisGame = 0;

@@ -26,8 +26,4 @@ public class TaskEnumHelper {
         }
         return customTaskEnum;
     }
-
-    public static boolean isCustomTaskSupported() {
-        return getCustom() != null;
-    }
 }

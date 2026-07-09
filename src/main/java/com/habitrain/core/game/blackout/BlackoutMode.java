@@ -83,8 +83,7 @@ public class BlackoutMode implements GameMode {
         BlackoutSheriffVoteManager.reset(level);
         BlackoutTimerSystem.init(level,
                 () -> victoryChecker.triggerSREPermanentBlackout(currentLevel),
-                () -> victoryChecker.endSREBlackout(currentLevel),
-                () -> {});
+                () -> victoryChecker.endSREBlackout(currentLevel));
         BlackoutPoliceHireService.reset(level);
         BlackoutExileVoteManager.reset(level);
         BlackoutHornVoteHandler.clearAll();

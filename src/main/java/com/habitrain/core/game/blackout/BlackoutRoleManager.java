@@ -62,10 +62,6 @@ public class BlackoutRoleManager {
         return getOrCreate(level).factions.getOrDefault(playerId, Faction.GOOD);
     }
 
-    public static ResourceLocation getRoleId(ServerLevel level, UUID playerId) {
-        return getOrCreate(level).roles.get(playerId);
-    }
-
     public static boolean isAlive(ServerLevel level, UUID playerId) {
         return getOrCreate(level).roles.containsKey(playerId);
     }
@@ -155,10 +151,6 @@ public class BlackoutRoleManager {
         return getOrCreate(level).sheriffs.size();
     }
 
-    public static List<UUID> getAllSheriffs(ServerLevel level) {
-        return new ArrayList<>(getOrCreate(level).sheriffs);
-    }
-
     public static int getRemainingCount(ServerLevel level, Faction faction) {
         return (int) getOrCreate(level).factions.values().stream()
                 .filter(current -> current == faction)
@@ -179,36 +171,6 @@ public class BlackoutRoleManager {
 
     public static List<UUID> getAllAlive(ServerLevel level) {
         return new ArrayList<>(getOrCreate(level).roles.keySet());
-    }
-
-    /**
-     * 从当前存活、好人阵营、非警察的玩家中随机选择一个。
-     * 供电话雇佣警察时选择转职目标。
-     * @return 目标 UUID，如果没有合适候选人则 null
-     */
-    @org.jetbrains.annotations.Nullable
-    public static UUID getRandomGoodNonSheriff(ServerLevel level, java.util.Random random) {
-        return getRandomGoodNonSheriff(level, random, null);
-    }
-
-    /**
-     * 从当前存活、好人阵营、非警察的玩家中随机选择一个。
-     * @param excludeId 可选，排除的 UUID（用于禁止自雇）；null 表示不排除
-     * @return 目标 UUID，如果没有合适候选人则 null
-     */
-    @org.jetbrains.annotations.Nullable
-    public static UUID getRandomGoodNonSheriff(ServerLevel level, java.util.Random random,
-                                               @org.jetbrains.annotations.Nullable UUID excludeId) {
-        RoleState state = INSTANCES.get(level.dimension());
-        if (state == null) return null;
-        List<UUID> candidates = new ArrayList<>();
-        for (UUID id : state.roles.keySet()) {
-            if (excludeId != null && excludeId.equals(id)) continue;
-            if (!state.sheriffs.contains(id) && state.factions.get(id) == Faction.GOOD) {
-                candidates.add(id);
-            }
-        }
-        return candidates.isEmpty() ? null : candidates.get(random.nextInt(candidates.size()));
     }
 
     /**

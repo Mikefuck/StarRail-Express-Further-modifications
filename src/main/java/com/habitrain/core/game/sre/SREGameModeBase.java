@@ -156,10 +156,6 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     }
 
     /**
-     * 检查服务器上当前是否有任何 SRE 对局正在运行。
-     * 用于 JOIN 事件判断是否应将玩家加入队列。
-     */
-    /**
      * 检查服务器上当前是否有任何 SRE 对局正在运行（ACTIVE/STOPPING）。
      * 用于 JOIN 事件判断是否应将玩家加入队列。
      */

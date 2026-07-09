@@ -26,7 +26,6 @@ public class MaintainPowerTask {
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
             })
-            .onTick((player, task) -> MaintainPowerHandler.tickCheck(player, task))
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {

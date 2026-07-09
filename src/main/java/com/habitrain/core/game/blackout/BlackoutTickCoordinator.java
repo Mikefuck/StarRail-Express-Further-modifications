@@ -22,14 +22,6 @@ class BlackoutTickCoordinator {
         this.sheriffResolver = sheriffResolver;
     }
 
-    void onSreGameStarted(ServerLevel level) {
-        cachedSreActive = true;
-    }
-
-    void onSreGameEnded(ServerLevel level) {
-        cachedSreActive = false;
-    }
-
     void onPreStart() {
         tickAccumulator = 0;
         sreGameRunning = false;
