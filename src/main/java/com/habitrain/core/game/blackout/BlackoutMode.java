@@ -40,9 +40,8 @@ public class BlackoutMode implements GameMode {
 
     private final BlackoutSyncManager syncManager = new BlackoutSyncManager();
     private final BlackoutVictoryChecker victoryChecker = new BlackoutVictoryChecker(this, syncManager);
-    private final BlackoutSheriffResolver sheriffResolver = new BlackoutSheriffResolver();
     private final BlackoutTickCoordinator tickCoordinator =
-            new BlackoutTickCoordinator(this, victoryChecker, syncManager, sheriffResolver);
+            new BlackoutTickCoordinator(this, victoryChecker, syncManager);
 
     private static volatile BlackoutRoleManager.Faction lastWinningFaction = null;
 

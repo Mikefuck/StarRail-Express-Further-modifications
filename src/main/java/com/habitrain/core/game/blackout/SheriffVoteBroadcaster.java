@@ -11,28 +11,6 @@ import java.util.Map;
 import java.util.UUID;
 
 class SheriffVoteBroadcaster {
-    private static int lastPayloadHash = 0;
-
-    static void tickSecond(ServerLevel level, boolean active, int windowSeconds, int totalSeconds, int sheriffCount, List<UUID> candidateOrder, Map<UUID, List<UUID>> votesByVoter) {
-        if (!active) return;
-
-        int hash = computeHash(active, windowSeconds, candidateOrder, votesByVoter);
-        if (hash == lastPayloadHash) return;
-
-        lastPayloadHash = hash;
-        broadcast(level, active, windowSeconds, totalSeconds, sheriffCount, candidateOrder, votesByVoter);
-    }
-
-    private static int computeHash(boolean active, int windowSeconds, List<UUID> candidateOrder, Map<UUID, List<UUID>> votesByVoter) {
-        int h = active ? 1 : 0;
-        h = 31 * h + windowSeconds;
-        h = 31 * h + candidateOrder.hashCode();
-        for (Map.Entry<UUID, List<UUID>> e : votesByVoter.entrySet()) {
-            h = 31 * h + e.getKey().hashCode();
-            h = 31 * h + e.getValue().hashCode();
-        }
-        return h;
-    }
 
     static void broadcast(ServerLevel level, boolean active, int windowSeconds, int totalSeconds, int sheriffCount, List<UUID> candidateOrder, Map<UUID, List<UUID>> votesByVoter) {
         Map<UUID, Integer> voteCounts = new HashMap<>();

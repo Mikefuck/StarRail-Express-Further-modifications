@@ -7,19 +7,16 @@ class BlackoutTickCoordinator {
     private final BlackoutMode mode;
     private final BlackoutVictoryChecker victoryChecker;
     private final BlackoutSyncManager syncManager;
-    private final BlackoutSheriffResolver sheriffResolver;
 
     private int tickAccumulator = 0;
     private boolean sreGameRunning = false;
     private boolean cachedSreActive = false;
 
     BlackoutTickCoordinator(BlackoutMode mode, BlackoutVictoryChecker victoryChecker,
-                             BlackoutSyncManager syncManager,
-                             BlackoutSheriffResolver sheriffResolver) {
+                             BlackoutSyncManager syncManager) {
         this.mode = mode;
         this.victoryChecker = victoryChecker;
         this.syncManager = syncManager;
-        this.sheriffResolver = sheriffResolver;
     }
 
     void onPreStart() {
