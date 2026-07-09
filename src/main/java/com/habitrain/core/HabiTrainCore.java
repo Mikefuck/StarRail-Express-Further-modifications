@@ -133,9 +133,7 @@ public class HabiTrainCore implements ModInitializer {
 
         // 停电模式日常任务（7个，加入 BLACKOUT_GOOD 池，也自动成为坏人假任务池）
         com.habitrain.core.game.blackout.task.BlackoutEatTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutEatHandler.register();
         com.habitrain.core.game.blackout.task.BlackoutDrinkTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutDrinkHandler.register();
         com.habitrain.core.game.blackout.task.BlackoutSearchBackpackTask.register();
         com.habitrain.core.game.blackout.task.BlackoutBetelQuestTask.register();
         com.habitrain.core.game.blackout.task.BlackoutPetCatTask.register();

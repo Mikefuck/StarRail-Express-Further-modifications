@@ -104,8 +104,6 @@ public class GameLifecycleHandler {
             com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.clearAll();
             com.habitrain.core.game.blackout.task.SabotageWiringHandler.clearAll();
             // 清除停电日常任务的交互状态
-            com.habitrain.core.game.blackout.task.BlackoutEatHandler.clearAll();
-            com.habitrain.core.game.blackout.task.BlackoutDrinkHandler.clearAll();
 
             HabiTrainCore.LOGGER.info("游戏结束，已清除所有槟榔效果");
         }

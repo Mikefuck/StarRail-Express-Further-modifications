@@ -30,7 +30,6 @@ public class BlackoutEatTask {
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_eat");
                 }
             })
-            .onRemove((player, task) -> BlackoutEatHandler.clearState(player.getUUID()))
         );
     }
 }
