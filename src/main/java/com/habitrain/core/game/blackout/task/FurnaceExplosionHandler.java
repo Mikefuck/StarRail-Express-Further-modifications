@@ -208,9 +208,9 @@ public class FurnaceExplosionHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
-        SlownessReapplyManager.register(sp.serverLevel(), uuid,
-                2, ticks + 10,
-                ResourceLocation.parse("habitrain_core:furnace_explosion"));
+        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
+                new SlownessReapplyManager.EffectSpec(2, ticks + 10,
+                        ResourceLocation.parse("habitrain_core:furnace_explosion")));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;

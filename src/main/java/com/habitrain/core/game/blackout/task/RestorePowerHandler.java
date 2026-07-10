@@ -143,9 +143,9 @@ public class RestorePowerHandler {
         rs.slowUntilTick = tick + SLOW_TICKS;
         activeStates.put(uuid, rs);
 
-        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
-                2, SLOW_TICKS + 10,
-                ResourceLocation.parse("habitrain_core:restore_power"));
+        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
+                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
+                        ResourceLocation.parse("habitrain_core:restore_power")));
 
         return InteractionResult.FAIL;
     }
