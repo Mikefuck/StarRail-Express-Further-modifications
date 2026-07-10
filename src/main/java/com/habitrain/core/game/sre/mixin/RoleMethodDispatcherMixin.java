@@ -23,6 +23,11 @@ public class RoleMethodDispatcherMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleMethodDispatcherMixin");
 
+    /** 记录本次 callOnFinishQuest 是否被 HEAD 接管（已发自定义金 + cancel 原方法）。
+     *  TAIL 据此决定是否发自定义情绪：仅 HEAD 接管时才发，避免 progression==null 路径
+     *  与 SRE 原版情绪双发（P2-28）。 */
+    private static final ThreadLocal<Boolean> headHandled = ThreadLocal.withInitial(() -> false);
+
     @Shadow(remap = false)
     private static SRERole getCurrentRole(Player player) {
         throw new AssertionError("Shadowed");
@@ -54,6 +59,7 @@ public class RoleMethodDispatcherMixin {
     )
     private static void habitrain$beforeCallOnFinishQuest(Player player, String quest, int taskStreak,
                                                           boolean isParallelTask, CallbackInfo ci) {
+        headHandled.set(false);
         if (player == null || player.level() == null || player.level().isClientSide) return;
 
         TaskConfigEntry config = findConfigForQuest(quest);
@@ -68,6 +74,7 @@ public class RoleMethodDispatcherMixin {
             }
             try {
                 ci.cancel();
+                headHandled.set(true);
 
                 progression.onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
@@ -100,13 +107,15 @@ public class RoleMethodDispatcherMixin {
     )
     private static void habitrain$afterCallOnFinishQuest(Player player, String quest, int taskStreak,
                                                          boolean isParallelTask, CallbackInfo ci) {
-        if (player == null || player.level() == null || player.level().isClientSide) return;
-
-        TaskConfigEntry config = findConfigForQuest(quest);
-        if (config == null) return;
-
         try {
-            if (config.hasEmotionReward) {
+            if (player == null || player.level() == null || player.level().isClientSide) return;
+
+            TaskConfigEntry config = findConfigForQuest(quest);
+            if (config == null) return;
+
+            // 仅当 HEAD 已接管（cancel 了原方法、发了自定义金）时才发自定义情绪，
+            // 避免 progression==null 路径下 SRE 原版情绪 + 自定义情绪双发（P2-28）。
+            if (headHandled.get() && config.hasEmotionReward) {
                 var mood = SREPlayerMoodComponent.KEY.get(player);
                 if (mood != null) {
                     float actualReward = isParallelTask
@@ -119,6 +128,8 @@ public class RoleMethodDispatcherMixin {
             }
         } catch (Exception e) {
             LOGGER.error("[Reward] 发放自定义情绪奖励失败", e);
+        } finally {
+            headHandled.remove();
         }
     }
 }

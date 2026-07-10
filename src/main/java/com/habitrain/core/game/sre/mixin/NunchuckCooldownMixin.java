@@ -27,7 +27,7 @@ public class NunchuckCooldownMixin {
     )
     private static void habitrain$resetKillFlag(ServerPlayer attacker, Player target, int direction_,
                                                 CallbackInfo ci) {
-        killHappened.set(false);
+        killHappened.remove();
     }
 
     @Inject(
@@ -53,10 +53,14 @@ public class NunchuckCooldownMixin {
         if (!Boolean.TRUE.equals(killHappened.get())) {
             return;
         }
-        killHappened.set(false);
+        killHappened.remove();
 
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(attacker.level());
+            if (game == null) {
+                // 非 SRE 对局或 component 未附加：不设冷却（避免 NPE 被吞后冷却静默失效，P5-19）
+                return;
+            }
             var role = game.getRole(attacker);
             if (role == null || role.getRoleType() != KILLER_ROLE_TYPE) {
                 return;

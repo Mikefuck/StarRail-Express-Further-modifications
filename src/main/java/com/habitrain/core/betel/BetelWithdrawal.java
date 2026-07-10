@@ -28,4 +28,10 @@ public class BetelWithdrawal {
             player.removeEffect(MobEffects.DARKNESS);
         }
     }
+
+    /** 吃槟榔缓解戒断：记录缓解窗口，窗口到期后 effectState 自动回 NONE 以重新应用戒断效果（P2-9）。 */
+    public static void enterWithdrawalRelief(ServerPlayer player, BetelQuestState.PlayerBetelData data, long reliefTicks) {
+        data.effectState = BetelQuestState.EffectState.WITHDRAWAL_ACTIVE;
+        data.withdrawalReliefUntilTick = player.serverLevel().getGameTime() + reliefTicks;
+    }
 }

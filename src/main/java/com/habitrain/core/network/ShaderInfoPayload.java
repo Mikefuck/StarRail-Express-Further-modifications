@@ -1,6 +1,7 @@
 package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
@@ -44,7 +45,9 @@ public class ShaderInfoPayload implements CustomPacketPayload {
         public ShaderInfoPayload decode(ByteBuf buf) {
             int len = buf.readInt();
             if (len <= 0) return new ShaderInfoPayload("");
-            len = Math.min(len, MAX_STRING_LENGTH);
+            if (len > MAX_STRING_LENGTH) {
+                throw new DecoderException("ShaderInfo payload 过大: " + len + " > " + MAX_STRING_LENGTH);
+            }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8));

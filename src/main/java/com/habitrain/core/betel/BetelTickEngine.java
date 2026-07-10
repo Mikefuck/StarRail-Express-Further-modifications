@@ -126,7 +126,7 @@ public class BetelTickEngine {
         long currentGameTime = player.level().getGameTime();
 
         if (detectedEating) {
-            data.effectState = BetelQuestState.EffectState.WITHDRAWAL_ACTIVE;
+            BetelWithdrawal.enterWithdrawalRelief(player, data, 100);
             data.betelNutsEatenThisGame++;
             data.ownLastEatGameTime = currentGameTime;
 
@@ -222,6 +222,13 @@ public class BetelTickEngine {
             if (data.effectState == BetelQuestState.EffectState.DARKNESS_APPLIED) {
                 data.effectState = BetelQuestState.EffectState.NONE;
             }
+        }
+
+        // 戒断缓解窗口到期：重置 effectState 为 NONE，使后续 applyHeavyAddictionEffects 重新生效，
+        // 避免 stage>=3 玩家在缓解窗口后既无 slowness 也无 darkness 的空窗（P2-9）。
+        if (data.effectState == BetelQuestState.EffectState.WITHDRAWAL_ACTIVE
+                && player.serverLevel().getGameTime() >= data.withdrawalReliefUntilTick) {
+            data.effectState = BetelQuestState.EffectState.NONE;
         }
 
         if (betelAddictionStage >= 3) {

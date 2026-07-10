@@ -237,6 +237,9 @@ public class BetelQuestState {
          */
         EffectState effectState = EffectState.NONE;
 
+        /** 戒断缓解窗口到期 tick：effectState=WITHDRAWAL_ACTIVE 期间，超过此 tick 则重置为 NONE 以重新应用戒断效果。 */
+        public long withdrawalReliefUntilTick = 0;
+
         /**
          * 玩家是否因槟榔成瘾而无法吃普通食物（Stage >= 3 时激活）。
          * <p>写入点：{@link BetelTickEngine#tickPlayer} 达到 Stage 3 时设为 true。
