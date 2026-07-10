@@ -41,7 +41,7 @@ public class MinigameConfigEntry {
         for (String map : enabledMaps) enabledList.add(map);
         json.add("enabledMaps", enabledList);
 
-        if (mapFilterMode != 0) json.addProperty("mapFilterMode", mapFilterMode);
+        json.addProperty("mapFilterMode", mapFilterMode);
         json.addProperty("instinctColor", instinctColor);
         json.addProperty("outlineWidth", outlineWidth);
         if (hasGoldReward) json.addProperty("goldReward", goldReward);
@@ -60,9 +60,8 @@ public class MinigameConfigEntry {
         }
         if (json.has("mapFilterMode")) {
             entry.mapFilterMode = Math.max(0, Math.min(2, json.get("mapFilterMode").getAsInt()));
-        } else if (!entry.enabledMaps.isEmpty()) {
-            entry.mapFilterMode = 1;
         }
+        // 缺 mapFilterMode 时默认 0，不再隐式升级为白名单（同 TaskConfigEntry）。
         if (json.has("instinctColor")) entry.instinctColor = json.get("instinctColor").getAsInt();
         if (json.has("outlineWidth")) entry.outlineWidth = json.get("outlineWidth").getAsFloat();
         if (json.has("goldReward")) {

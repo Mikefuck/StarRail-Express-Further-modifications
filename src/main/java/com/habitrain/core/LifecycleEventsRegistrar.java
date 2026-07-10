@@ -41,6 +41,7 @@ public final class LifecycleEventsRegistrar {
         // 服务器启动后加载配置
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
+            ConfigManager.getInstance().setServer(server);
             ConfigManager.getInstance().applyMinigameEnforcement(server);
             // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
             // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
@@ -53,6 +54,7 @@ public final class LifecycleEventsRegistrar {
         // 不清理会导致下一局残留状态（计时器/角色/商店/投票）误用。
         // 注：fabric-api 此版本无 ServerLevelEvents.UNLOAD，故在 SERVER_STOPPING 遍历所有 level 清理。
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            ConfigManager.getInstance().setServer(null);
             for (ServerLevel level : server.getAllLevels()) {
                 if (GameModeRegistry.isActiveInLevel(level)) {
                     GameModeRegistry.stop(level);

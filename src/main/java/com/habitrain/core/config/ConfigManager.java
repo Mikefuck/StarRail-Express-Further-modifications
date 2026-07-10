@@ -18,6 +18,7 @@ public class ConfigManager implements ConfigQueryService {
     private final ConfigStore store;
     private final ConfigSync sync;
     private final MinigameEnforcement enforcement;
+    private volatile MinecraftServer currentServer;
 
     public static void setOnSaveCallback(@Nullable Runnable callback) {
         getInstance().repository.setOnSaveCallback(callback);
@@ -39,6 +40,11 @@ public class ConfigManager implements ConfigQueryService {
             }
         }
         return INSTANCE;
+    }
+
+    /** 由 LifecycleEventsRegistrar 在 SERVER_STARTED 注入，供运行时改 minigame 配置后 re-enforce。 */
+    public void setServer(@Nullable MinecraftServer server) {
+        this.currentServer = server;
     }
 
     public void load() {
@@ -90,6 +96,8 @@ public class ConfigManager implements ConfigQueryService {
 
     public void putTaskConfig(String fullId, TaskConfigEntry entry) {
         repository.putTaskConfig(fullId, entry);
+        store.markDirty();
+        TaskPoolBuilder.invalidateAll();
     }
 
     public Map<String, TaskConfigEntry> getAllConfigs() {
@@ -163,6 +171,11 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
     }
 
+    public void mergeFromJsonString(String json) {
+        sync.mergeFromJsonString(repository, json);
+        store.markDirty();
+    }
+
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
         sync.applySyncData(repository, configs, target);
     }
@@ -205,10 +218,13 @@ public class ConfigManager implements ConfigQueryService {
     public void setMinigameConfig(String minigameId, MinigameConfigEntry entry) {
         repository.setMinigameConfig(minigameId, entry);
         store.markDirty();
+        if (currentServer != null) applyMinigameEnforcement(currentServer);
     }
 
     public void putMinigameConfig(String minigameId, MinigameConfigEntry entry) {
         repository.putMinigameConfig(minigameId, entry);
+        store.markDirty();
+        if (currentServer != null) applyMinigameEnforcement(currentServer);
     }
 
     public Map<String, MinigameConfigEntry> getAllMinigameConfigs() {

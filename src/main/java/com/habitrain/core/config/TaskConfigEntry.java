@@ -47,7 +47,7 @@ public class TaskConfigEntry {
         for (String map : enabledMaps) enabledList.add(map);
         json.add("enabledMaps", enabledList);
 
-        if (mapFilterMode != 0) json.addProperty("mapFilterMode", mapFilterMode);
+        json.addProperty("mapFilterMode", mapFilterMode);
         json.addProperty("instinctColor", instinctColor);
         json.addProperty("outlineWidth", outlineWidth);
         if (hasGoldReward) json.addProperty("goldReward", goldReward);
@@ -67,9 +67,9 @@ public class TaskConfigEntry {
         }
         if (json.has("mapFilterMode")) {
             entry.mapFilterMode = Math.max(0, Math.min(2, json.get("mapFilterMode").getAsInt()));
-        } else if (!entry.enabledMaps.isEmpty()) {
-            entry.mapFilterMode = 1;
         }
+        // 缺 mapFilterMode 时默认 0（全部允许），不再因 enabledMaps 非空隐式升级为白名单（mode=1）。
+        // mode=0 下 enabledMaps 仅作信息记录、不影响启用判断（见 ConfigManager.isMapAllowed）。
         if (json.has("disabledMaps")) {
             var arr = json.getAsJsonArray("disabledMaps");
             if (arr.size() > 0) {

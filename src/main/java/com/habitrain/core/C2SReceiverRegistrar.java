@@ -34,14 +34,14 @@ public final class C2SReceiverRegistrar {
                     player.sendSystemMessage(Component.literal("§c你没有权限修改服务端配置（需要 OP 权限）"));
                     return;
                 }
-                ConfigManager.getInstance().loadFromJsonString(payload.getConfigJson());
+                // merge 语义：仅覆盖 OP 客户端发送的条目，不删除客户端视图缺失的服务端独有条目（P5-36）
+                ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
                 if (context.server().isSingleplayer()) return;
-                TaskConfigPayload.broadcastToAll(context.server());
-                ShaderConfigPayload.broadcastToAll(context.server());
-                // 广播完整配置，让所有客户端的全局项同步到服务端最新值。
+                // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
+                // 单独的 TaskConfigPayload / ShaderConfigPayload 广播冗余，去掉（P1-16）。
                 FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });

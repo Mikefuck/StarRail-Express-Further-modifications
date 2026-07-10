@@ -41,9 +41,13 @@ public class ConfigStore {
      */
     public boolean commit(ConfigRepository repo) {
         if (!dirty) return false;
-        dirty = false;
-        save(repo);
-        return true;
+        boolean saved = save(repo);
+        if (saved) {
+            dirty = false;
+            return true;
+        }
+        // save 失败：保留 dirty，下次 commit 重试，避免改动永久丢失
+        return false;
     }
 
     public void load(ConfigRepository repo) {
@@ -160,7 +164,11 @@ public class ConfigStore {
         }
     }
 
-    public void save(ConfigRepository repo) {
+    /**
+     * @return true 写盘成功；false 失败（含 IO 与 buildJsonRoot 抛出的 RuntimeException），
+     *         调用方据此决定是否保留 dirty flag（见 commit）。
+     */
+    public boolean save(ConfigRepository repo) {
         try {
             if (!configFile.getParentFile().exists()) {
                 configFile.getParentFile().mkdirs();
@@ -171,8 +179,12 @@ public class ConfigStore {
             try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(configFile), StandardCharsets.UTF_8)) {
                 gson.toJson(root, writer);
             }
-        } catch (IOException e) {
+            return true;
+        } catch (Exception e) {
+            // 同时捕获 IOException 与 buildJsonRoot 抛出的 RuntimeException，
+            // 避免非 IO 异常传出后 commit 已清 dirty 导致改动永久丢失。
             LOGGER.error("保存配置失败", e);
+            return false;
         }
     }
 
