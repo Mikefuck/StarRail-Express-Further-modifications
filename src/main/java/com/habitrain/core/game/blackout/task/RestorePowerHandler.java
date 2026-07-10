@@ -62,8 +62,14 @@ public class RestorePowerHandler {
                     continue;
                 }
 
+                // sp 可能为 null（玩家在 onUseBlock 注册 slow 后、本 tick 前离线）；
+                // restoreCompleted 按 level 维度记录，玩家离线时无法取其维度 → 直接清理本条目。
+                if (sp == null) {
+                    it.remove();
+                    continue;
+                }
                 if (restoreCompleted.getOrDefault(sp.serverLevel().dimension(), false)) {
-                    if (sp != null) sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     it.remove();
                     continue;
                 }
@@ -137,9 +143,9 @@ public class RestorePowerHandler {
         rs.slowUntilTick = tick + SLOW_TICKS;
         activeStates.put(uuid, rs);
 
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:restore_power")));
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, SLOW_TICKS + 10,
+                ResourceLocation.parse("habitrain_core:restore_power"));
 
         return InteractionResult.FAIL;
     }

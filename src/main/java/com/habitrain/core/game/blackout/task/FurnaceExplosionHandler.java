@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -74,21 +75,26 @@ public class FurnaceExplosionHandler {
 
             // 检查延迟点燃 TNT 队列
             if (!pendingExplosions.isEmpty()) {
-                ServerLevel overworld = server.overworld();
                 for (Iterator<Map.Entry<UUID, PendingExplosion>> it =
                      pendingExplosions.entrySet().iterator(); it.hasNext(); ) {
                     var entry = it.next();
                     PendingExplosion pe = entry.getValue();
                     if (tick >= pe.triggerTick) {
-                        // 执行爆炸
-                        BlockPos pos = pe.targetPos;
-                        if (overworld.getBlockState(pos).is(Blocks.TNT)) {
-                            overworld.destroyBlock(pos, false);
+                        // 按玩家点燃 TNT 时所在维度执行爆炸，避免炸错世界（P0-2）
+                        ServerLevel level = server.getLevel(pe.dimension);
+                        if (level == null) {
+                            // 维度已卸载：放弃本次爆炸，清理条目
+                            it.remove();
+                            continue;
                         }
-                        overworld.explode(null,
+                        BlockPos pos = pe.targetPos;
+                        if (level.getBlockState(pos).is(Blocks.TNT)) {
+                            level.destroyBlock(pos, false);
+                        }
+                        level.explode(null,
                                 pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
                                 4.0f, Level.ExplosionInteraction.BLOCK);
-                        BlackoutMode.broadcast(overworld, "§c⚡ 发电机被摧毁！");
+                        BlackoutMode.broadcast(level, "§c⚡ 发电机被摧毁！");
                         it.remove();
                     }
                 }
@@ -189,7 +195,7 @@ public class FurnaceExplosionHandler {
 
             // 调度延迟 2 秒点燃 TNT
             long triggerTick = serverPlayer.serverLevel().getServer().overworld().getGameTime() + FUSE_DELAY_TICKS;
-            pendingExplosions.put(uuid, new PendingExplosion(pos, triggerTick));
+            pendingExplosions.put(uuid, new PendingExplosion(pos, triggerTick, serverPlayer.serverLevel().dimension()));
 
             SubtitleNotifier.sendTop(serverPlayer,
                     Component.translatable("task.furnace_explosion"),
@@ -202,9 +208,9 @@ public class FurnaceExplosionHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
-        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
-                new SlownessReapplyManager.EffectSpec(2, ticks + 10,
-                        ResourceLocation.parse("habitrain_core:furnace_explosion")));
+        SlownessReapplyManager.register(sp.serverLevel(), uuid,
+                2, ticks + 10,
+                ResourceLocation.parse("habitrain_core:furnace_explosion"));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;
@@ -220,10 +226,12 @@ public class FurnaceExplosionHandler {
     private static final class PendingExplosion {
         final BlockPos targetPos;
         final long triggerTick;
+        final ResourceKey<Level> dimension;
 
-        PendingExplosion(BlockPos targetPos, long triggerTick) {
+        PendingExplosion(BlockPos targetPos, long triggerTick, ResourceKey<Level> dimension) {
             this.targetPos = targetPos;
             this.triggerTick = triggerTick;
+            this.dimension = dimension;
         }
     }
 }

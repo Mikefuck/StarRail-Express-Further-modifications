@@ -86,9 +86,20 @@ public class BackpackSearchHandler {
                         ServerPlayer stuckPlayer = server.getPlayerList().getPlayer(uuid);
                         if (stuckPlayer != null) {
                             com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(stuckPlayer, stuckTask);
+                            // 走标准 onRemove（与 PerPlayerTaskTicker.handleMainTaskDone 失败分支一致），
+                            // 让任务定义有机会做自身清理。
+                            try {
+                                stuckTask.getDefinition().onRemove(stuckPlayer, stuckTask);
+                            } catch (Exception ex) {
+                                HabiTrainCore.LOGGER.error("search_backpack 超时 onRemove 失败", ex);
+                            }
                         }
                         stuckTask.markFailed();
                         mgr.removeActiveTask(uuid);
+                        // 通知客户端清除活动任务 HUD/方块高亮，避免陈旧活动任务残留到下局
+                        if (stuckPlayer != null) {
+                            com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(stuckPlayer);
+                        }
                     }
                     continue;
                 }
@@ -158,10 +169,11 @@ public class BackpackSearchHandler {
             return InteractionResult.FAIL;
         }
 
-        // 给予缓慢3效果（时长按任务版本：谋杀6秒 / 停电3秒，+10 tick缓冲）
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, searchTicks + 10,
-                        ResourceLocation.parse(taskKey)));
+        // 给予缓慢3效果（时长按任务版本：谋杀6秒 / 停电3秒，+10 tick缓冲）；到期自动 unregister
+        int slowDuration = searchTicks + 10;
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, slowDuration,
+                ResourceLocation.parse(taskKey));
 
         // 记录翻找状态（onTick 会据此递增任务进度）
         // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差
