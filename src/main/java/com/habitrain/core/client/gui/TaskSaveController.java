@@ -19,12 +19,18 @@ public class TaskSaveController {
     }
 
     public void syncFields(EditBox goldField, EditBox emotionField, EditBox weightField, EditBox mapField) {
-        String raw = mapField != null ? mapField.getValue() : "";
-        cfg.enabledMaps = TaskMapFilterEditor.parseMapList(raw);
-        parseNumFields(goldField, emotionField, weightField);
+        syncFields(goldField, emotionField, weightField, null, mapField);
     }
 
-    private void parseNumFields(EditBox goldField, EditBox emotionField, EditBox weightField) {
+    public void syncFields(EditBox goldField, EditBox emotionField, EditBox weightField,
+                            EditBox shopPriceField, EditBox mapField) {
+        String raw = mapField != null ? mapField.getValue() : "";
+        cfg.enabledMaps = TaskMapFilterEditor.parseMapList(raw);
+        parseNumFields(goldField, emotionField, weightField, shopPriceField);
+    }
+
+    private void parseNumFields(EditBox goldField, EditBox emotionField, EditBox weightField,
+                                EditBox shopPriceField) {
         try {
             String v = goldField.getValue().trim();
             cfg.hasGoldReward = !v.isEmpty();
@@ -40,6 +46,13 @@ public class TaskSaveController {
             cfg.hasRefreshWeight = !v.isEmpty();
             cfg.refreshWeight = v.isEmpty() ? 0f : Float.parseFloat(v);
         } catch (NumberFormatException ignored) {}
+        if (shopPriceField != null) {
+            try {
+                String v = shopPriceField.getValue().trim();
+                cfg.hasShopPrice = !v.isEmpty();
+                cfg.shopPrice = v.isEmpty() ? 0 : Math.max(0, Integer.parseInt(v));
+            } catch (NumberFormatException ignored) {}
+        }
     }
 
     public void resetDefault() {
@@ -55,6 +68,8 @@ public class TaskSaveController {
         cfg.emotionReward = 0f;
         cfg.hasRefreshWeight = false;
         cfg.refreshWeight = 0f;
+        cfg.hasShopPrice = false;
+        cfg.shopPrice = 0;
         saveCurrent();
     }
 

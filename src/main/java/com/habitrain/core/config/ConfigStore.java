@@ -97,6 +97,11 @@ public class ConfigStore {
                     if (div > 0) repo.setSheriffCountDivisor(div);
                 }
 
+                if (global.has("tempPowerPrice")) {
+                    int price = global.get("tempPowerPrice").getAsInt();
+                    if (price >= 0) repo.setTempPowerPrice(price);
+                }
+
                 LOGGER.info("全局设置: DLC目标占比={}%, 光影白名单={}, 允许{}个光影, 警长除数={}",
                         Math.round(repo.getDlcProbabilityTarget() * 100),
                         repo.isShaderWhitelistEnabled() ? "启用" : "禁用",
@@ -184,6 +189,7 @@ public class ConfigStore {
         for (String name : repo.getShaderWhitelist()) whitelistArray.add(name);
         global.add("shaderWhitelist", whitelistArray);
         global.addProperty("sheriffCountDivisor", repo.getSheriffCountDivisor());
+        global.addProperty("tempPowerPrice", repo.getTempPowerPrice());
         root.add("global", global);
 
         JsonObject tasks = new JsonObject();

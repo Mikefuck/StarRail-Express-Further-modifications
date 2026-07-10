@@ -30,7 +30,7 @@ import java.util.UUID;
 
 public class RestorePowerHandler {
 
-    private static final int SLOW_TICKS = 120;
+    private static final int SLOW_TICKS = 60;
     private static final Map<UUID, RestoreState> activeStates = new HashMap<>();
     /** per-level: true 表示该维度下 restore_power 已完成，停电已恢复 */
     private static final Map<ResourceKey<Level>, Boolean> restoreCompleted = new HashMap<>();

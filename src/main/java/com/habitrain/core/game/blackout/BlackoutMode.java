@@ -18,6 +18,8 @@ import java.util.Set;
 public class BlackoutMode implements GameMode {
 
     public static final String MODE_ID = "habitrain:blackout";
+    /** GameModeRegistry 完整 ID：modId + ":" + modeId */
+    public static final String REGISTRY_FULL_ID = "habitrain_core:habitrain:blackout";
     public static final String MODE_DISPLAY = "停电模式";
 
     public static final TaskCategory BLACKOUT_GOOD =
@@ -31,6 +33,8 @@ public class BlackoutMode implements GameMode {
     private ServerLevel currentLevel;
     private boolean gameEnded = false;
     private String pendingEndMessage = null;
+    /** 供 finalize 延后 GameModeRegistry.stop 使用的结算结果。 */
+    private WinResult pendingWinResult = null;
 
     private final Set<String> assignedOncePerGameTasks = new HashSet<>();
 
@@ -49,6 +53,9 @@ public class BlackoutMode implements GameMode {
     void setGameEnded(boolean v) { gameEnded = v; }
     void setPendingEndMessage(String m) { pendingEndMessage = m; }
     void setLastWinningFaction(BlackoutRoleManager.Faction f) { lastWinningFaction = f; }
+    void setPendingWinResult(WinResult r) { pendingWinResult = r; }
+
+    public WinResult getPendingWinResult() { return pendingWinResult; }
 
     /** 供放逐投票调用：结算后立即检查胜负条件 */
     void checkVictoryAfterExile(ServerLevel level) {
@@ -74,6 +81,7 @@ public class BlackoutMode implements GameMode {
         currentLevel = level;
         gameEnded = false;
         pendingEndMessage = null;
+        pendingWinResult = null;
         lastWinningFaction = null;
         assignedOncePerGameTasks.clear();
 
@@ -86,6 +94,7 @@ public class BlackoutMode implements GameMode {
         BlackoutExileVoteManager.reset(level);
         BlackoutHornVoteHandler.clearAll();
         BlackoutShopService.resetRound(level);
+        com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.reset(level);
         syncManager.onPreStart();
         syncManager.syncReset(level);
         tickCoordinator.onPreStart();
@@ -141,9 +150,11 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
-        String message = pendingEndMessage != null ? pendingEndMessage : "结束对局";
-        syncManager.broadcast(level, message);
-        pendingEndMessage = null;
+        // 结束字幕若尚未在 endGame 提前广播，则在此补发
+        if (pendingEndMessage != null) {
+            syncManager.broadcast(level, pendingEndMessage);
+            pendingEndMessage = null;
+        }
         syncManager.syncReset(level);
         currentLevel = null;
     }
@@ -157,27 +168,28 @@ public class BlackoutMode implements GameMode {
         BlackoutHornVoteHandler.clearAll();
         BlackoutTimerSystem.reset(level);
         BlackoutShopService.resetRound(level);
+        com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.cleanup(level);
         BlackoutRoleManager.restoreVigilanteRoleMaxes();
+        // roleHistory / factionHistory 保留到下一局 onPreStart 的 clear，
+        // 以便 SRE finalize 阶段仍可读取结算身份。
         currentLevel = null;
         gameEnded = false;
         pendingEndMessage = null;
+        pendingWinResult = null;
     }
 
+    /**
+     * 停电模式任务系统独立化：专属任务（BLACKOUT_GOOD / BLACKOUT_BAD）不再自动派发，
+     * 仅通过红色电话商店购买或炸毁发电机后强制派发恢复供电。此处将专属任务从自动
+     * 派发池中排除，让原版 SRE 任务（吃/喝/外出/修线镜等）正常进入池子。
+     */
     @Override
     public List<TaskDefinition> filterAvailableTasks(List<TaskDefinition> tasks, ServerPlayer player) {
         return tasks.stream()
                 .filter(t -> {
                     TaskCategory cat = t.getCategory();
-                    return BLACKOUT_GOOD.equals(cat) || BLACKOUT_BAD.equals(cat);
-                })
-                .filter(t -> {
-                    if (ONCE_PER_GAME_TASK_IDS.contains(t.getFullId())
-                            && assignedOncePerGameTasks.contains(t.getFullId())) {
-                        HabiTrainCore.LOGGER.debug("[Blackout] Excluding once-per-game task {} (already assigned this round)",
-                                t.getFullId());
-                        return false;
-                    }
-                    return true;
+                    // 排除停电专属任务（电话购买/强制派发，不走自动池）
+                    return !BLACKOUT_GOOD.equals(cat) && !BLACKOUT_BAD.equals(cat);
                 })
                 .toList();
     }
@@ -205,6 +217,16 @@ public class BlackoutMode implements GameMode {
         var component = net.minecraft.network.chat.Component.literal(message);
         for (ServerPlayer player : level.players()) {
             com.habitrain.core.util.SubtitleNotifier.sendTop(player, net.minecraft.network.chat.Component.empty(), component, 80);
+        }
+    }
+
+    /**
+     * 强制派发恢复供电给所有存活好人（包可见委托，供炸毁发电机路径调用）。
+     * 仅当当前激活的模式是本 BlackoutMode 实例时生效。
+     */
+    public void forceAssignRestorePower(ServerLevel level) {
+        if (currentLevel != null && currentLevel.dimension().equals(level.dimension())) {
+            victoryChecker.forceAssignRestorePowerToAllGood(level);
         }
     }
 }

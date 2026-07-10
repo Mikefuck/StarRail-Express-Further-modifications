@@ -58,6 +58,9 @@ class BlackoutTickCoordinator {
 
             victoryChecker.tickSecond(level);
 
+            // 临时电源提灯到期回收（每秒检查一次足够）
+            com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.tickTempPower(level);
+
             if (mode.getCurrentLevel() == null || mode.isGameEnded()) return;
 
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive(level)) {

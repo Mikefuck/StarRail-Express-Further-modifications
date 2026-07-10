@@ -2,7 +2,6 @@ package com.habitrain.core;
 
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -85,8 +84,6 @@ public class LootHelper {
                             initialCooldown, initialCooldown / 20, roleType);
                 }
 
-                player.displayClientMessage(
-                    Component.literal("§e你从背包中翻找到了: ").append(stack.getHoverName()), true);
                 LOGGER.info("玩家 {} 翻找背包获得: {} (阵营类型: {})",
                     player.getName().getString(), itemId, roleType);
                 return stack;

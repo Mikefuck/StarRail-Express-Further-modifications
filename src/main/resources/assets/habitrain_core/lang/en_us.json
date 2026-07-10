@@ -9,8 +9,9 @@
     "task.add_coal":  "Add Coal",
     "task.repair_wiring":  "Repair Wiring",
     "task.sabotage_wiring":  "Sabotage Wiring",
-    "task.furnace_explosion":  "Furnace Explosion",
+    "task.furnace_explosion":  "Destroy Generator",
     "task.maintain_power":  "Maintain Power",
+    "task.restore_power":  "Restore Power",
     "death_reason.habitrain_core.sanity_collapse":  "Sanity Collapse",
     "death_reason.habitrain_core.exile_vote":  "Exiled"
 }

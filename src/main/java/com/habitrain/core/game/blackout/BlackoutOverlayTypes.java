@@ -15,9 +15,12 @@ public final class BlackoutOverlayTypes {
     public static final int STREET_PHONE = 90;
     /** trainmurdermystery:horn 方块在透视缓存中的 typeId */
     public static final int HORN = 91;
+    /** decocraft:rotary_phone_red 方块在透视缓存中的 typeId（红色电话任务商店，仅停电模式常驻透视） */
+    public static final int ROTARY_PHONE_RED = 92;
 
     private static Block cachedStreetPhone = null;
     private static Block cachedHorn = null;
+    private static Block cachedRotaryPhoneRed = null;
 
     /** 获取 yuushya:street_phone 方块实例（缓存版） */
     public static Block getStreetPhoneBlock() {
@@ -35,6 +38,15 @@ public final class BlackoutOverlayTypes {
                     ResourceLocation.parse("trainmurdermystery:horn"));
         }
         return cachedHorn;
+    }
+
+    /** 获取 decocraft:rotary_phone_red 方块实例（缓存版） */
+    public static Block getRotaryPhoneRedBlock() {
+        if (cachedRotaryPhoneRed == null || cachedRotaryPhoneRed == Blocks.AIR) {
+            cachedRotaryPhoneRed = BuiltInRegistries.BLOCK.get(
+                    ResourceLocation.parse("decocraft:rotary_phone_red"));
+        }
+        return cachedRotaryPhoneRed;
     }
 
     private BlackoutOverlayTypes() {}

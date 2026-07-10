@@ -26,6 +26,7 @@ public class ConfigSync {
             float newDlcTarget = 0.5f;
             boolean newShaderEnabled = false;
             int newSheriffDivisor = 6;
+            int newTempPowerPrice = 100;
             boolean newMgGlobal = true;
 
             if (root.has("global")) {
@@ -47,6 +48,10 @@ public class ConfigSync {
                 if (global.has("sheriffCountDivisor")) {
                     int div = global.get("sheriffCountDivisor").getAsInt();
                     if (div > 0) newSheriffDivisor = div;
+                }
+                if (global.has("tempPowerPrice")) {
+                    int price = global.get("tempPowerPrice").getAsInt();
+                    if (price >= 0) newTempPowerPrice = price;
                 }
             }
 
@@ -91,6 +96,7 @@ public class ConfigSync {
             repo.getShaderWhitelist().clear();
             repo.getShaderWhitelist().addAll(newShaderWhitelist);
             repo.setSheriffCountDivisor(newSheriffDivisor);
+            repo.setTempPowerPrice(newTempPowerPrice);
             repo.setMinigameGlobalEnabled(newMgGlobal);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);

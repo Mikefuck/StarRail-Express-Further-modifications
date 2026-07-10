@@ -65,4 +65,10 @@ public final class PayloadSenders {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, null));
     }
+
+    /** 从客户端发送停电任务商店购买请求。 */
+    public static void sendTaskShopBuy(String entryKey) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutTaskShopBuyPayload(entryKey));
+    }
 }

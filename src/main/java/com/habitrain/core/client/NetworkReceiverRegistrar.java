@@ -6,6 +6,7 @@ import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutPhoneHireScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
+import com.habitrain.core.client.gui.BlackoutTaskShopScreen;
 import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
@@ -24,7 +25,6 @@ import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
-import com.habitrain.core.network.VotePurpose;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -169,14 +169,32 @@ public class NetworkReceiverRegistrar {
         ClientPlayNetworking.registerGlobalReceiver(BlackoutVotePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 BlackoutVoteState.update(payload);
+                // Tip-only UX: never auto-open the vote screen (1Hz rebroadcast would re-force it).
+                // Player opens via keybind; close only when vote ends if screen is open.
                 if (!payload.active() && ctx.client().screen instanceof BlackoutVoteScreen) {
                     ctx.client().setScreen(null);
                 }
-                if (payload.active() && VotePurpose.EXILE.equals(payload.purpose())) {
-                    // 放逐投票自动打开 GUI（如果当前不在其他 screen）
-                    if (!(ctx.client().screen instanceof BlackoutVoteScreen) && ctx.client().screen == null) {
-                        ctx.client().setScreen(new BlackoutVoteScreen(null));
-                    }
+            });
+        });
+
+        // 12) 停电任务商店打开 S2C 接收器
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutTaskShopOpenPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                if (ctx.client().screen instanceof BlackoutTaskShopScreen shopScreen) {
+                    shopScreen.updateState(payload);
+                } else {
+                    BlackoutTaskShopScreen screen = new BlackoutTaskShopScreen(ctx.client().screen);
+                    screen.updateState(payload);
+                    ctx.client().setScreen(screen);
+                }
+            });
+        });
+
+        // 13) 停电任务商店购买结果 S2C 接收器
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutTaskShopResultPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                if (ctx.client().screen instanceof BlackoutTaskShopScreen shopScreen) {
+                    shopScreen.onPurchaseResult(payload.success(), payload.reason());
                 }
             });
         });

@@ -11,8 +11,8 @@ import net.minecraft.world.entity.player.Player;
 
 /**
  * 停电模式好人任务：翻找背包（复用 BackpackSearchHandler）。
- * <p>玩家右键 {@code decocraft:backpack_red} 方块后进入翻找状态（缓慢6秒），
- * 6 秒后任务自动完成。
+ * <p>玩家右键 {@code decocraft:backpack_red} 方块后进入翻找状态（缓慢3秒），
+ * 3 秒后任务自动完成。
  * <p>完成时发放金币 50 / 情绪 0.5 奖励，并复用原版 search_backpack 的随机道具池
  * （按角色分池：杀手/警长/平民）。
  * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
@@ -30,7 +30,7 @@ public class BlackoutSearchBackpackTask {
             .canAssign((player, task) ->
                 !BackpackQuestState.hasCompleted(player.getUUID()))
             .onAssign((player, task) -> {
-                task.setMaxProgress(120);
+                task.setMaxProgress(60);
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;

@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.Blocks;
 
 /**
  * 停电模式好人任务：修理线路（右键交互）。
- * <p>派发时给玩家 1 个红石，玩家手持红石右键红石块 → 消耗红石 + 缓慢 III(6秒) + 完成。
+ * <p>派发时给玩家 1 个红石，玩家手持红石右键红石块 → 消耗红石 + 缓慢 III(3秒) + 完成。
  * <p>完成时延迟停电时间 40 秒 + 发放金币 50 / 情绪 0.5 奖励。
  * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
  */

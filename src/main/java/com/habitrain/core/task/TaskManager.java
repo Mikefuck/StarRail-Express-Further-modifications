@@ -101,7 +101,11 @@ public class TaskManager {
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);
-        return existing != null && existing.getFullId().equals(fullId);
+        if (existing != null && existing.getFullId().equals(fullId)) {
+            return true;
+        }
+        TaskInstance fake = activeFakeTasks.get(playerUuid);
+        return fake != null && fake.getFullId().equals(fullId);
     }
 
     // ==================== SRE 集成方法（供 Mixin 使用） ====================

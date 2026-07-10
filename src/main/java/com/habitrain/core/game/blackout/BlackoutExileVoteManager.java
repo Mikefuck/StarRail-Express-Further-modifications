@@ -109,7 +109,7 @@ public final class BlackoutExileVoteManager {
                 initiator.getName().getString(), state.candidateOrder.size());
 
         broadcastState(level);
-        broadcastResult(level, "§e放逐投票已开启！按 V 键打开投票页面。");
+        broadcastResult(level, "§e放逐投票已开启！打开投票页面参与投票。");
         return true;
     }
 

@@ -20,11 +20,12 @@ class BlackoutSyncManager {
 
     void tickSecond(ServerLevel level) {
         var phase = BlackoutTimerSystem.getPhase(level);
-        long serverTick = level.getServer().getTickCount();
+        // Use world gameTime (same clock client uses via level.getGameTime()), NOT server process tickCount.
+        long serverTick = level.getGameTime();
         long endTimeTick = phase == BlackoutTimerSystem.Phase.NORMAL
-                ? serverTick + BlackoutTimerSystem.getBlackoutCountdown(level)
+                ? serverTick + (long) BlackoutTimerSystem.getBlackoutCountdown(level) * 20L
                 : (phase == BlackoutTimerSystem.Phase.MAINTENANCE
-                    ? serverTick + BlackoutTimerSystem.getMaintenanceTime(level)
+                    ? serverTick + (long) BlackoutTimerSystem.getMaintenanceTime(level) * 20L
                     : 0L);
 
         BlackoutTimerSnapshot current = new BlackoutTimerSnapshot(

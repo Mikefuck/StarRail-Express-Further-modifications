@@ -84,6 +84,7 @@ public class ClientLifecycleHandler {
     }
 
     private static void resetState() {
+        GameRunningCache.invalidate();
         BlackoutHudOverlay.reset();
         BlackoutWelcomeRenderer.reset();
         BlackoutSheriffVoteState.clear();

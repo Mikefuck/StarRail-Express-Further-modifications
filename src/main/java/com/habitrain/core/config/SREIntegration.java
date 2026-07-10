@@ -46,7 +46,7 @@ public final class SREIntegration {
                 var areas = AreasWorldComponent.KEY.get(level);
                 if (areas == null) continue;
 
-                areas.minigameQuestEnabled = globalEnabled;
+                areas.areasSettings.minigameQuestEnabled = globalEnabled;
                 String mapName = areas.mapName != null ? areas.mapName : "";
                 areas.availableMinigameIds.clear();
                 for (String mgId : allMinigameIds) {

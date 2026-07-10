@@ -1,10 +1,12 @@
 package com.habitrain.core.client;
 
+import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
+import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -16,6 +18,17 @@ public class BlackoutKeyHandler {
 
     public static KeyMapping getOpenVoteKey() {
         return openVoteKey;
+    }
+
+    /**
+     * Client-bound key display for HUD tips. Never hardcodes "V" — if unregistered, "?".
+     */
+    public static Component getBoundKeyDisplay() {
+        KeyMapping key = openVoteKey;
+        if (key == null) {
+            return Component.literal("?");
+        }
+        return key.getTranslatedKeyMessage();
     }
 
     public static void register() {
@@ -38,6 +51,13 @@ public class BlackoutKeyHandler {
 
     private static void openVote(Minecraft client) {
         if (client.player == null) return;
+
+        // Sheriff vote takes priority while active.
+        if (BlackoutSheriffVoteState.isActive()) {
+            if (client.screen instanceof BlackoutSheriffVoteScreen) return;
+            client.setScreen(new BlackoutSheriffVoteScreen(client.screen));
+            return;
+        }
 
         if (!BlackoutVoteState.isActive()) {
             com.habitrain.core.client.util.ClientSubtitleNotifier.sendTop(

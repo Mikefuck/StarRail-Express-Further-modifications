@@ -7,19 +7,19 @@ import net.minecraft.client.Minecraft;
 /**
  * 缓存 SRE 游戏运行状态。
  *
- * 用事件驱动的 invalidation 替代旧的 500ms TTL 定时器：
- * - 首次调用 {@link #isGameRunning()} 时查询 Cardinal Component 并缓存结果
- * - 之后直接返回缓存值，不触发任何查询
- * - 游戏开始/结束时，外部调用 {@link #invalidate()} 清除缓存
- *   （由 {@link com.habitrain.core.client.HabiTrainCoreClient} 中的事件监听器负责）
- *
- * 与旧 TTL 方案相比：
- * - 无固定延迟窗口（500ms 内可能拿到过期值）
- * - 无不必要的重新查询（停服期间每 500ms 白查一次）
+ * <p>规则：
+ * <ul>
+ *   <li>{@code true} 可缓存，直到 {@link #invalidate()}（游戏开始/结束/进出服）</li>
+ *   <li>{@code false} 不永久缓存：level 为 null 时直接返回 false 且不写入缓存；
+ *       已查到 false 时用短 TTL 重查，避免大厅首帧 sticky-false 把整局透视关掉</li>
+ * </ul>
  */
 public final class GameRunningCache {
 
     private static Boolean cachedValue = null;
+    /** 仅在缓存为 false 时使用的下次允许重查时间戳（ms）。 */
+    private static long falseUntilMs = 0L;
+    private static final long FALSE_TTL_MS = 250L;
 
     private GameRunningCache() {}
 
@@ -28,29 +28,49 @@ public final class GameRunningCache {
      * 大厅阶段返回 false，游戏进行中返回 true。
      */
     public static boolean isGameRunning() {
+        long now = System.currentTimeMillis();
+
         if (cachedValue != null) {
-            return cachedValue;
+            if (Boolean.TRUE.equals(cachedValue)) {
+                return true;
+            }
+            // cached false: allow re-query after short TTL
+            if (now < falseUntilMs) {
+                return false;
+            }
+            cachedValue = null;
         }
+
         var instance = Minecraft.getInstance();
         if (instance == null || instance.level == null) {
-            cachedValue = false;
-        } else {
-            try {
-                var gameWorld = SREGameWorldComponent.KEY.get(instance.level);
-                cachedValue = gameWorld != null && gameWorld.isRunning();
-            } catch (Exception e) {
-                HabiTrainCore.LOGGER.error("[GameRunningCache] 查询 SREGameWorldComponent 失败", e);
-                cachedValue = false;
-            }
+            // Do NOT sticky-cache false while level is null (loading / between worlds).
+            return false;
         }
-        return cachedValue;
+
+        try {
+            var gameWorld = SREGameWorldComponent.KEY.get(instance.level);
+            boolean running = gameWorld != null && gameWorld.isRunning();
+            if (running) {
+                cachedValue = true;
+            } else {
+                cachedValue = false;
+                falseUntilMs = now + FALSE_TTL_MS;
+            }
+            return running;
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("[GameRunningCache] 查询 SREGameWorldComponent 失败", e);
+            cachedValue = false;
+            falseUntilMs = now + FALSE_TTL_MS;
+            return false;
+        }
     }
 
     /**
      * 强制刷新缓存。
-     * 在 SRE 游戏开始/结束事件发生时调用，以确保下次 isGameRunning() 重新查询。
+     * 在 SRE 游戏开始/结束、JOIN/DISCONNECT 时调用。
      */
     public static void invalidate() {
         cachedValue = null;
+        falseUntilMs = 0L;
     }
 }

@@ -12,6 +12,7 @@ public class ConfigRepository {
     private int sheriffCountDivisor = 6;
     private boolean minigameGlobalEnabled = true;
     private boolean shaderWhitelistEnabled = false;
+    private int tempPowerPrice = 100;
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -61,6 +62,12 @@ public class ConfigRepository {
 
     public void setSheriffCountDivisor(int divisor) {
         this.sheriffCountDivisor = Math.max(1, divisor);
+    }
+
+    public int getTempPowerPrice() { return tempPowerPrice; }
+
+    public void setTempPowerPrice(int price) {
+        this.tempPowerPrice = Math.max(0, price);
     }
 
     public boolean isShaderWhitelistEnabled() { return shaderWhitelistEnabled; }

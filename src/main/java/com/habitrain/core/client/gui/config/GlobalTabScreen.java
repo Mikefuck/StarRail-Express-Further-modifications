@@ -32,12 +32,13 @@ public class GlobalTabScreen {
     private float dlcTarget;
     private boolean mgGlobal;
     private int sheriffDivisor;
+    private int tempPowerPrice;
 
-    private EditBox sheriffField;
+    private EditBox sheriffField, tempPowerField;
     private boolean draggingSlider = false;
     private int sliderX, sliderY, sliderW;
 
-    private Button shaderBtn, mgToggleBtn, sheriffApplyBtn;
+    private Button shaderBtn, mgToggleBtn, sheriffApplyBtn, tempPowerApplyBtn;
     /** 标记 widgets 是否已初始化 (S10-014) */
     private boolean widgetsInitialized = false;
 
@@ -48,6 +49,7 @@ public class GlobalTabScreen {
         this.dlcTarget = ConfigManager.getInstance().getDlcProbabilityTarget();
         this.mgGlobal = ConfigManager.getInstance().isMinigameGlobalEnabled();
         this.sheriffDivisor = ConfigManager.getInstance().getSheriffCountDivisor();
+        this.tempPowerPrice = ConfigManager.getInstance().getTempPowerPrice();
     }
 
     /**
@@ -63,6 +65,12 @@ public class GlobalTabScreen {
         sheriffField.setValue(String.valueOf(sheriffDivisor));
         sheriffField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
         sheriffField.setEditable(editable);
+
+        tempPowerField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
+        tempPowerField.setMaxLength(6);
+        tempPowerField.setValue(String.valueOf(tempPowerPrice));
+        tempPowerField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
+        tempPowerField.setEditable(editable);
 
         shaderBtn = Button.builder(Component.literal("光影白名单设置"), b -> {
             Minecraft.getInstance().setScreen(new ShaderWhitelistScreen(root));
@@ -87,6 +95,16 @@ public class GlobalTabScreen {
             } catch (NumberFormatException ignored) {}
         }).bounds(-10000, -10000, 50, 18).build();
         sheriffApplyBtn.active = editable;
+
+        tempPowerApplyBtn = Button.builder(Component.literal("应用"), b -> {
+            if (!editable) { LiveConfigAccess.showDeniedMessage(); return; }
+            try {
+                int v = Integer.parseInt(tempPowerField.getValue().trim());
+                tempPowerPrice = Math.max(0, v);
+                ConfigManager.getInstance().setTempPowerPrice(tempPowerPrice);
+            } catch (NumberFormatException ignored) {}
+        }).bounds(-10000, -10000, 50, 18).build();
+        tempPowerApplyBtn.active = editable;
     }
 
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
@@ -152,6 +170,21 @@ public class GlobalTabScreen {
         sheriffApplyBtn.render(g, mx, my, delta);
         cy += ROW_H;
 
+        // ===== 临时电源价格（停电任务商店） =====
+        g.fill(labelX - 2, cy - 2, labelX + sliderW + 2, cy - 1, 0x20FFFFFF);
+        cy += 6;
+        g.drawString(font, Component.literal("§e§l临时电源价格"), labelX, cy, SharedGuiKit.ACCENT_CYAN, false);
+        cy += 18;
+        g.drawString(font, Component.literal("§7停电模式红色电话商店「临时电源」提灯价格，默认 100"),
+                labelX, cy, SharedGuiKit.TEXT_SECONDARY, false);
+        cy += 18;
+        g.drawString(font, "价格:", labelX, cy + 2, 0xFFCCCCCC, false);
+        tempPowerField.setX(labelX + 50); tempPowerField.setY(cy); tempPowerField.setWidth(60);
+        tempPowerField.render(g, mx, my, delta);
+        tempPowerApplyBtn.setX(labelX + 120); tempPowerApplyBtn.setY(cy - 1); tempPowerApplyBtn.setWidth(50);
+        tempPowerApplyBtn.render(g, mx, my, delta);
+        cy += ROW_H;
+
         // ===== 小游戏总开关 =====
         g.fill(labelX - 2, cy - 2, labelX + sliderW + 2, cy - 1, 0x20FFFFFF);
         cy += 6;
@@ -198,9 +231,11 @@ public class GlobalTabScreen {
 
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         if (sheriffField != null && sheriffField.mouseClicked(mx, my, btn)) return true;
+        if (tempPowerField != null && tempPowerField.mouseClicked(mx, my, btn)) return true;
         if (shaderBtn != null && shaderBtn.mouseClicked(mx, my, btn)) return true;
         if (mgToggleBtn != null && mgToggleBtn.mouseClicked(mx, my, btn)) return true;
         if (sheriffApplyBtn != null && sheriffApplyBtn.mouseClicked(mx, my, btn)) return true;
+        if (tempPowerApplyBtn != null && tempPowerApplyBtn.mouseClicked(mx, my, btn)) return true;
         // 滑条
         int tx = thumbX();
         boolean onSlider = mx >= sliderX - 4 && mx <= sliderX + sliderW + 4 && my >= sliderY - 4 && my <= sliderY + SLIDER_H + 4;
@@ -234,11 +269,13 @@ public class GlobalTabScreen {
 
     public boolean keyPressed(int key, int scan, int mod) {
         if (sheriffField != null && sheriffField.isFocused() && sheriffField.keyPressed(key, scan, mod)) return true;
+        if (tempPowerField != null && tempPowerField.isFocused() && tempPowerField.keyPressed(key, scan, mod)) return true;
         return false;
     }
 
     public boolean charTyped(char ch, int mod) {
         if (sheriffField != null && sheriffField.isFocused() && sheriffField.charTyped(ch, mod)) return true;
+        if (tempPowerField != null && tempPowerField.isFocused() && tempPowerField.charTyped(ch, mod)) return true;
         return false;
     }
 }

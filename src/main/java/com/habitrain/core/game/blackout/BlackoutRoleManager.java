@@ -46,6 +46,8 @@ public class BlackoutRoleManager {
     private static final class RoleState {
         final Map<UUID, ResourceLocation> roles = new HashMap<>();
         final Map<UUID, Faction> factions = new HashMap<>();
+        /** 淘汰后仍保留的阵营，供结算屏 setPlayerWin 使用。 */
+        final Map<UUID, Faction> factionHistory = new HashMap<>();
         final Set<UUID> sheriffs = new HashSet<>();
         final Map<UUID, ResourceLocation> roleHistory = new HashMap<>();
         int initialGoodCount = 0;
@@ -55,11 +57,23 @@ public class BlackoutRoleManager {
         RoleState state = getOrCreate(level);
         state.roles.put(playerId, roleId);
         state.factions.put(playerId, faction);
+        state.factionHistory.put(playerId, faction);
         state.roleHistory.put(playerId, roleId);
     }
 
     public static Faction getFaction(ServerLevel level, UUID playerId) {
         return getOrCreate(level).factions.getOrDefault(playerId, Faction.GOOD);
+    }
+
+    /**
+     * 结算用阵营：优先存活表，否则回落到淘汰前快照。
+     * 避免 eliminate 后 getFaction 默认 GOOD 把死掉的杀手算成好人胜。
+     */
+    public static Faction getFactionForEnd(ServerLevel level, UUID playerId) {
+        RoleState state = getOrCreate(level);
+        Faction live = state.factions.get(playerId);
+        if (live != null) return live;
+        return state.factionHistory.getOrDefault(playerId, Faction.GOOD);
     }
 
     public static boolean isAlive(ServerLevel level, UUID playerId) {
@@ -68,6 +82,10 @@ public class BlackoutRoleManager {
 
     public static void eliminate(ServerLevel level, UUID playerId) {
         RoleState state = getOrCreate(level);
+        Faction faction = state.factions.get(playerId);
+        if (faction != null) {
+            state.factionHistory.put(playerId, faction);
+        }
         state.roles.remove(playerId);
         state.factions.remove(playerId);
         state.sheriffs.remove(playerId);
@@ -101,6 +119,7 @@ public class BlackoutRoleManager {
         state.sheriffs.add(playerId);
         state.roles.put(playerId, roleId);
         state.factions.put(playerId, faction);
+        state.factionHistory.put(playerId, faction);
         state.roleHistory.put(playerId, roleId);
 
         var gameWorld = SREGameWorldComponent.KEY.get(level);
@@ -251,6 +270,7 @@ public class BlackoutRoleManager {
             Faction faction = sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD;
             state.roles.put(p.getUUID(), roleId);
             state.factions.put(p.getUUID(), faction);
+            state.factionHistory.put(p.getUUID(), faction);
             state.roleHistory.put(p.getUUID(), roleId);
         }
         state.initialGoodCount = getRemainingGood(level);

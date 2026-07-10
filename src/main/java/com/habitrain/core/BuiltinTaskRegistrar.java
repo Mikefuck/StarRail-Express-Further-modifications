@@ -136,9 +136,7 @@ public class BuiltinTaskRegistrar {
             .completionChecker((player, task) ->
                 task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.pet_cat"), Component.literal("§a✔ 摸猫猫任务完成！猫猫真可爱！"));
-                }
+                // no-op: remove completion toast
             })
         );
 
@@ -173,10 +171,6 @@ public class BuiltinTaskRegistrar {
                 if (granted != null) {
                     ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:search_backpack");
                 }
-                SubtitleNotifier.sendTop(
-                    serverPlayer,
-                    Component.translatable("task.search_backpack"),
-                    Component.literal("§a✔ 翻找背包完成！你找到了一些有用的东西！"));
             })
             .onReclaim((player, task) -> ItemReclaimHelper.reclaim(player, "habitrain_core:search_backpack"))
         );

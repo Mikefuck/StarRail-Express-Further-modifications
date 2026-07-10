@@ -30,8 +30,11 @@ public final class NetworkRegistrar {
         BlackoutVoteCastPayload.register();
         CustomTaskBlockPayload.register();
         FullConfigSyncPayload.register();
+        BlackoutTaskShopOpenPayload.register();
+        BlackoutTaskShopBuyPayload.register();
+        BlackoutTaskShopResultPayload.register();
         // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
         //     本模组不再重复注册；客户端接收、HUD tick/render 也由 SRE 接管。
-        LOGGER.info("已注册 16 个网络数据包类型");
+        LOGGER.info("已注册 19 个网络数据包类型");
     }
 }

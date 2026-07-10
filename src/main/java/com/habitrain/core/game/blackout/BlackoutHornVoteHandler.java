@@ -96,7 +96,8 @@ public final class BlackoutHornVoteHandler {
 
                 HabiTrainCore.LOGGER.info("[HornVote] {} initiated exile vote (cost: {})",
                         serverPlayer.getName().getString(), EXILE_COST);
-                return InteractionResult.SUCCESS;
+                // 第二次成功发起：放行原版 horn 拉动效果（音效/动画）
+                return InteractionResult.PASS;
             } else {
                 // 第一次拉动：使用 MC 原生 Title 提示
                 confirmWindows.put(playerId, now + CONFIRM_WINDOW_SECONDS * 20L);

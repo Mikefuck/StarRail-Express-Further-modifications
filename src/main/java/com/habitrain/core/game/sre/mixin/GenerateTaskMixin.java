@@ -25,12 +25,25 @@ import java.util.*;
 public abstract class GenerateTaskMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GenerateTaskMixin");
+    /**
+     * IDs of hollow SRE mirror registrations in {@code SREGameModeBase#registerBuiltin}.
+     * Must stay in sync with that list so they never enter the DLC weighted pool
+     * (empty shells have no onTick / completionChecker and would complete instantly).
+     * Includes {@code outside} (displayName 外出) — previously missing, which caused
+     * assign-and-complete for 外出.
+     */
     private static final Set<String> BUILTIN_SRE_TASK_IDS = Set.of(
             "sleep", "raed_book", "eat", "drink", "exercise", "meditate",
             "bathe", "chair", "note_block", "toilet", "be_alone",
-            "breathe", "light_stove", "clean_dust", "transport",
-            "pray", "prune_bush", "harvest_crop"
+            "breathe", "outside", "vending_machine",
+            "light_stove", "clean_dust", "transport",
+            "pray", "prune_bush", "harvest_crop",
+            "repair_wire", "repair_panel"
     );
+
+    /** Throttle empty-pool WARN logs per player (ms). */
+    private static final Map<UUID, Long> EMPTY_POOL_WARN_AT = new HashMap<>();
+    private static final long EMPTY_POOL_WARN_COOLDOWN_MS = 15_000L;
 
     @Shadow(remap = false) private Player player;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, SREPlayerTaskComponent.TrainTask> tasks;
@@ -104,10 +117,62 @@ public abstract class GenerateTaskMixin {
         LOGGER.debug("[HabiDebug] Flat pool built: {} entries, total weight={}",
                 weightEntries.size(), String.format("%.2f", total));
 
+        if (weightEntries.isEmpty() || total <= 0f) {
+            maybeWarnEmptyPool(ctx, mapName, disabledTasks);
+        }
+
         boolean isFakeTask = ctx.currentIsFakeTask();
-        cir.setReturnValue(TaskSelector.weightedSelect(
+        SREPlayerTaskComponent.TrainTask selected = TaskSelector.weightedSelect(
                 weightEntries, total, player,
                 this::createTaskInstance,
-                def -> DlcTaskTracker.createAndTrackDlcTask(def, isFakeTask, player)));
+                def -> DlcTaskTracker.createAndTrackDlcTask(def, isFakeTask, player));
+
+        if (selected == null && ctx.killerDualTask() && this.tasks.isEmpty()) {
+            LOGGER.info("[HabiDebug] Killer gen returned null (tasks empty, poolEntries={}, total={}) player={}",
+                    weightEntries.size(), String.format("%.2f", total), player.getName().getString());
+        }
+
+        cir.setReturnValue(selected);
+    }
+
+    private void maybeWarnEmptyPool(FactionFilter.FactionContext ctx, String mapName, Set<String> disabledTasks) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        // Only interesting for blackout killers waiting on BAD pool, or dual fake GOOD.
+        if (!(ctx.activeMode() instanceof BlackoutMode) || !ctx.killerDualTask()) return;
+
+        long now = System.currentTimeMillis();
+        Long last = EMPTY_POOL_WARN_AT.get(sp.getUUID());
+        if (last != null && now - last < EMPTY_POOL_WARN_COOLDOWN_MS) return;
+        EMPTY_POOL_WARN_AT.put(sp.getUUID(), now);
+
+        TaskManager mgr = TaskManager.getInstance();
+        var forced = ctx.forcedCategory();
+        var raw = com.habitrain.core.task.TaskPoolBuilder.getPool(
+                ctx.activeMode(), mapName, forced, mgr.getCurrentGameModeCategory(player),
+                player, BUILTIN_SRE_TASK_IDS);
+        int canAssignFail = 0;
+        int alreadyHas = 0;
+        int disabled = 0;
+        List<String> ids = new ArrayList<>();
+        for (var def : raw) {
+            ids.add(def.getFullId());
+            if (mgr.hasTaskWithId(player.getUUID(), def.getFullId())) {
+                alreadyHas++;
+            } else if (disabledTasks.contains(def.getFullId())) {
+                disabled++;
+            } else if (!def.canAssign(player)) {
+                canAssignFail++;
+            }
+        }
+        LOGGER.warn(
+                "[HabiDebug] Killer empty weighted pool: player={} fake={} forced={} rawCandidates={} alreadyHas={} disabled={} canAssignFail={} ids={}",
+                sp.getName().getString(),
+                ctx.currentIsFakeTask(),
+                forced,
+                raw.size(),
+                alreadyHas,
+                disabled,
+                canAssignFail,
+                ids);
     }
 }

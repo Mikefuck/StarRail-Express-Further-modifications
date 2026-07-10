@@ -36,7 +36,7 @@ public class TaskEditScreen extends Screen {
     private int contentHeight = 0;
 
     private Button enableBtn;
-    private EditBox goldField, emotionField, weightField;
+    private EditBox goldField, emotionField, weightField, shopPriceField;
     private Button saveBtn, saveReturnBtn, resetBtn;
     private Button topBackBtn;
 
@@ -94,6 +94,12 @@ public class TaskEditScreen extends Screen {
         weightField.setHint(Component.literal("默认"));
         weightField.setEditable(remoteEditable);
 
+        shopPriceField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
+        shopPriceField.setMaxLength(8);
+        if (cfg.hasShopPrice) shopPriceField.setValue(String.valueOf(cfg.shopPrice));
+        shopPriceField.setHint(Component.literal("默认"));
+        shopPriceField.setEditable(remoteEditable);
+
         int centerX = width / 2;
         int btnY = height - FOOTER_H + 6;
 
@@ -102,7 +108,7 @@ public class TaskEditScreen extends Screen {
                 LiveConfigAccess.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
+            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
             saveController.saveCurrent();
             TaskSaveController.showMessage("§a✔ 任务「" + def.getDisplayName() + "」已保存！");
         }).bounds(centerX - 155, btnY, 90, 20).build();
@@ -113,7 +119,7 @@ public class TaskEditScreen extends Screen {
                 LiveConfigAccess.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
+            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
             saveController.saveCurrent();
             goBack();
         }).bounds(centerX - 58, btnY, 100, 20).build();
@@ -147,7 +153,8 @@ public class TaskEditScreen extends Screen {
     }
 
     private int calcSectionCount() {
-        return 3 + 3 + 2 + 8;
+        // 停电专属任务在奖励区多一行（商店价格）
+        return 3 + 3 + 2 + 8 + (isBlackoutExclusiveTask() ? 1 : 0);
     }
 
     private int calcTotalContentHeight() {
@@ -277,7 +284,26 @@ public class TaskEditScreen extends Screen {
         String effWStr = String.format("§7生效: §e%.1f", effW);
         g.drawString(f, Component.literal(effWStr), rowX + 66, r3 + 4, 0x777777, false);
 
-        return r3 + ROW_H;
+        int nextY = r3 + ROW_H;
+        // 停电专属任务额外显示商店价格字段
+        if (isBlackoutExclusiveTask()) {
+            int r4 = nextY;
+            g.drawString(f, Component.literal("§6商店价格:"), labelX, r4 + 4, 0xCCCCCC, false);
+            shopPriceField.setX(rowX);
+            shopPriceField.setY(r4 + 4);
+            shopPriceField.setWidth(60);
+            shopPriceField.render(g, mx, my, delta);
+            g.drawString(f, Component.literal("§7(留空 = 系统默认值)"), rowX + 66, r4 + 4, 0x777777, false);
+            nextY = r4 + ROW_H;
+        }
+        return nextY;
+    }
+
+    /** 是否为停电专属任务（电话商店购买类，需要商店价格配置）。 */
+    private boolean isBlackoutExclusiveTask() {
+        TaskCategory cat = def.getCategory();
+        return com.habitrain.core.game.blackout.BlackoutMode.BLACKOUT_GOOD.equals(cat)
+                || com.habitrain.core.game.blackout.BlackoutMode.BLACKOUT_BAD.equals(cat);
     }
 
     private int renderSectionMap(GuiGraphics g, Font f, int w, int y, int labelX, int rowX, int mx, int my, float delta) {
@@ -356,6 +382,7 @@ public class TaskEditScreen extends Screen {
         goldField.setFocused(false);
         emotionField.setFocused(false);
         weightField.setFocused(false);
+        shopPriceField.setFocused(false);
         mapEditor.mapField.setFocused(false);
 
         if (mx >= enableBtn.getX() && mx < enableBtn.getX() + 88
@@ -398,6 +425,16 @@ public class TaskEditScreen extends Screen {
             weightField.setFocused(true);
             return true;
         }
+        if (isBlackoutExclusiveTask()
+                && mx >= shopPriceField.getX() && mx < shopPriceField.getX() + 60
+                && my >= shopPriceField.getY() && my < shopPriceField.getY() + 14) {
+            if (!remoteEditable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
+            shopPriceField.setFocused(true);
+            return true;
+        }
 
         return false;
     }
@@ -425,6 +462,7 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.keyPressed(key, sc, mod)) return true;
         if (emotionField.isFocused() && emotionField.keyPressed(key, sc, mod)) return true;
         if (weightField.isFocused() && weightField.keyPressed(key, sc, mod)) return true;
+        if (shopPriceField.isFocused() && shopPriceField.keyPressed(key, sc, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyPressed(key, sc, mod)) return true;
 
         if (key == 256) {
@@ -439,6 +477,7 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.charTyped(ch, mod)) return true;
         if (emotionField.isFocused() && emotionField.charTyped(ch, mod)) return true;
         if (weightField.isFocused() && weightField.charTyped(ch, mod)) return true;
+        if (shopPriceField.isFocused() && shopPriceField.charTyped(ch, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.charTyped(ch, mod)) return true;
         return super.charTyped(ch, mod);
     }
@@ -448,6 +487,7 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.keyReleased(key, sc, mod)) return true;
         if (emotionField.isFocused() && emotionField.keyReleased(key, sc, mod)) return true;
         if (weightField.isFocused() && weightField.keyReleased(key, sc, mod)) return true;
+        if (shopPriceField.isFocused() && shopPriceField.keyReleased(key, sc, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyReleased(key, sc, mod)) return true;
         return super.keyReleased(key, sc, mod);
     }

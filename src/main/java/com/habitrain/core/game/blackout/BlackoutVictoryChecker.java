@@ -1,11 +1,15 @@
 package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.blackout.shop.BlackoutTaskShopService;
+import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
+import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREWorldBlackoutComponent;
 import io.wifi.starrailexpress.game.GameUtils;
@@ -13,9 +17,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.Map;
 import java.util.UUID;
 
-class BlackoutVictoryChecker {
+public class BlackoutVictoryChecker {
     private final BlackoutMode mode;
     private final BlackoutSyncManager syncManager;
 
@@ -84,17 +89,75 @@ class BlackoutVictoryChecker {
         if (mode.isGameEnded()) return;
         mode.setGameEnded(true);
         mode.setPendingEndMessage(message);
+        mode.setPendingWinResult(result);
         if (level != null) {
             try {
+                // 对齐 SRE 原版：先写 roundEnd，再进入 STOPPING。
+                // 不要 clearRoleMap：客户端 lastRole 依赖 AnnounceEnding 时角色表仍在。
+                // 不要立刻 GameModeRegistry.stop：finalize 仍需 lastWinningFaction。
+                populateRoundEndData(level, mode.getLastWinningFaction());
+
+                if (message != null && !message.isEmpty()) {
+                    syncManager.broadcast(level, message);
+                    mode.setPendingEndMessage(null);
+                }
+
                 var sreGame = SREGameWorldComponent.KEY.get(level);
                 if (sreGame != null) {
                     sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
-                    sreGame.clearRoleMap();
                 }
             } catch (Exception e) {
                 HabiTrainCore.LOGGER.error("endGame: failed to stop SRE game", e);
+                // 回退：至少把 habitrain 模式停掉，避免卡死
+                com.habitrain.core.api.GameModeRegistry.stop(level, result);
             }
-            com.habitrain.core.api.GameModeRegistry.stop(level, result);
+        }
+    }
+
+    /**
+     * 写入 SRE 结算组件（胜负阵营 + 参与者 + 个人胜负）。
+     * 在 STOPPING 前调用，确保客户端在 fade/AnnounceEnding 期间已有非 NONE 的 winStatus。
+     */
+    public static void populateRoundEndData(ServerLevel level, BlackoutRoleManager.Faction winner) {
+        if (level == null) return;
+        try {
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            if (roundEnd == null) return;
+
+            GameUtils.WinStatus winStatus;
+            if (winner == BlackoutRoleManager.Faction.GOOD) {
+                winStatus = GameUtils.WinStatus.PASSENGERS;
+            } else if (winner == BlackoutRoleManager.Faction.BAD) {
+                winStatus = GameUtils.WinStatus.KILLERS;
+            } else {
+                // 同归于尽 / 外部强制结束：用 NO_PLAYER 避免 RoundTextRenderer 在 NONE 时整段不画
+                winStatus = GameUtils.WinStatus.NO_PLAYER;
+            }
+
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            java.util.List<ServerPlayer> participants = new java.util.ArrayList<>();
+            for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
+                if (history.containsKey(p.getUUID())) {
+                    participants.add(p);
+                }
+            }
+            // 若历史为空（异常），至少用当前在线玩家，避免 players 列表全空
+            if (participants.isEmpty()) {
+                participants.addAll(level.players());
+            }
+
+            roundEnd.setRoundEndData(participants, winStatus);
+
+            for (ServerPlayer p : participants) {
+                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFactionForEnd(level, p.getUUID());
+                boolean didWin = (winner != null && f == winner);
+                roundEnd.setPlayerWin(p.getUUID(), didWin);
+            }
+            roundEnd.sync();
+            HabiTrainCore.LOGGER.info("[Blackout] round-end populated: winStatus={}, winner={}, participants={}",
+                    winStatus, winner, participants.size());
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.error("populateRoundEndData failed", t);
         }
     }
 
@@ -105,6 +168,17 @@ class BlackoutVictoryChecker {
 
     void triggerSREPermanentBlackout(ServerLevel level) {
         if (level == null) return;
+        // 计时器到点的永久停电：若本局已恢复过供电，则第二次停电不再派发恢复供电（无法恢复）。
+        if (BlackoutTaskShopState.isRestoreUsed(level)) {
+            HabiTrainCore.LOGGER.info("[Blackout] Permanent blackout but restoreUsed=true, no restore dispatch");
+            try {
+                var blackout = SREWorldBlackoutComponent.KEY.get(level);
+                if (blackout != null) blackout.triggerBlackout(true, 600000);
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.error("triggerSREPermanentBlackout: SRE blackout failed", t);
+            }
+            return;
+        }
         var blackout = SREWorldBlackoutComponent.KEY.get(level);
         if (blackout != null) {
             blackout.triggerBlackout(true, 600000);
@@ -113,7 +187,13 @@ class BlackoutVictoryChecker {
         forceAssignRestorePowerToAllGood(level);
     }
 
-    private void forceAssignRestorePowerToAllGood(ServerLevel level) {
+    /**
+     * 强制给所有存活好人派发恢复供电。
+     * 派发前以「无奖励取消」方式替换当前任务（停电专属任务 onRemove + 回收；原版 SRE clear），
+     * 不再调 onComplete 发奖，对齐任务商店购买语义。
+     * 包可见，供炸毁发电机路径通过 {@link BlackoutVictoryCheckerAccessor} 调用。
+     */
+    void forceAssignRestorePowerToAllGood(ServerLevel level) {
         if (level == null) return;
         TaskManager mgr = TaskManager.getInstance();
         var restoreDef = TaskRegistry.get("habitrain_core:restore_power");
@@ -124,34 +204,17 @@ class BlackoutVictoryChecker {
 
             ServerPlayer sp = level.getServer().getPlayerList().getPlayer(uuid);
 
-            TaskInstance existing = mgr.getActiveTask(uuid);
-            if (existing != null && !existing.isFulfilled()
-                    && existing.getFullId() != null
-                    && existing.getFullId().startsWith("habitrain_core:")) {
-                if (sp != null) {
-                    try {
-                        existing.setFulfilled(true);
-                        existing.getDefinition().onComplete(sp, existing);
-                    } catch (Throwable t) {
-                        HabiTrainCore.LOGGER.error(
-                                "forceAssignRestorePowerToAllGood: failed to complete existing task {} for {}",
-                                existing.getFullId(), uuid, t);
-                    }
-                }
-            }
-
-            mgr.removeActiveTask(uuid);
-            mgr.clearBlackoutRotationFlag(uuid);
-
+            // 无奖励取消当前任务（停电专属 onRemove + 回收；原版 SRE clear）
             if (sp != null) {
-                try {
-                    var taskComp = io.wifi.starrailexpress.cca.SREPlayerTaskComponent.KEY.get(sp);
-                    if (taskComp != null) {
-                        taskComp.clear();
-                    }
-                } catch (Throwable t) {
-                    HabiTrainCore.LOGGER.error("forceAssignRestorePowerToAllGood: failed to clear SRE tasks for {}", uuid, t);
+                BlackoutTaskShopService.cancelWithoutReward(level, sp);
+            } else {
+                // 玩家离线：仍清追踪
+                TaskInstance existing = mgr.getActiveTask(uuid);
+                if (existing != null) {
+                    mgr.removeActiveTask(uuid);
                 }
+                mgr.removeFakeTask(uuid);
+                mgr.clearBlackoutRotationFlag(uuid);
             }
 
             TaskInstance instance = new TaskInstance(restoreDef);

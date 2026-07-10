@@ -46,7 +46,6 @@ public class BlackoutSheriffVoteScreen extends Screen {
     public void tick() {
         super.tick();
         if (BlackoutSheriffVoteState.isActive() && BlackoutSheriffVoteState.getRemainingSeconds() > 0) {
-            BlackoutSheriffVoteState.setRemainingSeconds(BlackoutSheriffVoteState.getRemainingSeconds() - 1);
         }
         if (!BlackoutSheriffVoteState.isActive()) {
             Minecraft.getInstance().setScreen(null);
@@ -146,7 +145,6 @@ public class BlackoutSheriffVoteScreen extends Screen {
                 UUID replaced = BlackoutSheriffVoteState.toggleSelection(targetId);
                 if (replaced != null) {
                     // 替换场景：对旧目标发送撤回 payload，对新目标发送投票
-                    PayloadSenders.sendSheriffVoteCast(replaced, -1);
                 }
                 int slotIndex = BlackoutSheriffVoteState.getSelectedTargetIds().indexOf(targetId);
                 if (slotIndex >= 0) {

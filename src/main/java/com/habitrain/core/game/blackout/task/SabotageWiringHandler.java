@@ -21,10 +21,13 @@ import java.util.UUID;
 
 /**
  * 破坏线路任务交互处理器。
- * <p>玩家右键红石块 → 给缓慢III(6秒) + 推进任务完成。
+ * <p>玩家右键红石块 或 煤炭块 → 给缓慢III(3秒) + 推进任务完成。
  * <p>缓慢效果在 END_SERVER_TICK 中重新施加以对抗 betel-nut-mod 每 tick 清除。
  */
 public class SabotageWiringHandler {
+
+    /** 缓慢持续 tick（3 秒）。 */
+    private static final int SLOW_TICKS = 60;
 
     public static void register() {
         UseBlockCallback.EVENT.register(SabotageWiringHandler::onUseBlock);
@@ -54,13 +57,13 @@ public class SabotageWiringHandler {
         }
 
         BlockState state = world.getBlockState(hitResult.getBlockPos());
-        if (!state.is(Blocks.REDSTONE_BLOCK)) {
+        if (!state.is(Blocks.REDSTONE_BLOCK) && !state.is(Blocks.COAL_BLOCK)) {
             return InteractionResult.PASS;
         }
 
-        // 给缓慢 III (6 秒)
+        // 给缓慢 III (3 秒)
         SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, 130,
+                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
                         ResourceLocation.parse("habitrain_core:sabotage_wiring")));
 
         // 推进任务完成

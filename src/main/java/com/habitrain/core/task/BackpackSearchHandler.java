@@ -29,16 +29,19 @@ import java.util.UUID;
 
 /**
  * 背包翻找交互处理器
- * 玩家右键背包方块后给予缓慢3效果（6秒），播放翻找音效，
+ * 玩家右键背包方块后给予缓慢3效果，播放翻找音效，
  * 并在任务系统中标记为"正在翻找"状态，使任务进度每tick递增。
- * 6秒后任务自动完成并发放奖励。
+ * 谋杀模式 search_backpack 为 6 秒；停电模式 blackout_search_backpack 为 3 秒。
  */
 public class BackpackSearchHandler {
-    /** 活跃的翻找记录 (玩家UUID -> 翻找开始时的世界tick) */
-    private static final Map<UUID, Long> activeSearches = new HashMap<>();
-    private static final int SEARCH_TICKS = 120; // 6秒 (20 ticks/秒 × 6)
+    /** 活跃的翻找记录 (玩家UUID -> 翻找状态) */
+    private static final Map<UUID, SearchState> activeSearches = new HashMap<>();
+    private static final int SEARCH_TICKS_DEFAULT = 120; // 6秒 — 谋杀模式
+    private static final int SEARCH_TICKS_BLACKOUT = 60; // 3秒 — 停电模式
 
     private static final String BACKPACK_BLOCK_ID = "decocraft:backpack_red";
+    private static final String TASK_SEARCH_BACKPACK = "habitrain_core:search_backpack";
+    private static final String TASK_BLACKOUT_SEARCH_BACKPACK = "habitrain_core:blackout_search_backpack";
 
     private static Block backpackBlock = null;
     private static boolean blockChecked = false;
@@ -59,10 +62,10 @@ public class BackpackSearchHandler {
             for (var it = activeSearches.entrySet().iterator(); it.hasNext();) {
                 var entry = it.next();
                 UUID uuid = entry.getKey();
-                long startTick = entry.getValue();
+                SearchState state = entry.getValue();
 
                 // 超时清理：移除追踪并主动清除缓慢效果（不依赖外部 mod 每 tick 清除）
-                if (tick - startTick >= SEARCH_TICKS) {
+                if (tick - state.startTick() >= state.durationTicks()) {
                     ServerPlayer timedOut = server.getPlayerList().getPlayer(uuid);
                     if (timedOut != null) {
                         timedOut.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
@@ -75,8 +78,8 @@ public class BackpackSearchHandler {
                     TaskManager mgr = TaskManager.getInstance();
                     TaskInstance stuckTask = mgr.getActiveTask(uuid);
                     if (stuckTask != null
-                            && ("habitrain_core:search_backpack".equals(stuckTask.getFullId())
-                                    || "habitrain_core:blackout_search_backpack".equals(stuckTask.getFullId()))
+                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
+                                    || TASK_BLACKOUT_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
                             && !stuckTask.isFulfilled()) {
                         // 任务超时前回收发放的道具（虽然翻背包通常 onComplete 才发放，
                         // 但若任务以某种方式提前发放了道具，这里回收保证安全）
@@ -117,6 +120,13 @@ public class BackpackSearchHandler {
         SlownessReapplyManager.clearAll();
     }
 
+    private static int getSearchTicks(String taskKey) {
+        if (TASK_BLACKOUT_SEARCH_BACKPACK.equals(taskKey)) {
+            return SEARCH_TICKS_BLACKOUT;
+        }
+        return SEARCH_TICKS_DEFAULT;
+    }
+
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
                                                 BlockHitResult hitResult) {
         if (world.isClientSide()) return InteractionResult.PASS;
@@ -133,32 +143,35 @@ public class BackpackSearchHandler {
 
         // 检查玩家是否有翻找背包任务（支持谋杀模式与停电模式两个版本）
         TaskInstance task = TaskManager.getInstance().getActiveTask(uuid);
-        if (task == null || (!"habitrain_core:search_backpack".equals(task.getFullId())
-                && !"habitrain_core:blackout_search_backpack".equals(task.getFullId()))) {
+        if (task == null || (!TASK_SEARCH_BACKPACK.equals(task.getFullId())
+                && !TASK_BLACKOUT_SEARCH_BACKPACK.equals(task.getFullId()))) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
             return InteractionResult.PASS;
         }
         String taskKey = task.getFullId();
+        int searchTicks = getSearchTicks(taskKey);
 
         // 防止重复点击
         if (activeSearches.containsKey(uuid)) {
             return InteractionResult.FAIL;
         }
 
-        // 给予缓慢3效果（6秒 = 120 ticks，+10 tick缓冲）
+        // 给予缓慢3效果（时长按任务版本：谋杀6秒 / 停电3秒，+10 tick缓冲）
         SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SEARCH_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:search_backpack")));
+                new SlownessReapplyManager.EffectSpec(2, searchTicks + 10,
+                        ResourceLocation.parse(taskKey)));
 
         // 记录翻找状态（onTick 会据此递增任务进度）
         // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差
+        long startTick;
         if (world instanceof ServerLevel sl && sl.getServer() != null) {
-            activeSearches.put(uuid, sl.getServer().overworld().getGameTime());
+            startTick = sl.getServer().overworld().getGameTime();
         } else {
-            activeSearches.put(uuid, world.getGameTime());
+            startTick = world.getGameTime();
         }
+        activeSearches.put(uuid, new SearchState(startTick, searchTicks));
 
         return InteractionResult.FAIL;
     }
@@ -179,4 +192,6 @@ public class BackpackSearchHandler {
         }
         return backpackBlock != null && block == backpackBlock;
     }
+
+    private record SearchState(long startTick, int durationTicks) {}
 }

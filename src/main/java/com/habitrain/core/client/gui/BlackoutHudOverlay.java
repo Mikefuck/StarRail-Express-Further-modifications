@@ -1,7 +1,6 @@
 package com.habitrain.core.client.gui;
 
 import com.habitrain.core.client.BlackoutKeyHandler;
-import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -61,13 +60,20 @@ public class BlackoutHudOverlay {
     private static boolean blackoutActive = false;
     private static boolean showHud = false;
     private static int currentPhase = 0;
-    private static int totalDuration = 300;
+    /** Full match length for progress bar denominator — never overwrite with remaining each packet. */
+    private static int totalDuration = 600;
     private static final int TIME_WARNING_SECONDS = 60;
+    private static final int DEFAULT_MATCH_DURATION = 600;
     private static long cachedEndTimeTick = -1;
 
     public static void updateTime(int total, long endTimeTick, boolean active, int phase) {
         totalTimeRemaining = total;
-        totalDuration = total;
+        // Capture full duration once (or grow if server extends time); never shrink to remaining.
+        if (totalDuration <= 0) {
+            totalDuration = Math.max(total, DEFAULT_MATCH_DURATION);
+        } else if (total > totalDuration) {
+            totalDuration = total;
+        }
         cachedEndTimeTick = endTimeTick;
         blackoutActive = active;
         currentPhase = phase;
@@ -100,7 +106,7 @@ public class BlackoutHudOverlay {
         showHud = false;
         ClientBlackoutState.setBlackoutModeActive(false);
         currentPhase = 0;
-        totalDuration = 300;
+        totalDuration = DEFAULT_MATCH_DURATION;
         cachedEndTimeTick = -1;
     }
 
@@ -115,6 +121,7 @@ public class BlackoutHudOverlay {
 
         // S11-001: Cache getLocalCountdown() once per frame
         long localCountdown = getLocalCountdown();
+        int localCountdownSeconds = (int) Math.max(0L, localCountdown / 20L);
 
         g.fill(barX, BAR_Y - 1, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT + 1, COLOR_BG_PROGRESS_BAR_BORDER);
         g.fill(barX, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, COLOR_BG_PROGRESS_BAR);
@@ -132,8 +139,8 @@ public class BlackoutHudOverlay {
             g.fill(barX + filledW, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, color);
         }
 
-        if (!blackoutActive && localCountdown >= 0) {
-            int markerX = barX + (int) ((float) (totalDuration - localCountdown) / totalDuration * BAR_WIDTH);
+        if (!blackoutActive && localCountdownSeconds >= 0) {
+            int markerX = barX + (int) ((float) (totalDuration - localCountdownSeconds) / totalDuration * BAR_WIDTH);
             g.fill(markerX, BAR_Y - 2, markerX + 1, BAR_Y + BAR_HEIGHT + 2, COLOR_MARKER_BLACKOUT_START);
         }
 
@@ -152,25 +159,34 @@ public class BlackoutHudOverlay {
             if (blackoutActive) {
                 String blackoutText = "§c停电中";
                 g.drawString(font, blackoutText, textX, textY + 10, COLOR_TEXT_BLACKOUT, false);
-            } else if (localCountdown >= 0) {
+            } else if (localCountdownSeconds >= 0) {
                 String cdLabel = currentPhase == PHASE_MAINTENANCE ? "§e剩余供电时间" : "§e停电";
-                String cdText = cdLabel + " " + formatTime((int) localCountdown);
+                String cdText = cdLabel + " " + formatTime(localCountdownSeconds);
                 g.drawString(font, cdText, textX, textY + 10, COLOR_TEXT_MAINTENANCE, false);
             }
         }
 
-        // 警长投票进行中时，在 HUD 下方显示带实际绑定按键的提示。
+        // 警长 / 放逐投票进行中时，在 HUD 下方显示带客户端实际绑定键的提示。
         if (BlackoutSheriffVoteState.isActive()) {
-            KeyMapping voteKey = BlackoutKeyHandler.getOpenVoteKey();
-            Component keyName = voteKey != null ? voteKey.getTranslatedKeyMessage() : Component.literal("V");
-            Component hint = Component.literal("§e按 §f")
-                    .append(keyName)
-                    .append("§e 打开警长投票 §7(" + BlackoutSheriffVoteState.getRemainingSeconds() + "s)");
-            int hintWidth = font.width(hint);
-            int hintX = (width - hintWidth) / 2;
-            int hintY = BAR_Y + 12;
-            g.drawString(font, hint, hintX, hintY, COLOR_TEXT_DEFAULT, false);
+            drawVoteHint(g, font, width,
+                    "打开警长投票",
+                    BlackoutSheriffVoteState.getRemainingSeconds());
+        } else if (BlackoutVoteState.isActive()) {
+            drawVoteHint(g, font, width,
+                    "打开放逐投票",
+                    BlackoutVoteState.getRemainingSeconds());
         }
+    }
+
+    private static void drawVoteHint(GuiGraphics g, Font font, int width, String actionLabel, int remainingSeconds) {
+        Component keyName = BlackoutKeyHandler.getBoundKeyDisplay();
+        Component hint = Component.literal("§e按 §f")
+                .append(keyName)
+                .append("§e " + actionLabel + " §7(" + remainingSeconds + "s)");
+        int hintWidth = font.width(hint);
+        int hintX = (width - hintWidth) / 2;
+        int hintY = BAR_Y + 12;
+        g.drawString(font, hint, hintX, hintY, COLOR_TEXT_DEFAULT, false);
     }
 
     private static String formatTime(int seconds) {

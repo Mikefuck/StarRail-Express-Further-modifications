@@ -8,7 +8,7 @@ import net.minecraft.world.entity.player.Player;
 
 /**
  * 停电模式好人任务：维持供电（右键发电机触发延迟奖励）。
- * <p>玩家右键发电机 → 获得 10 秒缓慢 → 缓慢结束后发放奖励 + 断电倒计时增加 80 秒。
+ * <p>玩家右键发电机 → 获得 3 秒缓慢 → 缓慢结束后发放奖励 + 断电倒计时增加 80 秒。
  * <p>属于 {@link BlackoutMode#BLACKOUT_GOOD} 池。
  */
 public class MaintainPowerTask {

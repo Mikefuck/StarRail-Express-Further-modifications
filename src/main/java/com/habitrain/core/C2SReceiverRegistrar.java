@@ -125,5 +125,49 @@ public final class C2SReceiverRegistrar {
                 }
             });
         });
+        // C2S 停电任务商店购买接收器
+        ServerPlayNetworking.registerGlobalReceiver(BlackoutTaskShopBuyPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                ServerLevel level = player.serverLevel();
+                if (level == null) return;
+
+                com.habitrain.core.game.blackout.shop.BlackoutTaskShopCatalog.Entry entry =
+                        com.habitrain.core.game.blackout.shop.BlackoutTaskShopCatalog.findByKey(payload.entryKey());
+                if (entry == null) {
+                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(false, "无效条目"));
+                    return;
+                }
+                String error = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.tryPurchase(level, player, entry);
+                if (error != null) {
+                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(false, error));
+                    SubtitleNotifier.sendTop(player, Component.empty(), Component.literal("§c" + error), 60);
+                } else {
+                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(true, ""));
+                }
+                // 刷新商店 Open 状态（余额/可买性变化）
+                refreshShopOpen(level, player);
+            });
+        });
+    }
+
+    /** 购买后重发商店 Open payload 刷新客户端。 */
+    private static void refreshShopOpen(ServerLevel level, ServerPlayer player) {
+        var entries = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.visibleEntries(level, player);
+        int balance = 0;
+        try {
+            var shop = io.wifi.starrailexpress.cca.SREPlayerShopComponent.KEY.get(player);
+            if (shop != null) balance = shop.balance;
+        } catch (Exception ignored) {}
+        boolean destroyed = com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.isGeneratorDestroyed(level);
+        boolean restoreUsed = com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.isRestoreUsed(level);
+        var out = new java.util.ArrayList<BlackoutTaskShopOpenPayload.Entry>();
+        for (var e : entries) {
+            String reason = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.purchaseBlockReason(level, player, e);
+            out.add(new BlackoutTaskShopOpenPayload.Entry(e.key(), e.displayName(), e.resolvePrice(),
+                    reason == null, reason == null ? "" : reason));
+        }
+        ServerPlayNetworking.send(player, new BlackoutTaskShopOpenPayload(balance, destroyed, restoreUsed, out));
     }
 }

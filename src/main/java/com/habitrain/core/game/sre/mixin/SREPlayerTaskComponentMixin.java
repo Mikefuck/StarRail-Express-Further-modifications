@@ -1,16 +1,11 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.GameMode;
-import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.sre.PerPlayerTaskTicker;
-import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
@@ -109,32 +104,9 @@ public abstract class SREPlayerTaskComponentMixin {
         Player player = getPlayer();
         if (player == null) return;
 
-        // 杀手双任务强制派发：停电模式杀手一旦有了主任务(BAD)但还没有并行任务(GOOD假任务)，
-        // 立即强制调用 generateParallelTask()，绕过原版的 currentTaskAge/mood 阈值条件。
-        // generateParallelTask 内部会调 generateTaskInternal，被 GenerateTaskMixin 拦截后
-        // 因 tasks 非空走并行分支，只从 BLACKOUT_GOOD 池选假任务。
-        try {
-            if (player instanceof ServerPlayer sp && sp.level() instanceof ServerLevel level) {
-                GameMode activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
-                if (activeMode instanceof BlackoutMode
-                        && BlackoutRoleManager.getFaction(level, sp.getUUID()) == BlackoutRoleManager.Faction.BAD
-                        && !this.parallelTaskGenerated
-                        && !this.tasks.isEmpty()
-                        && PerPlayerTaskTicker.mgrHasActiveDlcTask(sp)) {
-                    LOGGER.info("[KillerDualTask] forcing parallel task for killer {} (mainTaskCount={})",
-                            sp.getName().getString(), this.tasks.size());
-                    SREPlayerTaskComponent.TrainTask parallel = generateParallelTask();
-                    if (parallel != null) {
-                        this.tasks.put(parallel.getType(), parallel);
-                        this.parallelTaskGenerated = true;
-                        LOGGER.info("[KillerDualTask] parallel fake task assigned: type={} name={}",
-                                parallel.getType(), parallel.getName());
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.error("[KillerDualTask] failed to force parallel task", t);
-        }
+        // 停电模式任务系统独立化后，杀手双任务（假任务）机制已关闭：
+        // 杀手默认只走原版 SRE 任务，坏人专属任务通过红色电话商店购买。
+        // 原来的 generateParallelTask() 强制派发已移除。
 
         PerPlayerTaskTicker.tick(player);
     }

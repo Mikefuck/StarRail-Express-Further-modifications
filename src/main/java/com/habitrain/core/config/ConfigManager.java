@@ -184,6 +184,15 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
     }
 
+    public int getTempPowerPrice() {
+        return repository.getTempPowerPrice();
+    }
+
+    public void setTempPowerPrice(int price) {
+        repository.setTempPowerPrice(price);
+        store.markDirty();
+    }
+
     @Override
     public MinigameConfigEntry getMinigameConfig(String minigameId) {
         return repository.getMinigameConfig(minigameId);

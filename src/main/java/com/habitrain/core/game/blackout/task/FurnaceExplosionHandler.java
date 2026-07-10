@@ -34,15 +34,15 @@ import java.util.UUID;
 
 /**
  * 炸毁熔炉任务交互处理器（两阶段右键流程）。
- * <p>阶段0：右键红石火把方块 → 给缓慢III(6秒) + 发放 1 个红石火把 → 进入阶段1
- * <p>阶段1：手持红石火把右键 TNT → 消耗火把 + 给 2 秒缓慢 + 推进完成
+ * <p>阶段0：右键红石火把方块 → 给缓慢III(3秒) + 发放 1 个红石火把 → 进入阶段1
+ * <p>阶段1：手持红石火把右键 TNT → 消耗火把 + 推进完成
  *           → 2 秒后点燃 TNT + 全图通报发电机被摧毁
  * <p>缓慢效果在 END_SERVER_TICK 中重新施加以对抗 betel-nut-mod 每 tick 清除。
  */
 public class FurnaceExplosionHandler {
 
-    private static final int SLOW_TICKS_LONG = 120; // 6 秒
-    private static final int SLOW_TICKS_SHORT = 40; // 2 秒
+    private static final int SLOW_TICKS_LONG = 60; // 3 秒
+    private static final int SLOW_TICKS_SHORT = 40; // 2 秒（未用于玩家缓慢）
     private static final int FUSE_DELAY_TICKS = 40; // 2 秒延迟点燃 TNT
 
     private static final Map<UUID, TorchState> activeStates = new HashMap<>();
@@ -183,9 +183,7 @@ public class FurnaceExplosionHandler {
                 serverPlayer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             }
 
-            // 给 2 秒缓慢
-            giveSlow(serverPlayer, uuid, SLOW_TICKS_SHORT, true);
-
+            // 阶段1：取消手持火把右键 TNT 时的缓慢（仅给短动画/声音提示，不再施加强制缓慢）
             // 推进任务完成 → 触发 onComplete（短暂停电 + 减供电时间 40 秒 + 奖励）
             task.setProgress(FurnaceExplosionTask.PROGRESS_DONE);
 

@@ -1,9 +1,10 @@
 package com.habitrain.core.game.blackout.sre;
 
+import com.habitrain.core.api.WinResult;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
 import io.wifi.starrailexpress.api.SREGameModes;
-import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameUtils;
 import io.wifi.starrailexpress.game.modes.SREMurderGameMode;
@@ -15,8 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * 停电模式专用 SRE GameMode。
@@ -90,51 +89,49 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
     /**
      * 在 SRE 停止游戏后接管回放数据填充，确保结算屏显示正确的胜负阵营与头像分组。
+     * <p>
+     * endGame 已在 STOPPING 前写入 roundEnd；此处再补一次（幂等），并延后
+     * {@code GameModeRegistry.stop}，以便 habitrain 清理发生在身份揭示数据就绪之后。
      */
     @Override
     public void finalizeGame(ServerLevel world, SREGameWorldComponent game) {
         super.finalizeGame(world, game);
 
         try {
-            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(world);
-            if (roundEnd == null) return;
-
             BlackoutRoleManager.Faction winner = null;
+            BlackoutMode bm = null;
             var modeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(world);
-            if (modeOpt.isPresent() && modeOpt.get() instanceof BlackoutMode bm) {
-                winner = bm.getLastWinningFaction();
-            }
-            GameUtils.WinStatus winStatus;
-            if (winner == BlackoutRoleManager.Faction.GOOD) {
-                winStatus = GameUtils.WinStatus.PASSENGERS;
-            } else if (winner == BlackoutRoleManager.Faction.BAD) {
-                winStatus = GameUtils.WinStatus.KILLERS;
+            if (modeOpt.isPresent() && modeOpt.get() instanceof BlackoutMode active) {
+                bm = active;
+                winner = active.getLastWinningFaction();
             } else {
-                winStatus = GameUtils.WinStatus.NONE;
-            }
-
-            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(world);
-            java.util.List<ServerPlayer> participants = new java.util.ArrayList<>();
-            for (ServerPlayer p : world.getServer().getPlayerList().getPlayers()) {
-                if (history.containsKey(p.getUUID())) {
-                    participants.add(p);
+                // 兜底：用注册表里的单例（ACTIVE 可能已摘掉，但 lastWinningFaction 仍在）
+                var registered = com.habitrain.core.api.GameModeRegistry.get(BlackoutMode.REGISTRY_FULL_ID);
+                if (registered instanceof BlackoutMode fallback) {
+                    bm = fallback;
+                    winner = fallback.getLastWinningFaction();
                 }
             }
 
-            roundEnd.setRoundEndData(participants, winStatus);
+            // 再写一次 roundEnd（若 endGame 已写则刷新 hasWin / 在线列表）
+            BlackoutVictoryChecker.populateRoundEndData(world, winner);
 
-            for (ServerPlayer p : participants) {
-                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFaction(world, p.getUUID());
-                boolean didWin = (winner != null && f == winner);
-                roundEnd.setPlayerWin(p.getUUID(), didWin);
+            // 延后停止 habitrain GameMode：字幕已在 endGame 广播，这里只做清理
+            if (bm != null && com.habitrain.core.api.GameModeRegistry.isActiveInLevel(world)) {
+                WinResult result = bm.getPendingWinResult();
+                if (result == null) {
+                    result = WinResult.forceEnd("游戏结束");
+                }
+                com.habitrain.core.api.GameModeRegistry.stop(world, result);
             }
-            roundEnd.sync();
-
-            // SRE 4.3.0 移除了 replay.screen 包（ReplayScreenSavedData/ReplayScreenService），
-            // 之前的 ensureDefaultReplayScreen 调用已失效。replay screen 是 SRE 内部功能，
-            // habitrain_core 不再自动创建默认 screen — 如需要请由地图作者在地图里配置。
         } catch (Throwable t) {
             LOGGER.error("finalizeGame: failed to populate blackout round-end data", t);
+            try {
+                // 保证 habitrain 模式不会永远卡在 active
+                if (com.habitrain.core.api.GameModeRegistry.isActiveInLevel(world)) {
+                    com.habitrain.core.api.GameModeRegistry.stop(world, WinResult.forceEnd("finalize 异常"));
+                }
+            } catch (Throwable ignored) {}
         }
     }
 

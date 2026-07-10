@@ -110,6 +110,13 @@ public class MapScannerMixin {
             blockToTypeIds.computeIfAbsent(phoneBlock, k -> new HashSet<>()).add(BlackoutOverlayTypes.STREET_PHONE);
         }
 
+        // 红色旋转电话（任务商店），停电模式常驻透视，与 street_phone 同管道
+        Block rotaryPhoneBlock = BlackoutOverlayTypes.getRotaryPhoneRedBlock();
+        if (rotaryPhoneBlock != null && rotaryPhoneBlock != Blocks.AIR) {
+            blockToTypeIds.computeIfAbsent(rotaryPhoneBlock, k -> new HashSet<>())
+                    .add(BlackoutOverlayTypes.ROTARY_PHONE_RED);
+        }
+
         // 如果 blockToTypeIds 仍然为空（只有常量方块但停电模式未激活），提前返回
         if (blockToTypeIds.isEmpty()) {
             CustomTaskBlockCache.clear();

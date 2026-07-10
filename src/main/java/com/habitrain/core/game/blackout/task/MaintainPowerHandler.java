@@ -25,14 +25,14 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 维持供电任务交互处理器（右键发电机 → 10秒缓慢 → 缓慢结束后完成）。
- * <p>玩家右键发电机后获得 10 秒缓慢III，缓慢期间每 tick 重新施加以对抗 betel-nut-mod。
+ * 维持供电任务交互处理器（右键发电机 → 3秒缓慢 → 缓慢结束后完成）。
+ * <p>玩家右键发电机后获得 3 秒缓慢III，缓慢期间每 tick 重新施加以对抗 betel-nut-mod。
  * 缓慢到期后任务进度设为完成，触发 onComplete（奖励 + 断电倒计时 +60 秒）。
  */
 public class MaintainPowerHandler {
 
     private static final String GENERATOR_BLOCK_ID = "yuushya:generator";
-    private static final int SLOW_TICKS = 200; // 10 秒
+    private static final int SLOW_TICKS = 60; // 3 秒
 
     private static final Map<UUID, MaintainState> activeStates = new HashMap<>();
 

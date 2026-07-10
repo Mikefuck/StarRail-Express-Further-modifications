@@ -5,6 +5,7 @@ import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -44,10 +45,13 @@ public class RestorePowerTask {
                 }
 
                 RestorePowerHandler.markRestoreCompleted(level);
+                // 本局已用掉一次恢复供电（第二次永久停电无法再恢复）
+                BlackoutTaskShopState.markRestoreUsed(level);
 
                 // 通过 applyTimeImpact 调用 restorePower（替代硬编码 BlackoutTimerSystem.restorePower(level)）
                 BlackoutTaskHelper.applyTimeImpact(level, "habitrain_core:restore_power");
 
+                // 仅完成者拿奖励
                 BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:restore_power");
                 SubtitleNotifier.sendTop(
                         serverPlayer,
@@ -56,12 +60,8 @@ public class RestorePowerTask {
                         80
                 );
 
-                // 同步完成其它正在做 restore_power 的 GOOD 玩家
+                // 同步完成其它正在做 restore_power 的 GOOD 玩家（仅清理状态，不发奖、不重复 restorePower）
                 completeAllGoodPlayers(level, serverPlayer.getUUID());
-
-                // 不再强制派发 maintain_power 给所有 GOOD 玩家（旧逻辑会无差别移除所有人当前任务）。
-                // 任务刷新交给自然刷新机制：每个玩家下次刷新任务时自动从供电池池里抽。
-                // 想做 maintain_power 同步派发？改用 SupplyTaskSyncHelper.syncCompletion 即可。
             })
             .onRemove((player, task) -> {
                 if (player != null) RestorePowerHandler.clearState(player.getUUID());
@@ -69,6 +69,11 @@ public class RestorePowerTask {
         );
     }
 
+    /**
+     * 同步完成其它正在做 restore_power 的 GOOD 玩家。
+     * 仅清理状态（setFulfilled + onRemove + clearState），不调用 onComplete —— 不发奖、
+     * 不重复 restorePower（时间效果由真正完成者施加一次）。
+     */
     private static void completeAllGoodPlayers(ServerLevel level, UUID completerUuid) {
         TaskManager mgr = TaskManager.getInstance();
         List<UUID> alive = BlackoutRoleManager.getAllAlive(level);
@@ -81,9 +86,15 @@ public class RestorePowerTask {
             if (task.isFulfilled()) continue;
 
             task.setFulfilled(true);
-            task.getDefinition().onComplete(
-                    level.getServer().getPlayerList().getPlayer(uuid), task);
+            ServerPlayer other = level.getServer().getPlayerList().getPlayer(uuid);
+            try {
+                task.getDefinition().onRemove(other, task);
+            } catch (Throwable t) {
+                com.habitrain.core.HabiTrainCore.LOGGER.error(
+                        "[RestorePower] onRemove failed for synced player {}", uuid, t);
+            }
             RestorePowerHandler.clearState(uuid);
+            // 不调 onComplete — 不发奖、不重复 restorePower
         }
     }
 }

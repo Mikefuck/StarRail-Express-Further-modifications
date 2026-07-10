@@ -22,10 +22,13 @@ import java.util.UUID;
 
 /**
  * 修理线路任务交互处理器。
- * <p>检测玩家手持红石右键红石块 → 消耗红石 + 缓慢 III(6秒) + 推进任务进度完成。
+ * <p>检测玩家手持红石右键红石块 → 消耗红石 + 缓慢 III(3秒) + 推进任务进度完成。
  * <p>缓慢效果在 END_SERVER_TICK 中重新施加以对抗 betel-nut-mod 每 tick 清除。
  */
 public class RepairWiringHandler {
+
+    /** 缓慢持续 tick（3 秒）。 */
+    private static final int SLOW_TICKS = 60;
 
     public static void register() {
         UseBlockCallback.EVENT.register(RepairWiringHandler::onUseBlock);
@@ -70,9 +73,9 @@ public class RepairWiringHandler {
             serverPlayer.setItemInHand(InteractionHand.MAIN_HAND, net.minecraft.world.item.ItemStack.EMPTY);
         }
 
-        // 给缓慢 III (6 秒)
+        // 给缓慢 III (3 秒)
         SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, 130,
+                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
                         ResourceLocation.parse("habitrain_core:repair_wiring")));
 
         // 推进任务完成
