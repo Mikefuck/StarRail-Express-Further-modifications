@@ -1,7 +1,9 @@
 package com.habitrain.core.client;
 
+import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
+import com.habitrain.core.client.gui.BlackoutTaskShopState;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
@@ -9,6 +11,7 @@ import com.habitrain.core.client.gui.LiveConfigAccess;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import io.wifi.starrailexpress.event.client.OnGameFinishedClient;
 import io.wifi.starrailexpress.event.client.OnGameStartedClient;
 import net.fabricmc.api.EnvType;
@@ -90,5 +93,9 @@ public class ClientLifecycleHandler {
         BlackoutSheriffVoteState.clear();
         BlackoutVoteState.clear();
         ClientBlackoutState.setBlackoutModeActive(false);
+        // 清活动任务/扫描方块缓存与商店状态，避免换世界后陈旧 ESP 轮廓与商店状态残留（P1-22/P1-23）
+        ActiveTaskCache.clear();
+        CustomTaskBlockCache.clear();
+        BlackoutTaskShopState.clear();
     }
 }

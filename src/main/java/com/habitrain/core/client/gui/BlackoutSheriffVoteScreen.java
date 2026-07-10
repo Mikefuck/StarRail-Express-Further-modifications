@@ -144,14 +144,14 @@ public class BlackoutSheriffVoteScreen extends Screen {
                 boolean wasSelected = BlackoutSheriffVoteState.isSelected(targetId);
                 UUID replaced = BlackoutSheriffVoteState.toggleSelection(targetId);
                 if (replaced != null) {
-                    // 替换场景：对旧目标发送撤回 payload，对新目标发送投票
+                    // 替换场景：先撤回旧目标的票（slotIndex=-1），再发新目标的票（P4-6）
+                    PayloadSenders.sendSheriffVoteCast(replaced, -1);
                 }
                 int slotIndex = BlackoutSheriffVoteState.getSelectedTargetIds().indexOf(targetId);
                 if (slotIndex >= 0) {
                     PayloadSenders.sendSheriffVoteCast(targetId, slotIndex);
                 } else if (wasSelected && replaced == null) {
-                    // 取消投票：发送 slotIndex = -1 表示撤回（服务端按 slotIndex 移除该目标）
-                    // 注意：如果 replaced != null，已在上方发送了旧目标的撤回，这里不重复发送
+                    // 纯取消投票（非替换）：撤回本目标
                     PayloadSenders.sendSheriffVoteCast(targetId, -1);
                 }
                 return true;
