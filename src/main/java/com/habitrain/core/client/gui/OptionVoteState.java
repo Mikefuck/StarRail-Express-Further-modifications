@@ -21,7 +21,9 @@ public final class OptionVoteState {
     private OptionVoteState() {}
 
     public static void update(OptionVotePayload payload) {
-        voteId = payload.voteId() == null ? "" : payload.voteId();
+        String newVoteId = payload.voteId() == null ? "" : payload.voteId();
+        boolean voteIdChanged = !newVoteId.equals(voteId);
+        voteId = newVoteId;
         active = payload.active();
         remainingSeconds = payload.remainingSeconds();
         totalSeconds = payload.totalSeconds();
@@ -29,9 +31,8 @@ public final class OptionVoteState {
         title = payload.title() == null ? "" : payload.title();
         description = payload.description() == null ? "" : payload.description();
         candidates = List.copyOf(payload.candidates());
-        // 投票结束或新投票开始时清空本地选择
-        boolean freshVote = active && remainingSeconds == totalSeconds;
-        if (!active || freshVote) {
+        // 投票结束或 voteId 切换时清空本地选择（勿用 remaining==total 判断新投票）
+        if (!active || voteIdChanged) {
             selectedOptionId = null;
         }
     }
