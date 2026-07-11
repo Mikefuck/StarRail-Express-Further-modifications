@@ -45,6 +45,7 @@ public class VoteTabScreen {
     private double dragStartY = 0;
     private double dragStartScroll = 0;
     private int contentHeight = 0;
+    private int listHeight = 0;
 
     private final List<RowHit> modeHits = new ArrayList<>();
     private final List<RowHit> mapHits = new ArrayList<>();
@@ -69,6 +70,10 @@ public class VoteTabScreen {
         return ConfigManager.getInstance().getModeMapVoteSettings();
     }
 
+    /**
+     * Build display id lists from registry + existing settings keys only.
+     * Does NOT insert default entries into ConfigManager settings.
+     */
     private void rebuildIdLists() {
         ModeMapVoteSettings s = settings();
         Set<String> modes = new LinkedHashSet<>();
@@ -87,14 +92,6 @@ public class VoteTabScreen {
         }
         mapIds.clear();
         mapIds.addAll(maps);
-
-        // ensure entries exist for UI mutation
-        for (String id : modeIds) {
-            s.modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
-        }
-        for (String id : mapIds) {
-            s.maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
-        }
     }
 
     private void ensureWidgetsInitialized() {
@@ -117,15 +114,16 @@ public class VoteTabScreen {
         rebuildNameFields();
     }
 
+    /** Create display EditBoxes without writing missing ids into settings. */
     private void rebuildNameFields() {
         ModeMapVoteSettings s = settings();
         for (String id : modeIds) {
             if (!modeNameFields.containsKey(id)) {
-                ModeVoteEntry e = s.modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
+                ModeVoteEntry e = s.modes.get(id);
                 EditBox box = new EditBox(font, -10000, -10000, 120, 14, Component.literal(""));
                 box.setMaxLength(64);
-                String dn = e.displayName != null ? e.displayName : "";
-                if (dn.isEmpty()) dn = resolveModeDisplay(id);
+                String dn = (e != null && e.displayName != null && !e.displayName.isEmpty())
+                        ? e.displayName : resolveModeDisplay(id);
                 box.setValue(dn);
                 box.setEditable(editable);
                 modeNameFields.put(id, box);
@@ -133,10 +131,11 @@ public class VoteTabScreen {
         }
         for (String id : mapIds) {
             if (!mapNameFields.containsKey(id)) {
-                MapVoteEntry e = s.maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+                MapVoteEntry e = s.maps.get(id);
                 EditBox box = new EditBox(font, -10000, -10000, 120, 14, Component.literal(""));
                 box.setMaxLength(64);
-                String dn = e.displayName != null && !e.displayName.isEmpty() ? e.displayName : id;
+                String dn = (e != null && e.displayName != null && !e.displayName.isEmpty())
+                        ? e.displayName : id;
                 box.setValue(dn);
                 box.setEditable(editable);
                 mapNameFields.put(id, box);
@@ -155,6 +154,16 @@ public class VoteTabScreen {
         return idx >= 0 ? id.substring(idx + 1) : id;
     }
 
+    private boolean modeEnabled(ModeMapVoteSettings s, String id) {
+        ModeVoteEntry e = s.modes.get(id);
+        return e == null || e.enabled;
+    }
+
+    private boolean mapEnabled(ModeMapVoteSettings s, String id) {
+        MapVoteEntry e = s.maps.get(id);
+        return e == null || e.enabled;
+    }
+
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
         rebuildIdLists();
@@ -166,6 +175,7 @@ public class VoteTabScreen {
 
         int listTop = y;
         int listH = h;
+        listHeight = listH;
         g.enableScissor(x, listTop, x + w, listTop + listH);
 
         int cy = listTop + 6 - (int) contentScroll;
@@ -208,7 +218,7 @@ public class VoteTabScreen {
             cy += ROW_H;
         } else {
             for (String id : modeIds) {
-                ModeVoteEntry e = s.modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
+                boolean enabled = modeEnabled(s, id);
                 boolean hover = SharedGuiKit.inBounds(mx, my, labelX, cy, innerW, ROW_H);
                 g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
                         hover ? SharedGuiKit.BG_ROW_HOVER : SharedGuiKit.BG_ROW);
@@ -216,8 +226,8 @@ public class VoteTabScreen {
 
                 int tX = labelX + 6;
                 int tW = 36;
-                g.fill(tX, cy + 4, tX + tW, cy + 18, e.enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
-                g.drawString(font, e.enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
+                g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
+                g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
 
                 String shortId = id.length() > 18 ? id.substring(0, 16) + "…" : id;
                 g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, SharedGuiKit.TEXT_SECONDARY, false);
@@ -250,7 +260,7 @@ public class VoteTabScreen {
             cy += ROW_H;
         } else {
             for (String id : mapIds) {
-                MapVoteEntry e = s.maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+                boolean enabled = mapEnabled(s, id);
                 boolean hover = SharedGuiKit.inBounds(mx, my, labelX, cy, innerW, ROW_H);
                 g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
                         hover ? SharedGuiKit.BG_ROW_HOVER : SharedGuiKit.BG_ROW);
@@ -258,8 +268,8 @@ public class VoteTabScreen {
 
                 int tX = labelX + 6;
                 int tW = 36;
-                g.fill(tX, cy + 4, tX + tW, cy + 18, e.enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
-                g.drawString(font, e.enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
+                g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
+                g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
 
                 String shortId = id.length() > 22 ? id.substring(0, 20) + "…" : id;
                 g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, SharedGuiKit.TEXT_SECONDARY, false);
@@ -329,6 +339,7 @@ public class VoteTabScreen {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
                 if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                // User edit: create entry only now
                 ModeVoteEntry e = settings().modes.computeIfAbsent(hit.id(), k -> ModeVoteEntry.createDefault());
                 e.enabled = !e.enabled;
                 persist();
@@ -336,7 +347,7 @@ public class VoteTabScreen {
             }
             if (hit.mapsW() > 0 && mx >= hit.mapsX() && mx < hit.mapsX() + hit.mapsW()) {
                 if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
-                commitFieldsToSettings();
+                flushPendingFields();
                 Minecraft.getInstance().setScreen(new ModeAllowedMapsScreen(root, hit.id(), editable));
                 return true;
             }
@@ -364,14 +375,24 @@ public class VoteTabScreen {
 
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
         if (draggingContent) {
-            contentScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, Math.max(0, contentHeight));
+            int maxScroll = Math.max(0, contentHeight - listHeight);
+            contentScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, maxScroll);
+            return true;
+        }
+        return false;
+    }
+
+    public boolean mouseReleased(double mx, double my, int btn) {
+        if (draggingContent) {
+            draggingContent = false;
             return true;
         }
         return false;
     }
 
     public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) {
-        contentScroll = Mth.clamp(contentScroll - sy * 18, 0, Math.max(0, contentHeight));
+        int maxScroll = Math.max(0, contentHeight - listHeight);
+        contentScroll = Mth.clamp(contentScroll - sy * 18, 0, maxScroll);
         return true;
     }
 
@@ -403,6 +424,17 @@ public class VoteTabScreen {
         return Math.max(DURATION_MIN, Math.min(DURATION_MAX, v));
     }
 
+    /**
+     * Flush duration/displayName EditBoxes into settings and mark dirty.
+     * Called before leave (tab switch / close / open sub-screen) so text is not
+     * dropped while toggles already persisted.
+     */
+    public void flushPendingFields() {
+        if (!editable || !widgetsInitialized) return;
+        commitFieldsToSettings();
+        persist();
+    }
+
     private void commitFieldsToSettings() {
         ModeMapVoteSettings s = settings();
         try {
@@ -417,12 +449,27 @@ public class VoteTabScreen {
         mapDurationField.setValue(String.valueOf(s.mapDurationSeconds));
 
         for (var e : modeNameFields.entrySet()) {
-            ModeVoteEntry me = s.modes.computeIfAbsent(e.getKey(), k -> ModeVoteEntry.createDefault());
-            me.displayName = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
+            String val = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
+            ModeVoteEntry me = s.modes.get(e.getKey());
+            if (me != null) {
+                me.displayName = val;
+            } else if (!val.isEmpty() && !val.equals(resolveModeDisplay(e.getKey()))) {
+                // Only create entry when user actually changed the display name
+                me = ModeVoteEntry.createDefault();
+                me.displayName = val;
+                s.modes.put(e.getKey(), me);
+            }
         }
         for (var e : mapNameFields.entrySet()) {
-            MapVoteEntry me = s.maps.computeIfAbsent(e.getKey(), k -> MapVoteEntry.createDefault());
-            me.displayName = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
+            String val = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
+            MapVoteEntry me = s.maps.get(e.getKey());
+            if (me != null) {
+                me.displayName = val;
+            } else if (!val.isEmpty() && !val.equals(e.getKey())) {
+                me = MapVoteEntry.createDefault();
+                me.displayName = val;
+                s.maps.put(e.getKey(), me);
+            }
         }
     }
 

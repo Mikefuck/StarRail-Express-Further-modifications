@@ -119,12 +119,20 @@ public class ConfigRootScreen extends Screen {
         g.fill(0, TAB_H, width, TAB_H + 1, 0x30FFFFFF);
     }
 
+    /** Flush vote-tab text fields when leaving the tab (toggles already persist immediately). */
+    private void flushVoteTabIfLeaving(int newTab) {
+        if (selectedTab == TAB_VOTE && newTab != TAB_VOTE && voteTab != null) {
+            voteTab.flushPendingFields();
+        }
+    }
+
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
         // Tab 切换
         if (my < TAB_H) {
             for (int i = 0; i < TAB_LABELS.length; i++) {
                 if (SharedGuiKit.inBounds(mx, my, tabX[i], 0, tabW[i], TAB_H)) {
+                    flushVoteTabIfLeaving(i);
                     selectedTab = i;
                     return true;
                 }
@@ -155,6 +163,14 @@ public class ConfigRootScreen extends Screen {
             case TAB_VOTE -> { return voteTab.mouseDragged(mx, my, btn, dx, dy, PAD, contentY, width - PAD, contentH); }
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int btn) {
+        if (selectedTab == TAB_VOTE && voteTab != null && voteTab.mouseReleased(mx, my, btn)) {
+            return true;
+        }
+        return super.mouseReleased(mx, my, btn);
     }
 
     @Override
@@ -200,6 +216,10 @@ public class ConfigRootScreen extends Screen {
 
     @Override
     public void onClose() {
+        // Match GlobalTab: toggles already dirty; flush vote text fields before root save
+        if (voteTab != null) {
+            voteTab.flushPendingFields();
+        }
         ConfigManager_save();
         Minecraft.getInstance().setScreen(parent);
     }
