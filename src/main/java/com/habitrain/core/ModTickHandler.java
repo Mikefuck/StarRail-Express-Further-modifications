@@ -6,6 +6,7 @@ import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.task.GameLifecycleHandler;
+import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
@@ -13,11 +14,24 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 public class ModTickHandler {
+    private static int voteTickCounter = 0;
+
     public static void register() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // 大厅阶段周期性补拉未进 LobbyChat 的玩家（必须在 processPending 前，以便本 tick 即可尝试）
+            SREGameModeBase.reconcileLobbyGroupMembership(server);
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);
+
+            // 1Hz option-vote tick (mode/map lobby vote countdown)
+            voteTickCounter++;
+            if (voteTickCounter % 20 == 0) {
+                for (ServerLevel level : server.getAllLevels()) {
+                    OptionVoteManager.tickSecond(level);
+                }
+            }
+
             tickMoreMods(server);
         });
     }

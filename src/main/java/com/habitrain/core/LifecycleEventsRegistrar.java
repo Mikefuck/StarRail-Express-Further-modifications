@@ -20,6 +20,8 @@ import com.habitrain.core.network.TaskConfigPayload;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
 import com.habitrain.core.task.SlownessReapplyManager;
+import com.habitrain.core.vote.ModeMapVoteOrchestrator;
+import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerLevel;
@@ -65,6 +67,8 @@ public final class LifecycleEventsRegistrar {
                 BlackoutShopService.resetRound(level);
                 BlackoutPoliceHireService.cleanup(level);
                 BlackoutExileVoteManager.reset(level);
+                OptionVoteManager.reset(level);
+                ModeMapVoteOrchestrator.reset(level);
             }
             // 清理所有跨局残留状态
             SlownessReapplyManager.clearAll();
@@ -104,6 +108,8 @@ public final class LifecycleEventsRegistrar {
                 GameModeRegistry.getActiveForLevel(level)
                     .ifPresent(mode -> mode.onPlayerJoin(player));
             }
+            // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
+            ModeMapVoteOrchestrator.onPlayerJoin(player);
         });
         // 玩家断线：通知激活的 GameMode 处理。
         // 停电模式据此把断线玩家移出存活阵营，避免其继续被计为放逐候选人或卡住胜负判定（Q8）。
@@ -121,6 +127,8 @@ public final class LifecycleEventsRegistrar {
                 if (disconnectLevel != null) {
                     GameModeRegistry.getActiveForLevel(disconnectLevel)
                         .ifPresent(mode -> mode.onPlayerLeave(player));
+                    // 从进行中的选项投票中移除断线玩家的票
+                    OptionVoteManager.onVoterRemoved(disconnectLevel, player.getUUID());
                 }
             } catch (Exception e) {
                 LOGGER.error("[GameMode] 处理玩家断线失败", e);
