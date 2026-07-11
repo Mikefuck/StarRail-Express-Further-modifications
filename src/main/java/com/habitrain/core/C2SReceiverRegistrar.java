@@ -8,6 +8,7 @@ import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
 import com.habitrain.core.network.*;
 import com.habitrain.core.util.SubtitleNotifier;
+import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -148,6 +149,16 @@ public final class C2SReceiverRegistrar {
                 }
                 // 刷新商店 Open 状态（余额/可买性变化）
                 refreshShopOpen(level, player);
+            });
+        });
+        // C2S 通用选项投票接收器（模式/地图等）；voteId 不匹配时 manager 内 no-op
+        ServerPlayNetworking.registerGlobalReceiver(OptionVoteCastPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer voter = context.player();
+                if (voter == null) return;
+                ServerLevel level = voter.serverLevel();
+                if (level == null) return;
+                OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
             });
         });
     }

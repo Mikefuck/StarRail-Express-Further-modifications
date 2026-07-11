@@ -11,6 +11,8 @@ import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
+import com.habitrain.core.client.gui.OptionVoteScreen;
+import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.InstinctColorHelper;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
@@ -23,6 +25,7 @@ import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
+import com.habitrain.core.network.OptionVotePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
 import net.fabricmc.api.EnvType;
@@ -195,6 +198,17 @@ public class NetworkReceiverRegistrar {
             ctx.client().execute(() -> {
                 if (ctx.client().screen instanceof BlackoutTaskShopScreen shopScreen) {
                     shopScreen.onPurchaseResult(payload.success(), payload.reason());
+                }
+            });
+        });
+
+        // 14) 通用选项投票（模式/地图等） S2C 接收器
+        ClientPlayNetworking.registerGlobalReceiver(OptionVotePayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                OptionVoteState.update(payload);
+                // Tip-only UX: never auto-open; close when vote ends if screen is open.
+                if (!payload.active() && ctx.client().screen instanceof OptionVoteScreen) {
+                    ctx.client().setScreen(null);
                 }
             });
         });

@@ -111,63 +111,67 @@ public class BlackoutHudOverlay {
     }
 
     public static void render(GuiGraphics g) {
-        if (!showHud) return;
-
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
-        int width = mc.getWindow().getGuiScaledWidth();
-        int barX = (width - BAR_WIDTH) / 2;
-
-        // S11-001: Cache getLocalCountdown() once per frame
-        long localCountdown = getLocalCountdown();
-        int localCountdownSeconds = (int) Math.max(0L, localCountdown / 20L);
-
-        g.fill(barX, BAR_Y - 1, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT + 1, COLOR_BG_PROGRESS_BAR_BORDER);
-        g.fill(barX, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, COLOR_BG_PROGRESS_BAR);
-
-        int elapsed = totalDuration - totalTimeRemaining;
-        int filledW = totalDuration > 0 ? (int) ((float) elapsed / totalDuration * BAR_WIDTH) : 0;
-        filledW = Math.max(0, Math.min(filledW, BAR_WIDTH));
-        if (filledW > 0) {
-            g.fill(barX, BAR_Y, barX + filledW, BAR_Y + BAR_HEIGHT, COLOR_SEGMENT_ELAPSED);
-        }
-
-        int remainingW = BAR_WIDTH - filledW;
-        if (remainingW > 0) {
-            int color = blackoutActive ? COLOR_SEGMENT_BLACKOUT : COLOR_SEGMENT_MAINTENANCE;
-            g.fill(barX + filledW, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, color);
-        }
-
-        if (!blackoutActive && localCountdownSeconds >= 0) {
-            int markerX = barX + (int) ((float) (totalDuration - localCountdownSeconds) / totalDuration * BAR_WIDTH);
-            g.fill(markerX, BAR_Y - 2, markerX + 1, BAR_Y + BAR_HEIGHT + 2, COLOR_MARKER_BLACKOUT_START);
-        }
-
-        int warningX = barX + (int) ((float) (totalDuration - TIME_WARNING_SECONDS) / totalDuration * BAR_WIDTH);
-        g.fill(warningX, BAR_Y - 1, warningX + 1, BAR_Y + BAR_HEIGHT + 1, COLOR_MARKER_WARNING);
-
-        // 进度条右侧：游戏倒计时 + 停电/维护倒计时（仅按住 shift 时显示）
         Font font = mc.font;
-        if (mc.player.isShiftKeyDown()) {
-            int textX = barX + BAR_WIDTH + 6;
-            int textY = BAR_Y - 4;
+        int width = mc.getWindow().getGuiScaledWidth();
 
-            String gameText = "§f对局剩余时间 " + formatTime(totalTimeRemaining);
-            g.drawString(font, gameText, textX, textY, COLOR_TEXT_DEFAULT, false);
+        if (showHud) {
+            int barX = (width - BAR_WIDTH) / 2;
 
-            if (blackoutActive) {
-                String blackoutText = "§c停电中";
-                g.drawString(font, blackoutText, textX, textY + 10, COLOR_TEXT_BLACKOUT, false);
-            } else if (localCountdownSeconds >= 0) {
-                String cdLabel = currentPhase == PHASE_MAINTENANCE ? "§e剩余供电时间" : "§e停电";
-                String cdText = cdLabel + " " + formatTime(localCountdownSeconds);
-                g.drawString(font, cdText, textX, textY + 10, COLOR_TEXT_MAINTENANCE, false);
+            // S11-001: Cache getLocalCountdown() once per frame
+            long localCountdown = getLocalCountdown();
+            int localCountdownSeconds = (int) Math.max(0L, localCountdown / 20L);
+
+            g.fill(barX, BAR_Y - 1, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT + 1, COLOR_BG_PROGRESS_BAR_BORDER);
+            g.fill(barX, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, COLOR_BG_PROGRESS_BAR);
+
+            int elapsed = totalDuration - totalTimeRemaining;
+            int filledW = totalDuration > 0 ? (int) ((float) elapsed / totalDuration * BAR_WIDTH) : 0;
+            filledW = Math.max(0, Math.min(filledW, BAR_WIDTH));
+            if (filledW > 0) {
+                g.fill(barX, BAR_Y, barX + filledW, BAR_Y + BAR_HEIGHT, COLOR_SEGMENT_ELAPSED);
+            }
+
+            int remainingW = BAR_WIDTH - filledW;
+            if (remainingW > 0) {
+                int color = blackoutActive ? COLOR_SEGMENT_BLACKOUT : COLOR_SEGMENT_MAINTENANCE;
+                g.fill(barX + filledW, BAR_Y, barX + BAR_WIDTH, BAR_Y + BAR_HEIGHT, color);
+            }
+
+            if (!blackoutActive && localCountdownSeconds >= 0) {
+                int markerX = barX + (int) ((float) (totalDuration - localCountdownSeconds) / totalDuration * BAR_WIDTH);
+                g.fill(markerX, BAR_Y - 2, markerX + 1, BAR_Y + BAR_HEIGHT + 2, COLOR_MARKER_BLACKOUT_START);
+            }
+
+            int warningX = barX + (int) ((float) (totalDuration - TIME_WARNING_SECONDS) / totalDuration * BAR_WIDTH);
+            g.fill(warningX, BAR_Y - 1, warningX + 1, BAR_Y + BAR_HEIGHT + 1, COLOR_MARKER_WARNING);
+
+            // 进度条右侧：游戏倒计时 + 停电/维护倒计时（仅按住 shift 时显示）
+            if (mc.player.isShiftKeyDown()) {
+                int textX = barX + BAR_WIDTH + 6;
+                int textY = BAR_Y - 4;
+
+                String gameText = "§f对局剩余时间 " + formatTime(totalTimeRemaining);
+                g.drawString(font, gameText, textX, textY, COLOR_TEXT_DEFAULT, false);
+
+                if (blackoutActive) {
+                    String blackoutText = "§c停电中";
+                    g.drawString(font, blackoutText, textX, textY + 10, COLOR_TEXT_BLACKOUT, false);
+                } else if (localCountdownSeconds >= 0) {
+                    String cdLabel = currentPhase == PHASE_MAINTENANCE ? "§e剩余供电时间" : "§e停电";
+                    String cdText = cdLabel + " " + formatTime(localCountdownSeconds);
+                    g.drawString(font, cdText, textX, textY + 10, COLOR_TEXT_MAINTENANCE, false);
+                }
             }
         }
 
-        // 警长 / 放逐投票进行中时，在 HUD 下方显示带客户端实际绑定键的提示。
-        if (BlackoutSheriffVoteState.isActive()) {
+        // 投票提示：通用选项投票优先于警长/放逐。
+        if (OptionVoteState.isActive()) {
+            String label = OptionVoteState.getTitle().isBlank() ? "打开投票" : "打开" + OptionVoteState.getTitle();
+            drawVoteHint(g, font, width, label, OptionVoteState.getRemainingSeconds());
+        } else if (BlackoutSheriffVoteState.isActive()) {
             drawVoteHint(g, font, width,
                     "打开警长投票",
                     BlackoutSheriffVoteState.getRemainingSeconds());

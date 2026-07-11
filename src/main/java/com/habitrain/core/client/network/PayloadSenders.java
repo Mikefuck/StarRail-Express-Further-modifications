@@ -2,12 +2,14 @@ package com.habitrain.core.client.network;
 
 import com.habitrain.core.network.BlackoutSheriffVoteCastPayload;
 import com.habitrain.core.network.ConfigUpdatePayload;
+import com.habitrain.core.network.OptionVoteCastPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
 import com.habitrain.core.network.VotePurpose;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
@@ -70,5 +72,14 @@ public final class PayloadSenders {
     public static void sendTaskShopBuy(String entryKey) {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutTaskShopBuyPayload(entryKey));
+    }
+
+    /**
+     * 从客户端发送通用选项投票/弃票。
+     * {@code optionId == null} 表示弃票；服务端会校验 voteId 是否与当前 active 投票匹配。
+     */
+    public static void sendOptionVoteCast(String voteId, @Nullable String optionId) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new OptionVoteCastPayload(voteId, optionId));
     }
 }

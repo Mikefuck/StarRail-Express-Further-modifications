@@ -33,8 +33,10 @@ public final class NetworkRegistrar {
         BlackoutTaskShopOpenPayload.register();
         BlackoutTaskShopBuyPayload.register();
         BlackoutTaskShopResultPayload.register();
+        OptionVotePayload.register();                // S2C: 通用选项投票状态
+        OptionVoteCastPayload.register();            // C2S: 通用选项投票/弃票
         // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
         //     本模组不再重复注册；客户端接收、HUD tick/render 也由 SRE 接管。
-        LOGGER.info("已注册 19 个网络数据包类型");
+        LOGGER.info("已注册 21 个网络数据包类型");
     }
 }
