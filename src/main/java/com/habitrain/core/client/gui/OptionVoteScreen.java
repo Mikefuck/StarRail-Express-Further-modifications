@@ -84,7 +84,9 @@ public class OptionVoteScreen extends Screen {
             int rowY = listY + i * (ROW_H + ROW_GAP) - (int) scrollOffset;
             if (rowY + ROW_H < listY || rowY > listY + listH) continue;
 
-            boolean hovered = mouseX >= listX && mouseX < listX + listW && mouseY >= rowY && mouseY < rowY + ROW_H;
+            boolean hovered = mouseX >= listX && mouseX < listX + listW
+                    && mouseY >= listY && mouseY < listY + listH
+                    && mouseY >= rowY && mouseY < rowY + ROW_H;
             boolean selected = OptionVoteState.isSelected(entry.optionId());
             renderRow(g, entry, listX, rowY, listW, ROW_H, hovered, selected);
         }
@@ -130,11 +132,18 @@ public class OptionVoteScreen extends Screen {
         int listX = panelX + PAD;
         int listY = panelY + 52;
         int listW = PANEL_W - PAD * 2;
+        int listH = PANEL_H - 84;
+
+        // Clamp to the same list viewport used for scissor/draw — scrolled rows must not
+        // receive clicks in the title/timer band or below the list.
+        if (mouseX < listX || mouseX >= listX + listW || mouseY < listY || mouseY >= listY + listH) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
 
         List<OptionVotePayload.Entry> candidates = OptionVoteState.getCandidates();
         for (int i = 0; i < candidates.size(); i++) {
             int rowY = listY + i * (ROW_H + ROW_GAP) - (int) scrollOffset;
-            if (mouseX >= listX && mouseX < listX + listW && mouseY >= rowY && mouseY < rowY + ROW_H) {
+            if (mouseY >= rowY && mouseY < rowY + ROW_H) {
                 var entry = candidates.get(i);
                 boolean wasSelected = OptionVoteState.isSelected(entry.optionId());
                 OptionVoteState.toggleSelection(entry.optionId());

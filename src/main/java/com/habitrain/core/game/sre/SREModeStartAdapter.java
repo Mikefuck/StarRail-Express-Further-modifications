@@ -53,26 +53,27 @@ public final class SREModeStartAdapter {
             if (registryFullId.endsWith(":habitrain:blackout")
                     || "habitrain_core:habitrain:blackout".equals(registryFullId)) {
                 GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
-                return true;
+                return GameModeRegistry.isActiveInLevel(level);
             }
             // murder
             if (registryFullId.contains("sre:murder")) {
                 var mode = io.wifi.starrailexpress.api.SREGameModes.MURDER;
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                return true;
+                // GameUtils.startGame is void; best-effort success signal is SRE running/starting.
+                return isSreGameBlocking(level);
             }
             // repair
             if (registryFullId.contains("sre:repair")) {
                 var mode = io.wifi.starrailexpress.api.SREGameModes.REPAIR_ESCAPE_MODE;
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                return true;
+                return isSreGameBlocking(level);
             }
             // generic explicit registry start
             if (GameModeRegistry.isRegistered(registryFullId)) {
                 GameModeRegistry.start(registryFullId, level);
-                return true;
+                return GameModeRegistry.isActiveInLevel(level);
             }
             return false;
         } catch (Throwable t) {

@@ -12,6 +12,7 @@ import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
 import com.habitrain.core.game.blackout.BlackoutShopService;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.sre.SREGameModeBase;
+import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
@@ -50,6 +51,20 @@ public final class LifecycleEventsRegistrar {
             TaskRegistry.freeze();
             GameModeRegistry.freeze();
             LOGGER.info("配置已加载，共 {} 个已注册任务（注册表已冻结）", TaskRegistry.size());
+
+            // Seed modeMapVote defaults so ModMenu maps list is usable before first vote.
+            // Map discovery needs ServerLevel (train_maps under world path); client VoteTab
+            // cannot call MapManager safely — server start is the client/server-safe hook.
+            try {
+                ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+                if (overworld != null) {
+                    ConfigManager.getInstance().ensureModeMapVoteDefaults(
+                            GameModeRegistry.getAllIds(),
+                            SREModeStartAdapter.getAvailableMaps(overworld));
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("modeMapVote ensureDefaults on SERVER_STARTED skipped", t);
+            }
         });
         // 服务器关闭时清理停电模式各 manager 的 per-level 静态 Map 条目。
         // 单机模式下集成服务器停止后客户端 JVM 仍存活，static 字段不会重置，
