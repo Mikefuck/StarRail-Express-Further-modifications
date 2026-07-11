@@ -56,6 +56,7 @@ public class ConfigStore {
         repo.getMutableGameModeConfigs().clear();
         repo.getMutableMinigameConfigs().clear();
         repo.setDlcProbabilityTarget(0.5f);
+        repo.setModeMapVote(ModeMapVoteSettings.createDefault());
 
         if (!configFile.exists()) {
             createDefaultConfig(repo);
@@ -148,6 +149,12 @@ public class ConfigStore {
                 }
             }
 
+            if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
+                repo.setModeMapVote(ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote")));
+            } else {
+                repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+            }
+
             LOGGER.info("任务配置已加载: {} 个任务, {} 个GameMode, {} 个小游戏",
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
@@ -160,6 +167,7 @@ public class ConfigStore {
             repo.getShaderWhitelist().clear();
             repo.getMutableMinigameConfigs().clear();
             repo.setMinigameGlobalEnabled(true);
+            repo.setModeMapVote(ModeMapVoteSettings.createDefault());
             save(repo);
         }
     }
@@ -230,6 +238,8 @@ public class ConfigStore {
         minigames.add("entries", mgEntries);
         root.add("minigames", minigames);
 
+        root.add("modeMapVote", repo.getModeMapVote().toJson());
+
         return root;
     }
 
@@ -246,6 +256,7 @@ public class ConfigStore {
             mgMap.put(id, MinigameConfigEntry.createDefault());
         }
         repo.setMinigameGlobalEnabled(true);
+        repo.setModeMapVote(ModeMapVoteSettings.createDefault());
     }
 
     public String toJsonString(ConfigRepository repo) {

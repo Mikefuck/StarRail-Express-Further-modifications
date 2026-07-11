@@ -28,6 +28,7 @@ public class ConfigSync {
             int newSheriffDivisor = 6;
             int newTempPowerPrice = 100;
             boolean newMgGlobal = true;
+            ModeMapVoteSettings newModeMapVote = ModeMapVoteSettings.createDefault();
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
@@ -85,6 +86,10 @@ public class ConfigSync {
                 }
             }
 
+            if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
+                newModeMapVote = ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote"));
+            }
+
             repo.getMutableTaskConfigs().clear();
             repo.getMutableTaskConfigs().putAll(newTasks);
             repo.getMutableGameModeConfigs().clear();
@@ -98,6 +103,7 @@ public class ConfigSync {
             repo.setSheriffCountDivisor(newSheriffDivisor);
             repo.setTempPowerPrice(newTempPowerPrice);
             repo.setMinigameGlobalEnabled(newMgGlobal);
+            repo.setModeMapVote(newModeMapVote);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
         }
@@ -107,6 +113,7 @@ public class ConfigSync {
      * 合并语义：仅用 json 中存在的 tasks/gameModes/minigames 覆盖对应键，
      * 不删除 json 中缺失的键（避免 OP 客户端陈旧视图删除服务端独有条目）。
      * global 字段按 json 覆盖（整体项）。
+     * modeMapVote 标量按 json 覆盖；modes/maps 仅 put 存在的键，不删缺失键。
      */
     public void mergeFromJsonString(ConfigRepository repo, String json) {
         try {
@@ -166,6 +173,36 @@ public class ConfigSync {
                     for (var e : entries.entrySet()) {
                         repo.getMutableMinigameConfigs().put(e.getKey(),
                                 MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
+                    }
+                }
+            }
+
+            if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
+                JsonObject mmv = root.getAsJsonObject("modeMapVote");
+                ModeMapVoteSettings s = repo.getModeMapVote();
+                if (mmv.has("enabled")) s.enabled = mmv.get("enabled").getAsBoolean();
+                if (mmv.has("modeDurationSeconds")) {
+                    int v = mmv.get("modeDurationSeconds").getAsInt();
+                    s.modeDurationSeconds = Math.max(5, Math.min(120, v));
+                }
+                if (mmv.has("mapDurationSeconds")) {
+                    int v = mmv.get("mapDurationSeconds").getAsInt();
+                    s.mapDurationSeconds = Math.max(5, Math.min(120, v));
+                }
+                if (mmv.has("modes") && mmv.get("modes").isJsonObject()) {
+                    JsonObject modesObj = mmv.getAsJsonObject("modes");
+                    for (var e : modesObj.entrySet()) {
+                        if (e.getValue().isJsonObject()) {
+                            s.modes.put(e.getKey(), ModeVoteEntry.fromJson(e.getValue().getAsJsonObject()));
+                        }
+                    }
+                }
+                if (mmv.has("maps") && mmv.get("maps").isJsonObject()) {
+                    JsonObject mapsObj = mmv.getAsJsonObject("maps");
+                    for (var e : mapsObj.entrySet()) {
+                        if (e.getValue().isJsonObject()) {
+                            s.maps.put(e.getKey(), MapVoteEntry.fromJson(e.getValue().getAsJsonObject()));
+                        }
                     }
                 }
             }

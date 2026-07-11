@@ -249,4 +249,24 @@ public class ConfigManager implements ConfigQueryService {
     public void applyMinigameEnforcement(@Nullable MinecraftServer server) {
         enforcement.apply(server, repository);
     }
+
+    public ModeMapVoteSettings getModeMapVoteSettings() {
+        return repository.getModeMapVote();
+    }
+
+    public void setModeMapVoteSettings(ModeMapVoteSettings settings) {
+        repository.setModeMapVote(settings);
+        store.markDirty();
+    }
+
+    public void ensureModeMapVoteDefaults(java.util.Collection<String> modeIds,
+                                          java.util.Collection<String> mapIds) {
+        ModeMapVoteSettings s = repository.getModeMapVote();
+        int beforeModes = s.modes.size();
+        int beforeMaps = s.maps.size();
+        s.ensureDefaults(modeIds, mapIds);
+        if (s.modes.size() != beforeModes || s.maps.size() != beforeMaps) {
+            store.markDirty();
+        }
+    }
 }

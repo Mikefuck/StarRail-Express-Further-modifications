@@ -13,6 +13,7 @@ public class ConfigRepository {
     private boolean minigameGlobalEnabled = true;
     private boolean shaderWhitelistEnabled = false;
     private int tempPowerPrice = 100;
+    private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -125,6 +126,12 @@ public class ConfigRepository {
         if (entry == null) return true;
         if (!entry.enabled) return false;
         return entry.isAllowedOnMap(mapName);
+    }
+
+    public ModeMapVoteSettings getModeMapVote() { return modeMapVote; }
+
+    public void setModeMapVote(ModeMapVoteSettings s) {
+        this.modeMapVote = s != null ? s : ModeMapVoteSettings.createDefault();
     }
 
     @Nullable
