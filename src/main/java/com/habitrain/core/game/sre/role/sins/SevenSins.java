@@ -68,17 +68,30 @@ public final class SevenSins {
     }
 
     private static void registerSkills() {
-        if (PRIDE == null) return;
-        RoleSkill.register(PRIDE,
-                RoleSkill.skill(
-                        HabiTrainCore.id("sin_pride_copy_shop"),
-                        "skill.habitrain_core.sin_pride.copy_shop",
-                        PrideComponent::useCopyShop
-                ).cooldownSeconds(PrideComponent.COPY_SHOP_CD_SECONDS)
-                        .showOnHud(true)
-                        .announceToSelf(true)
-                        .build()
-        );
+        if (PRIDE != null) {
+            RoleSkill.register(PRIDE,
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_pride_copy_shop"),
+                            "skill.habitrain_core.sin_pride.copy_shop",
+                            PrideComponent::useCopyShop
+                    ).cooldownSeconds(PrideComponent.COPY_SHOP_CD_SECONDS)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build()
+            );
+        }
+        if (ENVY != null) {
+            RoleSkill.register(ENVY,
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_envy_mark"),
+                            "skill.habitrain_core.sin_envy.mark",
+                            EnvyComponent::useMark
+                    ).cooldownSeconds(EnvyComponent.MARK_CD_SECONDS)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build()
+            );
+        }
     }
 
     private static void registerRoles() {
