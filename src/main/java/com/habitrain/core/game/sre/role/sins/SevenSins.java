@@ -1,8 +1,19 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
+import com.habitrain.core.game.sre.role.sins.win.GreedRole;
+import com.habitrain.core.game.sre.role.sins.win.LustRole;
+import com.habitrain.core.game.sre.role.sins.win.PrideRole;
+import com.habitrain.core.game.sre.role.sins.win.SlothRole;
+import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
+import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.resources.ResourceLocation;
+
+import java.awt.Color;
+import java.util.List;
 import java.util.Set;
 
 public final class SevenSins {
@@ -38,6 +49,91 @@ public final class SevenSins {
     }
 
     public static void init() {
-        // filled in Task 2
+        registerRoles();
+        wireOpposingClique();
+        HabiTrainCore.LOGGER.info(
+                "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");
+    }
+
+    private static void registerRoles() {
+        // Pride: independent neutral, instinct, no time
+        PRIDE = TMMRoles.registerRole(new PrideRole(
+                PRIDE_ID, new Color(180, 40, 40).getRGB(),
+                false, false, SRERole.MoodType.REAL,
+                TMMRoles.CIVILIAN.getMaxSprintTime(), false
+        ).setNeutrals(true)
+                .setCanUseInstinct(true)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
+
+        // Envy: killer
+        ENVY = TMMRoles.registerRole(new NormalRole(
+                ENVY_ID, new Color(40, 160, 60).getRGB(),
+                false, true, SRERole.MoodType.FAKE, Integer.MAX_VALUE, false
+        ) {
+            @Override
+            public List<ShopEntry> getShopEntries() {
+                return SevenSinShops.envyShop();
+            }
+        }.setCanSeeCoin(true).setDefaultMax(1));
+
+        // Wrath: neutral for killer, see time, no instinct
+        WRATH = TMMRoles.registerRole(new NormalRole(
+                WRATH_ID, new Color(200, 30, 30).getRGB(),
+                false, false, SRERole.MoodType.FAKE,
+                Integer.MAX_VALUE, true
+        ).setNeutrals(true)
+                .setNeutralForKiller(true)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
+
+        // Greed: independent neutral CustomWinner
+        GREED = TMMRoles.registerRole(new GreedRole(
+                GREED_ID, new Color(200, 160, 20).getRGB(),
+                false, false, SRERole.MoodType.REAL,
+                TMMRoles.CIVILIAN.getMaxSprintTime(), false
+        ).setNeutrals(true)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
+
+        // Gluttony: innocent civilian
+        GLUTTONY = TMMRoles.registerRole(new NormalRole(
+                GLUTTONY_ID, new Color(140, 90, 50).getRGB(),
+                true, false, SRERole.MoodType.REAL,
+                TMMRoles.CIVILIAN.getMaxSprintTime(), false
+        ) {
+            @Override
+            public List<ShopEntry> getShopEntries() {
+                return SevenSinShops.gluttonyShop();
+            }
+        }.setCanSeeCoin(true).setDefaultMax(1));
+
+        // Lust: independent neutral, instinct + see time
+        LUST = TMMRoles.registerRole(new LustRole(
+                LUST_ID, new Color(200, 50, 150).getRGB(),
+                false, false, SRERole.MoodType.REAL,
+                TMMRoles.CIVILIAN.getMaxSprintTime(), true
+        ).setNeutrals(true)
+                .setCanUseInstinct(true)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
+
+        // Sloth: independent neutral CustomWinner
+        SLOTH = TMMRoles.registerRole(new SlothRole(
+                SLOTH_ID, new Color(100, 100, 140).getRGB(),
+                false, false, SRERole.MoodType.REAL,
+                TMMRoles.CIVILIAN.getMaxSprintTime(), false
+        ).setNeutrals(true)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
+    }
+
+    private static void wireOpposingClique() {
+        SRERole[] sins = {PRIDE, ENVY, WRATH, GREED, GLUTTONY, LUST, SLOTH};
+        for (int i = 0; i < sins.length; i++) {
+            for (int j = i + 1; j < sins.length; j++) {
+                sins[i].addTwoWayOpposingRole(sins[j]);
+            }
+        }
     }
 }
