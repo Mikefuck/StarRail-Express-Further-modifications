@@ -83,6 +83,53 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         return pouchGiven;
     }
 
+    /**
+     * Trade/API: add a collected type id (no physical stack required).
+     *
+     * @return true if the type was newly added
+     */
+    public boolean addCollectedType(ServerPlayer self, String itemId, Component displayName) {
+        if (self == null || itemId == null || itemId.isEmpty() || collectionComplete) {
+            return false;
+        }
+        boolean fresh = collectedTypeIds.add(itemId);
+        KEY.sync(self);
+        if (fresh) {
+            self.displayClientMessage(
+                    Component.translatable(
+                            "message.habitrain_core.sin_greed.absorb_new",
+                            displayName != null ? displayName.getString() : itemId,
+                            collectedTypeIds.size(),
+                            Math.max(1, targetCount)
+                    ),
+                    true
+            );
+            checkAndTriggerWin(self);
+        }
+        return fresh;
+    }
+
+    /** Silent add used only for trade rollback safety. */
+    public void addCollectedTypeSilent(String itemId) {
+        if (itemId == null || itemId.isEmpty()) return;
+        collectedTypeIds.add(itemId);
+        if (player != null) KEY.sync(player);
+    }
+
+    /**
+     * Trade SELL: remove one collected type from the set.
+     *
+     * @return true if removed
+     */
+    public boolean removeCollectedType(String itemId) {
+        if (itemId == null || itemId.isEmpty()) return false;
+        boolean removed = collectedTypeIds.remove(itemId);
+        if (removed && player != null) {
+            KEY.sync(player);
+        }
+        return removed;
+    }
+
     @Override
     public void init() {
         clear();

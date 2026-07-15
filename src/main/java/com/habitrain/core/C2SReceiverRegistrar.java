@@ -161,6 +161,20 @@ public final class C2SReceiverRegistrar {
                 OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
             });
         });
+        // C2S 贪婪匿名交易确认/取消（与 /habi_api greed_trade 等价）
+        ServerPlayNetworking.registerGlobalReceiver(GreedTradeActionPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                String action = payload.action() == null ? "" : payload.action().trim().toLowerCase();
+                String sid = payload.sessionId() == null ? "" : payload.sessionId();
+                if ("confirm".equals(action)) {
+                    com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.confirm(player, sid);
+                } else if ("cancel".equals(action)) {
+                    com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.cancel(player, sid);
+                }
+            });
+        });
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

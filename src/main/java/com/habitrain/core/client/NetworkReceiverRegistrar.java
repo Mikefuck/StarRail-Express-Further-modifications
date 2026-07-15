@@ -25,6 +25,7 @@ import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
+import com.habitrain.core.network.GreedTradePromptPayload;
 import com.habitrain.core.network.OptionVotePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
@@ -211,6 +212,11 @@ public class NetworkReceiverRegistrar {
                     ctx.client().setScreen(null);
                 }
             });
+        });
+
+        // 15) 贪婪匿名交易提示 — MVP 用聊天确认按钮，此处仅吞包防未处理告警
+        ClientPlayNetworking.registerGlobalReceiver(GreedTradePromptPayload.TYPE, (payload, ctx) -> {
+            // no-op: server also sends chat click-confirm buttons
         });
     }
 }

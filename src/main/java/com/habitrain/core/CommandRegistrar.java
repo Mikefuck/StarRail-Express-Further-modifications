@@ -3,11 +3,14 @@ package com.habitrain.core;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteApi;
+import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,8 +96,27 @@ public final class CommandRegistrar {
                                 return 1;
                             }))
                     )
+                    // 贪婪匿名交易双确认（聊天点击 / RUN_COMMAND）
+                    .then(Commands.literal("greed_trade")
+                            .then(Commands.literal("confirm")
+                                    .then(Commands.argument("session", StringArgumentType.string())
+                                            .executes(ctx -> {
+                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                                String sid = StringArgumentType.getString(ctx, "session");
+                                                GreedTradeManager.confirm(player, sid);
+                                                return 1;
+                                            })))
+                            .then(Commands.literal("cancel")
+                                    .then(Commands.argument("session", StringArgumentType.string())
+                                            .executes(ctx -> {
+                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                                String sid = StringArgumentType.getString(ctx, "session");
+                                                GreedTradeManager.cancel(player, sid);
+                                                return 1;
+                                            })))
+                    )
               );
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout, /habi_api list, /habi_api vote start|cancel|status");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|greed_trade");
     }
 }

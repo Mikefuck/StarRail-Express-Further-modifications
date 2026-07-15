@@ -5,6 +5,7 @@ import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
+import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.task.GameLifecycleHandler;
 import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
@@ -18,6 +19,8 @@ public class ModTickHandler {
 
     public static void register() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // 大厅阶段周期性补拉未进 LobbyChat 的玩家（必须在 processPending 前，以便本 tick 即可尝试）
+            SREGameModeBase.reconcileLobbyGroupMembership(server);
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);
@@ -29,6 +32,11 @@ public class ModTickHandler {
                     OptionVoteManager.tickSecond(level);
                 }
             }
+
+            // Greed anonymous trade session timeouts
+            try {
+                GreedTradeManager.tick(server);
+            } catch (Throwable ignored) {}
 
             tickMoreMods(server);
         });

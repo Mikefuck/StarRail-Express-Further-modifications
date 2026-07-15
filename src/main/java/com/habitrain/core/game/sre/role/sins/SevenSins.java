@@ -9,6 +9,7 @@ import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
+import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.role.sins.win.GreedRole;
 import com.habitrain.core.game.sre.role.sins.win.LustRole;
 import com.habitrain.core.game.sre.role.sins.win.PrideRole;
@@ -122,6 +123,19 @@ public final class SevenSins {
                             "skill.habitrain_core.sin_lust.desire",
                             LustComponent::useDesireMark
                     ).cooldownSeconds(1)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build()
+            );
+        }
+        if (GREED != null) {
+            // Anonymous trade: crosshair partner + sample item in other hand.
+            RoleSkill.register(GREED,
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_greed_trade"),
+                            "skill.habitrain_core.sin_greed.trade",
+                            GreedTradeManager::useTradeSkill
+                    ).cooldownSeconds(5)
                             .showOnHud(true)
                             .announceToSelf(true)
                             .build()

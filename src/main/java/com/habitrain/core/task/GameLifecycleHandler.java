@@ -92,6 +92,9 @@ public class GameLifecycleHandler {
             try {
                 com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue.clearAll();
             } catch (Throwable ignored) {}
+            try {
+                com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.clearAll();
+            } catch (Throwable ignored) {}
 
             // 清除任务池缓存，确保下一局任务重新计算
             TaskPoolBuilder.invalidateAll();
