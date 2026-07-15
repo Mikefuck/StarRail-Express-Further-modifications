@@ -1,6 +1,13 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.sins.component.EnvyComponent;
+import com.habitrain.core.game.sre.role.sins.component.GluttonyComponent;
+import com.habitrain.core.game.sre.role.sins.component.GreedComponent;
+import com.habitrain.core.game.sre.role.sins.component.LustComponent;
+import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
+import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
+import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
 import com.habitrain.core.game.sre.role.sins.win.GreedRole;
 import com.habitrain.core.game.sre.role.sins.win.LustRole;
@@ -53,6 +60,7 @@ public final class SevenSins {
         wireOpposingClique();
         SevenSinsMutex.init();
         com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks.init();
+        SevenSinEvents.init();
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");
     }
@@ -63,7 +71,8 @@ public final class SevenSins {
                 PRIDE_ID, new Color(180, 40, 40).getRGB(),
                 false, false, SRERole.MoodType.REAL,
                 TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ).setNeutrals(true)
+        ).setComponentKey(PrideComponent.KEY)
+                .setNeutrals(true)
                 .setCanUseInstinct(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
@@ -77,14 +86,17 @@ public final class SevenSins {
             public List<ShopEntry> getShopEntries() {
                 return SevenSinShops.envyShop();
             }
-        }.setCanSeeCoin(true).setDefaultMax(1));
+        }.setComponentKey(EnvyComponent.KEY)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
 
         // Wrath: neutral for killer, see time, no instinct
         WRATH = TMMRoles.registerRole(new NormalRole(
                 WRATH_ID, new Color(200, 30, 30).getRGB(),
                 false, false, SRERole.MoodType.FAKE,
                 Integer.MAX_VALUE, true
-        ).setNeutrals(true)
+        ).setComponentKey(WrathComponent.KEY)
+                .setNeutrals(true)
                 .setNeutralForKiller(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
@@ -94,7 +106,8 @@ public final class SevenSins {
                 GREED_ID, new Color(200, 160, 20).getRGB(),
                 false, false, SRERole.MoodType.REAL,
                 TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ).setNeutrals(true)
+        ).setComponentKey(GreedComponent.KEY)
+                .setNeutrals(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
 
@@ -108,14 +121,17 @@ public final class SevenSins {
             public List<ShopEntry> getShopEntries() {
                 return SevenSinShops.gluttonyShop();
             }
-        }.setCanSeeCoin(true).setDefaultMax(1));
+        }.setComponentKey(GluttonyComponent.KEY)
+                .setCanSeeCoin(true)
+                .setDefaultMax(1));
 
         // Lust: independent neutral, instinct + see time
         LUST = TMMRoles.registerRole(new LustRole(
                 LUST_ID, new Color(200, 50, 150).getRGB(),
                 false, false, SRERole.MoodType.REAL,
                 TMMRoles.CIVILIAN.getMaxSprintTime(), true
-        ).setNeutrals(true)
+        ).setComponentKey(LustComponent.KEY)
+                .setNeutrals(true)
                 .setCanUseInstinct(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
@@ -125,7 +141,8 @@ public final class SevenSins {
                 SLOTH_ID, new Color(100, 100, 140).getRGB(),
                 false, false, SRERole.MoodType.REAL,
                 TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ).setNeutrals(true)
+        ).setComponentKey(SlothComponent.KEY)
+                .setNeutrals(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
     }

@@ -12,14 +12,30 @@
     "entrypoints": {
         "main": ["com.habitrain.core.HabiTrainCore"],
         "client": ["com.habitrain.core.client.HabiTrainCoreClient"],
-        "modmenu": ["com.habitrain.core.client.gui.ModMenuIntegration"]
+        "modmenu": ["com.habitrain.core.client.gui.ModMenuIntegration"],
+        "cardinal-components": ["com.habitrain.core.game.sre.role.HabiComponents"]
+    },
+    "custom": {
+        "cardinal-components": [
+            "habitrain_core:crime_scapegoat",
+            "habitrain_core:flower_girl",
+            "habitrain_core:swift_wind",
+            "habitrain_core:mime_killer",
+            "habitrain_core:sin_pride",
+            "habitrain_core:sin_envy",
+            "habitrain_core:sin_wrath",
+            "habitrain_core:sin_greed",
+            "habitrain_core:sin_gluttony",
+            "habitrain_core:sin_lust",
+            "habitrain_core:sin_sloth"
+        ]
     },
     "mixins": [
         "habitrain_core.mixins.json",
         { "config": "habitrain_core.client.mixins.json", "environment": "client" }
     ],
     "depends": {
-        "fabricloader": ">=0.19.3",
+        "fabricloader": ">=0.19.2",
         "minecraft": "~1.21.1",
         "java": ">=21",
         "fabric-api": "*",
