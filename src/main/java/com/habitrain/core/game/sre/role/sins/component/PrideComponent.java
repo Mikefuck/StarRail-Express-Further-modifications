@@ -84,8 +84,9 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
 
     public void onPrideKill(ServerLevel level) {
         if (level == null) return;
-        setBreakImmuneUntil(level.getGameTime() + BREAK_IMMUNE_SECONDS * 20L);
+        // Clear weaponImmune before sync so clients see both break window and lost aura in one packet.
         weaponImmune = false;
+        setBreakImmuneUntil(level.getGameTime() + BREAK_IMMUNE_SECONDS * 20L);
     }
 
     public static boolean isPrideWeaponImmune(Player target) {

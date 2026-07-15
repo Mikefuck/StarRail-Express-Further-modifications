@@ -24,11 +24,12 @@ public final class PrideRole extends CustomWinnerRole {
 
     @Override
     public WinStatus checkWin(ServerPlayer player, WinStatus winStatus) {
+        // Side-effect free: framework calls win() → customWinnerWin when CUSTOM.
+        // AllowGameEnd path also triggers custom win via SinVictoryHooks.
         if (player == null || !(player.level() instanceof ServerLevel level)) {
             return WinStatus.NOT_MODIFY;
         }
         if (SinVictoryHooks.isOnlyPrideAlive(level)) {
-            SinVictoryHooks.triggerCustomSinWin(level, SevenSins.PRIDE, player);
             return WinStatus.CUSTOM;
         }
         return WinStatus.NOT_MODIFY;
@@ -36,9 +37,18 @@ public final class PrideRole extends CustomWinnerRole {
 
     @Override
     public boolean didPlayerWin(ServerPlayer player, boolean original, WinStatus winStatus) {
-        if (winStatus == WinStatus.CUSTOM) {
+        // Only claim CUSTOM when this pride is the sole-alive custom winner — never any CUSTOM.
+        if (original) {
             return true;
         }
-        return original;
+        if (winStatus != WinStatus.CUSTOM || player == null) {
+            return false;
+        }
+        if (!(player.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        return SevenSins.PRIDE != null
+                && SevenSins.PRIDE_ID.equals(getIdentifier())
+                && SinVictoryHooks.isOnlyPrideAlive(level);
     }
 }
