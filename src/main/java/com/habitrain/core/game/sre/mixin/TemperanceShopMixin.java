@@ -40,7 +40,7 @@ public abstract class TemperanceShopMixin {
                     remap = false
             ),
             remap = false,
-            require = 0
+            require = 1
     )
     private int habitrain$temperancePrice(DynamicShopComponent dyn, ShopEntry entry) {
         this.habitrain$pendingEntry = entry;

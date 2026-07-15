@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.modifier.virtue.TaskTimeVirtues;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.world.entity.player.Player;
@@ -7,6 +8,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 耐心/勤勉：缩放交互类任务的初始 duration（构造参数）。
@@ -20,6 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(SREPlayerTaskComponent.class)
 public abstract class TaskInteractTimeMixin {
+
+    private static final AtomicBoolean TIMER_FIELD_MISSING_LOGGED = new AtomicBoolean(false);
 
     @Shadow(remap = false)
     public abstract Player getPlayer();
@@ -62,13 +67,25 @@ public abstract class TaskInteractTimeMixin {
     private static void scaleTimerField(SREPlayerTaskComponent.TrainTask task, double mult) {
         try {
             java.lang.reflect.Field f = findTimerField(task.getClass());
-            if (f == null) return;
+            if (f == null) {
+                logTimerFieldMissingOnce(task.getClass());
+                return;
+            }
             f.setAccessible(true);
             int current = f.getInt(task);
             if (current <= 0) return;
             int scaled = Math.max(1, (int) Math.round(current * mult));
             f.setInt(task, scaled);
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            logTimerFieldMissingOnce(task.getClass());
+        }
+    }
+
+    private static void logTimerFieldMissingOnce(Class<?> cls) {
+        if (TIMER_FIELD_MISSING_LOGGED.compareAndSet(false, true)) {
+            HabiTrainCore.LOGGER.warn(
+                    "[TaskTimeVirtues] reflection cannot find timer field on {}; patience/diligence scale is no-op",
+                    cls != null ? cls.getName() : "null");
         }
     }
 

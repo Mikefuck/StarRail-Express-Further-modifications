@@ -30,14 +30,23 @@ public final class MercyVirtue {
             if (!hasMercy(dead)) return true;
             if (!isInnocentKiller(level, killerSp)) return true;
 
-            // Consume mercy once, cancel death.
+            // Only cancel death after mercy is successfully consumed.
+            boolean consumed = false;
             try {
                 WorldModifierComponent wmc = WorldModifierComponent.getInstance(dead);
                 if (wmc != null && HabiModifiers.MERCY != null) {
                     wmc.removeModifier(dead, HabiModifiers.MERCY);
+                    // Confirm removal so a failed consume cannot grant free cancel.
+                    consumed = !wmc.isModifier(dead, HabiModifiers.MERCY);
                 }
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[Mercy] removeModifier failed", t);
+                consumed = false;
+            }
+            if (!consumed) {
+                HabiTrainCore.LOGGER.warn("[Mercy] remove failed; allowing death for {}",
+                        dead.getGameProfile().getName());
+                return true;
             }
 
             dead.setHealth(dead.getMaxHealth());
