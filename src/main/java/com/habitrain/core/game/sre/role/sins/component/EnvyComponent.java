@@ -106,17 +106,18 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
         Vec3 look = self.getLookAngle();
         double range = MARK_RANGE;
         AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
+        // Prefer the player most centered in the crosshair (normalized look dot > 0.85).
         ServerPlayer best = null;
-        double bestDist = range * range;
+        double bestDot = 0.85;
         for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
             if (p == self || p.isSpectator()) continue;
             if (!(p instanceof ServerPlayer sp)) continue;
             Vec3 to = p.getEyePosition().subtract(eye);
-            double proj = to.dot(look);
-            if (proj <= 0 || proj > range) continue;
-            double distSq = to.lengthSqr();
-            if (distSq < bestDist) {
-                bestDist = distSq;
+            double dist = to.length();
+            if (dist <= 0 || dist > range) continue;
+            double angleDot = to.dot(look) / dist;
+            if (angleDot > bestDot) {
+                bestDot = angleDot;
                 best = sp;
             }
         }

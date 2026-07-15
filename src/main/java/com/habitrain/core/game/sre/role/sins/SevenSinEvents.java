@@ -177,7 +177,7 @@ public final class SevenSinEvents {
 
         if (!candidates.isEmpty()) {
             SlotRef pick = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
-            ItemStack taken = pick.takeOne(inv);
+            ItemStack taken = pick.takeAll(inv);
             if (taken != null && !taken.isEmpty()) {
                 if (!envy.getInventory().add(taken)) {
                     envy.drop(taken, false);
@@ -219,14 +219,18 @@ public final class SevenSinEvents {
     private enum SlotKind { MAIN, OFF }
 
     private record SlotRef(SlotKind kind, int index) {
-        ItemStack takeOne(Inventory inv) {
+        /** Move the entire stack out of the slot (not a single item). */
+        ItemStack takeAll(Inventory inv) {
             ItemStack stack = switch (kind) {
                 case MAIN -> inv.items.get(index);
                 case OFF -> inv.offhand.get(index);
             };
             if (stack == null || stack.isEmpty()) return ItemStack.EMPTY;
-            ItemStack taken = stack.copyWithCount(1);
-            stack.shrink(1);
+            ItemStack taken = stack.copy();
+            switch (kind) {
+                case MAIN -> inv.items.set(index, ItemStack.EMPTY);
+                case OFF -> inv.offhand.set(index, ItemStack.EMPTY);
+            }
             return taken;
         }
     }
