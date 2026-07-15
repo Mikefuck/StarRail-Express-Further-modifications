@@ -18,6 +18,9 @@
         "ExtraEffectRoleMixin",
         "OutsideTaskInstantCompleteMixin",
         "BlackoutTaskIntervalMixin",
-        "MeleeImmuneKillMixin"
+        "MeleeImmuneKillMixin",
+        "HumilityTaskCompleteMixin",
+        "TaskInteractTimeMixin",
+        "TemperanceShopMixin"
     ]
 }

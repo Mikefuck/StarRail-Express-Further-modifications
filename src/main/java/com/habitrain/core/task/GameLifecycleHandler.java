@@ -5,6 +5,7 @@ import betel.nut.component.BetelNutEntityComponents;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.betel.BetelLeafHandler;
+import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -87,6 +88,10 @@ public class GameLifecycleHandler {
             SlownessReapplyManager.clearAll();
             BetelQuestState.resetGameState();
             BetelLeafHandler.clearAllHarvests();
+            MimeKillerComponent.clearHiddenBodies();
+            try {
+                com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue.clearAll();
+            } catch (Throwable ignored) {}
 
             // 清除任务池缓存，确保下一局任务重新计算
             TaskPoolBuilder.invalidateAll();

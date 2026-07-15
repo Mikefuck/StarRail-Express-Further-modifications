@@ -173,6 +173,26 @@ public class TaskManager {
                 gm.onTaskComplete(player, instance));
         }
 
+        // 默剧杀手：habitrain TaskManager 完成的任务也累计狂暴折扣
+        // （SRE 原版任务走 RoleMethodDispatcherMixin；此处覆盖本 mod 任务路径，避免漏计）
+        try {
+            if (com.habitrain.core.game.sre.role.HabiRoles.isHabiRole(
+                    player, com.habitrain.core.game.sre.role.HabiRoles.MIME_KILLER)) {
+                com.habitrain.core.game.sre.role.component.MimeKillerComponent.KEY
+                        .maybeGet(player)
+                        .ifPresent(com.habitrain.core.game.sre.role.component.MimeKillerComponent::onTaskComplete);
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("MimeKiller task discount apply failed", t);
+        }
+
+        // 谦卑：自定义任务完成时附近玩家 actionbar「谢谢」
+        try {
+            com.habitrain.core.game.sre.modifier.virtue.HumilityVirtue.onTaskComplete(player);
+        } catch (Throwable t) {
+            LOGGER.debug("Humility onTaskComplete failed", t);
+        }
+
         if (def.canDirectlyWin()) {
             triggerDirectWin(player, instance);
         }

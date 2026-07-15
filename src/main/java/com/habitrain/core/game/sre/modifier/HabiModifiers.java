@@ -1,6 +1,11 @@
 package com.habitrain.core.game.sre.modifier;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.modifier.virtue.ChastityVirtue;
+import com.habitrain.core.game.sre.modifier.virtue.HumilityVirtue;
+import com.habitrain.core.game.sre.modifier.virtue.MercyVirtue;
+import com.habitrain.core.game.sre.modifier.virtue.TaskTimeVirtues;
+import com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.harpymodloader.events.ModifierAssigned;
 import org.agmas.harpymodloader.modifiers.HMLModifiers;
@@ -9,8 +14,7 @@ import org.agmas.harpymodloader.modifiers.SREModifier;
 import java.util.HashSet;
 
 /**
- * habitrain_core 美德修饰符注册入口（七美德：六新建 + 上游慷慨关联）。
- * 效果逻辑在后续任务；此处只做定义、组互斥与 lang 路径绑定。
+ * habitrain_core 美德修饰符注册入口（七美德：六新建 + 上游慷慨关联）+ 效果 init。
  */
 public final class HabiModifiers {
     private HabiModifiers() {}
@@ -65,9 +69,19 @@ public final class HabiModifiers {
         }
 
         registerVirtueMutex();
+        initEffects();
         HabiTrainCore.LOGGER.info(
                 "[HabiModifiers] registered 6 virtues; generous link={}",
                 GENEROUS != null ? GENEROUS.identifier() : "null");
+    }
+
+    /** Wire P4 virtue runtime hooks after modifiers exist. */
+    private static void initEffects() {
+        HumilityVirtue.init();
+        MercyVirtue.init();
+        TaskTimeVirtues.init();
+        TemperanceVirtue.init();
+        ChastityVirtue.init();
     }
 
     /**
