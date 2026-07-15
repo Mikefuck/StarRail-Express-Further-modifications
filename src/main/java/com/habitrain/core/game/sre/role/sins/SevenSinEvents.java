@@ -292,9 +292,32 @@ public final class SevenSinEvents {
         });
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
             if (world.isClientSide()) return InteractionResult.PASS;
+            // Sleep: full attack lock.
             if (SlothComponent.isSleepingSloth(player)) {
                 notifySleepLock(player);
                 return InteractionResult.FAIL;
+            }
+            // Limited berserk: only attackers set; open berserk unrestricted.
+            if (player instanceof ServerPlayer sp
+                    && world instanceof ServerLevel level
+                    && entity != null) {
+                try {
+                    if (SlothComponent.isSlothPlayer(level, sp)) {
+                        SlothComponent sloth = SlothComponent.KEY.get(sp);
+                        if (sloth != null
+                                && sloth.isBerserk(level)
+                                && !sloth.isOpenBerserk(level)
+                                && !sloth.canAttackTarget(level, entity.getUUID())) {
+                            sp.displayClientMessage(
+                                    Component.translatable("message.habitrain_core.sin_sloth.not_attacker"),
+                                    true
+                            );
+                            return InteractionResult.FAIL;
+                        }
+                    }
+                } catch (Throwable t) {
+                    HabiTrainCore.LOGGER.warn("[Sloth] limited berserk attack gate failed", t);
+                }
             }
             return InteractionResult.PASS;
         });

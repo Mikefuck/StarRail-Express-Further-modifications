@@ -39,21 +39,11 @@ public final class SinVictoryHooks {
             return GameUtils.WinStatus.NOT_MODIFY;
         }
 
-        // Sloth hijack: any proposed PASSENGERS/KILLERS/TIME while sloth alive → CUSTOM.
-        // Runs before pride block so a living sloth steals the faction end (design §5.7 / §6.2).
-        if (proposed == GameUtils.WinStatus.KILLERS
-                || proposed == GameUtils.WinStatus.PASSENGERS
-                || proposed == GameUtils.WinStatus.TIME) {
-            if (isSlothAlive(world)) {
-                ServerPlayer sloth = findAliveSlothPlayer(world);
-                triggerCustomSinWin(world, SevenSins.SLOTH, sloth);
-                HabiTrainCore.LOGGER.info(
-                        "[SinVictoryHooks] sloth alive → CUSTOM hijack (proposed={}, loose={})",
-                        proposed, loose);
-                return GameUtils.WinStatus.CUSTOM;
-            }
-        }
-
+        // Order (priority):
+        // 1) only-pride → CUSTOM pride
+        // 2) pride blocking (pride alive + others) on PASSENGERS/KILLERS → NONE
+        // 3) sloth alive on PASSENGERS/KILLERS/TIME → CUSTOM sloth
+        // Pride must never lose the end to a sloth hijack while still blocking.
         if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
             if (isOnlyPrideAlive(world)) {
                 ServerPlayer pride = findAlivePridePlayer(world);
@@ -70,6 +60,20 @@ public final class SinVictoryHooks {
                 return GameUtils.WinStatus.NONE;
             }
         }
+
+        if (proposed == GameUtils.WinStatus.KILLERS
+                || proposed == GameUtils.WinStatus.PASSENGERS
+                || proposed == GameUtils.WinStatus.TIME) {
+            if (isSlothAlive(world)) {
+                ServerPlayer sloth = findAliveSlothPlayer(world);
+                triggerCustomSinWin(world, SevenSins.SLOTH, sloth);
+                HabiTrainCore.LOGGER.info(
+                        "[SinVictoryHooks] sloth alive → CUSTOM hijack (proposed={}, loose={})",
+                        proposed, loose);
+                return GameUtils.WinStatus.CUSTOM;
+            }
+        }
+
         return GameUtils.WinStatus.NOT_MODIFY;
     }
 
