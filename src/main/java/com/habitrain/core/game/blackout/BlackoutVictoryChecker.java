@@ -194,9 +194,11 @@ public class BlackoutVictoryChecker {
             try {
                 // Public fields on SREGameRoundEndComponent (SRE 4.3).
                 roundEnd.CustomWinnerID = sinRoleId.getPath();
-                // Pride red / Sloth slate default by id.
+                // Pride red / Sloth slate / Lust pink default by id.
                 if (com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID.equals(sinRoleId)) {
                     roundEnd.CustomWinnerColor = 0x64648C;
+                } else if (com.habitrain.core.game.sre.role.sins.SevenSins.LUST_ID.equals(sinRoleId)) {
+                    roundEnd.CustomWinnerColor = 0xC83296;
                 } else {
                     roundEnd.CustomWinnerColor = 0xB42828;
                 }

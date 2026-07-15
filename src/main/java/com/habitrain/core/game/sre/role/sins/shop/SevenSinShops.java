@@ -28,6 +28,8 @@ public final class SevenSinShops {
     public static final int GLUTTONY_MILK_PRICE = 300;
     public static final int GLUTTONY_HONEY_PRICE = 100;
 
+    public static final int LUST_LOCKPICK_PRICE = 300;
+
     public static List<ShopEntry> empty() {
         return new ArrayList<>();
     }
@@ -108,7 +110,10 @@ public final class SevenSinShops {
         return shop;
     }
 
+    /** 色欲店：开锁 300。 */
     public static List<ShopEntry> lustShop() {
-        return empty();
+        List<ShopEntry> shop = new ArrayList<>();
+        shop.add(new ShopEntry(TMMItems.LOCKPICK.getDefaultInstance(), LUST_LOCKPICK_PRICE, ShopEntry.Type.TOOL));
+        return shop;
     }
 }

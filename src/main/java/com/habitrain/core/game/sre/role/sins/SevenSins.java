@@ -106,6 +106,27 @@ public final class SevenSins {
                             .build()
             );
         }
+        if (LUST != null) {
+            // Phase 1: toggle observe (charge in component tick). Phase 2: once desire mark.
+            RoleSkill.register(LUST,
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_lust_observe"),
+                            "skill.habitrain_core.sin_lust.observe",
+                            LustComponent::useObserve
+                    ).cooldownSeconds(1)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build(),
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_lust_desire"),
+                            "skill.habitrain_core.sin_lust.desire",
+                            LustComponent::useDesireMark
+                    ).cooldownSeconds(1)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build()
+            );
+        }
     }
 
     private static void registerRoles() {

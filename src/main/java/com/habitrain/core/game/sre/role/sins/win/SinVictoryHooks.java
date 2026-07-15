@@ -4,14 +4,19 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.AllowGameEnd;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.noellesroles.utils.RoleUtils;
+import pro.fazeclan.river.stupid_express.constants.SEModifiers;
+import pro.fazeclan.river.stupid_express.modifier.lovers.cca.LoversComponent;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,8 +34,67 @@ public final class SinVictoryHooks {
         if (registered) return;
         registered = true;
         // SRE murder only — Blackout ends through BlackoutVictoryChecker.
+        // Array-backed AllowGameEnd: first non-NOT_MODIFY wins. LoversWinCheckEvent
+        // also registers here; we detect lovers.won() ourselves and try to stay first.
         AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
-        HabiTrainCore.LOGGER.info("[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth)");
+        prependOurAllowGameEndHandler();
+        HabiTrainCore.LOGGER.info(
+                "[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth/lust)");
+    }
+
+    /**
+     * Move our handler to the front of the array-backed event so we outrun
+     * {@code LoversWinCheckEvent} (which also returns a non-NOT_MODIFY status).
+     */
+    private static void prependOurAllowGameEndHandler() {
+        try {
+            Object event = AllowGameEnd.EVENT;
+            java.lang.reflect.Field handlersField = null;
+            Class<?> c = event.getClass();
+            while (c != null && handlersField == null) {
+                try {
+                    handlersField = c.getDeclaredField("handlers");
+                } catch (NoSuchFieldException ignored) {
+                    c = c.getSuperclass();
+                }
+            }
+            if (handlersField == null) {
+                for (java.lang.reflect.Field f : event.getClass().getDeclaredFields()) {
+                    if (f.getType().isArray()) {
+                        handlersField = f;
+                        break;
+                    }
+                }
+            }
+            if (handlersField == null) {
+                HabiTrainCore.LOGGER.warn(
+                        "[SinVictoryHooks] could not reorder AllowGameEnd handlers; lust may lose race to lovers");
+                return;
+            }
+            handlersField.setAccessible(true);
+            Object arr = handlersField.get(event);
+            if (!(arr instanceof Object[] handlers) || handlers.length == 0) return;
+
+            int ours = -1;
+            for (int i = 0; i < handlers.length; i++) {
+                if (handlers[i] != null
+                        && handlers[i].getClass().getName().contains("SinVictoryHooks")) {
+                    ours = i;
+                    break;
+                }
+            }
+            if (ours <= 0) return; // already first or not found
+
+            Object h = handlers[ours];
+            System.arraycopy(handlers, 0, handlers, 1, ours);
+            handlers[0] = h;
+            HabiTrainCore.LOGGER.info(
+                    "[SinVictoryHooks] prepended sin handler to AllowGameEnd index 0 (was {})",
+                    ours);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn(
+                    "[SinVictoryHooks] AllowGameEnd reorder failed; lust may lose race to lovers", t);
+        }
     }
 
     static GameUtils.WinStatus onAllowGameEnd(ServerLevel world, GameUtils.WinStatus proposed,
@@ -43,7 +107,9 @@ public final class SinVictoryHooks {
         // 1) only-pride → CUSTOM pride
         // 2) pride blocking (pride alive + others) on PASSENGERS/KILLERS → NONE
         // 3) sloth alive on PASSENGERS/KILLERS/TIME → CUSTOM sloth
+        // 4) lust alive + lovers win path (proposed LOVERS or lovers.won) → CUSTOM lust
         // Pride must never lose the end to a sloth hijack while still blocking.
+        // Lust only steals lovers wins — never faction/timer ends.
         if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
             if (isOnlyPrideAlive(world)) {
                 ServerPlayer pride = findAlivePridePlayer(world);
@@ -72,6 +138,18 @@ public final class SinVictoryHooks {
                         proposed, loose);
                 return GameUtils.WinStatus.CUSTOM;
             }
+        }
+
+        // Lust lovers steal: proposed LOVERS, or detect lovers.won() ourselves so we can
+        // win the race against LoversWinCheckEvent (first non-NOT_MODIFY wins the bus).
+        if (!loose && isLustAlive(world)
+                && (proposed == GameUtils.WinStatus.LOVERS || wouldLoversWin(world))) {
+            ServerPlayer lust = findAliveLustPlayer(world);
+            stealLoversWinForLust(world, lust);
+            HabiTrainCore.LOGGER.info(
+                    "[SinVictoryHooks] lust steals lovers win → CUSTOM (proposed={}, loose={})",
+                    proposed, loose);
+            return GameUtils.WinStatus.CUSTOM;
         }
 
         return GameUtils.WinStatus.NOT_MODIFY;
@@ -113,6 +191,77 @@ public final class SinVictoryHooks {
         SlothPresence p = scanSloth(level);
         if (!p.slothAlive || p.slothId == null) return null;
         return level.getServer().getPlayerList().getPlayer(p.slothId);
+    }
+
+    public static boolean isLustAlive(ServerLevel level) {
+        return scanLust(level).lustAlive;
+    }
+
+    public static ServerPlayer findAliveLustPlayer(ServerLevel level) {
+        if (level == null || level.getServer() == null) return null;
+        LustPresence p = scanLust(level);
+        if (!p.lustAlive || p.lustId == null) return null;
+        return level.getServer().getPlayerList().getPlayer(p.lustId);
+    }
+
+    /**
+     * True when any true-lover player currently has {@link LoversComponent#won()}.
+     * Used to race {@code LoversWinCheckEvent} on the AllowGameEnd bus.
+     */
+    public static boolean wouldLoversWin(ServerLevel level) {
+        if (level == null) return false;
+        try {
+            WorldModifierComponent wmc = WorldModifierComponent.KEY.get(level);
+            if (wmc == null || SEModifiers.LOVERS == null) return false;
+            for (ServerPlayer p : level.players()) {
+                if (p == null || p.isSpectator()) continue;
+                if (!wmc.isModifier(p, SEModifiers.LOVERS)) continue;
+                LoversComponent lc = LoversComponent.KEY.get(p);
+                if (lc != null && lc.isLover() && lc.won()) {
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.debug("[SinVictoryHooks] wouldLoversWin check failed", t);
+        }
+        return false;
+    }
+
+    /**
+     * Replace lovers custom winners with lust only and fire custom sin win.
+     */
+    public static void stealLoversWinForLust(ServerLevel level, ServerPlayer lust) {
+        if (level == null) return;
+        try {
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            if (roundEnd != null) {
+                if (roundEnd.CustomWinnerPlayers == null) {
+                    roundEnd.CustomWinnerPlayers = new ArrayList<>();
+                } else {
+                    roundEnd.CustomWinnerPlayers.clear();
+                }
+                if (lust != null) {
+                    roundEnd.CustomWinnerPlayers.add(lust.getUUID());
+                }
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[SinVictoryHooks] clear CustomWinnerPlayers for lust failed", t);
+        }
+        triggerCustomSinWin(level, SevenSins.LUST, lust);
+    }
+
+    /**
+     * Blackout helper: if lovers win surfaces and lust is alive, end as lust custom.
+     * Currently lovers are SRE-murder path; this is reserved for shared API.
+     *
+     * @return true if lust stole the end
+     */
+    public static boolean tryBlackoutLustLoversSteal(ServerLevel level) {
+        if (level == null || !isLustAlive(level)) return false;
+        if (!wouldLoversWin(level)) return false;
+        ServerPlayer lust = findAliveLustPlayer(level);
+        stealLoversWinForLust(level, lust);
+        return true;
     }
 
     private static PridePresence scanPride(ServerLevel level) {
@@ -186,6 +335,40 @@ public final class SinVictoryHooks {
         return out;
     }
 
+    private static LustPresence scanLust(ServerLevel level) {
+        LustPresence out = new LustPresence();
+        if (level == null) return out;
+
+        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
+        if (!blackoutAlive.isEmpty()) {
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            for (UUID id : blackoutAlive) {
+                if (SevenSins.LUST_ID.equals(history.get(id))) {
+                    out.lustAlive = true;
+                    out.lustId = id;
+                    break;
+                }
+            }
+            return out;
+        }
+
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+        if (game == null || !game.isRunning()) {
+            return out;
+        }
+        for (ServerPlayer player : level.players()) {
+            if (player == null || player.isSpectator()) continue;
+            SRERole role = game.getRole(player);
+            if (role == null) continue;
+            if (SevenSins.LUST_ID.equals(role.getIdentifier())) {
+                out.lustAlive = true;
+                out.lustId = player.getUUID();
+                break;
+            }
+        }
+        return out;
+    }
+
     /**
      * Alive players excluding {@link BlackoutRoleManager.Faction#SIN_INDEPENDENT}.
      */
@@ -226,5 +409,10 @@ public final class SinVictoryHooks {
     private static final class SlothPresence {
         boolean slothAlive;
         UUID slothId;
+    }
+
+    private static final class LustPresence {
+        boolean lustAlive;
+        UUID lustId;
     }
 }

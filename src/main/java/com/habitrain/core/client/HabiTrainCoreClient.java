@@ -35,6 +35,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // HUD 叠加层 + 快捷键注册
         new HudRegistrar();
 
+        // 投稿职业客户端钩子（替罪羊本能伪装等）
+        HabiRoleClientHooks.init();
+
         // 生命周期事件处理（JOIN / DISCONNECT / 游戏结束 / 配置保存回调）
         new ClientLifecycleHandler(shaderMonitor);
 
