@@ -19,8 +19,6 @@ public class ModTickHandler {
 
     public static void register() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            // 大厅阶段周期性补拉未进 LobbyChat 的玩家（必须在 processPending 前，以便本 tick 即可尝试）
-            SREGameModeBase.reconcileLobbyGroupMembership(server);
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);

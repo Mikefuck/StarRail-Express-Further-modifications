@@ -351,14 +351,15 @@ public final class GreedTradeManager {
             return;
         }
 
-        // Recompute price from current n (anti-stale)
+        // Fail closed if price tier drifted since session open
         int n = GreedDealTracker.getDealCount(level, s.itemId);
         int price = s.side == Side.SELL
                 ? GreedDealTracker.sellPrice(n)
                 : GreedDealTracker.buyPrice(n);
         if (price != s.price) {
-            // Accept current price if tier moved; still atomic
-            HabiTrainCore.LOGGER.info("[GreedTrade] price revalidate {} -> {} for {}", s.price, price, s.itemId);
+            HabiTrainCore.LOGGER.info("[GreedTrade] price drift {} -> {} for {} — cancel", s.price, price, s.itemId);
+            cancelSession(server, s, "price_changed");
+            return;
         }
 
         GreedComponent gc = GreedComponent.KEY.get(greed);
@@ -408,6 +409,12 @@ public final class GreedTradeManager {
                     partner.drop(give, false);
                 }
             } else { // BUY
+                // Gate before taking item/coins: must still need a new type
+                if (gc.isCollectionComplete() || gc.getCollectedTypeIds().contains(s.itemId)) {
+                    notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_collect"));
+                    forceClose(s);
+                    return;
+                }
                 if (shopBalance(greed) < price) {
                     notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_self_broke", price));
                     forceClose(s);
@@ -438,14 +445,19 @@ public final class GreedTradeManager {
                     forceClose(s);
                     return;
                 }
-                // Consume taken stack (buy into virtual collection, not physical pouch container)
-                // item is absorbed as type only
+                // Consume taken stack into virtual collection only if type is newly added
                 boolean fresh = gc.addCollectedType(greed, s.itemId, taken.getHoverName());
-                // taken discarded after type record (MVP absorb semantics)
-                taken.setCount(0);
                 if (!fresh) {
-                    // already had type — still a valid deal (paid for sample), no extra effect
+                    // collection complete / already had type — refund coins + item, no deal
+                    transferCoins(partner, greed, price);
+                    if (!partner.getInventory().add(taken)) {
+                        partner.drop(taken, false);
+                    }
+                    notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_collect"));
+                    forceClose(s);
+                    return;
                 }
+                taken.setCount(0);
             }
 
             GreedDealTracker.recordDeal(level, s.itemId);
