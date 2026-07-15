@@ -1,7 +1,6 @@
 package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.WinResult;
@@ -81,12 +80,22 @@ public class BlackoutVictoryChecker {
             if (prideBlocking) {
                 return;
             }
+            // Sloth still alive among independents → sloth custom win.
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
+                return;
+            }
             mode.setLastWinningFaction(null);
             endGame(level, WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
             return;
         }
         // Timer can still end even if pride is alive (spec §6.2 step 3).
+        // Sloth hijacks timer GOOD end when alive (design §5.7).
         if (BlackoutTimerSystem.isTimeUp(level)) {
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
+                return;
+            }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
             return;
@@ -95,12 +104,20 @@ public class BlackoutVictoryChecker {
             if (prideBlocking) {
                 return;
             }
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
+                return;
+            }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
             return;
         }
         if (goodRemaining <= 0 && badRemaining > 0) {
             if (prideBlocking) {
+                return;
+            }
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
                 return;
             }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.BAD);
@@ -130,8 +147,30 @@ public class BlackoutVictoryChecker {
         }
     }
 
+    private void endGameSlothCustom(ServerLevel level) {
+        if (mode.isGameEnded()) return;
+        mode.setLastWinningFaction(null);
+        mode.setGameEnded(true);
+        String message = "§9懒惰·贝露菲格露获胜！在阵营胜负中窃取了胜利。";
+        mode.setPendingEndMessage(message);
+        mode.setPendingWinResult(WinResult.noWinner("懒惰独立胜"));
+        if (level == null) return;
+        try {
+            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID);
+            mode.setPendingEndMessage(null);
+            HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
+            var sreGame = SREGameWorldComponent.KEY.get(level);
+            if (sreGame != null) {
+                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
+            }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("endGameSlothCustom failed", e);
+            com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("懒惰独立胜"));
+        }
+    }
+
     /**
-     * Write CUSTOM round-end for an independent sin (pride last survivor).
+     * Write CUSTOM round-end for an independent sin (pride last survivor / sloth hijack).
      * Personal wins: only players whose role history matches the sin id.
      */
     public static void populateRoundEndDataCustomSin(ServerLevel level, ResourceLocation sinRoleId) {
@@ -155,7 +194,12 @@ public class BlackoutVictoryChecker {
             try {
                 // Public fields on SREGameRoundEndComponent (SRE 4.3).
                 roundEnd.CustomWinnerID = sinRoleId.getPath();
-                roundEnd.CustomWinnerColor = 0xB42828;
+                // Pride red / Sloth slate default by id.
+                if (com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID.equals(sinRoleId)) {
+                    roundEnd.CustomWinnerColor = 0x64648C;
+                } else {
+                    roundEnd.CustomWinnerColor = 0xB42828;
+                }
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[Blackout] could not set CustomWinner fields", t);
             }
@@ -184,12 +228,14 @@ public class BlackoutVictoryChecker {
                 // 不要立刻 GameModeRegistry.stop：finalize 仍需 lastWinningFaction。
                 populateRoundEndData(level, mode.getLastWinningFaction());
 
+                // 不发 habitrain 胜利 TOP 补充弹窗；SRE 结算 UI 由 populateRoundEndData + STOPPING 驱动。
                 if (message != null && !message.isEmpty()) {
-                    syncManager.broadcast(level, message);
                     mode.setPendingEndMessage(null);
+                    HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
                 }
 
                 var sreGame = SREGameWorldComponent.KEY.get(level);
+
                 if (sreGame != null) {
                     sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
                 }
@@ -301,6 +347,7 @@ public class BlackoutVictoryChecker {
         var restoreDef = TaskRegistry.get("habitrain_core:restore_power");
         if (restoreDef == null) return;
 
+        int assigned = 0;
         for (UUID uuid : BlackoutRoleManager.getAllAlive(level)) {
             if (BlackoutRoleManager.getFaction(level, uuid) != BlackoutRoleManager.Faction.GOOD) continue;
 
@@ -327,7 +374,12 @@ public class BlackoutVictoryChecker {
 
             if (sp != null) {
                 ActiveTaskPayload.sendToPlayer(sp, restoreDef.getFullId());
+                ExclusiveTaskHudSync.insert(sp, instance);
             }
+            assigned++;
+        }
+        if (assigned > 0) {
+            HabiTrainCore.LOGGER.info("[Blackout] force-assigned restore_power to {} good players", assigned);
         }
     }
 
@@ -350,6 +402,6 @@ public class BlackoutVictoryChecker {
         if (blackout != null) {
             blackout.reset();
         }
-        syncManager.broadcast(level, "§a供电已恢复");
+        // 恢复提示由 BlackoutTimerSystem.restorePower 统一广播，此处不重复发。
     }
 }

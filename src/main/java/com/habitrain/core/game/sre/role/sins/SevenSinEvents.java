@@ -11,11 +11,20 @@ import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.event.AllowPlayerDeathWithKiller;
+import io.wifi.starrailexpress.event.OnGameTrueStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeathWithKiller;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import org.agmas.harpymodloader.events.ModdedRoleAssigned;
@@ -25,7 +34,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 七宗罪职业事件：分配时初始化 CCA；傲慢免疫/破防；嫉妒标记击杀门槛与掠夺；暴怒阶段机。
+ * 七宗罪职业事件：分配时初始化 CCA；傲慢免疫/破防；嫉妒标记击杀门槛与掠夺；暴怒阶段机；懒惰沉睡/破盾。
  */
 public final class SevenSinEvents {
     private SevenSinEvents() {}
@@ -56,6 +65,17 @@ public final class SevenSinEvents {
                 SlothComponent.KEY.get(sp).init();
             }
         });
+
+        // Safe time end → sloth sleep (SRE + Blackout both fire OnGameTrueStarted).
+        OnGameTrueStarted.EVENT.register(level -> {
+            try {
+                SlothComponent.onSafeTimeEnd(level);
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Sloth] onSafeTimeEnd failed", t);
+            }
+        });
+
+        registerSlothInputLocks();
 
         // Pride aura + Envy mark balance gate (order: each handler independent).
         AllowPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
@@ -128,10 +148,55 @@ public final class SevenSinEvents {
                 }
             }
 
+            // Sloth: sleeping shield absorb conventional hits; limited berserk may only kill attackers.
+            if (SevenSins.SLOTH != null && game.isRole(dead, SevenSins.SLOTH)) {
+                if (!SinDeathReasons.isForcePath(deathReason)
+                        && SinDeathReasons.isConventionalWeapon(deathReason)) {
+                    try {
+                        SlothComponent sloth = SlothComponent.KEY.get(dead);
+                        if (sloth != null && sloth.isSleeping()) {
+                            ServerPlayer atk = killer instanceof ServerPlayer sp ? sp : null;
+                            if (!sloth.onShieldHit(dead, atk)) {
+                                return false;
+                            }
+                        }
+                    } catch (Throwable t) {
+                        HabiTrainCore.LOGGER.warn("[Sloth] shield absorb failed", t);
+                    }
+                }
+            }
+
+            // Sloth as killer: while limited berserk, only attackers set is legal.
+            if (killer instanceof ServerPlayer killerSp
+                    && SevenSins.SLOTH != null
+                    && game.isRole(killerSp, SevenSins.SLOTH)) {
+                try {
+                    SlothComponent sloth = SlothComponent.KEY.get(killerSp);
+                    if (sloth != null) {
+                        if (sloth.isSleeping()) {
+                            // Should already be blocked by input locks; hard gate.
+                            dead.setHealth(dead.getMaxHealth());
+                            return false;
+                        }
+                        if (sloth.isBerserk(level) && !sloth.isOpenBerserk(level)
+                                && !sloth.canAttackTarget(level, dead.getUUID())) {
+                            dead.setHealth(dead.getMaxHealth());
+                            killerSp.displayClientMessage(
+                                    Component.translatable("message.habitrain_core.sin_sloth.not_attacker"),
+                                    true
+                            );
+                            return false;
+                        }
+                    }
+                } catch (Throwable t) {
+                    HabiTrainCore.LOGGER.warn("[Sloth] attack gate failed", t);
+                }
+            }
+
             return true;
         });
 
-        // Pride kill break + Envy mark loot + Wrath kill stage down / frenzy exhaustion.
+        // Pride kill break + Envy mark loot + Wrath kill stage down / frenzy exhaustion + Sloth berserk kills.
         OnPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
             if (!(killer instanceof ServerPlayer killerSp)) return;
             if (!(killerSp.level() instanceof ServerLevel level)) return;
@@ -182,9 +247,95 @@ public final class SevenSinEvents {
                     HabiTrainCore.LOGGER.warn("[Wrath] onWrathKill failed", t);
                 }
             }
+
+            if (SevenSins.SLOTH != null && game.isRole(killerSp, SevenSins.SLOTH)) {
+                try {
+                    SlothComponent sloth = SlothComponent.KEY.get(killerSp);
+                    if (sloth != null && sloth.isBerserk(level)) {
+                        sloth.onBerserkKill(killerSp);
+                    }
+                } catch (Throwable t) {
+                    HabiTrainCore.LOGGER.warn("[Sloth] onBerserkKill failed", t);
+                }
+            }
         });
 
-        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy + wrath death/kill hooks registered");
+        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy + wrath + sloth death/kill/input hooks registered");
+    }
+
+    private static void registerSlothInputLocks() {
+        UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (SlothComponent.isSleepingSloth(player)) {
+                notifySleepLock(player);
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (world.isClientSide()) {
+                return net.minecraft.world.InteractionResultHolder.pass(player.getItemInHand(hand));
+            }
+            if (SlothComponent.isSleepingSloth(player)) {
+                notifySleepLock(player);
+                return net.minecraft.world.InteractionResultHolder.fail(player.getItemInHand(hand));
+            }
+            return net.minecraft.world.InteractionResultHolder.pass(player.getItemInHand(hand));
+        });
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (SlothComponent.isSleepingSloth(player)) {
+                notifySleepLock(player);
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (SlothComponent.isSleepingSloth(player)) {
+                notifySleepLock(player);
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+        AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (SlothComponent.isSleepingSloth(player)) {
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+        PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
+            if (world.isClientSide()) return true;
+            if (SlothComponent.isSleepingSloth(player)) {
+                notifySleepLock(player);
+                return false;
+            }
+            return true;
+        });
+        try {
+            ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
+                if (SlothComponent.isSleepingSloth(sender)) {
+                    sender.displayClientMessage(
+                            Component.translatable("message.habitrain_core.sin_sloth.chat_locked"),
+                            true
+                    );
+                    return false;
+                }
+                return true;
+            });
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] ServerMessageEvents.ALLOW_CHAT_MESSAGE unavailable", t);
+        }
+    }
+
+    private static void notifySleepLock(net.minecraft.world.entity.player.Player player) {
+        if (player instanceof ServerPlayer sp) {
+            sp.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_sloth.input_locked"),
+                    true
+            );
+        }
     }
 
     private static int shopBalance(ServerPlayer player) {

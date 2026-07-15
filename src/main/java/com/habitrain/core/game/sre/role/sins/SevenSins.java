@@ -93,6 +93,19 @@ public final class SevenSins {
                             .build()
             );
         }
+        if (SLOTH != null) {
+            // Once-per-game: component gates onceAwakeUsed; no cooldown needed.
+            RoleSkill.register(SLOTH,
+                    RoleSkill.skill(
+                            HabiTrainCore.id("sin_sloth_awake"),
+                            "skill.habitrain_core.sin_sloth.awake",
+                            SlothComponent::useAwake
+                    ).cooldownSeconds(1)
+                            .showOnHud(true)
+                            .announceToSelf(true)
+                            .build()
+            );
+        }
     }
 
     private static void registerRoles() {

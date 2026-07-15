@@ -13,7 +13,8 @@
         "main": ["com.habitrain.core.HabiTrainCore"],
         "client": ["com.habitrain.core.client.HabiTrainCoreClient"],
         "modmenu": ["com.habitrain.core.client.gui.ModMenuIntegration"],
-        "cardinal-components": ["com.habitrain.core.game.sre.role.HabiComponents"]
+        "cardinal-components": ["com.habitrain.core.game.sre.role.HabiComponents"],
+        "voicechat": ["com.habitrain.core.game.sre.role.sins.SlothVoicePlugin"]
     },
     "custom": {
         "cardinal-components": [

@@ -30,7 +30,7 @@ public final class SinVictoryHooks {
         registered = true;
         // SRE murder only — Blackout ends through BlackoutVictoryChecker.
         AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
-        HabiTrainCore.LOGGER.info("[SevenSins] SinVictoryHooks registered (AllowGameEnd pride block/win)");
+        HabiTrainCore.LOGGER.info("[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth)");
     }
 
     static GameUtils.WinStatus onAllowGameEnd(ServerLevel world, GameUtils.WinStatus proposed,
@@ -38,6 +38,22 @@ public final class SinVictoryHooks {
         if (world == null || proposed == null) {
             return GameUtils.WinStatus.NOT_MODIFY;
         }
+
+        // Sloth hijack: any proposed PASSENGERS/KILLERS/TIME while sloth alive → CUSTOM.
+        // Runs before pride block so a living sloth steals the faction end (design §5.7 / §6.2).
+        if (proposed == GameUtils.WinStatus.KILLERS
+                || proposed == GameUtils.WinStatus.PASSENGERS
+                || proposed == GameUtils.WinStatus.TIME) {
+            if (isSlothAlive(world)) {
+                ServerPlayer sloth = findAliveSlothPlayer(world);
+                triggerCustomSinWin(world, SevenSins.SLOTH, sloth);
+                HabiTrainCore.LOGGER.info(
+                        "[SinVictoryHooks] sloth alive → CUSTOM hijack (proposed={}, loose={})",
+                        proposed, loose);
+                return GameUtils.WinStatus.CUSTOM;
+            }
+        }
+
         if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
             if (isOnlyPrideAlive(world)) {
                 ServerPlayer pride = findAlivePridePlayer(world);
@@ -84,6 +100,17 @@ public final class SinVictoryHooks {
         return level.getServer().getPlayerList().getPlayer(p.prideId);
     }
 
+    public static boolean isSlothAlive(ServerLevel level) {
+        return scanSloth(level).slothAlive;
+    }
+
+    public static ServerPlayer findAliveSlothPlayer(ServerLevel level) {
+        if (level == null || level.getServer() == null) return null;
+        SlothPresence p = scanSloth(level);
+        if (!p.slothAlive || p.slothId == null) return null;
+        return level.getServer().getPlayerList().getPlayer(p.slothId);
+    }
+
     private static PridePresence scanPride(ServerLevel level) {
         PridePresence out = new PridePresence();
         if (level == null) return out;
@@ -116,6 +143,40 @@ public final class SinVictoryHooks {
                 out.prideId = player.getUUID();
             } else {
                 out.otherAlive = true;
+            }
+        }
+        return out;
+    }
+
+    private static SlothPresence scanSloth(ServerLevel level) {
+        SlothPresence out = new SlothPresence();
+        if (level == null) return out;
+
+        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
+        if (!blackoutAlive.isEmpty()) {
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            for (UUID id : blackoutAlive) {
+                if (SevenSins.SLOTH_ID.equals(history.get(id))) {
+                    out.slothAlive = true;
+                    out.slothId = id;
+                    break;
+                }
+            }
+            return out;
+        }
+
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+        if (game == null || !game.isRunning()) {
+            return out;
+        }
+        for (ServerPlayer player : level.players()) {
+            if (player == null || player.isSpectator()) continue;
+            SRERole role = game.getRole(player);
+            if (role == null) continue;
+            if (SevenSins.SLOTH_ID.equals(role.getIdentifier())) {
+                out.slothAlive = true;
+                out.slothId = player.getUUID();
+                break;
             }
         }
         return out;
@@ -156,5 +217,10 @@ public final class SinVictoryHooks {
         boolean prideAlive;
         boolean otherAlive;
         UUID prideId;
+    }
+
+    private static final class SlothPresence {
+        boolean slothAlive;
+        UUID slothId;
     }
 }
