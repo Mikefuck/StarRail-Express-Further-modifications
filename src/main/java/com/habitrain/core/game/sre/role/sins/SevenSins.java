@@ -14,6 +14,7 @@ import com.habitrain.core.game.sre.role.sins.win.LustRole;
 import com.habitrain.core.game.sre.role.sins.win.PrideRole;
 import com.habitrain.core.game.sre.role.sins.win.SlothRole;
 import io.wifi.starrailexpress.api.NormalRole;
+import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.util.ShopEntry;
@@ -57,12 +58,27 @@ public final class SevenSins {
 
     public static void init() {
         registerRoles();
+        registerSkills();
         wireOpposingClique();
         SevenSinsMutex.init();
         com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks.init();
         SevenSinEvents.init();
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");
+    }
+
+    private static void registerSkills() {
+        if (PRIDE == null) return;
+        RoleSkill.register(PRIDE,
+                RoleSkill.skill(
+                        HabiTrainCore.id("sin_pride_copy_shop"),
+                        "skill.habitrain_core.sin_pride.copy_shop",
+                        PrideComponent::useCopyShop
+                ).cooldownSeconds(PrideComponent.COPY_SHOP_CD_SECONDS)
+                        .showOnHud(true)
+                        .announceToSelf(true)
+                        .build()
+        );
     }
 
     private static void registerRoles() {

@@ -27,6 +27,7 @@
     "announcement.star.goals.sin_pride": "成为最后的幸存者。",
     "info.screen.roleid.sin_pride": "傲慢·路西法\n\n独立中立。可透视，不可看时间。无商店、无初始物。\nG：60s CD，复制目标角色基础商店快照。\n半径 8 内其他存活 ≥3 时发光并免疫常规武器；击杀他人后破防 5s。\n存活时阻止好人/杀手因灭队提前结束；成为最后存活者则独立胜。\n投稿：Mike",
     "info.screen.roleid.sin_pride.simple": "成为最后的幸存者。\n复制商店 / 人多免疫 / 独立胜",
+    "skill.habitrain_core.sin_pride.copy_shop": "复制商店",
     "announcement.star.role.sin_envy": "嫉妒·利维坦",
     "announcement.star.goals.sin_envy": "随杀手阵营获胜。",
     "info.screen.roleid.sin_envy": "嫉妒·利维坦\n\n杀手。商店：刀/枪/狂暴/开锁/关灯。\nG：90s 标记准星玩家。对标记目标：仅当自身金币 ≤ 目标金币时可击杀，成功随机夺合法物，否则夺最多 100 金。\n未标记目标攻击不受此限。随杀手胜。\n投稿：Mike",

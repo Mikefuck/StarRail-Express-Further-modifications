@@ -2,22 +2,23 @@ package com.habitrain.core.game.sre.role.sins.win;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.AllowGameEnd;
 import io.wifi.starrailexpress.game.GameUtils;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.agmas.noellesroles.utils.RoleUtils;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * Shared sin win hooks for SRE murder ({@link AllowGameEnd}) and Blackout
  * ({@link com.habitrain.core.game.blackout.BlackoutVictoryChecker}).
- *
- * <p>P0 shell only: pride block / custom sin win filled in later tasks.
- * Blackout does not end via AllowGameEnd ({@code SREBlackoutGameMode} always
- * returns NOT_MODIFY); registration still serves the SRE murder path.
  */
 public final class SinVictoryHooks {
     private static boolean registered;
@@ -29,29 +30,40 @@ public final class SinVictoryHooks {
         registered = true;
         // SRE murder only — Blackout ends through BlackoutVictoryChecker.
         AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
-        HabiTrainCore.LOGGER.info("[SevenSins] SinVictoryHooks registered (AllowGameEnd shell)");
+        HabiTrainCore.LOGGER.info("[SevenSins] SinVictoryHooks registered (AllowGameEnd pride block/win)");
     }
 
     static GameUtils.WinStatus onAllowGameEnd(ServerLevel world, GameUtils.WinStatus proposed,
                                               boolean loose) {
-        // P0 shell: Task 7 will return NONE when pride is alive and other non-pride
-        // players remain while proposed is KILLERS/PASSENGERS.
+        if (world == null || proposed == null) {
+            return GameUtils.WinStatus.NOT_MODIFY;
+        }
         if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
+            if (isOnlyPrideAlive(world)) {
+                ServerPlayer pride = findAlivePridePlayer(world);
+                triggerCustomSinWin(world, SevenSins.PRIDE, pride);
+                HabiTrainCore.LOGGER.info(
+                        "[SinVictoryHooks] only pride alive → CUSTOM (proposed={}, loose={})",
+                        proposed, loose);
+                return GameUtils.WinStatus.CUSTOM;
+            }
             if (isPrideBlocking(world)) {
                 HabiTrainCore.LOGGER.debug(
-                        "[SinVictoryHooks] pride would block {} (loose={}) — not yet active",
+                        "[SinVictoryHooks] pride blocks {} (loose={})",
                         proposed, loose);
+                return GameUtils.WinStatus.NONE;
             }
         }
         return GameUtils.WinStatus.NOT_MODIFY;
     }
 
     /**
-     * Whether pride is still alive and should prevent good/bad faction wipe ends.
-     * P0 always false; Task 7 implements real conditions.
+     * Pride is still alive and at least one other assigned/alive participant remains.
+     * Blocks good/bad faction wipe ends (timer ends are not gated by this).
      */
     public static boolean isPrideBlocking(ServerLevel level) {
-        return false; // Task 7
+        PridePresence p = scanPride(level);
+        return p.prideAlive && p.otherAlive;
     }
 
     /** Alias for plan interface name. */
@@ -59,10 +71,58 @@ public final class SinVictoryHooks {
         return isPrideBlocking(level);
     }
 
+    /** Pride is the sole remaining assigned/alive participant. */
+    public static boolean isOnlyPrideAlive(ServerLevel level) {
+        PridePresence p = scanPride(level);
+        return p.prideAlive && !p.otherAlive;
+    }
+
+    public static ServerPlayer findAlivePridePlayer(ServerLevel level) {
+        if (level == null || level.getServer() == null) return null;
+        PridePresence p = scanPride(level);
+        if (!p.prideAlive || p.prideId == null) return null;
+        return level.getServer().getPlayerList().getPlayer(p.prideId);
+    }
+
+    private static PridePresence scanPride(ServerLevel level) {
+        PridePresence out = new PridePresence();
+        if (level == null) return out;
+
+        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
+        if (!blackoutAlive.isEmpty()) {
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            for (UUID id : blackoutAlive) {
+                ResourceLocation roleId = history.get(id);
+                if (SevenSins.PRIDE_ID.equals(roleId)) {
+                    out.prideAlive = true;
+                    out.prideId = id;
+                } else {
+                    out.otherAlive = true;
+                }
+            }
+            return out;
+        }
+
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+        if (game == null || !game.isRunning()) {
+            return out;
+        }
+        for (ServerPlayer player : level.players()) {
+            if (player == null || player.isSpectator()) continue;
+            SRERole role = game.getRole(player);
+            if (role == null) continue;
+            if (SevenSins.PRIDE_ID.equals(role.getIdentifier())) {
+                out.prideAlive = true;
+                out.prideId = player.getUUID();
+            } else {
+                out.otherAlive = true;
+            }
+        }
+        return out;
+    }
+
     /**
      * Alive players excluding {@link BlackoutRoleManager.Faction#SIN_INDEPENDENT}.
-     * Used by later pride/custom win checks; not used for good/bad wipe counts
-     * (those already ignore SIN_* via getRemainingGood/Bad).
      */
     public static int countAliveExcludingIndependent(ServerLevel level) {
         if (level == null) return 0;
@@ -78,12 +138,6 @@ public final class SinVictoryHooks {
 
     /**
      * Trigger a custom-winner SRE end for an independent sin.
-     * P0: helper only; callers land in later tasks.
-     *
-     * <p>Round-end for Blackout custom sin wins should prefer
-     * {@link GameUtils.WinStatus#CUSTOM} + {@code CustomWinnerID} on
-     * {@link io.wifi.starrailexpress.cca.SREGameRoundEndComponent} when writing
-     * via BlackoutVictoryChecker; this path is for SRE murder RoleUtils.
      */
     public static void triggerCustomSinWin(ServerLevel level, SRERole role, ServerPlayer winner) {
         if (level == null || role == null) return;
@@ -96,5 +150,11 @@ public final class SinVictoryHooks {
             HabiTrainCore.LOGGER.error("[SinVictoryHooks] triggerCustomSinWin failed for {}",
                     role.getIdentifier(), t);
         }
+    }
+
+    private static final class PridePresence {
+        boolean prideAlive;
+        boolean otherAlive;
+        UUID prideId;
     }
 }

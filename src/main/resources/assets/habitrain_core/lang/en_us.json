@@ -18,6 +18,7 @@
     "announcement.star.goals.sin_pride": "Be the last one standing.",
     "info.screen.roleid.sin_pride": "Pride · Lucifer\n\nIndependent neutral. Instinct on, timer off. No shop/starting items.\nG: 60s CD — copy a target role's base shop snapshot.\nGlow + conventional-weapon immunity when ≥3 other survivors within 8; killing others breaks it for 5s.\nBlocks early faction ends while alive; last survivor wins alone.\nSubmission: Mike",
     "info.screen.roleid.sin_pride.simple": "Be the last one standing.\nCopy shop / crowd immunity / solo win",
+    "skill.habitrain_core.sin_pride.copy_shop": "Copy Shop",
     "announcement.star.role.sin_envy": "Envy · Leviathan",
     "announcement.star.goals.sin_envy": "Win with the killers.",
     "info.screen.roleid.sin_envy": "Envy · Leviathan\n\nKiller. Shop: knife/gun/psycho/lockpick/lights.\nG: 90s mark aim target. Marked kills only if your gold ≤ theirs; loot a legal item or up to 100 gold.\nUnmarked targets unrestricted. Wins with killers.\nSubmission: Mike",

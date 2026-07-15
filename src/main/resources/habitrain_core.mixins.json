@@ -16,6 +16,7 @@
         "BlackoutDrinkItemMixin",
         "ExtraEffectRoleMixin",
         "OutsideTaskInstantCompleteMixin",
-        "BlackoutTaskIntervalMixin"
+        "BlackoutTaskIntervalMixin",
+        "MeleeImmuneKillMixin"
     ]
 }

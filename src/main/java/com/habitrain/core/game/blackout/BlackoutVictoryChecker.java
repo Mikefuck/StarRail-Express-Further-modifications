@@ -62,16 +62,22 @@ public class BlackoutVictoryChecker {
 
     void checkVictory(ServerLevel level) {
         if (mode.getCurrentLevel() == null) return;
+        if (mode.isGameEnded()) return;
+
+        // 1) Pride last survivor among assigned alive → custom pride win.
+        if (SinVictoryHooks.isOnlyPrideAlive(level)) {
+            endGamePrideCustom(level);
+            return;
+        }
+
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
-        // SIN_* never enter getRemainingGood/Bad; pride block (Task 7) can still
+        // SIN_* never enter getRemainingGood/Bad; pride block can still
         // prevent wipe ends while independent sins remain alive.
         boolean prideBlocking = SinVictoryHooks.isPrideBlocking(level);
 
         if (goodRemaining <= 0 && badRemaining <= 0) {
-            // Only GOOD/BAD wiped — SIN_* may still be alive. When pride blocks,
-            // defer (Task 7 may convert to pride win / continue). P0: still end
-            // as mutual wipe because isPrideBlocking is false.
+            // Only GOOD/BAD wiped — SIN_* may still be alive.
             if (prideBlocking) {
                 return;
             }
@@ -79,6 +85,7 @@ public class BlackoutVictoryChecker {
             endGame(level, WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
             return;
         }
+        // Timer can still end even if pride is alive (spec §6.2 step 3).
         if (BlackoutTimerSystem.isTimeUp(level)) {
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
@@ -98,6 +105,70 @@ public class BlackoutVictoryChecker {
             }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.BAD);
             endGame(level, WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
+        }
+    }
+
+    private void endGamePrideCustom(ServerLevel level) {
+        if (mode.isGameEnded()) return;
+        mode.setLastWinningFaction(null);
+        mode.setGameEnded(true);
+        String message = "§6傲慢·路西法获胜！成为最后的幸存者。";
+        mode.setPendingEndMessage(message);
+        mode.setPendingWinResult(WinResult.noWinner("傲慢独立胜"));
+        if (level == null) return;
+        try {
+            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.PRIDE_ID);
+            mode.setPendingEndMessage(null);
+            HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
+            var sreGame = SREGameWorldComponent.KEY.get(level);
+            if (sreGame != null) {
+                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
+            }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("endGamePrideCustom failed", e);
+            com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("傲慢独立胜"));
+        }
+    }
+
+    /**
+     * Write CUSTOM round-end for an independent sin (pride last survivor).
+     * Personal wins: only players whose role history matches the sin id.
+     */
+    public static void populateRoundEndDataCustomSin(ServerLevel level, ResourceLocation sinRoleId) {
+        if (level == null || sinRoleId == null) return;
+        try {
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            if (roundEnd == null) return;
+
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            java.util.List<ServerPlayer> participants = new java.util.ArrayList<>();
+            for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
+                if (history.containsKey(p.getUUID())) {
+                    participants.add(p);
+                }
+            }
+            if (participants.isEmpty()) {
+                participants.addAll(level.players());
+            }
+
+            roundEnd.setRoundEndData(participants, GameUtils.WinStatus.CUSTOM);
+            try {
+                // Public fields on SREGameRoundEndComponent (SRE 4.3).
+                roundEnd.CustomWinnerID = sinRoleId.getPath();
+                roundEnd.CustomWinnerColor = 0xB42828;
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Blackout] could not set CustomWinner fields", t);
+            }
+            for (ServerPlayer p : participants) {
+                ResourceLocation roleId = history.get(p.getUUID());
+                boolean didWin = sinRoleId.equals(roleId);
+                roundEnd.setPlayerWin(p.getUUID(), didWin);
+            }
+            roundEnd.sync();
+            HabiTrainCore.LOGGER.info("[Blackout] custom sin round-end: path={}, participants={}",
+                    sinRoleId.getPath(), participants.size());
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.error("populateRoundEndDataCustomSin failed", t);
         }
     }
 
