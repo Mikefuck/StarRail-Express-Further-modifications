@@ -28,6 +28,7 @@ import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 import pro.fazeclan.river.stupid_express.constants.SEModifiers;
 import pro.fazeclan.river.stupid_express.modifier.lovers.cca.LoversComponent;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -84,11 +85,11 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     }
 
     public Set<UUID> getDesireMarked() {
-        return desireMarked;
+        return Collections.unmodifiableSet(desireMarked);
     }
 
     public Set<UUID> getKnownLovers() {
-        return knownLovers;
+        return Collections.unmodifiableSet(knownLovers);
     }
 
     public boolean isDesireMarked(UUID id) {

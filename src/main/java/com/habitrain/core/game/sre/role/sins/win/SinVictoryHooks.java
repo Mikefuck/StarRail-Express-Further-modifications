@@ -34,8 +34,8 @@ public final class SinVictoryHooks {
         if (registered) return;
         registered = true;
         // SRE murder only — Blackout ends through BlackoutVictoryChecker.
-        // Array-backed AllowGameEnd: first non-NOT_MODIFY wins. LoversWinCheckEvent
-        // also registers here; we detect lovers.won() ourselves and try to stay first.
+        // Array-backed AllowGameEnd: first non-NOT_MODIFY wins. Prepend so pride/sloth
+        // still see faction proposals; lust only steals when proposed is LOVERS.
         AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
         prependOurAllowGameEndHandler();
         HabiTrainCore.LOGGER.info(
@@ -43,8 +43,8 @@ public final class SinVictoryHooks {
     }
 
     /**
-     * Move our handler to the front of the array-backed event so we outrun
-     * {@code LoversWinCheckEvent} (which also returns a non-NOT_MODIFY status).
+     * Move our handler to the front of the array-backed event so pride/sloth run
+     * before other faction ends. Lust steals only on proposed {@code LOVERS}.
      */
     private static void prependOurAllowGameEndHandler() {
         try {
@@ -107,9 +107,10 @@ public final class SinVictoryHooks {
         // 1) only-pride → CUSTOM pride
         // 2) pride blocking (pride alive + others) on PASSENGERS/KILLERS → NONE
         // 3) sloth alive on PASSENGERS/KILLERS/TIME → CUSTOM sloth
-        // 4) lust alive + lovers win path (proposed LOVERS or lovers.won) → CUSTOM lust
+        // 4) lust alive + proposed LOVERS only → CUSTOM lust
         // Pride must never lose the end to a sloth hijack while still blocking.
-        // Lust only steals lovers wins — never faction/timer ends.
+        // Lust steals only when proposed is LOVERS — never faction/timer/other ends,
+        // and never races ahead via lovers.won() (safer; requires LOVERS to surface).
         if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
             if (isOnlyPrideAlive(world)) {
                 ServerPlayer pride = findAlivePridePlayer(world);
@@ -140,15 +141,15 @@ public final class SinVictoryHooks {
             }
         }
 
-        // Lust lovers steal: proposed LOVERS, or detect lovers.won() ourselves so we can
-        // win the race against LoversWinCheckEvent (first non-NOT_MODIFY wins the bus).
-        if (!loose && isLustAlive(world)
-                && (proposed == GameUtils.WinStatus.LOVERS || wouldLoversWin(world))) {
+        // Lust lovers steal: only when proposed is LOVERS (no wouldLoversWin race).
+        // Reflective prepend keeps us ahead of LoversWinCheckEvent when possible; if
+        // reorder fails we still only steal once LOVERS is the proposed status.
+        if (!loose && proposed == GameUtils.WinStatus.LOVERS && isLustAlive(world)) {
             ServerPlayer lust = findAliveLustPlayer(world);
             stealLoversWinForLust(world, lust);
             HabiTrainCore.LOGGER.info(
-                    "[SinVictoryHooks] lust steals lovers win → CUSTOM (proposed={}, loose={})",
-                    proposed, loose);
+                    "[SinVictoryHooks] lust steals lovers win → CUSTOM (proposed=LOVERS, loose={})",
+                    loose);
             return GameUtils.WinStatus.CUSTOM;
         }
 
