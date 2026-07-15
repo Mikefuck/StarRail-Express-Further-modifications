@@ -51,6 +51,7 @@ public final class SevenSins {
     public static void init() {
         registerRoles();
         wireOpposingClique();
+        SevenSinsMutex.init();
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");
     }
