@@ -8,11 +8,13 @@ import com.habitrain.core.game.sre.role.sins.component.LustComponent;
 import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
+import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.event.AllowPlayerDeathWithKiller;
 import io.wifi.starrailexpress.event.OnGameTrueStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeathWithKiller;
+import io.wifi.starrailexpress.event.ShouldDropOnDeath;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -24,6 +26,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -76,6 +79,7 @@ public final class SevenSinEvents {
         });
 
         registerSlothInputLocks();
+        registerGreedPouchHooks();
 
         // Pride aura + Envy mark balance gate (order: each handler independent).
         AllowPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
@@ -260,7 +264,55 @@ public final class SevenSinEvents {
             }
         });
 
-        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy + wrath + sloth death/kill/input hooks registered");
+        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy + wrath + sloth + greed hooks registered");
+    }
+
+    private static void registerGreedPouchHooks() {
+        // Absorb: use pouch while other hand holds a sample item.
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (world.isClientSide()) {
+                return net.minecraft.world.InteractionResultHolder.pass(player.getItemInHand(hand));
+            }
+            if (!(player instanceof ServerPlayer sp)) {
+                return net.minecraft.world.InteractionResultHolder.pass(player.getItemInHand(hand));
+            }
+            ItemStack used = player.getItemInHand(hand);
+            if (!GreedPouchItem.isBoundPouchOf(sp, used)) {
+                return net.minecraft.world.InteractionResultHolder.pass(used);
+            }
+            InteractionHand otherHand = hand == InteractionHand.MAIN_HAND
+                    ? InteractionHand.OFF_HAND
+                    : InteractionHand.MAIN_HAND;
+            ItemStack other = player.getItemInHand(otherHand);
+            if (other.isEmpty()) {
+                sp.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_greed.need_item"),
+                        true
+                );
+                return net.minecraft.world.InteractionResultHolder.fail(used);
+            }
+            try {
+                GreedComponent greed = GreedComponent.KEY.get(sp);
+                if (greed != null && greed.tryAbsorbOtherHand(sp, other)) {
+                    return net.minecraft.world.InteractionResultHolder.success(used);
+                }
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Greed] absorb failed", t);
+            }
+            return net.minecraft.world.InteractionResultHolder.pass(used);
+        });
+
+        // Death drops: never drop bound greed pouch on death (steal/lose still kills via tick).
+        try {
+            ShouldDropOnDeath.EVENT.register(stack -> {
+                if (GreedPouchItem.isGreedPouch(stack)) {
+                    return false;
+                }
+                return true;
+            });
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Greed] ShouldDropOnDeath unavailable", t);
+        }
     }
 
     private static void registerSlothInputLocks() {

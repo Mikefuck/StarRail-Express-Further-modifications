@@ -49,11 +49,13 @@ public class BlackoutMode implements GameMode {
     private SREGameLauncher sreGameLauncher;
 
     ServerLevel getCurrentLevel() { return currentLevel; }
-    boolean isGameEnded() { return gameEnded; }
+    public boolean isGameEnded() { return gameEnded; }
     void setGameEnded(boolean v) { gameEnded = v; }
     void setPendingEndMessage(String m) { pendingEndMessage = m; }
     void setLastWinningFaction(BlackoutRoleManager.Faction f) { lastWinningFaction = f; }
     void setPendingWinResult(WinResult r) { pendingWinResult = r; }
+
+    BlackoutVictoryChecker getVictoryChecker() { return victoryChecker; }
 
     public WinResult getPendingWinResult() { return pendingWinResult; }
 
@@ -150,11 +152,8 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
-        // 结束字幕若尚未在 endGame 提前广播，则在此补发
-        if (pendingEndMessage != null) {
-            syncManager.broadcast(level, pendingEndMessage);
-            pendingEndMessage = null;
-        }
+        // 胜利 TOP 已在 endGame 取消；仅清理 pending，不补发字幕。
+        pendingEndMessage = null;
         syncManager.syncReset(level);
         currentLevel = null;
     }
@@ -169,6 +168,10 @@ public class BlackoutMode implements GameMode {
         BlackoutTimerSystem.reset(level);
         BlackoutShopService.resetRound(level);
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.cleanup(level);
+        // 局末回收所有在线玩家的临时电源提灯，防跨局残留
+        for (ServerPlayer p : level.players()) {
+            com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.reclaimTempLantern(p);
+        }
         BlackoutRoleManager.restoreVigilanteRoleMaxes();
         // roleHistory / factionHistory 保留到下一局 onPreStart 的 clear，
         // 以便 SRE finalize 阶段仍可读取结算身份。

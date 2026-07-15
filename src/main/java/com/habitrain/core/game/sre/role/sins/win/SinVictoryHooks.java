@@ -3,6 +3,7 @@ package com.habitrain.core.game.sre.role.sins.win;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.component.GreedComponent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -39,7 +40,7 @@ public final class SinVictoryHooks {
         AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
         prependOurAllowGameEndHandler();
         HabiTrainCore.LOGGER.info(
-                "[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth/lust)");
+                "[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth/lust; greed instant)");
     }
 
     /**
@@ -401,6 +402,110 @@ public final class SinVictoryHooks {
         }
     }
 
+    /**
+     * True when this greed player has finished the collection goal.
+     */
+    public static boolean isGreedCollectionComplete(ServerLevel level, ServerPlayer player) {
+        if (level == null || player == null) return false;
+        try {
+            GreedComponent greed = GreedComponent.KEY.get(player);
+            return greed != null && greed.isCollectionComplete();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Any alive greed player has completed collection.
+     */
+    public static boolean isGreedWinReady(ServerLevel level) {
+        if (level == null) return false;
+        GreedPresence p = scanGreed(level);
+        return p.greedAlive && p.complete;
+    }
+
+    public static ServerPlayer findAliveGreedPlayer(ServerLevel level) {
+        if (level == null || level.getServer() == null) return null;
+        GreedPresence p = scanGreed(level);
+        if (!p.greedAlive || p.greedId == null) return null;
+        return level.getServer().getPlayerList().getPlayer(p.greedId);
+    }
+
+    /**
+     * Instant greed collection win (SRE custom). Blackout dual-write is done by caller
+     * via {@code BlackoutVictoryChecker.endGameGreedCustom} to avoid package cycles.
+     */
+    public static void triggerGreedWin(ServerLevel level, ServerPlayer greed) {
+        if (level == null) return;
+        ServerPlayer winner = greed != null ? greed : findAliveGreedPlayer(level);
+        try {
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            if (roundEnd != null) {
+                if (roundEnd.CustomWinnerPlayers == null) {
+                    roundEnd.CustomWinnerPlayers = new ArrayList<>();
+                } else {
+                    roundEnd.CustomWinnerPlayers.clear();
+                }
+                if (winner != null) {
+                    roundEnd.CustomWinnerPlayers.add(winner.getUUID());
+                }
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[SinVictoryHooks] set CustomWinnerPlayers for greed failed", t);
+        }
+
+        if (SevenSins.GREED != null) {
+            triggerCustomSinWin(level, SevenSins.GREED, winner);
+        }
+    }
+
+    private static GreedPresence scanGreed(ServerLevel level) {
+        GreedPresence out = new GreedPresence();
+        if (level == null || level.getServer() == null) return out;
+
+        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
+        if (!blackoutAlive.isEmpty()) {
+            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
+            for (UUID id : blackoutAlive) {
+                if (SevenSins.GREED_ID.equals(history.get(id))) {
+                    out.greedAlive = true;
+                    out.greedId = id;
+                    ServerPlayer sp = level.getServer().getPlayerList().getPlayer(id);
+                    if (sp != null) {
+                        try {
+                            GreedComponent g = GreedComponent.KEY.get(sp);
+                            out.complete = g != null && g.isCollectionComplete();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    break;
+                }
+            }
+            return out;
+        }
+
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+        if (game == null || !game.isRunning()) {
+            return out;
+        }
+        for (ServerPlayer player : level.players()) {
+            if (player == null || player.isSpectator()) continue;
+            SRERole role = game.getRole(player);
+            if (role == null) continue;
+            if (SevenSins.GREED_ID.equals(role.getIdentifier())) {
+                out.greedAlive = true;
+                out.greedId = player.getUUID();
+                try {
+                    GreedComponent g = GreedComponent.KEY.get(player);
+                    out.complete = g != null && g.isCollectionComplete();
+                } catch (Throwable ignored) {
+                }
+                break;
+            }
+        }
+        return out;
+    }
+
     private static final class PridePresence {
         boolean prideAlive;
         boolean otherAlive;
@@ -415,5 +520,11 @@ public final class SinVictoryHooks {
     private static final class LustPresence {
         boolean lustAlive;
         UUID lustId;
+    }
+
+    private static final class GreedPresence {
+        boolean greedAlive;
+        boolean complete;
+        UUID greedId;
     }
 }

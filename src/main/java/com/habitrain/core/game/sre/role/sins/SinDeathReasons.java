@@ -19,7 +19,7 @@ public final class SinDeathReasons {
 
     private static final Set<String> FORCE_ALWAYS = Set.of(
             "fell_out_of_train", "disconnected", "sanity_collapse",
-            "exile", "void", "command"
+            "exile", "void", "command", "greed_lost_pouch", "wrath_exhaustion"
     );
 
     public static boolean isForcePath(ResourceLocation reason) {

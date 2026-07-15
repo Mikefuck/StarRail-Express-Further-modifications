@@ -69,6 +69,12 @@ public class BlackoutVictoryChecker {
             return;
         }
 
+        // 2) Greed collection complete → custom greed win.
+        if (SinVictoryHooks.isGreedWinReady(level)) {
+            endGameGreedCustomInstance(level, SinVictoryHooks.findAliveGreedPlayer(level));
+            return;
+        }
+
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
         // SIN_* never enter getRemainingGood/Bad; pride block can still
@@ -169,6 +175,45 @@ public class BlackoutVictoryChecker {
         }
     }
 
+    private void endGameGreedCustomInstance(ServerLevel level, ServerPlayer winner) {
+        if (mode.isGameEnded()) return;
+        mode.setLastWinningFaction(null);
+        mode.setGameEnded(true);
+        String message = "§6贪婪·玛门获胜！收纳袋收集完成。";
+        mode.setPendingEndMessage(message);
+        mode.setPendingWinResult(WinResult.noWinner("贪婪独立胜"));
+        if (level == null) return;
+        try {
+            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.GREED_ID);
+            mode.setPendingEndMessage(null);
+            HabiTrainCore.LOGGER.info("[Blackout] game end: {} winner={}",
+                    message, winner != null ? winner.getUUID() : null);
+            var sreGame = SREGameWorldComponent.KEY.get(level);
+            if (sreGame != null) {
+                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
+            }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("endGameGreedCustom failed", e);
+            com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("贪婪独立胜"));
+        }
+    }
+
+    /**
+     * Instant greed win from collection (callable outside tick).
+     * No-op if blackout mode is not active for this level.
+     */
+    public static void endGameGreedCustom(ServerLevel level, ServerPlayer winner) {
+        if (level == null) return;
+        try {
+            var activeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level);
+            if (activeOpt.isEmpty() || !(activeOpt.get() instanceof BlackoutMode blackout)) return;
+            if (blackout.isGameEnded()) return;
+            blackout.getVictoryChecker().endGameGreedCustomInstance(level, winner);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.debug("[Blackout] endGameGreedCustom skipped: {}", t.toString());
+        }
+    }
+
     /**
      * Write CUSTOM round-end for an independent sin (pride last survivor / sloth hijack).
      * Personal wins: only players whose role history matches the sin id.
@@ -199,6 +244,8 @@ public class BlackoutVictoryChecker {
                     roundEnd.CustomWinnerColor = 0x64648C;
                 } else if (com.habitrain.core.game.sre.role.sins.SevenSins.LUST_ID.equals(sinRoleId)) {
                     roundEnd.CustomWinnerColor = 0xC83296;
+                } else if (com.habitrain.core.game.sre.role.sins.SevenSins.GREED_ID.equals(sinRoleId)) {
+                    roundEnd.CustomWinnerColor = 0xC8A014;
                 } else {
                     roundEnd.CustomWinnerColor = 0xB42828;
                 }

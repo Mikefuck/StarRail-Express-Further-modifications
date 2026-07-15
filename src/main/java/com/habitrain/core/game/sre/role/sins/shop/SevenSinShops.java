@@ -30,6 +30,8 @@ public final class SevenSinShops {
 
     public static final int LUST_LOCKPICK_PRICE = 300;
 
+    public static final int GREED_LOCKPICK_PRICE = 100;
+
     public static List<ShopEntry> empty() {
         return new ArrayList<>();
     }
@@ -65,8 +67,11 @@ public final class SevenSinShops {
         return shop;
     }
 
+    /** 贪婪店：开锁 100。 */
     public static List<ShopEntry> greedShop() {
-        return empty(); // lockpick in P1/P3
+        List<ShopEntry> shop = new ArrayList<>();
+        shop.add(new ShopEntry(TMMItems.LOCKPICK.getDefaultInstance(), GREED_LOCKPICK_PRICE, ShopEntry.Type.TOOL));
+        return shop;
     }
 
     /**

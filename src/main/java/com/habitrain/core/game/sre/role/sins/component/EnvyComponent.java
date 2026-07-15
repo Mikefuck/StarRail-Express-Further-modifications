@@ -161,6 +161,11 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
             }
         }
 
+        // Greed bound pouch is never transferable (steal/loot would kill owner via lost-pouch).
+        if (com.habitrain.core.game.sre.role.sins.item.GreedPouchItem.isGreedPouch(stack)) {
+            return false;
+        }
+
         // Soulbound-style OWNER string: only transferable if matches recipient UUID
         try {
             if (stack.has(SREDataComponentTypes.OWNER)) {

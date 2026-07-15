@@ -21,6 +21,8 @@
         "MeleeImmuneKillMixin",
         "HumilityTaskCompleteMixin",
         "TaskInteractTimeMixin",
-        "TemperanceShopMixin"
+        "TemperanceShopMixin",
+        "GreedPouchDropMixin",
+        "GreedPouchClickMixin"
     ]
 }
