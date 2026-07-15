@@ -1,5 +1,6 @@
 package com.habitrain.core.game.blackout;
 
+import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -27,13 +28,20 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 角色分配完全复用 SRE 原版机制（SREMurderGameMode.assignRole → assignRolesToPlayers，
  * 含 RoleCountManager/权重/forced role），本类仅负责从 SRE 分配结果同步阵营状态
- * （canUseKiller=BAD, 其余=GOOD），并维护警长集合与角色历史用于回放结算。
+ * （七宗罪独立/分胜 + canUseKiller=BAD / 其余=GOOD），并维护警长集合与角色历史用于回放结算。
+ *
+ * <p>GOOD/BAD 仍是商店/任务/全灭判定用的阵营；{@link Faction#SIN_INDEPENDENT} /
+ * {@link Faction#SIN_KILLER_SHARE} 不计入 getRemainingGood/Bad，也不走 GOOD/BAD 商店。
  */
 public class BlackoutRoleManager {
 
     public enum Faction {
         GOOD,
-        BAD
+        BAD,
+        /** Independent sins: pride/greed/lust/sloth — alive but not in good/bad counts. */
+        SIN_INDEPENDENT,
+        /** Wrath — not in good/bad counts; shares personal win with killers. */
+        SIN_KILLER_SHARE
     }
 
     private static final Map<ResourceKey<Level>, RoleState> INSTANCES = new ConcurrentHashMap<>();
@@ -100,23 +108,37 @@ public class BlackoutRoleManager {
     }
 
     /**
-     * 投票选出的警长：把玩家的可见职业切换为 {@code sreRole}（通常是随机警察职业），
-     * 同时把玩家加入 {@code sheriffs} 集合以保留警长特权（/habi_api buy_gun、回放标识）。
-     *
-     * @param sreRole         被票选者要变成的 SRE 原版角色（不能为 null）
-     * @param factionOverride 阵营覆盖；null 表示沿用根据 sreRole 推导的阵营
+     * 从 SRE 角色推导停电阵营：七宗罪优先，否则 canUseKiller → BAD，其余 GOOD。
      */
-    public static void setSheriff(ServerLevel level, UUID playerId, SRERole sreRole,
-                                  Faction factionOverride) {
+    public static Faction resolveFactionFromSreRole(SRERole sreRole) {
         if (sreRole == null) {
+            return Faction.GOOD;
+        }
+        if (SevenSins.isIndependentSin(sreRole)) {
+            return Faction.SIN_INDEPENDENT;
+        }
+        if (SevenSins.isKillerShareSin(sreRole)) {
+            return Faction.SIN_KILLER_SHARE;
+        }
+        return sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD;
+    }
+
+    /**
+     * 中途改职（非警长特权）：写 blackout 存活表/历史，并同步 SRE 角色。
+     * 替罪羊转杀手等场景必须调用，否则 faction 仍停留在开局快照。
+     *
+     * @param factionOverride null 时按 {@link #resolveFactionFromSreRole(SRERole)} 推导
+     */
+    public static void reassignRole(ServerLevel level, UUID playerId, SRERole sreRole,
+                                    Faction factionOverride) {
+        if (level == null || playerId == null || sreRole == null) {
             return;
         }
         Faction faction = factionOverride != null ? factionOverride
-                : (sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD);
+                : resolveFactionFromSreRole(sreRole);
         ResourceLocation roleId = sreRole.getIdentifier();
 
         RoleState state = getOrCreate(level);
-        state.sheriffs.add(playerId);
         state.roles.put(playerId, roleId);
         state.factions.put(playerId, faction);
         state.factionHistory.put(playerId, faction);
@@ -130,17 +152,36 @@ public class BlackoutRoleManager {
                 io.wifi.starrailexpress.SRE.REPLAY_MANAGER.updateRolesFromComponent(gameWorld);
             } catch (Throwable ignored) {}
 
-            // 触发 ModdedRoleAssigned.EVENT 发放该角色的初始物品（如武术教官的双截棍）
             ServerPlayer sp = level.getServer().getPlayerList().getPlayer(playerId);
             if (sp != null) {
                 try {
                     org.agmas.harpymodloader.events.ModdedRoleAssigned.EVENT.invoker()
                             .assignModdedRole(sp, sreRole);
                 } catch (Throwable t) {
-                    LOGGER.error("setSheriff: failed to fire ModdedRoleAssigned for {}", playerId, t);
+                    LOGGER.error("reassignRole: failed to fire ModdedRoleAssigned for {}", playerId, t);
                 }
             }
         }
+        LOGGER.info("reassignRole: {} -> {} / {}", playerId, roleId, faction);
+    }
+
+    /**
+     * 投票选出的警长：把玩家的可见职业切换为 {@code sreRole}（通常是随机警察职业），
+     * 同时把玩家加入 {@code sheriffs} 集合以保留警长特权（/habi_api buy_gun、回放标识）。
+     *
+     * @param sreRole         被票选者要变成的 SRE 原版角色（不能为 null）
+     * @param factionOverride 阵营覆盖；null 表示沿用根据 sreRole 推导的阵营
+     */
+    public static void setSheriff(ServerLevel level, UUID playerId, SRERole sreRole,
+                                  Faction factionOverride) {
+        if (sreRole == null) {
+            return;
+        }
+        RoleState state = getOrCreate(level);
+        state.sheriffs.add(playerId);
+        reassignRole(level, playerId, sreRole, factionOverride != null ? factionOverride
+                : resolveFactionFromSreRole(sreRole));
+        state.sheriffs.add(playerId);
     }
 
     /**
@@ -255,26 +296,34 @@ public class BlackoutRoleManager {
     /**
      * 从 SRE 原版分配结果同步停电阵营状态。
      * 在 SREBlackoutGameMode.initializeGame 调用父类 assignRole 之后调用：
-     * 遍历每个玩家的 SRE 角色，按 canUseKiller()=BAD / 其余=GOOD 写入阵营状态，
+     * 遍历每个玩家的 SRE 角色，按七宗罪分类 / canUseKiller 写入阵营状态，
      * 并记录初始好人数供回放/任务进度使用。
+     *
+     * <p>同步后每位已分配玩家都有显式 faction；{@link #getFaction} 对未同步玩家的
+     * GOOD 默认仅作遗留兜底，不应再依赖。
      */
     public static void syncFactionsFromSreRoles(ServerLevel level, SREGameWorldComponent game,
                                                 List<ServerPlayer> players) {
         RoleState state = getOrCreate(level);
+        int sinIndependent = 0;
+        int sinKillerShare = 0;
         for (ServerPlayer p : players) {
             SRERole sreRole = game.getRole(p);
             if (sreRole == null) {
                 continue;
             }
             ResourceLocation roleId = sreRole.getIdentifier();
-            Faction faction = sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD;
+            Faction faction = resolveFactionFromSreRole(sreRole);
+            if (faction == Faction.SIN_INDEPENDENT) sinIndependent++;
+            else if (faction == Faction.SIN_KILLER_SHARE) sinKillerShare++;
             state.roles.put(p.getUUID(), roleId);
             state.factions.put(p.getUUID(), faction);
             state.factionHistory.put(p.getUUID(), faction);
             state.roleHistory.put(p.getUUID(), roleId);
         }
         state.initialGoodCount = getRemainingGood(level);
-        LOGGER.info("[BlackoutSync] factions synced from SRE roles: {} players, initialGood={}",
-                players.size(), state.initialGoodCount);
+        LOGGER.info("[BlackoutSync] factions synced from SRE roles: {} players, initialGood={}, "
+                        + "sinIndependent={}, sinKillerShare={}",
+                players.size(), state.initialGoodCount, sinIndependent, sinKillerShare);
     }
 }

@@ -7,6 +7,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopService;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
+import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
@@ -63,8 +64,17 @@ public class BlackoutVictoryChecker {
         if (mode.getCurrentLevel() == null) return;
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
+        // SIN_* never enter getRemainingGood/Bad; pride block (Task 7) can still
+        // prevent wipe ends while independent sins remain alive.
+        boolean prideBlocking = SinVictoryHooks.isPrideBlocking(level);
 
         if (goodRemaining <= 0 && badRemaining <= 0) {
+            // Only GOOD/BAD wiped — SIN_* may still be alive. When pride blocks,
+            // defer (Task 7 may convert to pride win / continue). P0: still end
+            // as mutual wipe because isPrideBlocking is false.
+            if (prideBlocking) {
+                return;
+            }
             mode.setLastWinningFaction(null);
             endGame(level, WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
             return;
@@ -75,11 +85,17 @@ public class BlackoutVictoryChecker {
             return;
         }
         if (badRemaining <= 0 && goodRemaining > 0) {
+            if (prideBlocking) {
+                return;
+            }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
             return;
         }
         if (goodRemaining <= 0 && badRemaining > 0) {
+            if (prideBlocking) {
+                return;
+            }
             mode.setLastWinningFaction(BlackoutRoleManager.Faction.BAD);
             endGame(level, WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
         }
@@ -148,9 +164,24 @@ public class BlackoutVictoryChecker {
 
             roundEnd.setRoundEndData(participants, winStatus);
 
+            // Personal wins: matching faction wins; SIN_KILLER_SHARE (wrath) also
+            // wins when killers (BAD) win. SIN_INDEPENDENT only wins on custom
+            // sin ends (later tasks).
+            // Custom sin win approach (probed SREGameRoundEndComponent): prefer
+            // WinStatus.CUSTOM + CustomWinnerID/Color/players when a later task
+            // ends for pride/greed/lust/sloth; fallback NO_PLAYER + message if
+            // setRoundEndData path cannot carry CUSTOM cleanly.
             for (ServerPlayer p : participants) {
                 BlackoutRoleManager.Faction f = BlackoutRoleManager.getFactionForEnd(level, p.getUUID());
-                boolean didWin = (winner != null && f == winner);
+                boolean didWin = false;
+                if (winner != null) {
+                    if (f == winner) {
+                        didWin = true;
+                    } else if (winner == BlackoutRoleManager.Faction.BAD
+                            && f == BlackoutRoleManager.Faction.SIN_KILLER_SHARE) {
+                        didWin = true;
+                    }
+                }
                 roundEnd.setPlayerWin(p.getUUID(), didWin);
             }
             roundEnd.sync();
