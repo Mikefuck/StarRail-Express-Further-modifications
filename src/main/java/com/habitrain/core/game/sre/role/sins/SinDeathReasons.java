@@ -37,6 +37,13 @@ public final class SinDeathReasons {
         return false;
     }
 
+    /** Bare-hand / fist path — conventional for pride, but must not advance wrath stages. */
+    public static boolean isFistPath(ResourceLocation reason) {
+        if (reason == null) return true; // no weapon reason → treat as non-weapon for wrath
+        String p = reason.getPath().toLowerCase(Locale.ROOT);
+        return p.contains("fist");
+    }
+
     public static boolean isPoisonDeath(ResourceLocation reason) {
         if (reason == null) return false;
         String p = reason.getPath().toLowerCase(Locale.ROOT);

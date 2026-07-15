@@ -109,11 +109,13 @@ public final class SevenSinEvents {
             }
 
             // Wrath: good/innocent conventional weapon → stage machine (may cancel death).
+            // Fist/bare-hand does NOT advance stages (even though fist is "conventional" for pride).
             if (killer instanceof ServerPlayer killerSp
                     && SevenSins.WRATH != null
                     && game.isRole(dead, SevenSins.WRATH)) {
                 if (!SinDeathReasons.isForcePath(deathReason)
                         && SinDeathReasons.isConventionalWeapon(deathReason)
+                        && !SinDeathReasons.isFistPath(deathReason)
                         && WrathComponent.isInnocentAttacker(level, killerSp)) {
                     try {
                         WrathComponent wrath = WrathComponent.KEY.get(dead);

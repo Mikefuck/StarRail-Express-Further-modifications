@@ -155,10 +155,8 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         if (stage > 0) {
             stage = Math.max(0, stage - 1);
         }
-        if (stage < STAGE_CAP) {
-            // Drop below frenzy threshold: keep enteredFrenzy flag for kill counter,
-            // but speed stacks only matter while stage >= 5.
-        }
+        // Dropping below stage 5 keeps enteredFrenzy for kill counter;
+        // speed stacks only reapply while stage >= 5 (see reapplyEffects).
 
         if (enteredFrenzy) {
             killsAfterFrenzy++;
