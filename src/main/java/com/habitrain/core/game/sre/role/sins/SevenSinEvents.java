@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 七宗罪职业事件：分配时初始化 CCA 状态机；傲慢免疫/破防；嫉妒标记击杀门槛与掠夺。
+ * 七宗罪职业事件：分配时初始化 CCA；傲慢免疫/破防；嫉妒标记击杀门槛与掠夺；暴怒阶段机。
  */
 public final class SevenSinEvents {
     private SevenSinEvents() {}
@@ -108,10 +108,28 @@ public final class SevenSinEvents {
                 }
             }
 
+            // Wrath: good/innocent conventional weapon → stage machine (may cancel death).
+            if (killer instanceof ServerPlayer killerSp
+                    && SevenSins.WRATH != null
+                    && game.isRole(dead, SevenSins.WRATH)) {
+                if (!SinDeathReasons.isForcePath(deathReason)
+                        && SinDeathReasons.isConventionalWeapon(deathReason)
+                        && WrathComponent.isInnocentAttacker(level, killerSp)) {
+                    try {
+                        WrathComponent wrath = WrathComponent.KEY.get(dead);
+                        if (wrath != null && !wrath.onLethalFromGoodWeapon(dead, killerSp)) {
+                            return false;
+                        }
+                    } catch (Throwable t) {
+                        HabiTrainCore.LOGGER.warn("[Wrath] stage advance failed", t);
+                    }
+                }
+            }
+
             return true;
         });
 
-        // Pride kill break + Envy mark loot.
+        // Pride kill break + Envy mark loot + Wrath kill stage down / frenzy exhaustion.
         OnPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
             if (!(killer instanceof ServerPlayer killerSp)) return;
             if (!(killerSp.level() instanceof ServerLevel level)) return;
@@ -145,9 +163,26 @@ public final class SevenSinEvents {
                     HabiTrainCore.LOGGER.warn("[Envy] mark loot failed", t);
                 }
             }
+
+            if (SevenSins.WRATH != null && game.isRole(killerSp, SevenSins.WRATH)) {
+                // Skip self-exhaustion force death path counting as a "wrath kill".
+                if (deathReason != null
+                        && WrathComponent.WRATH_EXHAUSTION.getPath().equals(deathReason.getPath())
+                        && killerSp.getUUID().equals(victim != null ? victim.getUUID() : null)) {
+                    return;
+                }
+                try {
+                    WrathComponent wrath = WrathComponent.KEY.get(killerSp);
+                    if (wrath != null) {
+                        wrath.onWrathKill(killerSp);
+                    }
+                } catch (Throwable t) {
+                    HabiTrainCore.LOGGER.warn("[Wrath] onWrathKill failed", t);
+                }
+            }
         });
 
-        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy death/kill hooks registered");
+        HabiTrainCore.LOGGER.info("[SevenSinEvents] pride + envy + wrath death/kill hooks registered");
     }
 
     private static int shopBalance(ServerPlayer player) {

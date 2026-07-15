@@ -19,6 +19,7 @@ import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 
 import java.awt.Color;
 import java.util.List;
@@ -119,12 +120,22 @@ public final class SevenSins {
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
 
-        // Wrath: neutral for killer, see time, no instinct
+        // Wrath: neutral for killer, see time, no instinct; no shop; fake knife/gun start
         WRATH = TMMRoles.registerRole(new NormalRole(
                 WRATH_ID, new Color(200, 30, 30).getRGB(),
                 false, false, SRERole.MoodType.FAKE,
                 Integer.MAX_VALUE, true
-        ).setComponentKey(WrathComponent.KEY)
+        ) {
+            @Override
+            public List<ItemStack> getDefaultItems() {
+                return WrathComponent.defaultItems();
+            }
+
+            @Override
+            public List<ShopEntry> getShopEntries() {
+                return SevenSinShops.empty();
+            }
+        }.setComponentKey(WrathComponent.KEY)
                 .setNeutrals(true)
                 .setNeutralForKiller(true)
                 .setCanSeeCoin(true)
