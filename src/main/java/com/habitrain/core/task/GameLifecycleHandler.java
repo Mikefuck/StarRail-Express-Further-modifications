@@ -5,6 +5,7 @@ import betel.nut.component.BetelNutEntityComponents;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.betel.BetelLeafHandler;
+import com.habitrain.core.game.sre.role.HabiComponents;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -77,6 +78,11 @@ public class GameLifecycleHandler {
                         BetelNutAddictionComponent addiction = BetelNutEntityComponents.ADDICTION.get(player);
                         addiction.clearAddiction(player);
                     } catch (Exception ignored) {}
+
+                    // 七宗罪 + 既有角色 CCA 局终清空（含 pride/envy/wrath/greed/gluttony/lust/sloth）
+                    try {
+                        HabiComponents.clearAll(player);
+                    } catch (Throwable ignored) {}
                 } catch (Exception pe) {
                     HabiTrainCore.LOGGER.error("清理玩家 {} 的效果时出错，继续处理其他玩家",
                             player.getName().getString(), pe);
@@ -92,6 +98,7 @@ public class GameLifecycleHandler {
             try {
                 com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue.clearAll();
             } catch (Throwable ignored) {}
+            // GreedTradeManager.clearAll → sessions + GreedDealTracker.clearAll()
             try {
                 com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.clearAll();
             } catch (Throwable ignored) {}
