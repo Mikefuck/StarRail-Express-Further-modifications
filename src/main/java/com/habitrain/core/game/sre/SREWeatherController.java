@@ -95,6 +95,17 @@ public final class SREWeatherController {
     }
 
     /**
+     * Whether low-player rain is currently forcing weather on this level.
+     * Used by EnvironmentController.maintainProfile to avoid fighting rain.
+     * Task 4 will flesh out restore-on-clear behavior; this stub reports current force flag.
+     */
+    public static boolean isForcingRain(ServerLevel level) {
+        if (level == null) return false;
+        DimensionWeatherState state = WEATHER_STATES.get(level.dimension());
+        return state != null && state.forcedRainByLowPlayers;
+    }
+
+    /**
      * Reset all weather state (e.g. on server shutdown or full reset).
      */
     public static void resetAll() {
