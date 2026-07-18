@@ -14,6 +14,7 @@ public class ConfigRepository {
     private boolean shaderWhitelistEnabled = false;
     private int tempPowerPrice = 100;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
+    private EnvironmentSettings environment = EnvironmentSettings.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -132,6 +133,14 @@ public class ConfigRepository {
 
     public void setModeMapVote(ModeMapVoteSettings s) {
         this.modeMapVote = s != null ? s : ModeMapVoteSettings.createDefault();
+    }
+
+    public EnvironmentSettings getEnvironment() {
+        return environment != null ? environment : EnvironmentSettings.createDefault();
+    }
+
+    public void setEnvironment(EnvironmentSettings s) {
+        this.environment = s != null ? s : EnvironmentSettings.createDefault();
     }
 
     @Nullable

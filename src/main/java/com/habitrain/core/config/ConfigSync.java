@@ -29,6 +29,7 @@ public class ConfigSync {
             int newTempPowerPrice = 100;
             boolean newMgGlobal = true;
             ModeMapVoteSettings newModeMapVote = ModeMapVoteSettings.createDefault();
+            EnvironmentSettings newEnv = EnvironmentSettings.createDefault();
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
@@ -90,6 +91,10 @@ public class ConfigSync {
                 newModeMapVote = ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote"));
             }
 
+            if (root.has("environment") && root.get("environment").isJsonObject()) {
+                newEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
+            }
+
             repo.getMutableTaskConfigs().clear();
             repo.getMutableTaskConfigs().putAll(newTasks);
             repo.getMutableGameModeConfigs().clear();
@@ -104,6 +109,7 @@ public class ConfigSync {
             repo.setTempPowerPrice(newTempPowerPrice);
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
+            repo.setEnvironment(newEnv);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
         }
@@ -205,6 +211,10 @@ public class ConfigSync {
                         }
                     }
                 }
+            }
+
+            if (root.has("environment") && root.get("environment").isJsonObject()) {
+                repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
             }
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串合并配置失败，保持原有内存状态不变", e);

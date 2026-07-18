@@ -155,6 +155,12 @@ public class ConfigStore {
                 repo.setModeMapVote(ModeMapVoteSettings.createDefault());
             }
 
+            if (root.has("environment") && root.get("environment").isJsonObject()) {
+                repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
+            } else {
+                repo.setEnvironment(EnvironmentSettings.createDefault());
+            }
+
             LOGGER.info("任务配置已加载: {} 个任务, {} 个GameMode, {} 个小游戏",
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
@@ -168,6 +174,7 @@ public class ConfigStore {
             repo.getMutableMinigameConfigs().clear();
             repo.setMinigameGlobalEnabled(true);
             repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+            repo.setEnvironment(EnvironmentSettings.createDefault());
             save(repo);
         }
     }
@@ -240,6 +247,8 @@ public class ConfigStore {
 
         root.add("modeMapVote", repo.getModeMapVote().toJson());
 
+        root.add("environment", repo.getEnvironment().toJson());
+
         return root;
     }
 
@@ -257,6 +266,7 @@ public class ConfigStore {
         }
         repo.setMinigameGlobalEnabled(true);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+        repo.setEnvironment(EnvironmentSettings.createDefault());
     }
 
     public String toJsonString(ConfigRepository repo) {
