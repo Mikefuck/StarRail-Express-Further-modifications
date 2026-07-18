@@ -259,6 +259,20 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
     }
 
+    public EnvironmentSettings getEnvironmentSettings() {
+        return repository.getEnvironment();
+    }
+
+    public void setEnvironmentSettings(EnvironmentSettings settings) {
+        repository.setEnvironment(settings);
+        store.markDirty();
+    }
+
+    /** Call after in-place mutation of the live EnvironmentSettings graph. */
+    public void markEnvironmentDirty() {
+        store.markDirty();
+    }
+
     public void ensureModeMapVoteDefaults(java.util.Collection<String> modeIds,
                                           java.util.Collection<String> mapIds) {
         ModeMapVoteSettings s = repository.getModeMapVote();

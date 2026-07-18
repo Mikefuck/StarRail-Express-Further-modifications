@@ -11,6 +11,7 @@ import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
 import com.habitrain.core.game.blackout.BlackoutShopService;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
+import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.misc.EffectOwnershipTracker;
@@ -64,6 +65,16 @@ public final class LifecycleEventsRegistrar {
                 }
             } catch (Throwable t) {
                 LOGGER.debug("modeMapVote ensureDefaults on SERVER_STARTED skipped", t);
+            }
+
+            // 服务端启动后应用大厅环境（时间/天气/雪雾等）
+            try {
+                ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+                if (overworld != null) {
+                    EnvironmentController.applyLobby(overworld);
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("initial lobby env apply skipped", t);
             }
         });
         // 服务器关闭时清理停电模式各 manager 的 per-level 静态 Map 条目。
