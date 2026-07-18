@@ -8,11 +8,13 @@ import com.habitrain.core.config.EnvironmentSettings;
 import com.habitrain.core.config.PostMatchTimeRule;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 
@@ -78,6 +80,20 @@ public class EnvironmentTabScreen {
 
     private void dirty() {
         ConfigManager.getInstance().markEnvironmentDirty();
+    }
+
+    private void playClick() {
+        try {
+            Minecraft.getInstance().getSoundManager().play(
+                    SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f));
+        } catch (Throwable ignored) {}
+    }
+
+    private void saveNow() {
+        dirty();
+        try {
+            ConfigManager.getInstance().save();
+        } catch (Throwable ignored) {}
     }
 
     private void ensureWidgetsInitialized() {
@@ -219,6 +235,20 @@ public class EnvironmentTabScreen {
             case SUB_RAIN -> cy = renderRain(g, mx, my, delta, labelX, cy, innerW);
             default -> {}
         }
+
+        // Save button on every sub-page
+        cy += 8;
+        g.fill(labelX, cy - 2, labelX + innerW, cy - 1, SharedGuiKit.SEPARATOR);
+        cy += 8;
+        int saveW = 72;
+        boolean saveHover = SharedGuiKit.inBounds(mx, my, labelX, cy, saveW, 18);
+        g.fill(labelX, cy, labelX + saveW, cy + 18,
+                saveHover ? 0xFF2A6B4A : 0xFF1B4A32);
+        g.drawString(font, "§a保存", labelX + 22, cy + 5, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("save", labelX, cy, saveW, 18));
+        g.drawString(font, "§7写入配置文件（关闭面板也会自动保存）",
+                labelX + saveW + 10, cy + 5, SharedGuiKit.TEXT_SECONDARY, false);
+        cy += 24;
 
         contentHeight = cy - listTop + (int) contentScroll + 12;
         int maxScroll = Math.max(0, contentHeight - listH);
@@ -405,7 +435,10 @@ public class EnvironmentTabScreen {
         } else {
             g.drawString(font, "Tick(0-23999):", labelX, cy + 2, SharedGuiKit.TEXT_SECONDARY, false);
             if (!profileTickField.isFocused()) {
-                profileTickField.setValue(String.valueOf(EnvTimeSpec.clampTick(profile.time.tick)));
+                String want = String.valueOf(EnvTimeSpec.clampTick(profile.time.tick));
+                if (!want.equals(profileTickField.getValue())) {
+                    profileTickField.setValue(want);
+                }
             }
             profileTickField.setX(labelX + 90);
             profileTickField.setY(cy);
@@ -432,13 +465,18 @@ public class EnvironmentTabScreen {
         cy = drawToggle(g, labelX, cy, "雾", profile.fog, prefix + ":fog");
 
         g.drawString(font, "雾距离 fogEnd:", labelX, cy + 2, SharedGuiKit.TEXT_SECONDARY, false);
+        // Only push model→field when not focused, so typing is not wiped every frame.
         if (!profileFogEndField.isFocused()) {
             float fe = profile.fogEnd;
-            profileFogEndField.setValue((fe == (int) fe) ? String.valueOf((int) fe) : String.valueOf(fe));
+            String want = (fe == (int) fe) ? String.valueOf((int) fe) : String.valueOf(fe);
+            if (!want.equals(profileFogEndField.getValue())) {
+                profileFogEndField.setValue(want);
+            }
         }
         profileFogEndField.setX(labelX + 100);
         profileFogEndField.setY(cy);
         profileFogEndField.setWidth(56);
+        profileFogEndField.setEditable(editable);
         profileFogEndField.render(g, mx, my, delta);
         int fogApplyX = labelX + 164;
         g.fill(fogApplyX, cy - 1, fogApplyX + 40, cy + 15, SharedGuiKit.BG_EDIT);
@@ -505,30 +543,17 @@ public class EnvironmentTabScreen {
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
 
-        // EditBoxes first
-        if (subTab == SUB_LOBBY || subTab == SUB_MATCH) {
-            EnvProfile p = currentProfile();
-            if (p != null && p.time != null && p.time.mode == EnvTimeSpec.Mode.TICK) {
-                if (profileTickField.mouseClicked(mx, my, btn)) return true;
-            }
-            if (profileFogEndField.mouseClicked(mx, my, btn)) return true;
-        }
-        if (subTab == SUB_POST) {
-            EnvironmentSettings s = settings();
-            if (s.goodWin != null && s.goodWin.time != null && s.goodWin.time.mode == EnvTimeSpec.Mode.TICK) {
-                if (goodTickField.mouseClicked(mx, my, btn)) return true;
-            }
-            if (s.otherWin != null && s.otherWin.time != null && s.otherWin.time.mode == EnvTimeSpec.Mode.TICK) {
-                if (otherTickField.mouseClicked(mx, my, btn)) return true;
-            }
-        }
-        if (subTab == SUB_RAIN) {
-            if (minPlayersField.mouseClicked(mx, my, btn)) return true;
-        }
+        // EditBoxes first (manual bounds so focus works even when widgets sit under scissor)
+        if (tryFocusEditBox(profileTickField, mx, my, subTab == SUB_LOBBY || subTab == SUB_MATCH)) return true;
+        if (tryFocusEditBox(profileFogEndField, mx, my, subTab == SUB_LOBBY || subTab == SUB_MATCH)) return true;
+        if (tryFocusEditBox(goodTickField, mx, my, subTab == SUB_POST)) return true;
+        if (tryFocusEditBox(otherTickField, mx, my, subTab == SUB_POST)) return true;
+        if (tryFocusEditBox(minPlayersField, mx, my, subTab == SUB_RAIN)) return true;
 
         // Map list selection
         for (MapRowHit hit : mapHits) {
             if (SharedGuiKit.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
+                playClick();
                 selectedMapId = hit.mapId();
                 if (selectedMapId != null) {
                     EnvironmentSettings s = settings();
@@ -556,9 +581,12 @@ public class EnvironmentTabScreen {
 
         for (ButtonHit hit : buttonHits) {
             if (!SharedGuiKit.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
+            playClick();
             return handleAction(hit.action());
         }
 
+        // Click empty content: unfocus edit boxes, allow drag
+        unfocusAll();
         if (my >= y && my < y + h) {
             draggingContent = true;
             dragStartY = my;
@@ -577,6 +605,17 @@ public class EnvironmentTabScreen {
                 unfocusAll();
                 syncFieldsFromSettings(true);
             }
+            return true;
+        }
+
+        if ("save".equals(action)) {
+            if (!editable) {
+                LiveConfigAccess.showDeniedMessage();
+                return true;
+            }
+            // Flush focused numeric fields before save
+            flushFocusedFields();
+            saveNow();
             return true;
         }
 
@@ -707,6 +746,82 @@ public class EnvironmentTabScreen {
             case "daylight" -> { if (profile != null) { profile.daylightCycle = !profile.daylightCycle; dirty(); } }
             case "weatherCycle" -> { if (profile != null) { profile.weatherCycle = !profile.weatherCycle; dirty(); } }
             default -> {}
+        }
+    }
+
+    private boolean tryFocusEditBox(EditBox box, double mx, double my, boolean activeTab) {
+        if (!activeTab || box == null) return false;
+        int bx = box.getX();
+        int by = box.getY();
+        int bw = box.getWidth();
+        int bh = box.getHeight();
+        // Ignore parked widgets still at sentinel coords
+        if (bx < -1000 || by < -1000) return false;
+        if (mx < bx || mx >= bx + bw || my < by || my >= by + bh) return false;
+        if (!editable) {
+            LiveConfigAccess.showDeniedMessage();
+            return true;
+        }
+        unfocusAll();
+        box.setFocused(true);
+        box.setEditable(true);
+        box.mouseClicked(mx, my, 0);
+        playClick();
+        return true;
+    }
+
+    private void flushFocusedFields() {
+        if (profileFogEndField != null && profileFogEndField.isFocused()) {
+            EnvProfile profile = currentProfile();
+            if (profile != null) {
+                try {
+                    float v = Float.parseFloat(profileFogEndField.getValue().trim());
+                    if (v < 0) v = 0;
+                    profile.fogEnd = v;
+                    dirty();
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        if (profileTickField != null && profileTickField.isFocused()) {
+            EnvProfile profile = currentProfile();
+            if (profile != null) {
+                if (profile.time == null) profile.time = EnvTimeSpec.createDefault();
+                try {
+                    int v = Integer.parseInt(profileTickField.getValue().trim());
+                    profile.time.tick = EnvTimeSpec.clampTick(v);
+                    profile.time.mode = EnvTimeSpec.Mode.TICK;
+                    dirty();
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        if (goodTickField != null && goodTickField.isFocused()) {
+            EnvironmentSettings s = settings();
+            if (s.goodWin == null) s.goodWin = PostMatchTimeRule.createDefault();
+            if (s.goodWin.time == null) s.goodWin.time = EnvTimeSpec.createDefault();
+            try {
+                int v = Integer.parseInt(goodTickField.getValue().trim());
+                s.goodWin.time.tick = EnvTimeSpec.clampTick(v);
+                s.goodWin.time.mode = EnvTimeSpec.Mode.TICK;
+                dirty();
+            } catch (NumberFormatException ignored) {}
+        }
+        if (otherTickField != null && otherTickField.isFocused()) {
+            EnvironmentSettings s = settings();
+            if (s.otherWin == null) s.otherWin = PostMatchTimeRule.createDefault();
+            if (s.otherWin.time == null) s.otherWin.time = EnvTimeSpec.createDefault();
+            try {
+                int v = Integer.parseInt(otherTickField.getValue().trim());
+                s.otherWin.time.tick = EnvTimeSpec.clampTick(v);
+                s.otherWin.time.mode = EnvTimeSpec.Mode.TICK;
+                dirty();
+            } catch (NumberFormatException ignored) {}
+        }
+        if (minPlayersField != null && minPlayersField.isFocused()) {
+            try {
+                int v = Integer.parseInt(minPlayersField.getValue().trim());
+                settings().lowPlayerRainMinPlayers = Math.max(1, v);
+                dirty();
+            } catch (NumberFormatException ignored) {}
         }
     }
 

@@ -22,6 +22,13 @@ public final class EnvironmentController {
     private static boolean eventsRegistered = false;
     private static int tickCounter = 0;
 
+    /**
+     * When a post-match win-time rule is active, idle lobby reconcile must not
+     * overwrite the custom post-match day time until the next match starts.
+     */
+    private static boolean postMatchTimeOverrideActive = false;
+    private static EnvTimeSpec postMatchOverrideTime = null;
+
     private EnvironmentController() {}
 
     public static void registerEvents() {
@@ -37,6 +44,7 @@ public final class EnvironmentController {
 
     public static void onGameStarted(ServerLevel level) {
         try {
+            clearPostMatchOverride();
             String mapId = null;
             try {
                 AreasWorldComponent areas = AreasWorldComponent.KEY.get(level);
@@ -62,6 +70,7 @@ public final class EnvironmentController {
 
     public static void applyLobby(ServerLevel level) {
         if (level == null) return;
+        clearPostMatchOverride();
         EnvProfile lobby = settings().lobby;
         if (lobby != null && lobby.enabled) applyProfile(level, lobby, true);
     }
@@ -83,15 +92,32 @@ public final class EnvironmentController {
         if (rule != null && rule.enabled) {
             EnvProfile lobby = env.lobby;
             if (lobby != null && lobby.enabled) {
-                applyProfile(level, lobby, false); // non-time first
+                applyProfile(level, lobby, false);
             }
-            applyTimeOnly(level, rule.time != null ? rule.time : EnvTimeSpec.createDefault());
+            EnvTimeSpec time = rule.time != null ? rule.time : EnvTimeSpec.createDefault();
+            applyTimeOnly(level, time);
+            postMatchTimeOverrideActive = true;
+            postMatchOverrideTime = copyTime(time);
         } else {
+            clearPostMatchOverride();
             applyLobby(level);
         }
     }
 
-    /** Used by SREWeatherController when clearing forced rain. */
+    private static void clearPostMatchOverride() {
+        postMatchTimeOverrideActive = false;
+        postMatchOverrideTime = null;
+    }
+
+    private static EnvTimeSpec copyTime(EnvTimeSpec src) {
+        if (src == null) return EnvTimeSpec.createDefault();
+        EnvTimeSpec t = new EnvTimeSpec();
+        t.mode = src.mode;
+        t.preset = src.preset;
+        t.tick = src.tick;
+        return t;
+    }
+
     public static EnvProfile getActiveMatchProfile(ServerLevel level) {
         String mapId = null;
         try {
@@ -123,7 +149,6 @@ public final class EnvironmentController {
                 train.setSnow(profile.snow);
                 train.setSand(profile.sand);
                 train.setFog(profile.fog);
-                // fogEnd: AreasSettings has fogEnd; Train component may not — skip if no API
             }
         } catch (Throwable t) {
             LOGGER.debug("train env apply failed", t);
@@ -144,7 +169,6 @@ public final class EnvironmentController {
                 if (time.mode == EnvTimeSpec.Mode.PRESET) {
                     train.setTimeOfDay(toSre(time.preset));
                 } else {
-                    // exact preset match only
                     for (EnvTimeSpec.Preset p : EnvTimeSpec.Preset.values()) {
                         if (p.time == dayTime) {
                             train.setTimeOfDay(toSre(p));
@@ -169,36 +193,44 @@ public final class EnvironmentController {
         };
     }
 
-    /** Call once per server tick from ModTickHandler (overworld). */
     public static void tick(ServerLevel level) {
         if (level == null) return;
         tickCounter++;
-        if (tickCounter % 20 != 0) return; // 1 Hz
+        if (tickCounter % 20 != 0) return;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
             boolean running = game != null && game.isRunning();
             EnvironmentSettings env = settings();
             if (!running) {
-                // idle reconcile every 5s
-                if (tickCounter % 100 == 0 && env.lobby != null && env.lobby.enabled) {
-                    maintainProfile(level, env.lobby);
+                if (tickCounter % 100 == 0) {
+                    EnvProfile lobby = env.lobby;
+                    if (lobby != null && lobby.enabled) {
+                        if (postMatchTimeOverrideActive && postMatchOverrideTime != null) {
+                            maintainProfile(level, lobby, false);
+                            if (!lobby.daylightCycle) {
+                                applyTimeOnly(level, postMatchOverrideTime);
+                            }
+                        } else {
+                            maintainProfile(level, lobby, true);
+                        }
+                    } else if (postMatchTimeOverrideActive && postMatchOverrideTime != null) {
+                        applyTimeOnly(level, postMatchOverrideTime);
+                    }
                 }
             } else {
                 EnvProfile match = getActiveMatchProfile(level);
-                if (match != null && match.enabled) maintainProfile(level, match);
+                if (match != null && match.enabled) maintainProfile(level, match, true);
             }
         } catch (Throwable t) {
             LOGGER.debug("env tick failed", t);
         }
     }
 
-    private static void maintainProfile(ServerLevel level, EnvProfile profile) {
-        if (!profile.daylightCycle) {
+    private static void maintainProfile(ServerLevel level, EnvProfile profile, boolean includeTime) {
+        if (includeTime && !profile.daylightCycle) {
             applyTimeOnly(level, profile.time);
         }
         if (!profile.weatherCycle) {
-            // Only re-assert weather if low-player rain is not currently forcing
-            // (SREWeatherController owns force flag).
             if (!SREWeatherController.isForcingRain(level)) {
                 applyWeatherOnly(level, profile.weather);
             }
