@@ -3,6 +3,7 @@ package com.habitrain.core;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelTickEngine;
+import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
@@ -50,10 +51,11 @@ public class ModTickHandler {
         }
         GameLifecycleHandler.tickGameEndCheck(isGameActive, server);
 
-        // 人数不足 8 人下雨（包含大厅→对局→对局结束全覆盖）
+        // 人数不足阈值下雨 + 环境 profile 维持（主世界）
         for (ServerLevel world : server.getAllLevels()) {
             if (world.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
                 SREWeatherController.tick(world);
+                EnvironmentController.tick(world);
             }
         }
 

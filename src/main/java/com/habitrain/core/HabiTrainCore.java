@@ -14,6 +14,7 @@ import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
 import com.habitrain.core.game.blackout.BlackoutShopService;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameLauncher;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
+import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameStateProvider;
 import com.habitrain.core.game.sre.SREMurderMode;
 import com.habitrain.core.game.sre.SRERepairMode;
@@ -95,6 +96,8 @@ public class HabiTrainCore implements ModInitializer {
         CommandRegistrar.init();
         // 5. 生命周期事件注册（SERVER_STARTED/STOPPING/JOIN/DISCONNECT）
         LifecycleEventsRegistrar.init();
+        // 5b. 环境控制器（对局开始/结束应用 lobby/match/post-match 天气与时间）
+        EnvironmentController.registerEvents();
         // 6. C2S 接收器注册（4 个客户端→服务端包处理器）
         C2SReceiverRegistrar.init();
         // 7. 注册集中式缓慢重施管理器
