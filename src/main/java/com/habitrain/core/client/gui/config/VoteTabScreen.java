@@ -3,10 +3,14 @@ package com.habitrain.core.client.gui.config;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.client.gui.LiveConfigAccess;
+import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MapPoolEntry;
+import com.habitrain.core.config.MapPoolRotationSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
+import com.habitrain.core.vote.MapPoolRotationService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,6 +21,7 @@ import net.minecraft.util.Mth;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 /**
@@ -76,13 +81,13 @@ public class VoteTabScreen {
      */
     private void rebuildIdLists() {
         ModeMapVoteSettings s = settings();
-        Set<String> modes = new LinkedHashSet<>();
+        // Prefer persisted LinkedHashMap order, then append registry-only ids.
+        LinkedHashSet<String> modes = new LinkedHashSet<>(s.modes.keySet());
         try {
             modes.addAll(GameModeRegistry.getAllIds());
         } catch (Throwable ignored) {
             // client-safe: registry may be empty
         }
-        modes.addAll(s.modes.keySet());
         modeIds.clear();
         modeIds.addAll(modes);
 
@@ -208,6 +213,56 @@ public class VoteTabScreen {
         mapDurationField.render(g, mx, my, delta);
         cy += ROW_H + SECTION_GAP;
 
+        // ===== 地图池轮换摘要 =====
+        g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, SharedGuiKit.SEPARATOR);
+        cy += 4;
+        g.drawString(font, Component.literal("§e§l地图池轮换"), labelX, cy, ACCENT, false);
+        cy += HEADER_H;
+
+        MapPoolRotationSettings rot = s.rotationOrDefault();
+        MapPoolEntry curPool = rot.poolAt(rot.activePoolIndex);
+        int poolCount = curPool.mapIds != null ? curPool.mapIds.size() : 0;
+
+        // row: enable rotation
+        int rToggleW = 70;
+        g.fill(labelX, cy, labelX + rToggleW, cy + 16,
+                rot.enabled ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
+        g.drawString(font, rot.enabled ? "§a轮换开" : "§c轮换关", labelX + 6, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pool_toggle", labelX, cy, rToggleW, 16));
+
+        int autoX = labelX + rToggleW + 8;
+        int autoW = 80;
+        g.fill(autoX, cy, autoX + autoW, cy + 16,
+                rot.autoRepartition ? SharedGuiKit.BG_ENABLED : SharedGuiKit.BG_DISABLED);
+        g.drawString(font, rot.autoRepartition ? "§a自动重分" : "§c不重分", autoX + 6, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pool_auto", autoX, cy, autoW, 16));
+
+        int modeX = autoX + autoW + 8;
+        int modeW = 100;
+        boolean direct = rot.isDirectPick();
+        g.fill(modeX, cy, modeX + modeW, cy + 16, SharedGuiKit.BG_EDIT);
+        g.drawString(font, direct ? "§e直接抽图" : "§e限制投票", modeX + 8, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pool_apply_mode", modeX, cy, modeW, 16));
+        cy += ROW_H;
+
+        String summary = "每局轮换 · 共" + rot.poolCount() + "池 · 当前池" + (rot.activePoolIndex + 1) + " · "
+                + (curPool.displayName != null ? curPool.displayName : "")
+                + " · " + poolCount + "图";
+        g.drawString(font, "§7" + summary, labelX, cy + 2, SharedGuiKit.TEXT_SECONDARY, false);
+        cy += ROW_H;
+
+        int editW = 80;
+        g.fill(labelX, cy, labelX + editW, cy + 16, SharedGuiKit.BG_EDIT);
+        g.drawString(font, "§e编辑池子", labelX + 12, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pool_edit", labelX, cy, editW, 16));
+
+        int skipX = labelX + editW + 8;
+        int skipW = 80;
+        g.fill(skipX, cy, skipX + skipW, cy + 16, editable ? 0xFF3A2A1B : SharedGuiKit.BG_DISABLED);
+        g.drawString(font, "§6跳过当前", skipX + 12, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pool_skip", skipX, cy, skipW, 16));
+        cy += ROW_H + SECTION_GAP;
+
         // ===== 模式列表 =====
         g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, SharedGuiKit.SEPARATOR);
         cy += 4;
@@ -236,7 +291,7 @@ public class VoteTabScreen {
                 if (nameBox != null) {
                     nameBox.setX(labelX + 160);
                     nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(60, innerW - 280));
+                    nameBox.setWidth(Math.max(40, innerW - 340));
                     nameBox.render(g, mx, my, delta);
                 }
 
@@ -244,6 +299,17 @@ public class VoteTabScreen {
                 int mapsX = labelX + innerW - mapsW - 6;
                 g.fill(mapsX, cy + 4, mapsX + mapsW, cy + 18, SharedGuiKit.BG_EDIT);
                 g.drawString(font, "§e可选地图", mapsX + 4, cy + 6, 0xFFFFFFFF, false);
+
+                int upW = 16;
+                int downW = 16;
+                int downX = mapsX - 6 - downW;
+                int upX = downX - 4 - upW;
+                g.fill(upX, cy + 4, upX + upW, cy + 18, SharedGuiKit.BG_EDIT);
+                g.drawString(font, "§f↑", upX + 4, cy + 6, 0xFFFFFFFF, false);
+                g.fill(downX, cy + 4, downX + downW, cy + 18, SharedGuiKit.BG_EDIT);
+                g.drawString(font, "§f↓", downX + 4, cy + 6, 0xFFFFFFFF, false);
+                buttonHits.add(new ButtonHit("mode_up:" + id, upX, cy + 4, upW, 14));
+                buttonHits.add(new ButtonHit("mode_down:" + id, downX, cy + 4, downW, 14));
 
                 modeHits.add(new RowHit(id, tX, tW, mapsX, mapsW, cy, ROW_H - 2, true));
                 cy += ROW_H;
@@ -309,13 +375,15 @@ public class VoteTabScreen {
 
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
-        if (modeDurationField != null && modeDurationField.mouseClicked(mx, my, btn)) return true;
-        if (mapDurationField != null && mapDurationField.mouseClicked(mx, my, btn)) return true;
+        clearAllEditFocus();
+
+        if (tryFocusEditBox(modeDurationField, mx, my)) return true;
+        if (tryFocusEditBox(mapDurationField, mx, my)) return true;
         for (EditBox box : modeNameFields.values()) {
-            if (box.mouseClicked(mx, my, btn)) return true;
+            if (tryFocusEditBox(box, mx, my)) return true;
         }
         for (EditBox box : mapNameFields.values()) {
-            if (box.mouseClicked(mx, my, btn)) return true;
+            if (tryFocusEditBox(box, mx, my)) return true;
         }
 
         for (ButtonHit hit : buttonHits) {
@@ -327,9 +395,80 @@ public class VoteTabScreen {
                     persist();
                     return true;
                 }
+                if ("pool_toggle".equals(hit.action())) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    ModeMapVoteSettings s = settings();
+                    MapPoolRotationSettings rot = s.rotationOrDefault();
+                    rot.enabled = !rot.enabled;
+                    if (rot.enabled) {
+                        MapPoolRotationService.ensureSeededIfNeeded(s, new Random());
+                    }
+                    persist();
+                    ConfigManager.getInstance().save();
+                    return true;
+                }
+                if ("pool_auto".equals(hit.action())) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    ModeMapVoteSettings s = settings();
+                    MapPoolRotationSettings rot = s.rotationOrDefault();
+                    rot.autoRepartition = !rot.autoRepartition;
+                    persist();
+                    ConfigManager.getInstance().save();
+                    return true;
+                }
+                if ("pool_apply_mode".equals(hit.action())) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    ModeMapVoteSettings s = settings();
+                    MapPoolRotationSettings rot = s.rotationOrDefault();
+                    rot.applyMode = rot.isDirectPick()
+                            ? MapPoolRotationSettings.APPLY_LIMIT_VOTE
+                            : MapPoolRotationSettings.APPLY_DIRECT_PICK;
+                    persist();
+                    ConfigManager.getInstance().save();
+                    return true;
+                }
+                if ("pool_edit".equals(hit.action())) {
+                    // 全员可进编辑页浏览；非 OP 只读
+                    flushPendingFields();
+                    Minecraft.getInstance().setScreen(new MapPoolEditorScreen(root, editable));
+                    return true;
+                }
+                if ("pool_skip".equals(hit.action())) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    PayloadSenders.sendMapPoolSkip();
+                    var p = Minecraft.getInstance().player;
+                    if (p != null) {
+                        p.displayClientMessage(Component.literal("§e已请求跳过当前地图池…"), true);
+                    }
+                    return true;
+                }
                 if ("save".equals(hit.action())) {
                     if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
                     commitAndSave();
+                    return true;
+                }
+                if (hit.action() != null && hit.action().startsWith("mode_up:")) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    String id = hit.action().substring("mode_up:".length());
+                    ensureModeEntry(id);
+                    if (settings().moveMode(id, -1)) {
+                        rebuildIdLists();
+                        persist();
+                        // Save immediately so LinkedHashMap order reaches disk / C2S merge
+                        // (persist alone only marks dirty; leaving the tab later is easy to miss).
+                        ConfigManager.getInstance().save();
+                    }
+                    return true;
+                }
+                if (hit.action() != null && hit.action().startsWith("mode_down:")) {
+                    if (!editable) { LiveConfigAccess.showDeniedMessage(); return true; }
+                    String id = hit.action().substring("mode_down:".length());
+                    ensureModeEntry(id);
+                    if (settings().moveMode(id, +1)) {
+                        rebuildIdLists();
+                        persist();
+                        ConfigManager.getInstance().save();
+                    }
                     return true;
                 }
             }
@@ -364,6 +503,7 @@ public class VoteTabScreen {
             }
         }
 
+        // Content drag only on true miss (after unfocus) so fields stay selectable.
         if (my >= y && my < y + h) {
             draggingContent = true;
             dragStartY = my;
@@ -371,6 +511,34 @@ public class VoteTabScreen {
             return true;
         }
         return false;
+    }
+
+    private void clearAllEditFocus() {
+        if (modeDurationField != null) modeDurationField.setFocused(false);
+        if (mapDurationField != null) mapDurationField.setFocused(false);
+        for (EditBox box : modeNameFields.values()) {
+            box.setFocused(false);
+        }
+        for (EditBox box : mapNameFields.values()) {
+            box.setFocused(false);
+        }
+    }
+
+    private boolean tryFocusEditBox(EditBox box, double mx, double my) {
+        if (box == null) return false;
+        int bx = box.getX();
+        int by = box.getY();
+        int bw = box.getWidth();
+        int bh = box.getHeight();
+        if (mx < bx || mx >= bx + bw || my < by || my >= by + bh) {
+            return false;
+        }
+        if (!editable) {
+            LiveConfigAccess.showDeniedMessage();
+            return true;
+        }
+        box.setFocused(true);
+        return true;
     }
 
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
@@ -471,6 +639,10 @@ public class VoteTabScreen {
                 s.maps.put(e.getKey(), me);
             }
         }
+    }
+
+    private void ensureModeEntry(String id) {
+        settings().modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
     }
 
     private void persist() {
