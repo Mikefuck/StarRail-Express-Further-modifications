@@ -1,6 +1,5 @@
 package com.habitrain.core.vote;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteConfig;
@@ -8,12 +7,13 @@ import com.habitrain.core.api.ModeMapVoteSnapshot;
 import com.habitrain.core.api.VoteOption;
 import com.habitrain.core.api.VoteResult;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MapPoolRotationSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
+import com.habitrain.core.game.sre.SreOriginalModeProxy;
+import com.habitrain.core.network.FullConfigSyncPayload;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,8 +23,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -32,6 +35,8 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Two-phase lobby vote: mode options → map options → loadMap → startMode.
  * Dimension-scoped; at most one session per level.
+ * <p>
+ * No subtitle tips — clients auto-open the vote UI from {@code OptionVotePayload}.
  */
 public final class ModeMapVoteOrchestrator {
     private static final Logger LOGGER = LoggerFactory.getLogger("ModeMapVoteOrchestrator");
@@ -79,22 +84,25 @@ public final class ModeMapVoteOrchestrator {
 
         List<String> availableMaps = SREModeStartAdapter.getAvailableMaps(level);
 
-        List<String> modeIds = new ArrayList<>();
-        for (String fullId : GameModeRegistry.getAllIds()) {
-            if (cfg.modeIds != null && !cfg.modeIds.contains(fullId)) {
-                continue;
-            }
-            ModeVoteEntry entry = settings.modes.get(fullId);
-            // missing entry = enabled
-            if (entry != null && !entry.enabled) {
-                continue;
-            }
-            modeIds.add(fullId);
-        }
-
-        ConfigManager.getInstance().ensureModeMapVoteDefaults(modeIds, availableMaps);
+        // Seed defaults for registry + known config keys so settings.modes can hold order.
+        List<String> registryModeIds = new ArrayList<>(GameModeRegistry.getAllIds());
+        ConfigManager.getInstance().ensureModeMapVoteDefaults(registryModeIds, availableMaps);
         // re-read after ensure (same instance, but entries may have been inserted)
         settings = ConfigManager.getInstance().getModeMapVoteSettings();
+
+        // Config LinkedHashMap order first, then any registry ids not yet present.
+        LinkedHashSet<String> orderedModeIds = new LinkedHashSet<>();
+        for (String fullId : settings.modes.keySet()) {
+            if (isModeAllowed(cfg, settings, fullId)) {
+                orderedModeIds.add(fullId);
+            }
+        }
+        for (String fullId : registryModeIds) {
+            if (isModeAllowed(cfg, settings, fullId)) {
+                orderedModeIds.add(fullId);
+            }
+        }
+        List<String> modeIds = new ArrayList<>(orderedModeIds);
 
         List<VoteOption> options = new ArrayList<>();
         for (String fullId : modeIds) {
@@ -116,11 +124,12 @@ public final class ModeMapVoteOrchestrator {
         session.phaseStartMs = System.currentTimeMillis();
         SESSIONS.put(level.dimension(), session);
 
+        // title/description are client-localized via voteId; wire strings are placeholders only
         boolean started = OptionVoteManager.start(
                 level,
                 "mode",
-                "模式投票",
-                "选择本局游戏模式",
+                "mode",
+                "",
                 options,
                 duration,
                 result -> onModeResolved(level, result)
@@ -130,7 +139,6 @@ public final class ModeMapVoteOrchestrator {
             return false;
         }
 
-        announce(level, Component.literal("§e模式投票已开始，按 V 打开投票界面"));
         LOGGER.info("[ModeMapVote] mode vote started options={} duration={}s dim={}",
                 options.size(), duration, level.dimension().location());
         return true;
@@ -144,7 +152,7 @@ public final class ModeMapVoteOrchestrator {
 
         String winnerId = result != null ? result.winnerId() : null;
         if (winnerId == null || winnerId.isBlank()) {
-            announce(level, Component.literal("§c模式投票无有效结果，已取消"));
+            LOGGER.info("[ModeMapVote] mode vote had no valid winner; cancelled");
             clearSession(level);
             return;
         }
@@ -153,8 +161,8 @@ public final class ModeMapVoteOrchestrator {
         ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
         session.selectedModeDisplay = resolveModeDisplayName(settings, winnerId);
 
-        String pickHint = result.randomPick() ? "§7（随机）" : "";
-        announce(level, Component.literal("§a模式已选定: §f" + session.selectedModeDisplay + pickHint));
+        LOGGER.info("[ModeMapVote] mode selected={} randomPick={}",
+                winnerId, result != null && result.randomPick());
 
         List<String> available = SREModeStartAdapter.getAvailableMaps(level);
         ConfigManager.getInstance().ensureModeMapVoteDefaults(List.of(winnerId), available);
@@ -171,7 +179,7 @@ public final class ModeMapVoteOrchestrator {
             configMaps = new HashSet<>(session.config.mapIds);
         }
 
-        List<VoteOption> mapOptions = new ArrayList<>();
+        List<String> candidateIds = new ArrayList<>();
         for (String mapId : available) {
             if (mapId == null || mapId.isBlank()) continue;
             MapVoteEntry mapEntry = settings.maps.get(mapId);
@@ -185,14 +193,56 @@ public final class ModeMapVoteOrchestrator {
             if (configMaps != null && !configMaps.contains(mapId)) {
                 continue;
             }
-            mapOptions.add(new VoteOption(mapId, resolveMapDisplayName(settings, mapId)));
+            candidateIds.add(mapId);
         }
 
-        if (mapOptions.isEmpty()) {
-            announce(level, Component.literal("§c无可用地图，投票结束"));
+        if (candidateIds.isEmpty()) {
+            LOGGER.info("[ModeMapVote] no available maps after mode={}; ending", winnerId);
             clearSession(level);
             return;
         }
+
+        Random rng = new Random(level.getRandom().nextLong());
+        List<String> effectiveIds = candidateIds;
+        MapPoolRotationSettings rot = settings.rotationOrDefault();
+        if (MapPoolRotationService.shouldApply(settings, candidateIds.size())) {
+            effectiveIds = MapPoolRotationService.resolveEffectiveMaps(settings, candidateIds, rng);
+            if (effectiveIds.isEmpty()) {
+                effectiveIds = candidateIds;
+            }
+            int usedPool = rot.activePoolIndex;
+            LOGGER.info("[ModeMapVote] map pool applied mode={} poolIndex={} candidates={} effective={} applyMode={}",
+                    winnerId, usedPool, candidateIds.size(), effectiveIds.size(), rot.applyMode);
+
+            // B1: this round uses current pool; advance for the next round.
+            boolean advanced = MapPoolRotationService.advance(settings, rng);
+            ConfigManager.getInstance().setModeMapVoteSettings(settings);
+            ConfigManager.getInstance().save();
+            try {
+                if (level.getServer() != null && !level.getServer().isSingleplayer()) {
+                    FullConfigSyncPayload.broadcastToAll(level.getServer());
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("[ModeMapVote] map pool config sync failed", t);
+            }
+            LOGGER.info("[ModeMapVote] map pool post-resolve advance={} nextIndex={}",
+                    advanced, settings.rotationOrDefault().activePoolIndex);
+        }
+
+        if (MapPoolRotationService.shouldApply(settings, candidateIds.size()) && rot.isDirectPick()) {
+            String pick = effectiveIds.get(rng.nextInt(effectiveIds.size()));
+            LOGGER.info("[ModeMapVote] DIRECT_PICK map={} from effective={}", pick, effectiveIds.size());
+            finishWithMap(level, session, pick, true);
+            return;
+        }
+
+        List<VoteOption> mapOptions = new ArrayList<>();
+        for (String mapId : effectiveIds) {
+            mapOptions.add(new VoteOption(mapId, resolveMapDisplayName(settings, mapId)));
+        }
+
+        // Fresh random order each map-vote start; OptionVotePayload preserves list order to clients.
+        Collections.shuffle(mapOptions, rng);
 
         int duration = session.config != null && session.config.mapDurationSeconds > 0
                 ? session.config.mapDurationSeconds
@@ -206,19 +256,18 @@ public final class ModeMapVoteOrchestrator {
         boolean started = OptionVoteManager.start(
                 level,
                 "map",
-                "地图投票",
-                "选择本局地图（模式: " + session.selectedModeDisplay + "）",
+                "map",
+                "",
                 mapOptions,
                 duration,
                 mapResult -> onMapResolved(level, mapResult)
         );
         if (!started) {
-            announce(level, Component.literal("§c无法启动地图投票"));
+            LOGGER.warn("[ModeMapVote] failed to start map vote after mode={}", winnerId);
             clearSession(level);
             return;
         }
 
-        announce(level, Component.literal("§e地图投票已开始，按 V 打开投票界面"));
         LOGGER.info("[ModeMapVote] map vote started mode={} options={} duration={}s",
                 winnerId, mapOptions.size(), duration);
     }
@@ -231,43 +280,43 @@ public final class ModeMapVoteOrchestrator {
 
         String winnerId = result != null ? result.winnerId() : null;
         if (winnerId == null || winnerId.isBlank()) {
-            announce(level, Component.literal("§c地图投票无有效结果，已取消"));
+            LOGGER.info("[ModeMapVote] map vote had no valid winner; cancelled");
             clearSession(level);
             return;
         }
 
-        session.selectedMapId = winnerId;
-        ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
-        String mapDisplay = resolveMapDisplayName(settings, winnerId);
-        String pickHint = result.randomPick() ? "§7（随机）" : "";
-        announce(level, Component.literal("§a地图已选定: §f" + mapDisplay + pickHint));
+        LOGGER.info("[ModeMapVote] map selected={} randomPick={}",
+                winnerId, result != null && result.randomPick());
+        finishWithMap(level, session, winnerId, result != null && result.randomPick());
+    }
 
+    /** Load map then start mode; shared by map vote result and DIRECT_PICK. */
+    private static void finishWithMap(ServerLevel level, Session session, String mapId, boolean randomPick) {
+        if (session == null || mapId == null || mapId.isBlank()) {
+            clearSession(level);
+            return;
+        }
+
+        session.selectedMapId = mapId;
         session.phase = Phase.SWITCHING_MAP;
         session.phaseDurationSeconds = 0;
         session.phaseStartMs = System.currentTimeMillis();
-        announce(level, Component.literal("§e正在加载地图: §f" + mapDisplay));
 
-        boolean loaded = SREModeStartAdapter.loadMap(level, winnerId);
+        boolean loaded = SREModeStartAdapter.loadMap(level, mapId);
         if (!loaded) {
-            announce(level, Component.literal("§c地图加载失败: §f" + mapDisplay));
+            LOGGER.warn("[ModeMapVote] map load failed map={} randomPick={}", mapId, randomPick);
             clearSession(level);
             return;
         }
 
         session.phase = Phase.STARTING_MODE;
         String modeId = session.selectedModeId;
-        String modeDisplay = session.selectedModeDisplay != null
-                ? session.selectedModeDisplay
-                : (modeId != null ? modeId : "?");
-        announce(level, Component.literal("§e正在启动模式: §f" + modeDisplay));
 
         boolean started = SREModeStartAdapter.startMode(level, modeId);
         if (!started) {
-            announce(level, Component.literal("§c模式启动失败: §f" + modeDisplay + " §7（地图已加载）"));
-            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept)", modeId, winnerId);
+            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept)", modeId, mapId);
         } else {
-            announce(level, Component.literal("§a对局已启动: §f" + modeDisplay));
-            LOGGER.info("[ModeMapVote] started mode={} map={}", modeId, winnerId);
+            LOGGER.info("[ModeMapVote] started mode={} map={}", modeId, mapId);
         }
 
         clearSession(level);
@@ -278,7 +327,6 @@ public final class ModeMapVoteOrchestrator {
         OptionVoteManager.cancel(level);
         Session session = SESSIONS.remove(level.dimension());
         if (session != null && session.phase != Phase.IDLE) {
-            announce(level, Component.literal("§e模式→地图投票已取消"));
             LOGGER.info("[ModeMapVote] cancelled phase={} dim={}",
                     session.phase, level.dimension().location());
         }
@@ -329,6 +377,11 @@ public final class ModeMapVoteOrchestrator {
         SESSIONS.remove(level.dimension());
     }
 
+    /**
+     * Wire display name: operator override if set; for bridged original SRE proxies use
+     * the raw SRE id (e.g. wifi:tnt_tag); otherwise the registry fullId so clients can
+     * detect "no override" and translate by id (murder/repair/blackout lang keys).
+     */
     private static String resolveModeDisplayName(ModeMapVoteSettings settings, String fullId) {
         if (settings != null) {
             ModeVoteEntry entry = settings.modes.get(fullId);
@@ -337,11 +390,8 @@ public final class ModeMapVoteOrchestrator {
             }
         }
         GameMode mode = GameModeRegistry.get(fullId);
-        if (mode != null) {
-            String name = mode.getDisplayName();
-            if (name != null && !name.isBlank()) {
-                return name;
-            }
+        if (mode instanceof SreOriginalModeProxy proxy) {
+            return proxy.getDisplayName();
         }
         return fullId;
     }
@@ -356,14 +406,16 @@ public final class ModeMapVoteOrchestrator {
         return mapId;
     }
 
-    private static void announce(ServerLevel level, Component text) {
-        if (level == null || text == null) return;
-        for (ServerPlayer player : level.players()) {
-            try {
-                SubtitleNotifier.sendTop(player, text);
-            } catch (Exception e) {
-                HabiTrainCore.LOGGER.debug("SubtitleNotifier failed for {}", player.getGameProfile().getName(), e);
-            }
+    /** true if mode passes optional config.modeIds filter and is not disabled in settings. */
+    private static boolean isModeAllowed(ModeMapVoteConfig cfg, ModeMapVoteSettings settings, String fullId) {
+        if (fullId == null || fullId.isBlank()) {
+            return false;
         }
+        if (cfg != null && cfg.modeIds != null && !cfg.modeIds.contains(fullId)) {
+            return false;
+        }
+        ModeVoteEntry entry = settings != null ? settings.modes.get(fullId) : null;
+        // missing entry = enabled
+        return entry == null || entry.enabled;
     }
 }
