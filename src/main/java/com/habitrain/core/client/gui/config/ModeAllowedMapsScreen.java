@@ -111,6 +111,8 @@ public class ModeAllowedMapsScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
+        // Single background pass only. Screen.render() would call renderBackground again
+        // and cover custom content with blur; widgets are drawn manually below.
         renderBackground(g, mx, my, delta);
         SharedGuiKit.drawBackdrop(g, width, height, ACCENT);
 
@@ -165,7 +167,11 @@ public class ModeAllowedMapsScreen extends Screen {
         saveBtn.setY(height - 28);
         saveBtn.setWidth(80);
 
-        super.render(g, mx, my, delta);
+        // Draw widgets without Screen.render() — that would call renderBackground again
+        // and cover the custom list with a second blur pass (MC 1.21.x).
+        backBtn.render(g, mx, my, delta);
+        clearBtn.render(g, mx, my, delta);
+        saveBtn.render(g, mx, my, delta);
 
         if (!remoteEditable) {
             g.drawString(font, Component.literal("§c只读：联机服务器中仅 OP 可修改"),

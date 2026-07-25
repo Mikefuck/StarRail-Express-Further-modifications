@@ -30,11 +30,11 @@ public class MaintainPowerTask {
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     // 通过 applyTimeImpact 统一调用（替代硬编码 delayMaintenanceOrCountdown(level, 80)）
-                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), "habitrain_core:maintain_power");
-                    BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:maintain_power");
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), com.habitrain.core.HabiTrainCore.TASK_MAINTAIN_POWER);
+                    BlackoutTaskHelper.grantRewards(serverPlayer, com.habitrain.core.HabiTrainCore.TASK_MAINTAIN_POWER);
                     // 同步完成其它正在做 maintain_power 的 GOOD 玩家
                     SupplyTaskSyncHelper.syncCompletion(
-                            serverPlayer.serverLevel(), serverPlayer.getUUID(), "habitrain_core:maintain_power");
+                            serverPlayer.serverLevel(), serverPlayer.getUUID(), com.habitrain.core.HabiTrainCore.TASK_MAINTAIN_POWER);
                 }
             })
             .onRemove((player, task) -> cleanup(player))

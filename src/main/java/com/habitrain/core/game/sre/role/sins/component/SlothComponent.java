@@ -6,6 +6,7 @@ import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.core.HolderLookup;
@@ -56,6 +57,11 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     /** true = open berserk (skill); false = limited to attackers (shield break). */
     private boolean openBerserk;
     private boolean enteredSleepThisRound;
+    private double sleepX;
+    private double sleepY;
+    private double sleepZ;
+    private float sleepYaw;
+    private float sleepPitch;
 
     public SlothComponent(Player player) {
         this.player = player;
@@ -114,6 +120,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         killsInBerserk = 0;
         openBerserk = false;
         enteredSleepThisRound = true;
+        captureSleepAnchor(self);
         KEY.sync(self);
         self.displayClientMessage(
                 Component.translatable("message.habitrain_core.sin_sloth.sleep", shields),
@@ -180,6 +187,16 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
                 ),
                 true
         );
+        // Trigger vanilla Habi psycho mode so the stock countdown / bat appear.
+        try {
+            boolean started = SREPlayerShopComponent.usePsychoMode_time(self, ticks, 1);
+            if (!started) {
+                SREPlayerShopComponent.usePsychoMode(self);
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] usePsychoMode failed for {}",
+                    self.getGameProfile().getName(), t);
+        }
         HabiTrainCore.LOGGER.info("[Sloth] {} wake berserk open={} ticks={}",
                 self.getGameProfile().getName(), open, ticks);
     }
@@ -189,7 +206,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         if (self == null || !(self.level() instanceof ServerLevel level)) return;
         if (!isBerserk(level)) return;
         killsInBerserk++;
-        if (openBerserk && killsInBerserk > 0 && killsInBerserk % KILLS_PER_SHIELD == 0) {
+        if (killsInBerserk > 0 && killsInBerserk % KILLS_PER_SHIELD == 0) {
             shields++;
             self.displayClientMessage(
                     Component.translatable(
@@ -307,6 +324,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         killsInBerserk = 0;
         openBerserk = false;
         berserkUntilGameTime = 0;
+        captureSleepAnchor(self);
         KEY.sync(self);
         self.displayClientMessage(
                 Component.translatable("message.habitrain_core.sin_sloth.resleep", shields),
@@ -396,6 +414,8 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         killsInBerserk = 0;
         openBerserk = false;
         enteredSleepThisRound = false;
+        sleepX = sleepY = sleepZ = 0.0D;
+        sleepYaw = sleepPitch = 0.0F;
     }
 
     @Override
@@ -428,27 +448,10 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
                 self.setJumping(false);
             } catch (Throwable ignored) {
             }
-            if (now % 5L == 0L) {
-                self.teleportTo(self.getX(), self.getY(), self.getZ());
-            }
-            if (now % 40L == 0L) {
-                self.displayClientMessage(
-                        Component.translatable("message.habitrain_core.sin_sloth.sleeping_hud", shields),
-                        true
-                );
-            }
-        } else if (isBerserk(level) && now % 40L == 0L) {
-            int remain = (int) Math.max(0, (berserkUntilGameTime - now + 19) / 20);
-            self.displayClientMessage(
-                    Component.translatable(
-                            openBerserk
-                                    ? "message.habitrain_core.sin_sloth.berserk_hud_open"
-                                    : "message.habitrain_core.sin_sloth.berserk_hud_limited",
-                            remain,
-                            openBerserk ? shields : attackers.size()
-                    ),
-                    true
-            );
+            self.teleportTo(sleepX, sleepY, sleepZ);
+            self.setYRot(sleepYaw);
+            self.setXRot(sleepPitch);
+            // No action-bar countdown: vanilla psycho HUD already covers berserk timer.
         }
     }
 
@@ -461,6 +464,11 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         tag.putInt("KillsInBerserk", killsInBerserk);
         tag.putBoolean("OpenBerserk", openBerserk);
         tag.putBoolean("EnteredSleep", enteredSleepThisRound);
+        tag.putDouble("SleepX", sleepX);
+        tag.putDouble("SleepY", sleepY);
+        tag.putDouble("SleepZ", sleepZ);
+        tag.putFloat("SleepYaw", sleepYaw);
+        tag.putFloat("SleepPitch", sleepPitch);
         ListTag list = new ListTag();
         for (UUID id : attackers) {
             list.add(StringTag.valueOf(id.toString()));
@@ -477,6 +485,11 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         killsInBerserk = tag.getInt("KillsInBerserk");
         openBerserk = tag.getBoolean("OpenBerserk");
         enteredSleepThisRound = tag.getBoolean("EnteredSleep");
+        sleepX = tag.getDouble("SleepX");
+        sleepY = tag.getDouble("SleepY");
+        sleepZ = tag.getDouble("SleepZ");
+        sleepYaw = tag.getFloat("SleepYaw");
+        sleepPitch = tag.getFloat("SleepPitch");
         attackers.clear();
         if (tag.contains("Attackers", Tag.TAG_LIST)) {
             ListTag list = tag.getList("Attackers", Tag.TAG_STRING);
@@ -497,5 +510,13 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
         readFromSyncNbt(tag, registryLookup);
+    }
+
+    private void captureSleepAnchor(ServerPlayer self) {
+        sleepX = self.getX();
+        sleepY = self.getY();
+        sleepZ = self.getZ();
+        sleepYaw = self.getYRot();
+        sleepPitch = self.getXRot();
     }
 }

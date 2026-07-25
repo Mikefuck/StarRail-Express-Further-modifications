@@ -1,7 +1,6 @@
 package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.network.BlackoutSheriffVotePayload;
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
@@ -45,7 +44,7 @@ class BlackoutSyncManager {
                 || forceCalibration;
 
         if (shouldBroadcast) {
-            BlackoutTimerPayload.broadcastToAll(level.getServer(),
+            BlackoutTimerPayload.broadcastToLevel(level,
                     current.totalTimeRemaining, current.endTimeTick,
                     current.isPermanent, current.phaseOrdinal);
             lastTimerSnapshot = current;
@@ -53,9 +52,9 @@ class BlackoutSyncManager {
     }
 
     void syncReset(ServerLevel level) {
-        if (level == null || level.getServer() == null) return;
-        BlackoutTimerPayload.broadcastToAll(level.getServer(), 0, 0L, false, 0);
-        BlackoutSheriffVotePayload.broadcastToAll(level.getServer(), false, 0, 15, 1, List.of());
+        if (level == null) return;
+        // phase=0 + remaining=0：客户端按局终重置处理（C8）
+        BlackoutTimerPayload.broadcastToLevel(level, 0, 0L, false, 0);
         lastTimerSnapshot = null;
         calibrationCounter = 0;
     }

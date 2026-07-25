@@ -1,0 +1,1106 @@
+  public void killPlayer(net.minecraft.class_1657, boolean, net.minecraft.class_1657, net.minecraft.class_2960, boolean);
+    Code:
+       0: getstatic     #385                // Field io/wifi/starrailexpress/event/EarlyKillPlayer.FIND_KILLER_EVENT:Lnet/fabricmc/fabric/api/event/Event;
+       3: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+       6: checkcast     #382                // class io/wifi/starrailexpress/event/EarlyKillPlayer
+       9: aload_1
+      10: aload_3
+      11: aload         4
+      13: invokeinterface #389,  4          // InterfaceMethod io/wifi/starrailexpress/event/EarlyKillPlayer.findTrueKiller:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_1657;
+      18: astore        6
+      20: aload         6
+      22: ifnull        32
+      25: aload         6
+      27: astore        7
+      29: goto          35
+      32: aload_3
+      33: astore        7
+      35: aload         7
+      37: astore_3
+      38: getstatic     #394                // Field io/wifi/starrailexpress/event/OnKillPlayerTriggered.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+      41: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+      44: checkcast     #393                // class io/wifi/starrailexpress/event/OnKillPlayerTriggered
+      47: aload_1
+      48: iload_2
+      49: aload         7
+      51: aload         4
+      53: iload         5
+      55: invokeinterface #398,  6          // InterfaceMethod io/wifi/starrailexpress/event/OnKillPlayerTriggered.onKillPlayerTriggered:(Lnet/minecraft/class_1657;ZLnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)Lio/wifi/starrailexpress/util/TrueFalseResult;
+      60: astore        8
+      62: aload         8
+      64: ifnull        81
+      67: aload         8
+      69: invokevirtual #401                // Method io/wifi/starrailexpress/util/TrueFalseResult.isFalse:()Z
+      72: ifeq          81
+      75: iload         5
+      77: ifne          81
+      80: return
+      81: getstatic     #404                // Field io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+      84: aload_1
+      85: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+      88: checkcast     #403                // class io/wifi/starrailexpress/cca/SREPlayerPsychoComponent
+      91: astore        8
+      93: aload         7
+      95: ifnull        141
+      98: aload         7
+     100: instanceof    #341                // class net/minecraft/class_3222
+     103: ifeq          141
+     106: aload         7
+     108: checkcast     #341                // class net/minecraft/class_3222
+     111: astore        9
+     113: new           #406                // class io/wifi/starrailexpress/network/TriggerScreenEdgeEffectPayload
+     116: dup
+     117: getstatic     #412                // Field java/awt/Color.RED:Ljava/awt/Color;
+     120: invokevirtual #416                // Method java/awt/Color.getRGB:()I
+     123: ldc2_w        #417                // long 600l
+     126: ldc_w         #419                // float 0.6f
+     129: invokespecial #422                // Method io/wifi/starrailexpress/network/TriggerScreenEdgeEffectPayload."<init>":(IJF)V
+     132: astore        10
+     134: aload         9
+     136: aload         10
+     138: invokestatic  #428                // Method net/fabricmc/fabric/api/networking/v1/ServerPlayNetworking.send:(Lnet/minecraft/class_3222;Lnet/minecraft/class_8710;)V
+     141: iconst_1
+     142: istore        9
+     144: ldc_w         #430                // String message.death_reason.null
+     147: invokestatic  #434                // InterfaceMethod net/minecraft/class_2561.method_43471:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+     150: astore        10
+     152: aload_1
+     153: instanceof    #341                // class net/minecraft/class_3222
+     156: ifeq          194
+     159: aload_1
+     160: checkcast     #341                // class net/minecraft/class_3222
+     163: astore        11
+     165: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     168: aload         7
+     170: ifnull        181
+     173: aload         7
+     175: invokevirtual #438                // Method net/minecraft/class_1657.method_5667:()Ljava/util/UUID;
+     178: goto          182
+     181: aconst_null
+     182: aload         11
+     184: invokevirtual #441                // Method net/minecraft/class_3222.method_5667:()Ljava/util/UUID;
+     187: aload         4
+     189: invokevirtual #445                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerKill:(Ljava/util/UUID;Ljava/util/UUID;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+     192: astore        10
+     194: getstatic     #446                // Field io/wifi/starrailexpress/cca/SREGameWorldComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+     197: aload_1
+     198: invokevirtual #450                // Method net/minecraft/class_1657.method_37908:()Lnet/minecraft/class_1937;
+     201: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+     204: checkcast     #284                // class io/wifi/starrailexpress/cca/SREGameWorldComponent
+     207: astore        11
+     209: aload         11
+     211: aload_1
+     212: invokevirtual #454                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.getRole:(Lnet/minecraft/class_1657;)Lio/wifi/starrailexpress/api/SRERole;
+     215: astore        12
+     217: aload         12
+     219: ifnonnull     230
+     222: aload_0
+     223: invokevirtual #456                // Method requiresAssignedRole:()Z
+     226: ifeq          230
+     229: return
+     230: aload         7
+     232: ifnull        254
+     235: aload_0
+     236: aload_1
+     237: aload         7
+     239: aload         4
+     241: invokevirtual #461                // Method shouldReloadDerringer:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+     244: ifeq          254
+     247: aload         7
+     249: iconst_1
+     250: invokestatic  #465                // Method io/wifi/starrailexpress/game/GameUtils.refillDerringer:(Lnet/minecraft/class_1657;Z)Z
+     253: pop
+     254: aload         7
+     256: ifnull        689
+     259: aload         7
+     261: instanceof    #341                // class net/minecraft/class_3222
+     264: ifeq          689
+     267: aload         7
+     269: checkcast     #341                // class net/minecraft/class_3222
+     272: astore        13
+     274: aload_1
+     275: instanceof    #341                // class net/minecraft/class_3222
+     278: ifeq          689
+     281: aload_1
+     282: checkcast     #341                // class net/minecraft/class_3222
+     285: astore        14
+     287: aload         4
+     289: invokevirtual #269                // Method net/minecraft/class_2960.method_12832:()Ljava/lang/String;
+     292: astore        16
+     294: iconst_m1
+     295: istore        17
+     297: aload         16
+     299: invokevirtual #468                // Method java/lang/String.hashCode:()I
+     302: lookupswitch  { // 9
+
+           -1174943079: 418
+
+           -1059982798: 522
+
+            -982749432: 486
+
+            -500595754: 401
+
+            -331862935: 469
+
+              93090825: 504
+
+             283970894: 452
+
+             821769116: 435
+
+            1765155435: 384
+               default: 537
+          }
+     384: aload         16
+     386: ldc_w         #470                // String derringer_shot
+     389: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     392: ifeq          537
+     395: iconst_0
+     396: istore        17
+     398: goto          537
+     401: aload         16
+     403: ldc_w         #476                // String revolver_shot
+     406: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     409: ifeq          537
+     412: iconst_1
+     413: istore        17
+     415: goto          537
+     418: aload         16
+     420: ldc_w         #478                // String gun_shot
+     423: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     426: ifeq          537
+     429: iconst_2
+     430: istore        17
+     432: goto          537
+     435: aload         16
+     437: ldc_w         #480                // String knife_stab
+     440: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     443: ifeq          537
+     446: iconst_3
+     447: istore        17
+     449: goto          537
+     452: aload         16
+     454: ldc_w         #482                // String grenade
+     457: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     460: ifeq          537
+     463: iconst_4
+     464: istore        17
+     466: goto          537
+     469: aload         16
+     471: ldc_w         #484                // String bat_hit
+     474: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     477: ifeq          537
+     480: iconst_5
+     481: istore        17
+     483: goto          537
+     486: aload         16
+     488: ldc_w         #486                // String poison
+     491: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     494: ifeq          537
+     497: bipush        6
+     499: istore        17
+     501: goto          537
+     504: aload         16
+     506: ldc_w         #488                // String arrow
+     509: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     512: ifeq          537
+     515: bipush        7
+     517: istore        17
+     519: goto          537
+     522: aload         16
+     524: ldc_w         #490                // String trident
+     527: invokevirtual #474                // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+     530: ifeq          537
+     533: bipush        8
+     535: istore        17
+     537: iload         17
+     539: tableswitch   { // 0 to 8
+
+                     0: 588
+
+                     1: 588
+
+                     2: 588
+
+                     3: 596
+
+                     4: 604
+
+                     5: 612
+
+                     6: 620
+
+                     7: 628
+
+                     8: 636
+               default: 644
+          }
+     588: getstatic     #494                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.GUN_SHOOT:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     591: astore        15
+     593: goto          649
+     596: getstatic     #497                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.KNIFE:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     599: astore        15
+     601: goto          649
+     604: getstatic     #500                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.GRENADE:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     607: astore        15
+     609: goto          649
+     612: getstatic     #503                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.BAT:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     615: astore        15
+     617: goto          649
+     620: getstatic     #506                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.POISON:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     623: astore        15
+     625: goto          649
+     628: getstatic     #509                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.ARROW:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     631: astore        15
+     633: goto          649
+     636: getstatic     #512                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.TRIDENT:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     639: astore        15
+     641: goto          649
+     644: getstatic     #515                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason.UNKNOWN:Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;
+     647: astore        15
+     649: getstatic     #516                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayer.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+     652: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+     655: checkcast     #14                 // class io/wifi/starrailexpress/event/OnPlayerKilledPlayer
+     658: aload         14
+     660: aload         13
+     662: aload         15
+     664: invokeinterface #520,  4          // InterfaceMethod io/wifi/starrailexpress/event/OnPlayerKilledPlayer.playerKilled:(Lnet/minecraft/class_3222;Lnet/minecraft/class_3222;Lio/wifi/starrailexpress/event/OnPlayerKilledPlayer$DeathReason;)V
+     669: getstatic     #523                // Field io/wifi/starrailexpress/event/OnPlayerKilledPlayerIdentifier.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+     672: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+     675: checkcast     #522                // class io/wifi/starrailexpress/event/OnPlayerKilledPlayerIdentifier
+     678: aload         14
+     680: aload         13
+     682: aload         4
+     684: invokeinterface #526,  4          // InterfaceMethod io/wifi/starrailexpress/event/OnPlayerKilledPlayerIdentifier.playerKilled:(Lnet/minecraft/class_3222;Lnet/minecraft/class_3222;Lnet/minecraft/class_2960;)V
+     689: aload         12
+     691: ifnull        749
+     694: aload         12
+     696: aload_1
+     697: aload         7
+     699: aload         4
+     701: iload_2
+     702: invokevirtual #530                // Method io/wifi/starrailexpress/api/SRERole.allowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)Z
+     705: ifne          749
+     708: iload         5
+     710: ifne          749
+     713: aload_1
+     714: instanceof    #341                // class net/minecraft/class_3222
+     717: ifeq          739
+     720: aload_1
+     721: checkcast     #341                // class net/minecraft/class_3222
+     724: astore        13
+     726: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     729: aload         7
+     731: aload         13
+     733: aload         4
+     735: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+     738: pop
+     739: aload         7
+     741: aload_1
+     742: aload         4
+     744: iconst_0
+     745: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+     748: return
+     749: getstatic     #540                // Field io/wifi/starrailexpress/event/AllowPlayerDeath.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+     752: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+     755: checkcast     #539                // class io/wifi/starrailexpress/event/AllowPlayerDeath
+     758: aload_1
+     759: aload         4
+     761: invokeinterface #543,  3          // InterfaceMethod io/wifi/starrailexpress/event/AllowPlayerDeath.allowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+     766: ifne          810
+     769: iload         5
+     771: ifne          810
+     774: aload_1
+     775: instanceof    #341                // class net/minecraft/class_3222
+     778: ifeq          800
+     781: aload_1
+     782: checkcast     #341                // class net/minecraft/class_3222
+     785: astore        13
+     787: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     790: aload         7
+     792: aload         13
+     794: aload         4
+     796: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+     799: pop
+     800: aload         7
+     802: aload_1
+     803: aload         4
+     805: iconst_0
+     806: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+     809: return
+     810: getstatic     #546                // Field io/wifi/starrailexpress/event/AllowPlayerDeathWithKiller.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+     813: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+     816: checkcast     #545                // class io/wifi/starrailexpress/event/AllowPlayerDeathWithKiller
+     819: aload_1
+     820: aload         7
+     822: aload         4
+     824: invokeinterface #548,  4          // InterfaceMethod io/wifi/starrailexpress/event/AllowPlayerDeathWithKiller.allowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+     829: ifne          873
+     832: iload         5
+     834: ifne          873
+     837: aload_1
+     838: instanceof    #341                // class net/minecraft/class_3222
+     841: ifeq          863
+     844: aload_1
+     845: checkcast     #341                // class net/minecraft/class_3222
+     848: astore        13
+     850: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     853: aload         7
+     855: aload         13
+     857: aload         4
+     859: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+     862: pop
+     863: aload         7
+     865: aload_1
+     866: aload         4
+     868: iconst_0
+     869: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+     872: return
+     873: aload         7
+     875: ifnull        1062
+     878: aload         7
+     880: instanceof    #341                // class net/minecraft/class_3222
+     883: ifeq          1062
+     886: aload         7
+     888: checkcast     #341                // class net/minecraft/class_3222
+     891: astore        13
+     893: getstatic     #551                // Field io/wifi/starrailexpress/cca/SREArmorPlayerComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+     896: aload_1
+     897: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+     900: checkcast     #550                // class io/wifi/starrailexpress/cca/SREArmorPlayerComponent
+     903: astore        14
+     905: aload         14
+     907: ifnull        1062
+     910: aload         14
+     912: invokevirtual #554                // Method io/wifi/starrailexpress/cca/SREArmorPlayerComponent.getArmor:()I
+     915: ifle          1062
+     918: getstatic     #559                // Field io/wifi/starrailexpress/rules/ArmorRules.canStickArmor:Ljava/util/List;
+     921: invokeinterface #563,  1          // InterfaceMethod java/util/List.stream:()Ljava/util/stream/Stream;
+     926: aload_1
+     927: aload         7
+     929: aload         4
+     931: invokedynamic #582,  0            // InvokeDynamic #2:test:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Ljava/util/function/Predicate;
+     936: invokeinterface #587,  2          // InterfaceMethod java/util/stream/Stream.anyMatch:(Ljava/util/function/Predicate;)Z
+     941: istore        15
+     943: iload         15
+     945: ifne          1062
+     948: aload_1
+     949: ldc_w         #589                // String message.bartender.armor_broke_self
+     952: invokestatic  #434                // InterfaceMethod net/minecraft/class_2561.method_43471:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+     955: getstatic     #595                // Field net/minecraft/class_124.field_1054:Lnet/minecraft/class_124;
+     958: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+     961: iconst_1
+     962: invokevirtual #605                // Method net/minecraft/class_1657.method_7353:(Lnet/minecraft/class_2561;Z)V
+     965: aload_1
+     966: getstatic     #611                // Field io/wifi/starrailexpress/index/TMMSounds.ITEM_PSYCHO_ARMOUR:Lnet/minecraft/class_3414;
+     969: getstatic     #617                // Field net/minecraft/class_3419.field_15250:Lnet/minecraft/class_3419;
+     972: ldc_w         #618                // float 5.0f
+     975: fconst_1
+     976: invokevirtual #622                // Method net/minecraft/class_1657.method_17356:(Lnet/minecraft/class_3414;Lnet/minecraft/class_3419;FF)V
+     979: aload         14
+     981: invokevirtual #625                // Method io/wifi/starrailexpress/cca/SREArmorPlayerComponent.removeArmor:()V
+     984: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     987: aload_1
+     988: invokevirtual #438                // Method net/minecraft/class_1657.method_5667:()Ljava/util/UUID;
+     991: invokevirtual #629                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.breakArmor:(Ljava/util/UUID;)V
+     994: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+     997: aload         7
+     999: aload_1
+    1000: aload         4
+    1002: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1005: pop
+    1006: aload         13
+    1008: new           #631                // class io/wifi/starrailexpress/network/BreakArmorPayload
+    1011: dup
+    1012: aload_1
+    1013: invokevirtual #635                // Method net/minecraft/class_1657.method_23317:()D
+    1016: aload_1
+    1017: invokevirtual #638                // Method net/minecraft/class_1657.method_23318:()D
+    1020: aload_1
+    1021: invokevirtual #641                // Method net/minecraft/class_1657.method_23321:()D
+    1024: invokespecial #644                // Method io/wifi/starrailexpress/network/BreakArmorPayload."<init>":(DDD)V
+    1027: invokestatic  #428                // Method net/fabricmc/fabric/api/networking/v1/ServerPlayNetworking.send:(Lnet/minecraft/class_3222;Lnet/minecraft/class_8710;)V
+    1030: getstatic     #647                // Field io/wifi/starrailexpress/event/OnShieldBroken.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1033: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1036: checkcast     #646                // class io/wifi/starrailexpress/event/OnShieldBroken
+    1039: aload_1
+    1040: aload         7
+    1042: invokeinterface #651,  3          // InterfaceMethod io/wifi/starrailexpress/event/OnShieldBroken.onShieldBroken:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;)V
+    1047: iload         5
+    1049: ifne          1062
+    1052: aload         7
+    1054: aload_1
+    1055: aload         4
+    1057: iconst_0
+    1058: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1061: return
+    1062: getstatic     #654                // Field io/wifi/starrailexpress/cca/SREWeakArmorPlayerComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    1065: aload_1
+    1066: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+    1069: checkcast     #653                // class io/wifi/starrailexpress/cca/SREWeakArmorPlayerComponent
+    1072: astore        13
+    1074: aload         13
+    1076: ifnull        1232
+    1079: aload         13
+    1081: invokevirtual #657                // Method io/wifi/starrailexpress/cca/SREWeakArmorPlayerComponent.getWeakArmor:()I
+    1084: ifle          1232
+    1087: aload         13
+    1089: aload         4
+    1091: invokevirtual #661                // Method io/wifi/starrailexpress/cca/SREWeakArmorPlayerComponent.canBlockDeathReason:(Lnet/minecraft/class_2960;)Z
+    1094: ifeq          1232
+    1097: aload         13
+    1099: invokevirtual #664                // Method io/wifi/starrailexpress/cca/SREWeakArmorPlayerComponent.consumeWeakArmor:()V
+    1102: aload_1
+    1103: ldc_w         #666                // String message.bartender.weak_armor_broke_self
+    1106: invokestatic  #434                // InterfaceMethod net/minecraft/class_2561.method_43471:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+    1109: getstatic     #595                // Field net/minecraft/class_124.field_1054:Lnet/minecraft/class_124;
+    1112: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+    1115: iconst_1
+    1116: invokevirtual #605                // Method net/minecraft/class_1657.method_7353:(Lnet/minecraft/class_2561;Z)V
+    1119: aload_1
+    1120: getstatic     #611                // Field io/wifi/starrailexpress/index/TMMSounds.ITEM_PSYCHO_ARMOUR:Lnet/minecraft/class_3414;
+    1123: getstatic     #617                // Field net/minecraft/class_3419.field_15250:Lnet/minecraft/class_3419;
+    1126: ldc_w         #618                // float 5.0f
+    1129: fconst_1
+    1130: invokevirtual #622                // Method net/minecraft/class_1657.method_17356:(Lnet/minecraft/class_3414;Lnet/minecraft/class_3419;FF)V
+    1133: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1136: ifnull        1161
+    1139: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1142: aload_1
+    1143: invokevirtual #438                // Method net/minecraft/class_1657.method_5667:()Ljava/util/UUID;
+    1146: invokevirtual #629                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.breakArmor:(Ljava/util/UUID;)V
+    1149: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1152: aload         7
+    1154: aload_1
+    1155: aload         4
+    1157: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1160: pop
+    1161: aload         7
+    1163: instanceof    #341                // class net/minecraft/class_3222
+    1166: ifeq          1200
+    1169: aload         7
+    1171: checkcast     #341                // class net/minecraft/class_3222
+    1174: astore        14
+    1176: aload         14
+    1178: new           #631                // class io/wifi/starrailexpress/network/BreakArmorPayload
+    1181: dup
+    1182: aload_1
+    1183: invokevirtual #635                // Method net/minecraft/class_1657.method_23317:()D
+    1186: aload_1
+    1187: invokevirtual #638                // Method net/minecraft/class_1657.method_23318:()D
+    1190: aload_1
+    1191: invokevirtual #641                // Method net/minecraft/class_1657.method_23321:()D
+    1194: invokespecial #644                // Method io/wifi/starrailexpress/network/BreakArmorPayload."<init>":(DDD)V
+    1197: invokestatic  #428                // Method net/fabricmc/fabric/api/networking/v1/ServerPlayNetworking.send:(Lnet/minecraft/class_3222;Lnet/minecraft/class_8710;)V
+    1200: getstatic     #647                // Field io/wifi/starrailexpress/event/OnShieldBroken.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1203: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1206: checkcast     #646                // class io/wifi/starrailexpress/event/OnShieldBroken
+    1209: aload_1
+    1210: aload         7
+    1212: invokeinterface #651,  3          // InterfaceMethod io/wifi/starrailexpress/event/OnShieldBroken.onShieldBroken:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;)V
+    1217: iload         5
+    1219: ifne          1232
+    1222: aload         7
+    1224: aload_1
+    1225: aload         4
+    1227: iconst_0
+    1228: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1231: return
+    1232: aload         8
+    1234: invokevirtual #669                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.getPsychoTicks:()I
+    1237: ifle          1411
+    1240: iload         5
+    1242: ifne          1400
+    1245: aload         8
+    1247: invokevirtual #672                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.getArmour:()I
+    1250: ifle          1400
+    1253: aload         8
+    1255: aload         8
+    1257: invokevirtual #672                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.getArmour:()I
+    1260: iconst_1
+    1261: isub
+    1262: invokevirtual #676                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.setArmour:(I)V
+    1265: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1268: ifnull        1281
+    1271: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1274: aload_1
+    1275: invokevirtual #438                // Method net/minecraft/class_1657.method_5667:()Ljava/util/UUID;
+    1278: invokevirtual #629                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.breakArmor:(Ljava/util/UUID;)V
+    1281: aload_1
+    1282: ldc_w         #589                // String message.bartender.armor_broke_self
+    1285: invokestatic  #434                // InterfaceMethod net/minecraft/class_2561.method_43471:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+    1288: getstatic     #595                // Field net/minecraft/class_124.field_1054:Lnet/minecraft/class_124;
+    1291: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+    1294: iconst_1
+    1295: invokevirtual #605                // Method net/minecraft/class_1657.method_7353:(Lnet/minecraft/class_2561;Z)V
+    1298: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1301: aload         7
+    1303: aload_1
+    1304: aload         4
+    1306: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1309: pop
+    1310: aload         7
+    1312: instanceof    #341                // class net/minecraft/class_3222
+    1315: ifeq          1349
+    1318: aload         7
+    1320: checkcast     #341                // class net/minecraft/class_3222
+    1323: astore        14
+    1325: aload         14
+    1327: new           #631                // class io/wifi/starrailexpress/network/BreakArmorPayload
+    1330: dup
+    1331: aload_1
+    1332: invokevirtual #635                // Method net/minecraft/class_1657.method_23317:()D
+    1335: aload_1
+    1336: invokevirtual #638                // Method net/minecraft/class_1657.method_23318:()D
+    1339: aload_1
+    1340: invokevirtual #641                // Method net/minecraft/class_1657.method_23321:()D
+    1343: invokespecial #644                // Method io/wifi/starrailexpress/network/BreakArmorPayload."<init>":(DDD)V
+    1346: invokestatic  #428                // Method net/fabricmc/fabric/api/networking/v1/ServerPlayNetworking.send:(Lnet/minecraft/class_3222;Lnet/minecraft/class_8710;)V
+    1349: aload         8
+    1351: invokevirtual #679                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.sync:()V
+    1354: aload_1
+    1355: getstatic     #611                // Field io/wifi/starrailexpress/index/TMMSounds.ITEM_PSYCHO_ARMOUR:Lnet/minecraft/class_3414;
+    1358: getstatic     #617                // Field net/minecraft/class_3419.field_15250:Lnet/minecraft/class_3419;
+    1361: ldc_w         #618                // float 5.0f
+    1364: fconst_1
+    1365: invokevirtual #622                // Method net/minecraft/class_1657.method_17356:(Lnet/minecraft/class_3414;Lnet/minecraft/class_3419;FF)V
+    1368: aload_1
+    1369: ldc_w         #589                // String message.bartender.armor_broke_self
+    1372: invokestatic  #434                // InterfaceMethod net/minecraft/class_2561.method_43471:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+    1375: getstatic     #595                // Field net/minecraft/class_124.field_1054:Lnet/minecraft/class_124;
+    1378: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+    1381: iconst_1
+    1382: invokevirtual #605                // Method net/minecraft/class_1657.method_7353:(Lnet/minecraft/class_2561;Z)V
+    1385: iload         5
+    1387: ifne          1411
+    1390: aload         7
+    1392: aload_1
+    1393: aload         4
+    1395: iconst_0
+    1396: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1399: return
+    1400: aload         8
+    1402: invokevirtual #682                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.stopPsycho:()I
+    1405: pop
+    1406: aload         8
+    1408: invokevirtual #679                // Method io/wifi/starrailexpress/cca/SREPlayerPsychoComponent.sync:()V
+    1411: aload         12
+    1413: ifnull        1471
+    1416: aload         12
+    1418: aload_1
+    1419: aload         7
+    1421: aload         4
+    1423: iload_2
+    1424: invokevirtual #685                // Method io/wifi/starrailexpress/api/SRERole.afterShieldAllowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)Z
+    1427: ifne          1471
+    1430: iload         5
+    1432: ifne          1471
+    1435: aload_1
+    1436: instanceof    #341                // class net/minecraft/class_3222
+    1439: ifeq          1461
+    1442: aload_1
+    1443: checkcast     #341                // class net/minecraft/class_3222
+    1446: astore        14
+    1448: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1451: aload         7
+    1453: aload         14
+    1455: aload         4
+    1457: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1460: pop
+    1461: aload         7
+    1463: aload_1
+    1464: aload         4
+    1466: iconst_0
+    1467: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1470: return
+    1471: getstatic     #688                // Field io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeath.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1474: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1477: checkcast     #687                // class io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeath
+    1480: aload_1
+    1481: aload         4
+    1483: invokeinterface #689,  3          // InterfaceMethod io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeath.allowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+    1488: ifne          1532
+    1491: iload         5
+    1493: ifne          1532
+    1496: aload_1
+    1497: instanceof    #341                // class net/minecraft/class_3222
+    1500: ifeq          1522
+    1503: aload_1
+    1504: checkcast     #341                // class net/minecraft/class_3222
+    1507: astore        14
+    1509: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1512: aload         7
+    1514: aload         14
+    1516: aload         4
+    1518: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1521: pop
+    1522: aload         7
+    1524: aload_1
+    1525: aload         4
+    1527: iconst_0
+    1528: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1531: return
+    1532: getstatic     #692                // Field io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeathWithKiller.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1535: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1538: checkcast     #691                // class io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeathWithKiller
+    1541: aload_1
+    1542: aload         7
+    1544: aload         4
+    1546: invokeinterface #693,  4          // InterfaceMethod io/wifi/starrailexpress/event/AfterShieldAllowPlayerDeathWithKiller.allowDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+    1551: ifne          1595
+    1554: iload         5
+    1556: ifne          1595
+    1559: aload_1
+    1560: instanceof    #341                // class net/minecraft/class_3222
+    1563: ifeq          1585
+    1566: aload_1
+    1567: checkcast     #341                // class net/minecraft/class_3222
+    1570: astore        14
+    1572: getstatic     #282                // Field io/wifi/starrailexpress/SRE.REPLAY_MANAGER:Lio/wifi/starrailexpress/api/replay/GameReplayManager;
+    1575: aload         7
+    1577: aload         14
+    1579: aload         4
+    1581: invokevirtual #534                // Method io/wifi/starrailexpress/api/replay/GameReplayManager.recordPlayerNotKilled:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Lnet/minecraft/class_2561;
+    1584: pop
+    1585: aload         7
+    1587: aload_1
+    1588: aload         4
+    1590: iconst_0
+    1591: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    1594: return
+    1595: aload         7
+    1597: instanceof    #341                // class net/minecraft/class_3222
+    1600: ifeq          1909
+    1603: aload         7
+    1605: checkcast     #341                // class net/minecraft/class_3222
+    1608: astore        14
+    1610: aload         14
+    1612: invokestatic  #698                // Method io/wifi/starrailexpress/stats/PlayerStatsManager.get:(Lnet/minecraft/class_3222;)Lio/wifi/starrailexpress/stats/PlayerStats;
+    1615: astore        15
+    1617: aload_0
+    1618: invokevirtual #110                // Method shouldRecordPlayerStats:()Z
+    1621: ifeq          1629
+    1624: aload         15
+    1626: invokevirtual #701                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalKills:()V
+    1629: aload         11
+    1631: aload         14
+    1633: invokevirtual #441                // Method net/minecraft/class_3222.method_5667:()Ljava/util/UUID;
+    1636: invokevirtual #704                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.addPlayerKill:(Ljava/util/UUID;)V
+    1639: aload         14
+    1641: invokestatic  #710                // Method io/wifi/starrailexpress/progression/ProgressionDataManager.onPlayerKill:(Lnet/minecraft/class_3222;)V
+    1644: aload         11
+    1646: aload         14
+    1648: invokevirtual #454                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.getRole:(Lnet/minecraft/class_1657;)Lio/wifi/starrailexpress/api/SRERole;
+    1651: astore        16
+    1653: aload         16
+    1655: ifnull        1909
+    1658: aload         16
+    1660: aload_1
+    1661: iload_2
+    1662: aload         7
+    1664: aload         4
+    1666: invokevirtual #714                // Method io/wifi/starrailexpress/api/SRERole.onKill:(Lnet/minecraft/class_1657;ZLnet/minecraft/class_1657;Lnet/minecraft/class_2960;)V
+    1669: aload_0
+    1670: invokevirtual #110                // Method shouldRecordPlayerStats:()Z
+    1673: ifeq          1758
+    1676: aload         15
+    1678: aload         16
+    1680: invokevirtual #717                // Method io/wifi/starrailexpress/api/SRERole.identifier:()Lnet/minecraft/class_2960;
+    1683: invokevirtual #721                // Method io/wifi/starrailexpress/stats/PlayerStats.getOrCreateRoleStats:(Lnet/minecraft/class_2960;)Lio/wifi/starrailexpress/stats/PlayerStats$RoleStats;
+    1686: invokevirtual #724                // Method io/wifi/starrailexpress/stats/PlayerStats$RoleStats.incrementKillsAsRole:()V
+    1689: aload         16
+    1691: invokevirtual #727                // Method io/wifi/starrailexpress/api/SRERole.isVigilanteTeam:()Z
+    1694: ifeq          1705
+    1697: aload         15
+    1699: invokevirtual #730                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalSheriffKills:()V
+    1702: goto          1758
+    1705: aload         16
+    1707: invokevirtual #733                // Method io/wifi/starrailexpress/api/SRERole.canUseKiller:()Z
+    1710: ifeq          1721
+    1713: aload         15
+    1715: invokevirtual #736                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalKillerKills:()V
+    1718: goto          1758
+    1721: aload         16
+    1723: invokevirtual #739                // Method io/wifi/starrailexpress/api/SRERole.isNeutrals:()Z
+    1726: ifeq          1737
+    1729: aload         15
+    1731: invokevirtual #742                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalNeutralKills:()V
+    1734: goto          1758
+    1737: aload         16
+    1739: invokevirtual #745                // Method io/wifi/starrailexpress/api/SRERole.isInnocent:()Z
+    1742: ifeq          1758
+    1745: aload         16
+    1747: invokevirtual #727                // Method io/wifi/starrailexpress/api/SRERole.isVigilanteTeam:()Z
+    1750: ifne          1758
+    1753: aload         15
+    1755: invokevirtual #748                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalCivilianKills:()V
+    1758: aload_1
+    1759: instanceof    #341                // class net/minecraft/class_3222
+    1762: ifeq          1909
+    1765: aload_1
+    1766: checkcast     #341                // class net/minecraft/class_3222
+    1769: astore        17
+    1771: aload         11
+    1773: aload         17
+    1775: invokevirtual #454                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.getRole:(Lnet/minecraft/class_1657;)Lio/wifi/starrailexpress/api/SRERole;
+    1778: astore        18
+    1780: aload         18
+    1782: ifnull        1909
+    1785: iconst_0
+    1786: istore        19
+    1788: aload         16
+    1790: invokevirtual #733                // Method io/wifi/starrailexpress/api/SRERole.canUseKiller:()Z
+    1793: ifeq          1831
+    1796: aload         18
+    1798: invokevirtual #733                // Method io/wifi/starrailexpress/api/SRERole.canUseKiller:()Z
+    1801: ifeq          1831
+    1804: iconst_1
+    1805: istore        19
+    1807: getstatic     #751                // Field io/wifi/starrailexpress/event/OnTeammateKilledTeammate.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1810: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1813: checkcast     #750                // class io/wifi/starrailexpress/event/OnTeammateKilledTeammate
+    1816: aload         17
+    1818: aload         14
+    1820: iconst_0
+    1821: aload         4
+    1823: invokeinterface #754,  5          // InterfaceMethod io/wifi/starrailexpress/event/OnTeammateKilledTeammate.playerKilled:(Lnet/minecraft/class_3222;Lnet/minecraft/class_3222;ZLnet/minecraft/class_2960;)V
+    1828: goto          1871
+    1831: aload         16
+    1833: invokevirtual #745                // Method io/wifi/starrailexpress/api/SRERole.isInnocent:()Z
+    1836: ifeq          1871
+    1839: aload         18
+    1841: invokevirtual #745                // Method io/wifi/starrailexpress/api/SRERole.isInnocent:()Z
+    1844: ifeq          1871
+    1847: iconst_1
+    1848: istore        19
+    1850: getstatic     #751                // Field io/wifi/starrailexpress/event/OnTeammateKilledTeammate.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    1853: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    1856: checkcast     #750                // class io/wifi/starrailexpress/event/OnTeammateKilledTeammate
+    1859: aload         17
+    1861: aload         14
+    1863: iconst_1
+    1864: aload         4
+    1866: invokeinterface #754,  5          // InterfaceMethod io/wifi/starrailexpress/event/OnTeammateKilledTeammate.playerKilled:(Lnet/minecraft/class_3222;Lnet/minecraft/class_3222;ZLnet/minecraft/class_2960;)V
+    1871: iload         19
+    1873: ifeq          1904
+    1876: aload_0
+    1877: invokevirtual #110                // Method shouldRecordPlayerStats:()Z
+    1880: ifeq          1909
+    1883: aload         15
+    1885: invokevirtual #757                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalTeamKills:()V
+    1888: aload         15
+    1890: aload         16
+    1892: invokevirtual #717                // Method io/wifi/starrailexpress/api/SRERole.identifier:()Lnet/minecraft/class_2960;
+    1895: invokevirtual #721                // Method io/wifi/starrailexpress/stats/PlayerStats.getOrCreateRoleStats:(Lnet/minecraft/class_2960;)Lio/wifi/starrailexpress/stats/PlayerStats$RoleStats;
+    1898: invokevirtual #760                // Method io/wifi/starrailexpress/stats/PlayerStats$RoleStats.incrementTeamKillsAsRole:()V
+    1901: goto          1909
+    1904: aload         14
+    1906: invokestatic  #763                // Method io/wifi/starrailexpress/progression/ProgressionDataManager.onPlayerKillDifferentTeam:(Lnet/minecraft/class_3222;)V
+    1909: iload         9
+    1911: ifne          1919
+    1914: iload         5
+    1916: ifeq          1923
+    1919: iconst_1
+    1920: goto          1924
+    1923: iconst_0
+    1924: istore        9
+    1926: iload         9
+    1928: ifeq          2652
+    1931: aload_1
+    1932: instanceof    #341                // class net/minecraft/class_3222
+    1935: ifeq          2137
+    1938: aload_1
+    1939: checkcast     #341                // class net/minecraft/class_3222
+    1942: astore        14
+    1944: aload         11
+    1946: aload         14
+    1948: invokevirtual #454                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.getRole:(Lnet/minecraft/class_1657;)Lio/wifi/starrailexpress/api/SRERole;
+    1951: astore        15
+    1953: aload         15
+    1955: ifnull        1969
+    1958: aload         15
+    1960: aload_1
+    1961: iload_2
+    1962: aload         7
+    1964: aload         4
+    1966: invokevirtual #766                // Method io/wifi/starrailexpress/api/SRERole.onDeath:(Lnet/minecraft/class_1657;ZLnet/minecraft/class_1657;Lnet/minecraft/class_2960;)V
+    1969: aload         14
+    1971: invokestatic  #698                // Method io/wifi/starrailexpress/stats/PlayerStatsManager.get:(Lnet/minecraft/class_3222;)Lio/wifi/starrailexpress/stats/PlayerStats;
+    1974: astore        16
+    1976: aload_0
+    1977: invokevirtual #110                // Method shouldRecordPlayerStats:()Z
+    1980: ifeq          1988
+    1983: aload         16
+    1985: invokevirtual #769                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalDeaths:()V
+    1988: aload         15
+    1990: ifnull        2082
+    1993: aload_0
+    1994: invokevirtual #110                // Method shouldRecordPlayerStats:()Z
+    1997: ifeq          2082
+    2000: aload         16
+    2002: aload         15
+    2004: invokevirtual #717                // Method io/wifi/starrailexpress/api/SRERole.identifier:()Lnet/minecraft/class_2960;
+    2007: invokevirtual #721                // Method io/wifi/starrailexpress/stats/PlayerStats.getOrCreateRoleStats:(Lnet/minecraft/class_2960;)Lio/wifi/starrailexpress/stats/PlayerStats$RoleStats;
+    2010: invokevirtual #772                // Method io/wifi/starrailexpress/stats/PlayerStats$RoleStats.incrementDeathsAsRole:()V
+    2013: aload         15
+    2015: invokevirtual #727                // Method io/wifi/starrailexpress/api/SRERole.isVigilanteTeam:()Z
+    2018: ifeq          2029
+    2021: aload         16
+    2023: invokevirtual #775                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalSheriffDeaths:()V
+    2026: goto          2082
+    2029: aload         15
+    2031: invokevirtual #733                // Method io/wifi/starrailexpress/api/SRERole.canUseKiller:()Z
+    2034: ifeq          2045
+    2037: aload         16
+    2039: invokevirtual #778                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalKillerDeaths:()V
+    2042: goto          2082
+    2045: aload         15
+    2047: invokevirtual #739                // Method io/wifi/starrailexpress/api/SRERole.isNeutrals:()Z
+    2050: ifeq          2061
+    2053: aload         16
+    2055: invokevirtual #781                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalNeutralDeaths:()V
+    2058: goto          2082
+    2061: aload         15
+    2063: invokevirtual #745                // Method io/wifi/starrailexpress/api/SRERole.isInnocent:()Z
+    2066: ifeq          2082
+    2069: aload         15
+    2071: invokevirtual #727                // Method io/wifi/starrailexpress/api/SRERole.isVigilanteTeam:()Z
+    2074: ifne          2082
+    2077: aload         16
+    2079: invokevirtual #784                // Method io/wifi/starrailexpress/stats/PlayerStats.incrementTotalCivilianDeaths:()V
+    2082: iload_2
+    2083: ifeq          2137
+    2086: aload_1
+    2087: aload         7
+    2089: aload         15
+    2091: aload         4
+    2093: invokestatic  #788                // Method io/wifi/starrailexpress/game/GameUtils.spawnBodyEntity:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lio/wifi/starrailexpress/api/SRERole;Lnet/minecraft/class_2960;)Lio/wifi/starrailexpress/content/entity/PlayerBodyEntity;
+    2096: astore        17
+    2098: aload         15
+    2100: ifnull        2116
+    2103: aload         15
+    2105: aload_1
+    2106: iload_2
+    2107: aload         7
+    2109: aload         4
+    2111: aload         17
+    2113: invokevirtual #792                // Method io/wifi/starrailexpress/api/SRERole.onDeathWithBody:(Lnet/minecraft/class_1657;ZLnet/minecraft/class_1657;Lnet/minecraft/class_2960;Lio/wifi/starrailexpress/content/entity/PlayerBodyEntity;)V
+    2116: getstatic     #797                // Field io/wifi/starrailexpress/event/OnDeathWithBody.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    2119: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    2122: checkcast     #796                // class io/wifi/starrailexpress/event/OnDeathWithBody
+    2125: aload_1
+    2126: aload         7
+    2128: aload         4
+    2130: aload         17
+    2132: invokeinterface #800,  5          // InterfaceMethod io/wifi/starrailexpress/event/OnDeathWithBody.onDeathWithBody:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Lio/wifi/starrailexpress/content/entity/PlayerBodyEntity;)V
+    2137: iload         9
+    2139: ifne          2147
+    2142: iload         5
+    2144: ifeq          2151
+    2147: iconst_1
+    2148: goto          2152
+    2151: iconst_0
+    2152: istore        9
+    2154: aload_1
+    2155: instanceof    #341                // class net/minecraft/class_3222
+    2158: ifeq          2362
+    2161: aload_1
+    2162: checkcast     #341                // class net/minecraft/class_3222
+    2165: astore        14
+    2167: aload         14
+    2169: invokestatic  #803                // Method io/wifi/starrailexpress/game/GameUtils.isPlayerAliveAndSurvival:(Lnet/minecraft/class_1657;)Z
+    2172: ifeq          2362
+    2175: iload         9
+    2177: ifeq          2362
+    2180: aload         14
+    2182: getstatic     #809                // Field net/minecraft/class_1934.field_9219:Lnet/minecraft/class_1934;
+    2185: invokevirtual #813                // Method net/minecraft/class_3222.method_7336:(Lnet/minecraft/class_1934;)Z
+    2188: pop
+    2189: aload         14
+    2191: new           #815                // class io/wifi/starrailexpress/network/PlayerDeathPayload
+    2194: dup
+    2195: invokespecial #816                // Method io/wifi/starrailexpress/network/PlayerDeathPayload."<init>":()V
+    2198: invokestatic  #428                // Method net/fabricmc/fabric/api/networking/v1/ServerPlayNetworking.send:(Lnet/minecraft/class_3222;Lnet/minecraft/class_8710;)V
+    2201: getstatic     #819                // Field io/wifi/starrailexpress/cca/SREPlayerPoisonComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2204: aload         14
+    2206: invokevirtual #823                // Method org/ladysnake/cca/api/v3/component/ComponentKey.maybeGet:(Ljava/lang/Object;)Ljava/util/Optional;
+    2209: aconst_null
+    2210: invokevirtual #829                // Method java/util/Optional.orElse:(Ljava/lang/Object;)Ljava/lang/Object;
+    2213: checkcast     #818                // class io/wifi/starrailexpress/cca/SREPlayerPoisonComponent
+    2216: astore        15
+    2218: getstatic     #551                // Field io/wifi/starrailexpress/cca/SREArmorPlayerComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2221: aload         14
+    2223: invokevirtual #823                // Method org/ladysnake/cca/api/v3/component/ComponentKey.maybeGet:(Ljava/lang/Object;)Ljava/util/Optional;
+    2226: aconst_null
+    2227: invokevirtual #829                // Method java/util/Optional.orElse:(Ljava/lang/Object;)Ljava/lang/Object;
+    2230: checkcast     #550                // class io/wifi/starrailexpress/cca/SREArmorPlayerComponent
+    2233: astore        16
+    2235: aload         15
+    2237: ifnull        2245
+    2240: aload         15
+    2242: invokevirtual #832                // Method io/wifi/starrailexpress/cca/SREPlayerPoisonComponent.clear:()V
+    2245: aload         16
+    2247: ifnull        2255
+    2250: aload         16
+    2252: invokevirtual #833                // Method io/wifi/starrailexpress/cca/SREArmorPlayerComponent.clear:()V
+    2255: getstatic     #836                // Field io/wifi/starrailexpress/event/OnPlayerDeath.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    2258: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    2261: checkcast     #835                // class io/wifi/starrailexpress/event/OnPlayerDeath
+    2264: aload_1
+    2265: aload         4
+    2267: invokeinterface #840,  3          // InterfaceMethod io/wifi/starrailexpress/event/OnPlayerDeath.onPlayerDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)V
+    2272: getstatic     #843                // Field io/wifi/starrailexpress/event/OnPlayerDeathWithKiller.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    2275: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    2278: checkcast     #842                // class io/wifi/starrailexpress/event/OnPlayerDeathWithKiller
+    2281: aload_1
+    2282: aload         7
+    2284: aload         4
+    2286: invokeinterface #846,  4          // InterfaceMethod io/wifi/starrailexpress/event/OnPlayerDeathWithKiller.onPlayerDeath:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)V
+    2291: getstatic     #851                // Field io/wifi/starrailexpress/rules/ReplayRules.cantSendReplay:Ljava/util/List;
+    2294: invokeinterface #563,  1          // InterfaceMethod java/util/List.stream:()Ljava/util/stream/Stream;
+    2299: aload         14
+    2301: invokedynamic #859,  0            // InvokeDynamic #3:test:(Lnet/minecraft/class_3222;)Ljava/util/function/Predicate;
+    2306: invokeinterface #587,  2          // InterfaceMethod java/util/stream/Stream.anyMatch:(Ljava/util/function/Predicate;)Z
+    2311: istore        17
+    2313: iload         17
+    2315: ifne          2359
+    2318: aload         14
+    2320: ldc_w         #861                // String message.death_reason.prefix
+    2323: iconst_1
+    2324: anewarray     #4                  // class java/lang/Object
+    2327: dup
+    2328: iconst_0
+    2329: ldc_w         #863                // String
+    2332: invokestatic  #866                // InterfaceMethod net/minecraft/class_2561.method_43470:(Ljava/lang/String;)Lnet/minecraft/class_5250;
+    2335: getstatic     #869                // Field net/minecraft/class_124.field_1076:Lnet/minecraft/class_124;
+    2338: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+    2341: aload         10
+    2343: invokevirtual #873                // Method net/minecraft/class_5250.method_10852:(Lnet/minecraft/class_2561;)Lnet/minecraft/class_5250;
+    2346: aastore
+    2347: invokestatic  #877                // InterfaceMethod net/minecraft/class_2561.method_43469:(Ljava/lang/String;[Ljava/lang/Object;)Lnet/minecraft/class_5250;
+    2350: getstatic     #880                // Field net/minecraft/class_124.field_1079:Lnet/minecraft/class_124;
+    2353: invokevirtual #601                // Method net/minecraft/class_5250.method_27692:(Lnet/minecraft/class_124;)Lnet/minecraft/class_5250;
+    2356: invokevirtual #884                // Method net/minecraft/class_3222.method_43496:(Lnet/minecraft/class_2561;)V
+    2359: goto          2372
+    2362: aload         7
+    2364: aload_1
+    2365: aload         4
+    2367: iconst_0
+    2368: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    2371: return
+    2372: aload         7
+    2374: ifnull        2456
+    2377: getstatic     #446                // Field io/wifi/starrailexpress/cca/SREGameWorldComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2380: aload         7
+    2382: invokevirtual #450                // Method net/minecraft/class_1657.method_37908:()Lnet/minecraft/class_1937;
+    2385: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+    2388: checkcast     #284                // class io/wifi/starrailexpress/cca/SREGameWorldComponent
+    2391: aload         7
+    2393: invokevirtual #887                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.canUseKillerFeatures:(Lnet/minecraft/class_1657;)Z
+    2396: ifeq          2456
+    2399: aload_0
+    2400: aload_1
+    2401: aload         7
+    2403: aload         4
+    2405: invokevirtual #889                // Method shouldGiveKillerBalance:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)Z
+    2408: ifeq          2456
+    2411: getstatic     #892                // Field io/wifi/starrailexpress/event/OnGiveKillerBalance.EVENT:Lnet/fabricmc/fabric/api/event/Event;
+    2414: invokevirtual #58                 // Method net/fabricmc/fabric/api/event/Event.invoker:()Ljava/lang/Object;
+    2417: checkcast     #891                // class io/wifi/starrailexpress/event/OnGiveKillerBalance
+    2420: aload_1
+    2421: aload         7
+    2423: aload         4
+    2425: invokeinterface #896,  4          // InterfaceMethod io/wifi/starrailexpress/event/OnGiveKillerBalance.onGiveKillerBalance:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;)I
+    2430: istore        15
+    2432: iload         15
+    2434: invokestatic  #901                // Method io/wifi/starrailexpress/game/GameConstants.getMoneyPerKill:()I
+    2437: iadd
+    2438: istore        15
+    2440: getstatic     #904                // Field io/wifi/starrailexpress/cca/SREPlayerShopComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2443: aload         7
+    2445: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+    2448: checkcast     #903                // class io/wifi/starrailexpress/cca/SREPlayerShopComponent
+    2451: iload         15
+    2453: invokevirtual #907                // Method io/wifi/starrailexpress/cca/SREPlayerShopComponent.addToBalance:(I)V
+    2456: getstatic     #910                // Field io/wifi/starrailexpress/cca/SREPlayerMoodComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2459: aload_1
+    2460: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+    2463: checkcast     #909                // class io/wifi/starrailexpress/cca/SREPlayerMoodComponent
+    2466: invokevirtual #913                // Method io/wifi/starrailexpress/cca/SREPlayerMoodComponent.init:()V
+    2469: aload_1
+    2470: invokevirtual #917                // Method net/minecraft/class_1657.method_31548:()Lnet/minecraft/class_1661;
+    2473: getfield      #922                // Field net/minecraft/class_1661.field_7543:Ljava/util/List;
+    2476: invokeinterface #331,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+    2481: astore        15
+    2483: aload         15
+    2485: invokeinterface #336,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+    2490: ifeq          2593
+    2493: aload         15
+    2495: invokeinterface #339,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+    2500: checkcast     #327                // class java/util/List
+    2503: astore        16
+    2505: iconst_0
+    2506: istore        17
+    2508: iload         17
+    2510: aload         16
+    2512: invokeinterface #925,  1          // InterfaceMethod java/util/List.size:()I
+    2517: if_icmpge     2590
+    2520: aload         16
+    2522: iload         17
+    2524: invokeinterface #928,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+    2529: checkcast     #930                // class net/minecraft/class_1799
+    2532: astore        18
+    2534: aload         18
+    2536: invokestatic  #934                // Method io/wifi/starrailexpress/game/GameUtils.shouldDropOnDeath:(Lnet/minecraft/class_1799;)Z
+    2539: ifeq          2584
+    2542: aload         11
+    2544: aload_1
+    2545: aload         7
+    2547: aload         18
+    2549: invokestatic  #940                // Method io/wifi/starrailexpress/util/BrokenGunDropUtils.shouldBreakVictimGunOnKillerKill:(Lio/wifi/starrailexpress/cca/SREGameWorldComponent;Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_1799;)Z
+    2552: ifeq          2562
+    2555: aload_1
+    2556: invokestatic  #944                // Method io/wifi/starrailexpress/util/BrokenGunDropUtils.dropBrokenGun:(Lnet/minecraft/class_1657;)V
+    2559: goto          2571
+    2562: aload_1
+    2563: aload         18
+    2565: iconst_1
+    2566: iconst_0
+    2567: invokevirtual #948                // Method net/minecraft/class_1657.method_7329:(Lnet/minecraft/class_1799;ZZ)Lnet/minecraft/class_1542;
+    2570: pop
+    2571: aload         16
+    2573: iload         17
+    2575: getstatic     #952                // Field net/minecraft/class_1799.field_8037:Lnet/minecraft/class_1799;
+    2578: invokeinterface #956,  3          // InterfaceMethod java/util/List.set:(ILjava/lang/Object;)Ljava/lang/Object;
+    2583: pop
+    2584: iinc          17, 1
+    2587: goto          2508
+    2590: goto          2483
+    2593: aload         11
+    2595: aload_1
+    2596: invokevirtual #958                // Method io/wifi/starrailexpress/cca/SREGameWorldComponent.isInnocent:(Lnet/minecraft/class_1657;)Z
+    2599: ifeq          2623
+    2602: getstatic     #961                // Field io/wifi/starrailexpress/cca/SREGameTimeComponent.KEY:Lorg/ladysnake/cca/api/v3/component/ComponentKey;
+    2605: aload_1
+    2606: invokevirtual #450                // Method net/minecraft/class_1657.method_37908:()Lnet/minecraft/class_1937;
+    2609: invokevirtual #166                // Method org/ladysnake/cca/api/v3/component/ComponentKey.get:(Ljava/lang/Object;)Lorg/ladysnake/cca/api/v3/component/Component;
+    2612: checkcast     #960                // class io/wifi/starrailexpress/cca/SREGameTimeComponent
+    2615: astore        15
+    2617: aload_0
+    2618: aload         15
+    2620: invokevirtual #965                // Method addKillRewardTime:(Lio/wifi/starrailexpress/cca/SREGameTimeComponent;)V
+    2623: invokestatic  #970                // Method io/wifi/starrailexpress/compat/TrainVoicePlugin.isVoiceChatMissing:()Z
+    2626: ifne          2643
+    2629: aload_1
+    2630: invokevirtual #973                // Method net/minecraft/class_1657.method_7325:()Z
+    2633: ifeq          2643
+    2636: aload_1
+    2637: invokevirtual #438                // Method net/minecraft/class_1657.method_5667:()Ljava/util/UUID;
+    2640: invokestatic  #976                // Method io/wifi/starrailexpress/compat/TrainVoicePlugin.addPlayer:(Ljava/util/UUID;)V
+    2643: aload         7
+    2645: aload_1
+    2646: aload         4
+    2648: iconst_1
+    2649: invokestatic  #537                // Method io/wifi/starrailexpress/game/GameUtils.recordPlayerKill:(Lnet/minecraft/class_1657;Lnet/minecraft/class_1657;Lnet/minecraft/class_2960;Z)V
+    2652: return

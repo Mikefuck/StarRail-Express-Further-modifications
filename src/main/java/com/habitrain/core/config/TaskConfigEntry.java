@@ -17,8 +17,6 @@ public class TaskConfigEntry {
     public List<String> enabledMaps = new ArrayList<>();
     public int mapFilterMode = 0;
 
-    @Deprecated(forRemoval=true)
-    public List<String> disabledMaps = new ArrayList<>();
     public int instinctColor = 0xB4C8C8C8;
     public float outlineWidth = 4.0f;
 

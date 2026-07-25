@@ -8,9 +8,8 @@ import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
-import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
-import com.habitrain.core.game.blackout.BlackoutShopService;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
+import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
@@ -89,8 +88,6 @@ public final class LifecycleEventsRegistrar {
                 }
                 BlackoutRoleManager.clear(level);
                 BlackoutTimerSystem.reset(level);
-                BlackoutSheriffVoteManager.reset(level);
-                BlackoutShopService.resetRound(level);
                 BlackoutPoliceHireService.cleanup(level);
                 BlackoutExileVoteManager.reset(level);
                 OptionVoteManager.reset(level);
@@ -108,6 +105,10 @@ public final class LifecycleEventsRegistrar {
             com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
             BetelQuestState.resetGameState();
             BackpackQuestState.getInstance().resetAll();
+            // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
+            EnvironmentController.clearRuntimeState();
+            com.habitrain.core.game.sre.SREWeatherController.resetAll();
+            GreedTradeManager.clearAll();
         });
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -128,10 +129,10 @@ public final class LifecycleEventsRegistrar {
             // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
             // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
             FullConfigSyncPayload.sendToPlayer(player);
-            // 通知激活的 GameMode 玩家加入
-            ServerLevel level = server.getLevel(Level.OVERWORLD);
-            if (level != null) {
-                GameModeRegistry.getActiveForLevel(level)
+            // 通知激活的 GameMode 玩家加入（用玩家所在维度，与 DISCONNECT 一致）
+            ServerLevel joinLevel = player.serverLevel();
+            if (joinLevel != null) {
+                GameModeRegistry.getActiveForLevel(joinLevel)
                     .ifPresent(mode -> mode.onPlayerJoin(player));
             }
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
@@ -149,6 +150,8 @@ public final class LifecycleEventsRegistrar {
                 SREGameModeBase.removePendingVoiceJoin(player.getUUID());
                 // 清除效果归属追踪数据
                 EffectOwnershipTracker.clearPlayer(player.getUUID());
+                // 贪婪匿名交易：断线立即取消 session，避免对方卡 UI 等到超时
+                GreedTradeManager.onPlayerDisconnect(server, player.getUUID());
                 ServerLevel disconnectLevel = player.serverLevel();
                 if (disconnectLevel != null) {
                     GameModeRegistry.getActiveForLevel(disconnectLevel)

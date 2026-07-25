@@ -1,6 +1,5 @@
 package com.habitrain.core.game.blackout.task;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.task.ClearableHandlerRegistry;
@@ -43,7 +42,6 @@ import java.util.UUID;
 public class FurnaceExplosionHandler {
 
     private static final int SLOW_TICKS_LONG = 60; // 3 秒
-    private static final int SLOW_TICKS_SHORT = 40; // 2 秒（未用于玩家缓慢）
     private static final int FUSE_DELAY_TICKS = 40; // 2 秒延迟点燃 TNT
 
     private static final Map<UUID, TorchState> activeStates = new HashMap<>();
@@ -111,7 +109,7 @@ public class FurnaceExplosionHandler {
     public static void clearAll() {
         activeStates.clear();
         pendingExplosions.clear();
-        SlownessReapplyManager.clearAll();
+        // 缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -121,7 +119,7 @@ public class FurnaceExplosionHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:furnace_explosion".equals(task.getFullId())) {
+        if (task == null || !com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= FurnaceExplosionTask.PROGRESS_DONE) {
@@ -137,10 +135,6 @@ public class FurnaceExplosionHandler {
             // 阶段0：右键红石火把方块
             TorchState existing = activeStates.get(uuid);
             if (existing != null && !existing.phaseProgressed) {
-                SubtitleNotifier.sendTop(serverPlayer,
-                        Component.translatable("task.furnace_explosion"),
-                        Component.literal("§7正在拔取红石火把，请稍候..."),
-                        45);
                 return InteractionResult.FAIL;
             }
 
@@ -176,10 +170,6 @@ public class FurnaceExplosionHandler {
             // 阶段1：手持红石火把右键 TNT
             ItemStack mainHand = serverPlayer.getMainHandItem();
             if (!mainHand.is(Items.REDSTONE_TORCH)) {
-                SubtitleNotifier.sendTop(serverPlayer,
-                        Component.translatable("task.furnace_explosion"),
-                        Component.literal("§c需要手持红石火把右键 TNT！"),
-                        60);
                 return InteractionResult.FAIL;
             }
 
@@ -190,17 +180,12 @@ public class FurnaceExplosionHandler {
             }
 
             // 阶段1：取消手持火把右键 TNT 时的缓慢（仅给短动画/声音提示，不再施加强制缓慢）
-            // 推进任务完成 → 触发 onComplete（短暂停电 + 减供电时间 40 秒 + 奖励）
+            // 推进任务完成 → 触发 onComplete（立刻永久停电 + 派发拉闸 + 奖励）
             task.setProgress(FurnaceExplosionTask.PROGRESS_DONE);
 
-            // 调度延迟 2 秒点燃 TNT
+            // 调度延迟 2 秒点燃 TNT（不提示倒计时文案）
             long triggerTick = serverPlayer.serverLevel().getServer().overworld().getGameTime() + FUSE_DELAY_TICKS;
             pendingExplosions.put(uuid, new PendingExplosion(pos, triggerTick, serverPlayer.serverLevel().dimension()));
-
-            SubtitleNotifier.sendTop(serverPlayer,
-                    Component.translatable("task.furnace_explosion"),
-                    Component.literal("§e引信已点燃，2 秒后爆炸！"),
-                    60);
             return InteractionResult.FAIL;
         }
 
@@ -210,7 +195,7 @@ public class FurnaceExplosionHandler {
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
         SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
                 new SlownessReapplyManager.EffectSpec(2, ticks + 10,
-                        ResourceLocation.parse("habitrain_core:furnace_explosion")));
+                        ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION)));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;

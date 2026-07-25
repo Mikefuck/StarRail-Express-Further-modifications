@@ -14,6 +14,7 @@ import java.util.List;
 /**
  * 通用选项投票界面（模式/地图等字符串选项）。
  * 结构对齐 {@link BlackoutVoteScreen}。
+ * 文案由客户端语言解析（{@link OptionVoteTexts}）。
  */
 public class OptionVoteScreen extends Screen {
     private static final int PAD = 10;
@@ -23,21 +24,20 @@ public class OptionVoteScreen extends Screen {
     private static final int ROW_GAP = 4;
     private static final int SCROLLBAR_W = 4;
 
-    private static final Component CLOSE_BUTTON_TEXT = Component.literal("关闭");
     private static final Component CHECK_MARK = Component.literal("✓");
 
     private final Screen parent;
     private double scrollOffset = 0;
 
     public OptionVoteScreen(Screen parent) {
-        super(Component.literal(OptionVoteState.getTitle()));
+        super(OptionVoteTexts.titleFor(OptionVoteState.getVoteId()));
         this.parent = parent;
     }
 
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(CLOSE_BUTTON_TEXT,
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(OptionVoteTexts.closeButton(),
                         btn -> onClose())
                 .bounds(width / 2 - 40, height - 32, 80, 20)
                 .build());
@@ -68,14 +68,15 @@ public class OptionVoteScreen extends Screen {
         g.fill(panelX + 1, panelY + 1, panelX + PANEL_W - 1, panelY + 2, 0x44D8E7FF);
 
         Font font = this.font;
-        g.drawCenteredString(font, this.title, width / 2, panelY + 10, 0xF5F7FB);
-        g.drawCenteredString(font, Component.literal(OptionVoteState.getDescription()),
+        String voteId = OptionVoteState.getVoteId();
+        g.drawCenteredString(font, OptionVoteTexts.titleFor(voteId), width / 2, panelY + 10, 0xF5F7FB);
+        g.drawCenteredString(font, OptionVoteTexts.descriptionFor(voteId),
                 width / 2, panelY + 24, 0xB9C7D9);
 
-        String timer = OptionVoteState.isActive()
-                ? "剩余时间: " + OptionVoteState.getRemainingSeconds() + "s"
-                : "投票已结束";
-        g.drawCenteredString(font, Component.literal(timer), width / 2, panelY + 36, 0xFFE6B566);
+        Component timer = OptionVoteState.isActive()
+                ? OptionVoteTexts.timeLeft(OptionVoteState.getRemainingSeconds())
+                : OptionVoteTexts.ended();
+        g.drawCenteredString(font, timer, width / 2, panelY + 36, 0xFFE6B566);
 
         List<OptionVotePayload.Entry> candidates = OptionVoteState.getCandidates();
         g.enableScissor(listX, listY, listX + listW, listY + listH);
@@ -109,9 +110,9 @@ public class OptionVoteScreen extends Screen {
         g.fill(x, y, x + w, y + h, border);
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, bg);
 
-        g.drawString(font, Component.literal(entry.displayName()),
+        g.drawString(font, OptionVoteTexts.candidateLabel(entry.optionId(), entry.displayName()),
                 x + 8, y + 9, 0xFFFFFF, false);
-        g.drawString(font, Component.literal("票数: " + entry.votes()),
+        g.drawString(font, OptionVoteTexts.votesLabel(entry.votes()),
                 x + w - 72, y + 9, 0xB9C7D9, false);
 
         if (selected) {
@@ -181,7 +182,17 @@ public class OptionVoteScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = Minecraft.getInstance();
-        mc.setScreen(parent);
+        // Avoid stacking OptionVoteScreen parents when mode→map rebuilds auto-open.
+        Screen next = parent;
+        while (next instanceof OptionVoteScreen nested) {
+            next = nested.parent;
+        }
+        mc.setScreen(next);
+    }
+
+    /** Parent screen for auto-open rebuild / close chain. */
+    public Screen getParentScreen() {
+        return parent;
     }
 
     @Override

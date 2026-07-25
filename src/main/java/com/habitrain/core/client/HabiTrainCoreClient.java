@@ -41,9 +41,6 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 生命周期事件处理（JOIN / DISCONNECT / 游戏结束 / 配置保存回调）
         new ClientLifecycleHandler(shaderMonitor);
 
-        // 填充警长/杀手商店目录（按角色能力绑定，否则 ROLE_SHOPS 为空，商店无商品可买）
-        com.habitrain.core.game.blackout.BlackoutShopService.bootstrapDefaults();
-
         // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
         //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
     }

@@ -95,6 +95,11 @@ public class ConfigSync {
                 newEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
             }
 
+            RoleOverrideConfigSection newRoleOverrides = null;
+            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
+                newRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
+            }
+
             repo.getMutableTaskConfigs().clear();
             repo.getMutableTaskConfigs().putAll(newTasks);
             repo.getMutableGameModeConfigs().clear();
@@ -110,6 +115,9 @@ public class ConfigSync {
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
             repo.setEnvironment(newEnv);
+            if (newRoleOverrides != null) {
+                repo.setRoleOverrides(newRoleOverrides);
+            }
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
         }
@@ -119,7 +127,8 @@ public class ConfigSync {
      * 合并语义：仅用 json 中存在的 tasks/gameModes/minigames 覆盖对应键，
      * 不删除 json 中缺失的键（避免 OP 客户端陈旧视图删除服务端独有条目）。
      * global 字段按 json 覆盖（整体项）。
-     * modeMapVote 标量按 json 覆盖；modes/maps 仅 put 存在的键，不删缺失键。
+     * modeMapVote 标量按 json 覆盖；modes/maps 按 JSON key 顺序整表重建并
+     * 追加服务端独有键（不删缺失键，同时保留投票列表顺序）。
      */
     public void mergeFromJsonString(ConfigRepository repo, String json) {
         try {
@@ -195,26 +204,56 @@ public class ConfigSync {
                     int v = mmv.get("mapDurationSeconds").getAsInt();
                     s.mapDurationSeconds = Math.max(5, Math.min(120, v));
                 }
+                // Rebuild modes in JSON key order. Plain put() on LinkedHashMap does NOT
+                // reorder existing keys, so vote-tab ↑/↓ order would never stick after
+                // C2S merge + FullConfigSync. Keep server-only keys (missing from client
+                // view) appended at the end so merge still does not delete them.
                 if (mmv.has("modes") && mmv.get("modes").isJsonObject()) {
                     JsonObject modesObj = mmv.getAsJsonObject("modes");
+                    LinkedHashMap<String, ModeVoteEntry> rebuilt = new LinkedHashMap<>();
                     for (var e : modesObj.entrySet()) {
                         if (e.getValue().isJsonObject()) {
-                            s.modes.put(e.getKey(), ModeVoteEntry.fromJson(e.getValue().getAsJsonObject()));
+                            rebuilt.put(e.getKey(), ModeVoteEntry.fromJson(e.getValue().getAsJsonObject()));
                         }
                     }
+                    for (var existing : s.modes.entrySet()) {
+                        rebuilt.putIfAbsent(existing.getKey(), existing.getValue());
+                    }
+                    s.modes.clear();
+                    s.modes.putAll(rebuilt);
                 }
+                // Same for maps: preserve client/json key order, append server-only keys.
                 if (mmv.has("maps") && mmv.get("maps").isJsonObject()) {
                     JsonObject mapsObj = mmv.getAsJsonObject("maps");
+                    LinkedHashMap<String, MapVoteEntry> rebuilt = new LinkedHashMap<>();
                     for (var e : mapsObj.entrySet()) {
                         if (e.getValue().isJsonObject()) {
-                            s.maps.put(e.getKey(), MapVoteEntry.fromJson(e.getValue().getAsJsonObject()));
+                            rebuilt.put(e.getKey(), MapVoteEntry.fromJson(e.getValue().getAsJsonObject()));
                         }
                     }
+                    for (var existing : s.maps.entrySet()) {
+                        rebuilt.putIfAbsent(existing.getKey(), existing.getValue());
+                    }
+                    s.maps.clear();
+                    s.maps.putAll(rebuilt);
+                }
+                // Full replace so pool mapIds deletions apply (merge put-only would keep stale ids).
+                if (mmv.has("mapPoolRotation") && mmv.get("mapPoolRotation").isJsonObject()) {
+                    s.mapPoolRotation = MapPoolRotationSettings.fromJson(
+                            mmv.getAsJsonObject("mapPoolRotation"));
                 }
             }
 
             if (root.has("environment") && root.get("environment").isJsonObject()) {
                 repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
+            }
+
+            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
+                RoleOverrideConfigSection incoming = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
+                RoleOverrideConfigSection existing = repo.getRoleOverrides();
+                existing.setGlobalEnabled(incoming.isGlobalEnabled());
+                existing.getEntries().putAll(incoming.getEntries());
+                existing.getConflictResolution().putAll(incoming.getConflictResolution());
             }
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串合并配置失败，保持原有内存状态不变", e);

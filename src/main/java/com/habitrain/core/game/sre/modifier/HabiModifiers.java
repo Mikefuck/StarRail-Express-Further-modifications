@@ -6,6 +6,8 @@ import com.habitrain.core.game.sre.modifier.virtue.HumilityVirtue;
 import com.habitrain.core.game.sre.modifier.virtue.MercyVirtue;
 import com.habitrain.core.game.sre.modifier.virtue.TaskTimeVirtues;
 import com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue;
+import com.habitrain.core.game.sre.role.sins.SinRoleRules;
+import io.wifi.starrailexpress.event.OnGameTrueStarted;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.harpymodloader.events.ModifierAssigned;
 import org.agmas.harpymodloader.modifiers.HMLModifiers;
@@ -107,6 +109,18 @@ public final class HabiModifiers {
                 }
                 // one-virtue rule always removes other virtues (hard exclusive pair is a subset)
                 wmc.removeModifier(player, other);
+            }
+        });
+        OnGameTrueStarted.EVENT.register(level -> {
+            WorldModifierComponent modifiers = WorldModifierComponent.getInstance(level);
+            if (modifiers == null || MERCY == null) return;
+            for (net.minecraft.server.level.ServerPlayer player : level.players()) {
+                if (modifiers.isModifier(player, MERCY)
+                        && !SinRoleRules.isGoodAligned(level, player)) {
+                    modifiers.removeModifier(player, MERCY);
+                    HabiTrainCore.LOGGER.info("[Mercy] removed from non-good role {}",
+                            player.getGameProfile().getName());
+                }
             }
         });
     }

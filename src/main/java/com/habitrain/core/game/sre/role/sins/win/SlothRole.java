@@ -30,8 +30,7 @@ public final class SlothRole extends CustomWinnerRole {
         }
         if (SinVictoryHooks.isSlothAlive(level)
                 && (winStatus == WinStatus.PASSENGERS
-                || winStatus == WinStatus.KILLERS
-                || winStatus == WinStatus.TIME)) {
+                || winStatus == WinStatus.KILLERS)) {
             return WinStatus.CUSTOM;
         }
         return WinStatus.NOT_MODIFY;

@@ -109,6 +109,15 @@ public final class EnvironmentController {
         postMatchOverrideTime = null;
     }
 
+    /**
+     * 集成服务器停止时清掉进程内静态状态（C11）。
+     * 下次 SERVER_STARTED 的 applyLobby 也会 clear override，这里双保险。
+     */
+    public static void clearRuntimeState() {
+        clearPostMatchOverride();
+        tickCounter = 0;
+    }
+
     private static EnvTimeSpec copyTime(EnvTimeSpec src) {
         if (src == null) return EnvTimeSpec.createDefault();
         EnvTimeSpec t = new EnvTimeSpec();

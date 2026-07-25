@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentMap;
  * 电话雇佣警察服务。
  *
  * 每局每个 {@link ServerLevel#dimension()} 隔离运行。
- * 局未开始前电话不可用（check {@link #isPhoneUnlocked} 需先调用 reset 设置开始时间）。
+ * 无开局解锁 CD：对局运行中即可拨打。
  *
  * 候选 = 存活非警察（含杀手）。抽到好人 → 转警察 GOOD；抽到杀手 → 保留杀手身份，
  * 仅记入 sheriffs 特权集，并奖励 200 金 + 一次性手枪。
@@ -35,8 +35,7 @@ import java.util.concurrent.ConcurrentMap;
 public final class BlackoutPoliceHireService {
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutPoliceHireService");
 
-    private static final int UNLOCK_SECONDS = 120;
-    private static final int HIRE_COST = 300;
+    private static final int HIRE_COST = 50;
     private static final int KILLER_HIT_REWARD = 200;
     private static final ResourceLocation ONCE_REVOLVER_ID =
             ResourceLocation.parse("noellesroles:once_revolver");
@@ -77,21 +76,14 @@ public final class BlackoutPoliceHireService {
         LOGGER.info("[PoliceHire] cleanup for {}", level.dimension().location());
     }
 
-    /** 电话是否已解锁（开局后 120 秒） */
+    /** 电话是否可用：无开局 CD，只要本局 hire 状态已初始化即解锁。 */
     public static boolean isPhoneUnlocked(ServerLevel level) {
-        HireState state = STATES.get(level.dimension());
-        if (state == null) return false;
-        if (state.gameStartTick < 0) return false; // 游戏尚未真正开始
-        return level.getGameTime() - state.gameStartTick >= UNLOCK_SECONDS * 20L;
+        return STATES.containsKey(level.dimension());
     }
 
-    /** 返回剩余解锁秒数（负数表示已解锁） */
+    /** 剩余解锁秒数（已取消开局 CD，恒为 0）。 */
     public static int getRemainingLockSeconds(ServerLevel level) {
-        HireState state = STATES.get(level.dimension());
-        if (state == null) return UNLOCK_SECONDS;
-        if (state.gameStartTick < 0) return UNLOCK_SECONDS; // 游戏尚未真正开始
-        long elapsed = (level.getGameTime() - state.gameStartTick) / 20;
-        return (int) Math.max(0, UNLOCK_SECONDS - elapsed);
+        return 0;
     }
 
     /** 发起者本局是否已雇佣过 */
@@ -127,37 +119,32 @@ public final class BlackoutPoliceHireService {
             return Component.literal("§c你已淘汰，无法拨打110");
         }
 
-        // 2. 是否解锁
-        if (!isPhoneUnlocked(level)) {
-            return Component.literal("§c报警线路尚未接通（剩余 " + getRemainingLockSeconds(level) + " 秒）");
-        }
-
         // 串行化扣款/转职，避免同 tick 并发突破 police≤killer
         synchronized (state.hireLock) {
-            // 3. 本局已雇佣
+            // 2. 本局已雇佣
             if (state.hasHired.contains(initiator.getUUID())) {
                 return Component.literal("§c你本局已经拨打过110");
             }
 
-            // 4. 金币余额
+            // 3. 金币余额
             var shop = SREPlayerShopComponent.KEY.get(initiator);
             if (shop == null || shop.balance < HIRE_COST) {
                 return Component.literal("§c话费不足，需要 " + HIRE_COST + " 金币");
             }
 
-            // 5. 杀手阵营人数
+            // 4. 杀手阵营人数
             int killerCount = BlackoutRoleManager.getRemainingBad(level);
             if (killerCount <= 0) {
                 return Component.literal("§c当前没有杀手，无需聘请警察");
             }
 
-            // 6. 警察不超杀手（成功前再读一遍）
+            // 5. 警察不超杀手（成功前再读一遍）
             int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
             if (sheriffCount + 1 > killerCount) {
                 return Component.literal("§c当前警力已足够，无法继续聘请");
             }
 
-            // 7. 候选：存活非警察（含杀手）；排除发起者（禁自雇）
+            // 6. 候选：存活非警察（含杀手）；排除发起者（禁自雇）
             Random random = new Random(level.getRandom().nextLong());
             UUID targetId = BlackoutRoleManager.getRandomHireTarget(level, random, initiator.getUUID());
             if (targetId == null) {

@@ -3,17 +3,21 @@
     "package": "com.habitrain.core.client.mixin",
     "compatibilityLevel": "JAVA_21",
     "client": [
-        "HudCustomTaskMixin",
         "CustomTaskBlockRendererMixin",
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
         "StarRailExpressTitleScreenMixin",
         "FixTaskRendererMixin",
         "SubtitleHUDPrefixFixMixin",
-        "BlackoutLimitedInventoryScreenMixin",
         "InstinctKillerTeamMixin",
         "InstinctSheriffGateMixin",
         "BlackoutTimeRendererMixin",
-        "PlayerBodyEntityMixin"
+        "PlayerBodyEntityMixin",
+        "MimeBodyHideMixin",
+        "UnifiedSkillHudReadyShiftMixin",
+        "SlothScreenLockMixin",
+        "ScreenWidgetAccessor",
+        "GreedBackpackTradeMixin",
+        "RoleArgumentTypeMixin"
     ]
 }

@@ -161,6 +161,12 @@ public class ConfigStore {
                 repo.setEnvironment(EnvironmentSettings.createDefault());
             }
 
+            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
+                repo.setRoleOverrides(RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides")));
+            } else {
+                repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
+            }
+
             LOGGER.info("任务配置已加载: {} 个任务, {} 个GameMode, {} 个小游戏",
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
@@ -248,6 +254,8 @@ public class ConfigStore {
         root.add("modeMapVote", repo.getModeMapVote().toJson());
 
         root.add("environment", repo.getEnvironment().toJson());
+
+        root.add("roleOverrides", repo.getRoleOverrides().toJson());
 
         return root;
     }

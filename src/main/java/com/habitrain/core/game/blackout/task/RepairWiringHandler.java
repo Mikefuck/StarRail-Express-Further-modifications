@@ -40,7 +40,7 @@ public class RepairWiringHandler {
     }
 
     public static void clearAll() {
-        SlownessReapplyManager.clearAll();
+        // 无 per-player map；缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -50,7 +50,7 @@ public class RepairWiringHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:repair_wiring".equals(task.getFullId())) {
+        if (task == null || !com.habitrain.core.HabiTrainCore.TASK_REPAIR_WIRING.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
@@ -73,10 +73,10 @@ public class RepairWiringHandler {
             serverPlayer.setItemInHand(InteractionHand.MAIN_HAND, net.minecraft.world.item.ItemStack.EMPTY);
         }
 
-        // 给缓慢 III (3 秒)
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:repair_wiring")));
+        // 给缓慢 III (3 秒)，到期后由 SlownessReapplyManager 自动 unregister
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, SLOW_TICKS + 10,
+                ResourceLocation.parse(com.habitrain.core.HabiTrainCore.TASK_REPAIR_WIRING));
 
         // 推进任务完成
         task.setProgress(task.getMaxProgress());

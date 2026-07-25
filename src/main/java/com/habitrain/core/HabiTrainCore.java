@@ -11,7 +11,6 @@ import com.habitrain.core.game.blackout.BlackoutDeathHandler;
 import com.habitrain.core.game.blackout.BlackoutHornVoteHandler;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
-import com.habitrain.core.game.blackout.BlackoutShopService;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameLauncher;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.EnvironmentController;
@@ -55,6 +54,14 @@ public class HabiTrainCore implements ModInitializer {
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
     // look_my_eyes.ogg now bundled in assets
+    public static final ResourceLocation BACKPACK_SEARCH_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "backpack_search");
+    public static final SoundEvent BACKPACK_SEARCH_SOUND = SoundEvent.createVariableRangeEvent(BACKPACK_SEARCH_ID);
+    public static final ResourceLocation PHONE_OPERATOR_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "phone_operator");
+    public static final SoundEvent PHONE_OPERATOR_SOUND = SoundEvent.createVariableRangeEvent(PHONE_OPERATOR_ID);
+    public static final ResourceLocation PHONE_RING_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "phone_ring");
+    public static final SoundEvent PHONE_RING_SOUND = SoundEvent.createVariableRangeEvent(PHONE_RING_ID);
+    public static final ResourceLocation MIKE_CODE_EDIT_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "mike_code_edit");
+    public static final SoundEvent MIKE_CODE_EDIT_SOUND = SoundEvent.createVariableRangeEvent(MIKE_CODE_EDIT_ID);
 
     // ===== 任务 ID 常量（全限定字符串，供 mixin/追踪器按 getFullId() 匹配） =====
     public static final String TASK_BLACKOUT_EAT = MOD_ID + ":blackout_eat";
@@ -86,12 +93,12 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.sre.role.HabiRoles.init();
         // 角色覆盖注册系统初始化
         com.habitrain.core.role.override.RoleOverrideRegistry.init();
+        com.habitrain.core.role.override.RoleOverrideLifecycleHandler.init();
         // 七美德修饰符（须在 HabiRoles 之后；慷慨只关联上游，不重复注册）
         com.habitrain.core.game.sre.modifier.HabiModifiers.init();
         // 装配 SRE 游戏状态提供者到 TaskManager（解除对 SRE 具体类的编译依赖）
         TaskManager.getInstance().setGameStateProvider(SREGameStateProvider.INSTANCE);
         // 按角色能力填充警长/杀手商店目录（canUseKiller=杀手商店, isVigilanteTeam=警长商店）
-        BlackoutShopService.bootstrapDefaults();
         // 3. 网络包注册（16 个 payload type）
         NetworkRegistrar.init();
         // 4. 命令注册（/instantgroup, /habi_api）
@@ -147,7 +154,11 @@ public class HabiTrainCore implements ModInitializer {
         Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_EAT_ID, BETEL_NUT_EAT_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_GET_ID, BETEL_NUT_GET_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, LOOK_MY_EYES_ID, LOOK_MY_EYES_SOUND);
-        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes");
+        Registry.register(BuiltInRegistries.SOUND_EVENT, BACKPACK_SEARCH_ID, BACKPACK_SEARCH_SOUND);
+        Registry.register(BuiltInRegistries.SOUND_EVENT, PHONE_OPERATOR_ID, PHONE_OPERATOR_SOUND);
+        Registry.register(BuiltInRegistries.SOUND_EVENT, PHONE_RING_ID, PHONE_RING_SOUND);
+        Registry.register(BuiltInRegistries.SOUND_EVENT, MIKE_CODE_EDIT_ID, MIKE_CODE_EDIT_SOUND);
+        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes, backpack_search, phone_operator, phone_ring, mike_code_edit");
     }
 
     private void initBetelSystem() {

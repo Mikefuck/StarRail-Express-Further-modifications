@@ -3,9 +3,11 @@ package com.habitrain.core.game.sre.role.sins.component;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.content.item.IronDoorKeyItem;
 import io.wifi.starrailexpress.content.item.KeyItem;
 import io.wifi.starrailexpress.index.SREDataComponentTypes;
@@ -14,6 +16,9 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -21,31 +26,41 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
 import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * 嫉妒：G 标记准星玩家；标记击杀金币门槛与掠夺由 {@code SevenSinEvents} 处理。
+ * 嫉妒：G 标记准星玩家（90s）；仅当前标记可伤；钱比标记多则无法击杀标记。
+ * 客户端透视用 CCA 同步标记目标余额对比色。
  */
 public final class EnvyComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<EnvyComponent> KEY =
             ComponentRegistry.getOrCreate(HabiTrainCore.id("sin_envy"), EnvyComponent.class);
 
+    public static final ResourceLocation MARK_SKILL_ID = HabiTrainCore.id("sin_envy_mark");
     public static final int MARK_CD_SECONDS = 90;
     public static final double MARK_RANGE = 16.0;
     public static final int COIN_STEAL_MAX = 100;
 
     private final Player player;
     private @Nullable UUID markedUuid;
+    private final Set<UUID> everMarked = new HashSet<>();
+    /** Client/server: self balance for instinct color compare. */
+    private int selfBalance;
+    /** Client/server: last known balances of ever-marked targets. */
+    private final Map<UUID, Integer> knownBalances = new HashMap<>();
 
     public EnvyComponent(Player player) {
         this.player = player;
@@ -62,11 +77,40 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
 
     public void setMarkedUuid(@Nullable UUID uuid) {
         this.markedUuid = uuid;
+        if (uuid != null) {
+            everMarked.add(uuid);
+        }
         KEY.sync(player);
     }
 
     public boolean isMark(Player target) {
         return target != null && markedUuid != null && markedUuid.equals(target.getUUID());
+    }
+
+    public boolean hasEverMarked(UUID id) {
+        return id != null && everMarked.contains(id);
+    }
+
+    /** Only the currently marked player can be harmed / killed. */
+    public boolean canHarm(UUID targetId) {
+        return targetId != null && markedUuid != null && markedUuid.equals(targetId);
+    }
+
+    public boolean canHarm(Player target) {
+        return target != null && canHarm(target.getUUID());
+    }
+
+    public Set<UUID> getEverMarked() {
+        return everMarked;
+    }
+
+    public int getSelfBalance() {
+        return selfBalance;
+    }
+
+    public int getKnownBalance(UUID id) {
+        if (id == null) return 0;
+        return knownBalances.getOrDefault(id, 0);
     }
 
     public static boolean useMark(RoleSkill.RoleSkillContext ctx) {
@@ -98,39 +142,18 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
     }
 
     private static ServerPlayer resolveTarget(ServerPlayer self, UUID targetId) {
-        if (targetId != null) {
-            Player p = self.level().getPlayerByUUID(targetId);
-            if (p instanceof ServerPlayer sp && !sp.isSpectator()) return sp;
-        }
-        Vec3 eye = self.getEyePosition();
-        Vec3 look = self.getLookAngle();
-        double range = MARK_RANGE;
-        AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
-        // Prefer the player most centered in the crosshair (normalized look dot > 0.85).
-        ServerPlayer best = null;
-        double bestDot = 0.85;
-        for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
-            if (p == self || p.isSpectator()) continue;
-            if (!(p instanceof ServerPlayer sp)) continue;
-            Vec3 to = p.getEyePosition().subtract(eye);
-            double dist = to.length();
-            if (dist <= 0 || dist > range) continue;
-            double angleDot = to.dot(look) / dist;
-            if (angleDot > bestDot) {
-                bestDot = angleDot;
-                best = sp;
-            }
-        }
-        return best;
+        return ServerAimTargeting.resolve(self, targetId, MARK_RANGE);
     }
 
     /**
-     * 可被嫉妒掠夺的物品：空/钥匙/任务发放物/灵魂绑定 OWNER 不匹配/明显不可转移 → false。
+     * 可被嫉妒掠夺的物品：空/AIR/钥匙/任务发放物/灵魂绑定 OWNER 不匹配/明显不可转移 → false。
      */
     public static boolean isTransferable(ItemStack stack, @Nullable Player recipient) {
         if (stack == null || stack.isEmpty()) return false;
+        if (stack.is(Items.AIR)) return false;
 
         Item item = stack.getItem();
+        if (item == null || item == Items.AIR) return false;
         if (item instanceof KeyItem || item instanceof IronDoorKeyItem) {
             return false;
         }
@@ -194,11 +217,50 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
     @Override
     public void clear() {
         markedUuid = null;
+        everMarked.clear();
+        selfBalance = 0;
+        knownBalances.clear();
     }
 
     @Override
     public void serverTick() {
-        // mark is sticky until re-marked or clear
+        if (player.level().isClientSide) return;
+        if (!(player instanceof ServerPlayer self)) return;
+        if (!(self.level() instanceof ServerLevel level)) return;
+
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+        boolean isEnvy = game != null && SevenSins.ENVY != null && game.isRole(self, SevenSins.ENVY);
+        if (!isEnvy || self.isSpectator() || everMarked.isEmpty()) {
+            return;
+        }
+
+        // Refresh balances every second for client instinct colors.
+        if (level.getGameTime() % 20L != 0L) return;
+
+        int nextSelf = shopBalance(self);
+        Map<UUID, Integer> nextKnown = new HashMap<>();
+        for (UUID id : everMarked) {
+            ServerPlayer other = level.getServer().getPlayerList().getPlayer(id);
+            if (other == null || other.isSpectator()) continue;
+            nextKnown.put(id, shopBalance(other));
+        }
+
+        boolean changed = nextSelf != selfBalance || !nextKnown.equals(knownBalances);
+        selfBalance = nextSelf;
+        knownBalances.clear();
+        knownBalances.putAll(nextKnown);
+        if (changed) {
+            KEY.sync(self);
+        }
+    }
+
+    private static int shopBalance(ServerPlayer p) {
+        try {
+            SREPlayerShopComponent shop = SREPlayerShopComponent.KEY.get(p);
+            return shop != null ? shop.balance : 0;
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 
     @Override
@@ -206,6 +268,20 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
         if (markedUuid != null) {
             tag.putUUID("Marked", markedUuid);
         }
+        ListTag ever = new ListTag();
+        for (UUID id : everMarked) {
+            ever.add(StringTag.valueOf(id.toString()));
+        }
+        tag.put("EverMarked", ever);
+        tag.putInt("SelfBal", selfBalance);
+        ListTag bals = new ListTag();
+        for (Map.Entry<UUID, Integer> e : knownBalances.entrySet()) {
+            CompoundTag line = new CompoundTag();
+            line.putUUID("Id", e.getKey());
+            line.putInt("Bal", e.getValue());
+            bals.add(line);
+        }
+        tag.put("KnownBal", bals);
     }
 
     @Override
@@ -214,6 +290,26 @@ public final class EnvyComponent implements RoleComponent, ServerTickingComponen
             markedUuid = tag.getUUID("Marked");
         } else {
             markedUuid = null;
+        }
+        everMarked.clear();
+        if (tag.contains("EverMarked", Tag.TAG_LIST)) {
+            ListTag ever = tag.getList("EverMarked", Tag.TAG_STRING);
+            for (int i = 0; i < ever.size(); i++) {
+                try {
+                    everMarked.add(UUID.fromString(ever.getString(i)));
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        selfBalance = tag.getInt("SelfBal");
+        knownBalances.clear();
+        if (tag.contains("KnownBal", Tag.TAG_LIST)) {
+            ListTag bals = tag.getList("KnownBal", Tag.TAG_COMPOUND);
+            for (int i = 0; i < bals.size(); i++) {
+                CompoundTag line = bals.getCompound(i);
+                if (!line.hasUUID("Id")) continue;
+                knownBalances.put(line.getUUID("Id"), line.getInt("Bal"));
+            }
         }
     }
 

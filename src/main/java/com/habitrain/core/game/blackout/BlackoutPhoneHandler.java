@@ -45,8 +45,11 @@ public final class BlackoutPhoneHandler {
                 return InteractionResult.PASS;
             }
 
-            // 发起者必须存活（旁观者/已淘汰不可开电话 GUI）
-            if (serverPlayer.isSpectator() || !BlackoutRoleManager.isAlive(serverLevel, serverPlayer.getUUID())) {
+            // 发起者必须存活（旁观者/已淘汰不可开电话 GUI；禁止 UI 路径 auto-revive）
+            if (serverPlayer.isSpectator()) {
+                return InteractionResult.PASS;
+            }
+            if (!BlackoutRoleManager.isAlive(serverLevel, serverPlayer.getUUID())) {
                 return InteractionResult.PASS;
             }
 
@@ -61,6 +64,15 @@ public final class BlackoutPhoneHandler {
 
             ServerPlayNetworking.send(serverPlayer, new BlackoutPhoneOpenPayload(
                     unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));
+
+            serverPlayer.serverLevel().playSound(
+                    null,
+                    serverPlayer.blockPosition(),
+                    HabiTrainCore.PHONE_OPERATOR_SOUND,
+                    net.minecraft.sounds.SoundSource.PLAYERS,
+                    1.0f,
+                    1.0f
+            );
 
             return InteractionResult.SUCCESS;
         });

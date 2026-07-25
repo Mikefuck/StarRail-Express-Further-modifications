@@ -2,7 +2,6 @@ package com.habitrain.core.client;
 
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
-import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutTaskShopState;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
@@ -71,6 +70,9 @@ public class ClientLifecycleHandler {
             String configJson = ConfigManager.getInstance().toJsonString();
             InstinctColorHelper.markDirty();
             PayloadSenders.sendConfigUpdate(configJson);
+
+            // 本地刷新角色覆盖引擎（客户端预览）
+            com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
         });
 
         // 监听 SRE 游戏结束事件 → 立即隐藏 HUD + 刷新游戏运行缓存
@@ -91,7 +93,6 @@ public class ClientLifecycleHandler {
         GameRunningCache.invalidate();
         BlackoutHudOverlay.reset();
         BlackoutWelcomeRenderer.reset();
-        BlackoutSheriffVoteState.clear();
         BlackoutVoteState.clear();
         OptionVoteState.clear();
         ClientBlackoutState.setBlackoutModeActive(false);

@@ -72,12 +72,6 @@ public final class MapPoolRotationSettings {
         activePoolIndex = clampIndex(activePoolIndex);
     }
 
-    /** @deprecated use {@link #ensurePools()} */
-    @Deprecated
-    public void ensureFivePools() {
-        ensurePools();
-    }
-
     public int clampIndex(int index) {
         int n = poolCount();
         if (n <= 0) return 0;

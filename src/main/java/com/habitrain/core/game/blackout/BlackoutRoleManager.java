@@ -69,8 +69,13 @@ public class BlackoutRoleManager {
         state.roleHistory.put(playerId, roleId);
     }
 
+    /**
+     * 存活表阵营；未知/未入局 UUID 返回 {@code null}（不再默认 GOOD，避免局外玩家被当好人）。
+     * 结算请用 {@link #getFactionForEnd}。
+     */
+    @org.jetbrains.annotations.Nullable
     public static Faction getFaction(ServerLevel level, UUID playerId) {
-        return getOrCreate(level).factions.getOrDefault(playerId, Faction.GOOD);
+        return getOrCreate(level).factions.get(playerId);
     }
 
     /**
@@ -97,9 +102,42 @@ public class BlackoutRoleManager {
         state.roles.remove(playerId);
         state.factions.remove(playerId);
         state.sheriffs.remove(playerId);
-        BlackoutSheriffVoteManager.onPlayerRemoved(level, playerId);
         BlackoutExileVoteManager.onPlayerRemoved(level, playerId);
         BlackoutHornVoteHandler.onPlayerRemoved(playerId);
+    }
+
+    /**
+     * 复活：从 roleHistory/factionHistory 写回存活表，使电话/任务商店等 isAlive 门控重新通过。
+     * 仅在明确复活入口调用；不自动复活。
+     *
+     * @return true 若成功写回（有历史记录）
+     */
+    public static boolean revive(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return false;
+        RoleState state = getOrCreate(level);
+        if (state.roles.containsKey(playerId)) {
+            return true; // 已存活
+        }
+        ResourceLocation roleId = state.roleHistory.get(playerId);
+        Faction faction = state.factionHistory.get(playerId);
+        if (roleId == null && faction == null) {
+            LOGGER.warn("revive: no history for {}", playerId);
+            return false;
+        }
+        if (faction == null) faction = Faction.GOOD;
+        if (roleId != null) {
+            state.roles.put(playerId, roleId);
+        } else {
+            // 无角色 id 时仍写入占位，保证 isAlive=true
+            state.roles.put(playerId, ResourceLocation.parse("habitrain_core:revived"));
+        }
+        state.factions.put(playerId, faction);
+        state.factionHistory.put(playerId, faction);
+        if (roleId != null) {
+            state.roleHistory.put(playerId, roleId);
+        }
+        LOGGER.info("revive: restored {} as {} / {}", playerId, roleId, faction);
+        return true;
     }
 
     public static void setSheriff(ServerLevel level, UUID playerId) {
@@ -167,7 +205,7 @@ public class BlackoutRoleManager {
 
     /**
      * 投票选出的警长：把玩家的可见职业切换为 {@code sreRole}（通常是随机警察职业），
-     * 同时把玩家加入 {@code sheriffs} 集合以保留警长特权（/habi_api buy_gun、回放标识）。
+     * 同时把玩家加入 {@code sheriffs} 集合，供警长人数、电话候选与回放标识使用。
      *
      * @param sreRole         被票选者要变成的 SRE 原版角色（不能为 null）
      * @param factionOverride 阵营覆盖；null 表示沿用根据 sreRole 推导的阵营
@@ -181,19 +219,48 @@ public class BlackoutRoleManager {
         state.sheriffs.add(playerId);
         reassignRole(level, playerId, sreRole, factionOverride != null ? factionOverride
                 : resolveFactionFromSreRole(sreRole));
+        // reassignRole 不保证 sheriffs；上面已 add
         state.sheriffs.add(playerId);
     }
 
     /**
-     * 从 SRE 原版警察职业池（isVigilanteTeam()=true）中随机一个角色。
-     * 警长投票选出的玩家会被切换成这个职业。若警察池为空，返回 null。
+     * 从 SRE 原版警察职业池（isVigilanteTeam()=true）中随机一个<strong>无职业绑定</strong>的角色。
+     * <p>
+     * 中途电话聘请不会走开局 occupation 配对生成，绑定职业（如 JOJO↔DIO）
+     * 单独 reassign 可能导致客户端掉线。因此排除：
+     * <ul>
+     *   <li>自身 {@code occupationRoles} 非空的主角色</li>
+     *   <li>被任意角色列为 occupation companion 的伴生角色</li>
+     *   <li>{@code occupiedRoleCount &gt; 1} 的多槽位角色</li>
+     * </ul>
+     * 若过滤后池为空，返回 null。
      */
     @org.jetbrains.annotations.Nullable
     public static SRERole getRandomPoliceRole(Random random) {
+        Set<SRERole> occupationCompanions = new HashSet<>();
+        for (SRERole role : TMMRoles.ROLES.values()) {
+            List<SRERole> companions = role.getoccupationRoles();
+            if (companions != null && !companions.isEmpty()) {
+                occupationCompanions.addAll(companions);
+            }
+        }
+
         List<SRERole> police = TMMRoles.ROLES.values().stream()
                 .filter(SRERole::isVigilanteTeam)
+                .filter(role -> {
+                    List<SRERole> own = role.getoccupationRoles();
+                    return own == null || own.isEmpty();
+                })
+                .filter(role -> !occupationCompanions.contains(role))
+                .filter(role -> role.getOccupiedRoleCount() <= 1)
                 .toList();
-        return police.isEmpty() ? null : police.get(random.nextInt(police.size()));
+
+        if (police.isEmpty()) {
+            LOGGER.warn("getRandomPoliceRole: no standalone vigilante roles available "
+                    + "(all filtered by occupation binding)");
+            return null;
+        }
+        return police.get(random.nextInt(police.size()));
     }
 
     /**
@@ -203,12 +270,19 @@ public class BlackoutRoleManager {
         return new HashMap<>(getOrCreate(level).roleHistory);
     }
 
-    public static boolean isSheriff(ServerLevel level, UUID playerId) {
-        return getOrCreate(level).sheriffs.contains(playerId);
-    }
-
+    /**
+     * 雇警上限用的「正牌警察」人数：仅统计仍为 GOOD 的 sheriffs。
+     * 杀手被「点警」只拿特权枪/金，保留 BAD，不占 police≤killer 名额（C13）。
+     */
     public static int getSheriffCount(ServerLevel level) {
-        return getOrCreate(level).sheriffs.size();
+        RoleState state = getOrCreate(level);
+        int n = 0;
+        for (UUID id : state.sheriffs) {
+            if (state.factions.get(id) == Faction.GOOD) {
+                n++;
+            }
+        }
+        return n;
     }
 
     public static int getRemainingCount(ServerLevel level, Faction faction) {

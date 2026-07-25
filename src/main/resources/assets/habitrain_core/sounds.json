@@ -1,18 +1,18 @@
 {
-  "betel_nut_eat": {
-    "subtitle": "嚼槟榔",
-    "sounds": ["habitrain_core:betel_nut_eat"]
-  },
-  "betel_nut_get": {
-    "subtitle": "获得槟榔",
-    "sounds": ["habitrain_core:betel_nut_get"]
-  },
-  "look_my_eyes": {
-    "subtitle": "对视",
-    "sounds": ["habitrain_core:look_my_eyes"]
-  },
   "backpack_search": {
     "subtitle": "翻找背包",
     "sounds": ["habitrain_core:backpack_search"]
+  },
+  "phone_operator": {
+    "subtitle": "电话接通",
+    "sounds": ["habitrain_core:phone_operator"]
+  },
+  "phone_ring": {
+    "subtitle": "电话铃声",
+    "sounds": ["habitrain_core:phone_ring"]
+  },
+  "mike_code_edit": {
+    "subtitle": "代码修改",
+    "sounds": ["habitrain_core:mike_code_edit"]
   }
 }

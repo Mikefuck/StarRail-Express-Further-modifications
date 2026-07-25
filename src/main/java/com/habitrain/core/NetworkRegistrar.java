@@ -4,10 +4,7 @@ import com.habitrain.core.network.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * 网络包注册器 — 负责注册所有 C2S 与 S2C 的自定义数据包类型。
- * <p>在 {@link HabiTrainCore#onInitialize()} 中调用 {@link #init()}。</p>
- */
+/** Registers all custom C2S and S2C payload codecs. */
 public final class NetworkRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|NetworkRegistrar");
 
@@ -21,8 +18,6 @@ public final class NetworkRegistrar {
         ShaderInfoPayload.register();
         BlackoutTimerPayload.register();
         BlackoutAnnouncePayload.register();
-        BlackoutSheriffVotePayload.register();       // S2C: 投票状态同步
-        BlackoutSheriffVoteCastPayload.register();   // C2S: 玩家投票
         BlackoutPhoneOpenPayload.register();
         BlackoutHirePolicePayload.register();
         BlackoutHireResultPayload.register();
@@ -33,12 +28,12 @@ public final class NetworkRegistrar {
         BlackoutTaskShopOpenPayload.register();
         BlackoutTaskShopBuyPayload.register();
         BlackoutTaskShopResultPayload.register();
-        OptionVotePayload.register();                // S2C: 通用选项投票状态
-        OptionVoteCastPayload.register();            // C2S: 通用选项投票/弃票
-        GreedTradeActionPayload.register();          // C2S: 贪婪交易确认/取消
-        GreedTradePromptPayload.register();          // S2C: 贪婪交易提示
-        // 注：字幕报幕包 starrailexpress:subtitle 由 SRE 4.3.0 原生注册（SREPayloadRegister），
-        //     本模组不再重复注册；客户端接收、HUD tick/render 也由 SRE 接管。
-        LOGGER.info("已注册 23 个网络数据包类型");
+        OptionVotePayload.register();
+        OptionVoteCastPayload.register();
+        MapPoolSkipPayload.register();
+        GreedTradeActionPayload.register();
+        GreedTradePromptPayload.register();
+        GreedTradeSelectPayload.register();
+        LOGGER.info("Registered 23 HabiTrain network payload types");
     }
 }

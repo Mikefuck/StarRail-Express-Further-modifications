@@ -5,37 +5,22 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
+import com.habitrain.core.util.SubtitleNotifier;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Set;
-
 public final class DlcTaskTracker {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("DlcTaskTracker");
-
-    private static final Set<String> BLACKOUT_SUPPLY_TASK_IDS = Set.of(
-            HabiTrainCore.TASK_ADD_COAL,
-            HabiTrainCore.TASK_REPAIR_WIRING,
-            HabiTrainCore.TASK_MAINTAIN_POWER
-    );
-
-    private static final Set<String> BLACKOUT_DAILY_TASK_IDS = Set.of(
-            HabiTrainCore.TASK_BLACKOUT_EAT,
-            HabiTrainCore.TASK_BLACKOUT_DRINK,
-            HabiTrainCore.TASK_BLACKOUT_SEARCH_BACKPACK,
-            HabiTrainCore.TASK_BLACKOUT_BETEL_QUEST,
-            HabiTrainCore.TASK_BLACKOUT_PET_CAT,
-            HabiTrainCore.TASK_BLACKOUT_BE_ALONE,
-            HabiTrainCore.TASK_BLACKOUT_LOOK_MY_EYES
-    );
 
     private DlcTaskTracker() {}
 
@@ -63,6 +48,7 @@ public final class DlcTaskTracker {
             SREPlayerTaskComponent.Task fakeSlot = SREPlayerTaskComponent.Task.PRAY;
             if (player instanceof ServerPlayer sp) {
                 ActiveTaskPayload.sendToPlayer(sp, def.getFullId(), true);
+                sendNewTaskTop(sp, def);
             }
             return new SRETrainTaskWrapper(instance, fakeSlot);
         } else {
@@ -70,8 +56,8 @@ public final class DlcTaskTracker {
                 GameMode activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
                 if (activeMode instanceof BlackoutMode
                         && BlackoutMode.BLACKOUT_GOOD.equals(def.getCategory())
-                        && (BLACKOUT_SUPPLY_TASK_IDS.contains(def.getFullId())
-                        || BLACKOUT_DAILY_TASK_IDS.contains(def.getFullId()))) {
+                        && (BlackoutExclusiveTasks.isSupply(def.getFullId())
+                        || BlackoutExclusiveTasks.isDaily(def.getFullId()))) {
                     boolean wasDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
                     mgr.setBlackoutNextDailyPool(player.getUUID(), !wasDaily);
                     LOGGER.info("[HabiDebug] Blackout rotation flag toggled: {} -> {} for player {}",
@@ -83,8 +69,17 @@ public final class DlcTaskTracker {
             mgr.setActiveTask(player.getUUID(), instance);
             if (player instanceof ServerPlayer sp) {
                 ActiveTaskPayload.sendToPlayer(sp, def.getFullId());
+                sendNewTaskTop(sp, def);
             }
             return new SRETrainTaskWrapper(instance);
         }
+    }
+
+    /** 对齐 SRE 原版 subtitle.task.new 的 TOP 报幕，避免只闪中间 ActiveTask。 */
+    private static void sendNewTaskTop(ServerPlayer player, TaskDefinition def) {
+        String name = def.getDisplayName();
+        Component title = Component.literal(name != null && !name.isEmpty() ? name : def.getFullId());
+        Component sub = Component.translatable("subtitle.task.new");
+        SubtitleNotifier.sendTop(player, title, sub, 75);
     }
 }

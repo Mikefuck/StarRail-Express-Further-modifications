@@ -3,9 +3,6 @@ package com.habitrain.core.betel;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 
 
 
@@ -32,12 +29,7 @@ public class BetelQuestDefinition {
                     return BetelQuestState.hasPlayerEatenBetelNut(player.getUUID());
                 })
                 .onComplete((player, task) -> {
-                    if (player instanceof ServerPlayer sp) {
-                        SubtitleNotifier.sendTop(sp,
-                                Component.literal("§a[任务完成]"),
-                                Component.literal("§7你满足了对槟榔的渴望！"),
-                                80);
-                    }
+                    // 不再发送「你满足了对槟榔的渴望」TOP 字幕
                 })
                 .canAssign((player, task) -> {
                     return true;

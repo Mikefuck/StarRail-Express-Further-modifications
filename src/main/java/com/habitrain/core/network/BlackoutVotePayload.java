@@ -81,6 +81,8 @@ public record BlackoutVotePayload(
         PayloadTypeRegistry.playS2C().register(TYPE, CODEC);
     }
 
+    /** @deprecated 优先 {@link #broadcastToLevel}；保留兼容全服广播。 */
+    @Deprecated
     public static void broadcastToAll(net.minecraft.server.MinecraftServer server,
                                        VotePurpose purpose, boolean active, int remainingSeconds,
                                        int totalSeconds, int maxSelections,
@@ -89,6 +91,19 @@ public record BlackoutVotePayload(
         var payload = new BlackoutVotePayload(purpose, active, remainingSeconds,
                 totalSeconds, maxSelections, title, description, candidates);
         for (net.minecraft.server.level.ServerPlayer player : server.getPlayerList().getPlayers()) {
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
+        }
+    }
+
+    public static void broadcastToLevel(net.minecraft.server.level.ServerLevel level,
+                                        VotePurpose purpose, boolean active, int remainingSeconds,
+                                        int totalSeconds, int maxSelections,
+                                        String title, String description,
+                                        List<Entry> candidates) {
+        if (level == null) return;
+        var payload = new BlackoutVotePayload(purpose, active, remainingSeconds,
+                totalSeconds, maxSelections, title, description, candidates);
+        for (net.minecraft.server.level.ServerPlayer player : level.players()) {
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
         }
     }

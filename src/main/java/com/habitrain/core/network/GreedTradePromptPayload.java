@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 /**
- * S2C：贪婪交易提示（MVP 客户端可忽略，服务端仍发聊天确认按钮）。
+ * S2C：打开贪婪匿名交易双确认界面。
  * <p>
  * 编码：sessionId + side + itemId + price + partnerLabel
  */

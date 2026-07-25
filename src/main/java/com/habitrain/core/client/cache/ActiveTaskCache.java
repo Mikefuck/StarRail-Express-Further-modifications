@@ -94,15 +94,6 @@ public class ActiveTaskCache {
     }
 
     /**
-     * 判断指定任务完整 ID 是否为当前假任务
-     * @param taskFullId 任务完整 ID
-     * @return true 如果是假任务
-     */
-    public static boolean isFakeTask(@Nullable String taskFullId) {
-        return taskFullId != null && taskFullId.equals(fakeTaskFullId);
-    }
-
-    /**
      * 清空所有缓存（真实任务 + 假任务）
      */
     public static void clear() {
@@ -161,18 +152,4 @@ public class ActiveTaskCache {
         return new Color(200, 200, 200, 180);
     }
 
-    /**
-     * 获取活跃任务的描边粗细
-     * @return 描边粗细值，默认 4.0
-     */
-    public static float getOutlineWidth() {
-        if (activeTaskFullId == null) return 4.0f;
-
-        TaskConfigEntry cfg = getConfig();
-        if (cfg != null) {
-            return cfg.outlineWidth;
-        }
-
-        return 4.0f;
-    }
 }

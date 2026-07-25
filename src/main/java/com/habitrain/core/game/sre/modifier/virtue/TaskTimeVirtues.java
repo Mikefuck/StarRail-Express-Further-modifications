@@ -45,14 +45,6 @@ public final class TaskTimeVirtues {
         return 1.0;
     }
 
-    /** Scale a positive duration by virtue mult, floored at 1 tick. */
-    public static int scaleDuration(Player player, int baseDuration) {
-        if (baseDuration <= 0) return baseDuration;
-        double mult = interactTimeMultiplier(player);
-        if (mult == 1.0) return baseDuration;
-        return Math.max(1, (int) Math.round(baseDuration * mult));
-    }
-
     private static boolean isModifier(Player player, org.agmas.harpymodloader.modifiers.SREModifier mod) {
         if (player == null || mod == null) return false;
         try {

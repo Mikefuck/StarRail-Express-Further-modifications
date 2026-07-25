@@ -52,7 +52,7 @@ public class MaintainPowerHandler {
                 ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
 
                 TaskInstance task = TaskManager.getInstance().getActiveTask(uuid);
-                if (task == null || !"habitrain_core:maintain_power".equals(task.getFullId())) {
+                if (task == null || !HabiTrainCore.TASK_MAINTAIN_POWER.equals(task.getFullId())) {
                     if (sp != null) {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     }
@@ -89,7 +89,7 @@ public class MaintainPowerHandler {
 
     public static void clearAll() {
         activeStates.clear();
-        SlownessReapplyManager.clearAll();
+        // 缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -99,7 +99,7 @@ public class MaintainPowerHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:maintain_power".equals(task.getFullId())) {
+        if (task == null || !com.habitrain.core.HabiTrainCore.TASK_MAINTAIN_POWER.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
@@ -122,9 +122,9 @@ public class MaintainPowerHandler {
         ms.slowUntilTick = tick + SLOW_TICKS;
         activeStates.put(uuid, ms);
 
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:maintain_power")));
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, SLOW_TICKS + 10,
+                ResourceLocation.parse(com.habitrain.core.HabiTrainCore.TASK_MAINTAIN_POWER));
 
         return InteractionResult.FAIL;
     }

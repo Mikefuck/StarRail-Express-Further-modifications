@@ -42,6 +42,13 @@ public class GlobalTabScreen {
     /** 标记 widgets 是否已初始化 (S10-014) */
     private boolean widgetsInitialized = false;
 
+    private double contentScroll = 0;
+    private boolean draggingContent = false;
+    private double dragStartY = 0;
+    private double dragStartScroll = 0;
+    private int contentHeight = 0;
+    private int listHeight = 0;
+
     public GlobalTabScreen(ConfigRootScreen root, Font font, boolean editable) {
         this.root = root;
         this.font = font;
@@ -111,7 +118,10 @@ public class GlobalTabScreen {
         // 一次性初始化 widgets (S10-014)，从 render() 移至 init() 语义
         ensureWidgetsInitialized();
 
-        int cy = y + 8;
+        listHeight = h;
+        g.enableScissor(x, y, x + w, y + h);
+
+        int cy = y + 8 - (int) contentScroll;
         int labelX = x + PAD;
         int sliderMaxW = w - PAD * 2;
 
@@ -207,6 +217,13 @@ public class GlobalTabScreen {
         cy += 18;
         shaderBtn.setX(labelX); shaderBtn.setY(cy); shaderBtn.setWidth(140);
         shaderBtn.render(g, mx, my, delta);
+        cy += ROW_H + 8;
+
+        contentHeight = cy - y + (int) contentScroll;
+        int maxScroll = Math.max(0, contentHeight - listHeight);
+        contentScroll = Mth.clamp(contentScroll, 0, maxScroll);
+        SharedGuiKit.drawScrollbar(g, x + w - 4, y, listHeight, contentScroll, maxScroll, 3);
+        g.disableScissor();
 
         if (!editable) {
             g.drawString(font, Component.literal("§c只读模式：联机服务器中仅 OP 可修改"),
@@ -230,14 +247,16 @@ public class GlobalTabScreen {
     }
 
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (sheriffField != null && sheriffField.mouseClicked(mx, my, btn)) return true;
-        if (tempPowerField != null && tempPowerField.mouseClicked(mx, my, btn)) return true;
+        ensureWidgetsInitialized();
+        clearAllEditFocus();
+
+        if (tryFocusEditBox(sheriffField, mx, my)) return true;
+        if (tryFocusEditBox(tempPowerField, mx, my)) return true;
         if (shaderBtn != null && shaderBtn.mouseClicked(mx, my, btn)) return true;
         if (mgToggleBtn != null && mgToggleBtn.mouseClicked(mx, my, btn)) return true;
         if (sheriffApplyBtn != null && sheriffApplyBtn.mouseClicked(mx, my, btn)) return true;
         if (tempPowerApplyBtn != null && tempPowerApplyBtn.mouseClicked(mx, my, btn)) return true;
         // 滑条
-        int tx = thumbX();
         boolean onSlider = mx >= sliderX - 4 && mx <= sliderX + sliderW + 4 && my >= sliderY - 4 && my <= sliderY + SLIDER_H + 4;
         if (onSlider && editable) {
             draggingSlider = true;
@@ -248,7 +267,36 @@ public class GlobalTabScreen {
             }
             return true;
         }
+        // Content drag only on true miss so widgets/slider stay selectable.
+        if (my >= y && my < y + h) {
+            draggingContent = true;
+            dragStartY = my;
+            dragStartScroll = contentScroll;
+            return true;
+        }
         return false;
+    }
+
+    private void clearAllEditFocus() {
+        if (sheriffField != null) sheriffField.setFocused(false);
+        if (tempPowerField != null) tempPowerField.setFocused(false);
+    }
+
+    private boolean tryFocusEditBox(EditBox box, double mx, double my) {
+        if (box == null) return false;
+        int bx = box.getX();
+        int by = box.getY();
+        int bw = box.getWidth();
+        int bh = box.getHeight();
+        if (mx < bx || mx >= bx + bw || my < by || my >= by + bh) {
+            return false;
+        }
+        if (!editable) {
+            LiveConfigAccess.showDeniedMessage();
+            return true;
+        }
+        box.setFocused(true);
+        return true;
     }
 
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
@@ -260,11 +308,30 @@ public class GlobalTabScreen {
             }
             return true;
         }
+        if (draggingContent) {
+            int maxScroll = Math.max(0, contentHeight - listHeight);
+            contentScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, maxScroll);
+            return true;
+        }
+        return false;
+    }
+
+    public boolean mouseReleased(double mx, double my, int btn) {
+        if (draggingSlider) {
+            draggingSlider = false;
+            return true;
+        }
+        if (draggingContent) {
+            draggingContent = false;
+            return true;
+        }
         return false;
     }
 
     public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) {
-        return false;
+        int maxScroll = Math.max(0, contentHeight - listHeight);
+        contentScroll = Mth.clamp(contentScroll - sy * 18, 0, maxScroll);
+        return true;
     }
 
     public boolean keyPressed(int key, int scan, int mod) {

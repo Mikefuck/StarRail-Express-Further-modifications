@@ -19,14 +19,6 @@ public final class BlackoutVoteState {
 
     private BlackoutVoteState() {}
 
-    /** @deprecated Use {@link ClientBlackoutState#setBlackoutModeActive} directly. */
-    @Deprecated
-    public static void setBlackoutModeActive(boolean active) { ClientBlackoutState.setBlackoutModeActive(active); }
-
-    /** @deprecated Use {@link ClientBlackoutState#isBlackoutModeActive} directly. */
-    @Deprecated
-    public static boolean isBlackoutModeActive() { return ClientBlackoutState.isBlackoutModeActive(); }
-
     public static void update(BlackoutVotePayload payload) {
         purpose = payload.purpose();
         active = payload.active();
@@ -59,7 +51,6 @@ public final class BlackoutVoteState {
     public static String getDescription() { return description; }
     public static VotePurpose getPurpose() { return purpose; }
     public static List<BlackoutVotePayload.Entry> getCandidates() { return candidates; }
-    public static UUID getSelectedTargetId() { return selectedTargetId; }
     public static boolean isSelected(UUID id) { return id.equals(selectedTargetId); }
 
     public static void toggleSelection(UUID targetId) {

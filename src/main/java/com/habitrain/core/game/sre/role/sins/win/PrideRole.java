@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.win;
 
 import com.habitrain.core.game.sre.role.sins.SevenSins;
-import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
+import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
 import io.wifi.starrailexpress.api.CustomWinnerRole;
 import io.wifi.starrailexpress.game.GameUtils.WinStatus;
 import io.wifi.starrailexpress.util.ShopEntry;
@@ -19,7 +19,7 @@ public final class PrideRole extends CustomWinnerRole {
 
     @Override
     public List<ShopEntry> getShopEntries() {
-        return PrideComponent.getActiveShopEntries();
+        return SevenSinShops.prideShop();
     }
 
     @Override

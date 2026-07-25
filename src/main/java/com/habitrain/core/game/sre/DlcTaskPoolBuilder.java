@@ -5,6 +5,7 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.task.TaskPoolBuilder;
@@ -78,28 +79,15 @@ public final class DlcTaskPoolBuilder {
             filteredDlc.add(def);
         }
 
-        // Blackout rotation filtering
-        Set<String> blackoutSupplyTaskIds = Set.of(
-                HabiTrainCore.TASK_ADD_COAL,
-                HabiTrainCore.TASK_REPAIR_WIRING,
-                HabiTrainCore.TASK_MAINTAIN_POWER
-        );
-        Set<String> blackoutDailyTaskIds = Set.of(
-                HabiTrainCore.TASK_BLACKOUT_EAT,
-                HabiTrainCore.TASK_BLACKOUT_DRINK,
-                HabiTrainCore.TASK_BLACKOUT_SEARCH_BACKPACK,
-                HabiTrainCore.TASK_BLACKOUT_BETEL_QUEST,
-                HabiTrainCore.TASK_BLACKOUT_PET_CAT,
-                HabiTrainCore.TASK_BLACKOUT_BE_ALONE,
-                HabiTrainCore.TASK_BLACKOUT_LOOK_MY_EYES
-        );
-
+        // Blackout rotation filtering — IDs from BlackoutExclusiveTasks single source
         if (activeMode instanceof BlackoutMode
                 && BlackoutMode.BLACKOUT_GOOD.equals(forcedCategory)
                 && !currentIsFakeTask
                 && !skipActiveTaskGuard) {
             boolean wantDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
-            Set<String> targetPool = wantDaily ? blackoutDailyTaskIds : blackoutSupplyTaskIds;
+            Set<String> targetPool = wantDaily
+                    ? BlackoutExclusiveTasks.DAILY_TASK_IDS
+                    : BlackoutExclusiveTasks.SUPPLY_TASK_IDS;
             List<TaskDefinition> rotationFiltered = new ArrayList<>();
             for (TaskDefinition def : filteredDlc) {
                 if (targetPool.contains(def.getFullId())) {

@@ -3,12 +3,10 @@
     "package": "com.habitrain.core.game.sre.mixin",
     "compatibilityLevel": "JAVA_21",
     "mixins": [
-        "BlackoutShopMixin",
         "MapScannerMixin",
         "GenerateTaskMixin",
         "SREPlayerTaskComponentMixin",
         "RoleMethodDispatcherMixin",
-        "NunchuckCooldownMixin",
         "MinigameRewardMixin",
         "MinigameTaskAssignmentMixin",
         "BlackoutEatMixin",
@@ -18,11 +16,24 @@
         "ExtraEffectRoleMixin",
         "OutsideTaskInstantCompleteMixin",
         "BlackoutTaskIntervalMixin",
+        "SuppressParallelTaskSubtitleMixin",
+        "ExerciseDeadCoralMixin",
+        "ExerciseMapScannerMixin",
+        "BouquetChargeMixin",
+        "MimeKnifeSoundMixin",
         "MeleeImmuneKillMixin",
+        "OutOfGameKillMixin",
+        "PlayerBodyEntityTickMixin",
         "HumilityTaskCompleteMixin",
         "TaskInteractTimeMixin",
         "TemperanceShopMixin",
         "GreedPouchDropMixin",
-        "GreedPouchClickMixin"
+        "GreedPouchClickMixin",
+        "VirtueEffectImmunityMixin",
+        "RoleAssignmentPoolMixin",
+        "NoellesrolesGetAllRolesMixin",
+        "SRERoleNameMixin",
+        "SRERoleShopMixin",
+        "SRERoleItemsMixin"
     ]
 }

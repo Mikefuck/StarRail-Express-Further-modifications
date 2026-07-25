@@ -128,7 +128,7 @@ public class BackpackSearchHandler {
      */
     public static void clearAllSearches() {
         activeSearches.clear();
-        SlownessReapplyManager.clearAll();
+        // 缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static int getSearchTicks(String taskKey) {
@@ -184,6 +184,15 @@ public class BackpackSearchHandler {
             startTick = world.getGameTime();
         }
         activeSearches.put(uuid, new SearchState(startTick, searchTicks));
+
+        serverPlayer.serverLevel().playSound(
+                null,
+                serverPlayer.blockPosition(),
+                HabiTrainCore.BACKPACK_SEARCH_SOUND,
+                net.minecraft.sounds.SoundSource.PLAYERS,
+                1.0f,
+                1.0f
+        );
 
         return InteractionResult.FAIL;
     }

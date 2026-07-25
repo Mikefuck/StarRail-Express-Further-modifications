@@ -83,6 +83,8 @@ public record OptionVotePayload(
         PayloadTypeRegistry.playS2C().register(TYPE, CODEC);
     }
 
+    /** @deprecated 优先 {@link #broadcastToLevel}。 */
+    @Deprecated
     public static void broadcastToAll(MinecraftServer server,
                                       String voteId, boolean active, int remainingSeconds,
                                       int totalSeconds, int maxSelections,
@@ -92,6 +94,20 @@ public record OptionVotePayload(
                 voteId, active, remainingSeconds, totalSeconds, maxSelections,
                 title, description, candidates);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            ServerPlayNetworking.send(player, payload);
+        }
+    }
+
+    public static void broadcastToLevel(net.minecraft.server.level.ServerLevel level,
+                                        String voteId, boolean active, int remainingSeconds,
+                                        int totalSeconds, int maxSelections,
+                                        String title, String description,
+                                        List<Entry> candidates) {
+        if (level == null) return;
+        OptionVotePayload payload = new OptionVotePayload(
+                voteId, active, remainingSeconds, totalSeconds, maxSelections,
+                title, description, candidates);
+        for (ServerPlayer player : level.players()) {
             ServerPlayNetworking.send(player, payload);
         }
     }

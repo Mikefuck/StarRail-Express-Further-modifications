@@ -15,7 +15,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -135,17 +134,9 @@ public class BetelTickEngine {
             applyBetelNutEffects(player);
             giveBetelNutResidue(player);
 
-            player.serverLevel().playSound(
-                    null,
-                    player.blockPosition(),
-                    HabiTrainCore.BETEL_NUT_EAT_SOUND,
-                    SoundSource.PLAYERS,
-                    1.0f,
-                    1.0f
-            );
             player.displayClientMessage(Component.literal("§7你嚼碎了槟榔，只剩下一些渣滓"), true);
 
-            HabiTrainCore.LOGGER.debug("玩家 {} 检测到吃槟榔，已给予槟榔渣并播放音效", player.getName().getString());
+            HabiTrainCore.LOGGER.debug("玩家 {} 检测到吃槟榔，已给予槟榔渣", player.getName().getString());
         }
 
         boolean shouldReveal = false;

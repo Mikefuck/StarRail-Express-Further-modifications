@@ -58,7 +58,7 @@ public final class BlackoutExileVoteManager {
      * 玩家淘汰/断线时清理其选票：
      * - 删除其作为 voter 的票
      * - 删除指向其作为 target 的票
-     * - active 时 rebroadcast（对齐 BlackoutSheriffVoteManager.onPlayerRemoved）
+     * - active 时 rebroadcast
      */
     public static void onPlayerRemoved(ServerLevel level, UUID playerId) {
         VoteState state = STATES.get(level.dimension());
@@ -240,8 +240,8 @@ public final class BlackoutExileVoteManager {
         state.lastPayloadHash = hash;
 
         List<BlackoutVotePayload.Entry> entries = buildEntryList(level, state);
-        BlackoutVotePayload.broadcastToAll(
-                level.getServer(),
+        BlackoutVotePayload.broadcastToLevel(
+                level,
                 VotePurpose.EXILE,
                 state.active,
                 state.remainingSeconds,

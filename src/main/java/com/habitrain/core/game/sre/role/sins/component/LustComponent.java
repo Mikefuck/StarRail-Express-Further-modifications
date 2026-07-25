@@ -286,8 +286,12 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
      */
     public static List<ServerPlayer> findTrueLoverPair(ServerLevel level) {
         if (level == null) return null;
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         List<ServerPlayer> lovers = new java.util.ArrayList<>();
         for (ServerPlayer p : collectAlivePlayers(level)) {
+            if (game != null && SevenSins.LUST != null && game.isRole(p, SevenSins.LUST)) {
+                continue;
+            }
             if (isTrueLover(level, p)) {
                 lovers.add(p);
             }

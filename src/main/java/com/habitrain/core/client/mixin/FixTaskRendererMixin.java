@@ -39,6 +39,8 @@ public class FixTaskRendererMixin {
             return;
         }
 
+        // 专属任务（电话/恢复供电）已插入 SRE map 以显示左上角，走正常归一化，不再清空。
+
         Component taskNameComponent = TaskTextNormalizer.normalizeTaskTitle(task);
         boolean killer = SREClient.isKiller();
         // 关灯模式警长虽因 canUseKiller=true 被判为 killer，但任务都是真实有效的，

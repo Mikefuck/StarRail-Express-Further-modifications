@@ -91,7 +91,8 @@ public class BlackoutTimerSystem {
         if (s.blackoutCountdown <= 0) {
             s.phase = Phase.FIRST_BLACKOUT;
             if (s.onPermanentStart != null) s.onPermanentStart.run();
-            broadcast(level, "§e修理任务可以恢复电力供应。");
+            broadcast(level, "§e当前列车由于未知原因停电，请拉闸来恢复供电");
+
             LOGGER.info("Phase transition: NORMAL -> FIRST_BLACKOUT for level {}", level.dimension().location());
         }
     }
@@ -116,8 +117,7 @@ public class BlackoutTimerSystem {
         if (s.onPermanentEnd != null) s.onPermanentEnd.run();
         s.phase = Phase.MAINTENANCE;
         s.maintenanceTime = MAINTENANCE_DURATION;
-        broadcast(level, "§a⚡ 电力已恢复！维护阶段持续 " + MAINTENANCE_DURATION + " 秒。");
-        broadcast(level, "§e保持系统运行 " + MAINTENANCE_DURATION + " 秒以完成维护。");
+        broadcast(level, "§a⚡ 电力已恢复！维护阶段持续 " + MAINTENANCE_DURATION + " 秒，请保持系统运行。");
         LOGGER.info("Power restored for level {}", level.dimension().location());
     }
 
@@ -181,6 +181,49 @@ public class BlackoutTimerSystem {
             default -> LOGGER.warn("reduceMaintenanceOrCountdown called in phase {} for level {}",
                     s.phase, level.dimension().location());
         }
+    }
+
+    /**
+     * 外部事件（如炸毁发电机）强制进入永久停电阶段。
+     * <p>只改 timer 状态，不触发 {@code onPermanentStart}，由调用方负责 SRE 视觉停电与任务派发。
+     * <ul>
+     *   <li>NORMAL → FIRST_BLACKOUT，停电倒计时归零</li>
+     *   <li>MAINTENANCE → SECOND_BLACKOUT，维护期归零</li>
+     *   <li>已在 FIRST/SECOND：保持 phase，返回 false</li>
+     * </ul>
+     *
+     * @return true 若本次切换了 phase
+     */
+    public static boolean forceEnterPermanentBlackout(ServerLevel level) {
+        var s = getOrCreate(level);
+        if (!s.initialized) {
+            LOGGER.warn("forceEnterPermanentBlackout called before init for level {}",
+                    level.dimension().location());
+            return false;
+        }
+        return switch (s.phase) {
+            case NORMAL -> {
+                s.blackoutCountdown = 0;
+                s.phase = Phase.FIRST_BLACKOUT;
+                broadcast(level, "§e当前列车由于未知原因停电，请拉闸来恢复供电");
+                LOGGER.info("Force phase: NORMAL -> FIRST_BLACKOUT for level {}",
+                        level.dimension().location());
+                yield true;
+            }
+            case MAINTENANCE -> {
+                s.maintenanceTime = 0;
+                s.phase = Phase.SECOND_BLACKOUT;
+                broadcast(level, "§e尽快完成任务来减少剩余时间。");
+                LOGGER.info("Force phase: MAINTENANCE -> SECOND_BLACKOUT for level {}",
+                        level.dimension().location());
+                yield true;
+            }
+            case FIRST_BLACKOUT, SECOND_BLACKOUT -> {
+                LOGGER.info("forceEnterPermanentBlackout no-op, already in {} for level {}",
+                        s.phase, level.dimension().location());
+                yield false;
+            }
+        };
     }
 
     public static Phase getPhase(ServerLevel level) { return getOrCreate(level).phase; }

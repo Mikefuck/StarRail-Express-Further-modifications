@@ -20,9 +20,18 @@ public final class OptionVoteState {
 
     private OptionVoteState() {}
 
-    public static void update(OptionVotePayload payload) {
+    public record UpdateResult(boolean shouldAutoOpen, boolean shouldClose) {}
+
+    /**
+     * Apply S2C payload. Returns open/close hints so the network receiver can
+     * auto-open once per phase without reopening on 1Hz rebroadcasts.
+     */
+    public static UpdateResult update(OptionVotePayload payload) {
+        boolean wasActive = active;
+        String oldVoteId = voteId;
+
         String newVoteId = payload.voteId() == null ? "" : payload.voteId();
-        boolean voteIdChanged = !newVoteId.equals(voteId);
+        boolean voteIdChanged = !newVoteId.equals(oldVoteId);
         voteId = newVoteId;
         active = payload.active();
         remainingSeconds = payload.remainingSeconds();
@@ -35,6 +44,10 @@ public final class OptionVoteState {
         if (!active || voteIdChanged) {
             selectedOptionId = null;
         }
+
+        boolean shouldAutoOpen = active && (!wasActive || voteIdChanged);
+        boolean shouldClose = !active;
+        return new UpdateResult(shouldAutoOpen, shouldClose);
     }
 
     public static void clear() {
@@ -67,10 +80,6 @@ public final class OptionVoteState {
         return totalSeconds;
     }
 
-    public static int getMaxSelections() {
-        return maxSelections;
-    }
-
     public static String getTitle() {
         return title;
     }
@@ -81,10 +90,6 @@ public final class OptionVoteState {
 
     public static List<OptionVotePayload.Entry> getCandidates() {
         return candidates;
-    }
-
-    public static String getSelectedOptionId() {
-        return selectedOptionId;
     }
 
     public static boolean isSelected(String optionId) {

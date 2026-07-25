@@ -30,25 +30,6 @@ public final class VirtueGroup {
         return m != null && all().contains(m);
     }
 
-    /** Alias for {@link #isVirtue(SREModifier)}. */
-    public static boolean contains(SREModifier m) {
-        return isVirtue(m);
-    }
-
-    /** Hard exclusive pair: patience ↔ diligence. */
-    public static boolean isHardExclusivePair(SREModifier a, SREModifier b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        return (a == HabiModifiers.PATIENCE && b == HabiModifiers.DILIGENCE)
-                || (a == HabiModifiers.DILIGENCE && b == HabiModifiers.PATIENCE);
-    }
-
-    /** Alias for {@link #isHardExclusivePair(SREModifier, SREModifier)}. */
-    public static boolean areExclusive(SREModifier a, SREModifier b) {
-        return isHardExclusivePair(a, b);
-    }
-
     private static void addIfPresent(Set<SREModifier> s, SREModifier m) {
         if (m != null) {
             s.add(m);

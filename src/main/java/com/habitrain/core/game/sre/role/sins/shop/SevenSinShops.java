@@ -24,6 +24,11 @@ public final class SevenSinShops {
     public static final int ENVY_LOCKPICK_PRICE = 150;
     public static final int ENVY_BLACKOUT_PRICE = 150;
 
+    public static final int PRIDE_KNIFE_PRICE = 50;
+    public static final int PRIDE_GRENADE_PRICE = 200;
+    public static final int PRIDE_PSYCHO_PRICE = 300;
+    public static final int PRIDE_LOCKPICK_PRICE = 100;
+
     public static final int GLUTTONY_FOOD_PRICE = 5;
     public static final int GLUTTONY_MILK_PRICE = 300;
     public static final int GLUTTONY_HONEY_PRICE = 100;
@@ -64,6 +69,31 @@ public final class SevenSinShops {
                 return SREPlayerShopComponent.useBlackout(player);
             }
         });
+        return shop;
+    }
+
+    /**
+     * 傲慢固定店：刀 50、手雷 200、疯狂模式 300、撬锁 100。
+     * 刀必须用 {@link KillerKnifeShopEntry}；手雷为 {@code TMMItems.GRENADE}。
+     */
+    public static List<ShopEntry> prideShop() {
+        List<ShopEntry> shop = new ArrayList<>();
+        shop.add(new KillerKnifeShopEntry(PRIDE_KNIFE_PRICE));
+        shop.add(new ShopEntry(TMMItems.GRENADE.getDefaultInstance(), PRIDE_GRENADE_PRICE, ShopEntry.Type.WEAPON));
+        shop.add(new ShopEntry(TMMItems.PSYCHO_MODE.getDefaultInstance(), PRIDE_PSYCHO_PRICE, ShopEntry.Type.WEAPON) {
+            @Override
+            public boolean canBuy(@NotNull Player player) {
+                if (player.getCooldowns().isOnCooldown(TMMItems.PSYCHO_MODE)) return false;
+                return true;
+            }
+
+            @Override
+            public boolean onBuy(@NotNull Player player) {
+                if (player.getCooldowns().isOnCooldown(TMMItems.PSYCHO_MODE)) return false;
+                return SREPlayerShopComponent.usePsychoMode(player);
+            }
+        });
+        shop.add(new ShopEntry(TMMItems.LOCKPICK.getDefaultInstance(), PRIDE_LOCKPICK_PRICE, ShopEntry.Type.TOOL));
         return shop;
     }
 

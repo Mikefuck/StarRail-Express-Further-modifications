@@ -1,7 +1,6 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import net.fabricmc.api.EnvType;
@@ -30,7 +29,7 @@ public final class PhoneOverlayRenderer {
         if (level == null) return;
 
         if (!GameRunningCache.isGameRunning()) return;
-        if (!BlackoutVoteState.isBlackoutModeActive()) return;
+        if (!com.habitrain.core.client.gui.ClientBlackoutState.isBlackoutModeActive()) return;
 
         int rendered = 0;
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {

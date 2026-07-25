@@ -32,8 +32,12 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     private static final UUID LOBBY_GROUP_ID = UUID.randomUUID();
     private static final int MAX_VOICE_JOIN_RETRIES = 400; // 每 tick 重试一次，约 20 秒（慢客户端留足握手时间）
+    /** 大厅语音群组巡检间隔（tick）。JOIN 入队失败/重试耗尽后靠此补拉。 */
+    private static final int LOBBY_RECONCILE_INTERVAL_TICKS = 100; // 5 秒
+    private static int lobbyReconcileTickCounter = 0;
 
     protected final List<TaskCategory> taskCategories = new ArrayList<>();
+
 
     protected SREGameModeBase() {
         registerSREEvents();
@@ -117,7 +121,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     /**
      * 尝试将玩家加入大厅语音群组。
-     * @return true 表示成功加入或不需要加入（不在队列中），false 表示需要重试
+     * @return true 表示成功加入 / 已在大厅群 / 无需再试，false 表示需要重试
      */
     private static boolean tryAddPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
         if (TrainVoicePlugin.isVoiceChatMissing()) return false;
@@ -128,6 +132,12 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         if (connection == null) return false;
 
         try {
+            // 已在 LobbyChat → 视为成功，避免重复 setGroup
+            Group current = connection.getGroup();
+            if (current != null && LOBBY_GROUP_ID.equals(current.getId())) {
+                return true;
+            }
+
             if (STATE.getLobbyGroup() == null) {
                 STATE.setLobbyGroup(api.groupBuilder()
                         .setId(LOBBY_GROUP_ID)
@@ -223,6 +233,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
             LOGGER.info("[VoiceGroup] cleared pending queue (game starting/running)");
             return;
         }
+        // voicechat 服务端 API 尚未就绪时不消耗重试次数（否则 20 秒后永久放弃，直到对局结束才补拉）
+        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) {
+            return;
+        }
         Iterator<Map.Entry<UUID, Integer>> it = STATE.getPendingVoiceJoins().entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<UUID, Integer> entry = it.next();
@@ -235,10 +249,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
                 continue;
             }
 
-            // 重试次数耗尽 → 移除并记录日志
+            // 重试次数耗尽 → 暂移出队列；reconcileLobbyGroupMembership 会在大厅阶段周期性补入
             if (entry.getValue() <= 0) {
                 it.remove();
-                LOGGER.warn("[VoiceGroup] removed {} from pending queue (retries exhausted)", playerId);
+                LOGGER.warn("[VoiceGroup] temporarily removed {} from pending queue (retries exhausted; will requeue via lobby reconcile)", playerId);
                 continue;
             }
 
@@ -270,7 +284,53 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         LOGGER.info("[VoiceGroup] queued all online players for lobby group join after game end");
     }
 
+    /**
+     * 大厅阶段周期性巡检：把尚未进入 LobbyChat 的在线玩家重新入队。
+     * <p>
+     * 修复场景：玩家 JOIN 时 voicechat 连接尚未建立，pending 队列在 ~20s 内重试耗尽后
+     * 被移除，之后永远不会再进大厅群，只有对局结束的 processGameEndGroupJoin 才会补拉。
+     * 本方法保证大厅空闲期间持续补拉。
+     */
+    public static void reconcileLobbyGroupMembership(MinecraftServer server) {
+        if (server == null) return;
+        lobbyReconcileTickCounter++;
+        if (lobbyReconcileTickCounter < LOBBY_RECONCILE_INTERVAL_TICKS) return;
+        lobbyReconcileTickCounter = 0;
+
+        // 对局中/开局过渡：不拉人进大厅
+        if (isAnySreGameStartingOrRunning(server)) return;
+        // voicechat 未就绪：等下次
+        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
+
+        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
+        int queued = 0;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            UUID id = player.getUUID();
+            // 已在 pending 队列中 → 由 processPendingVoiceJoins 处理
+            if (STATE.getPendingVoiceJoins().containsKey(id)) continue;
+
+            try {
+                VoicechatConnection connection = api.getConnectionOf(id);
+                if (connection != null) {
+                    Group group = connection.getGroup();
+                    if (group != null && LOBBY_GROUP_ID.equals(group.getId())) {
+                        continue; // 已在 LobbyChat
+                    }
+                }
+                // connection 未就绪，或不在 LobbyChat → 入队
+                STATE.getPendingVoiceJoins().put(id, MAX_VOICE_JOIN_RETRIES);
+                queued++;
+            } catch (Exception e) {
+                LOGGER.debug("[VoiceGroup] lobby reconcile failed for {}: {}", id, e.getMessage());
+            }
+        }
+        if (queued > 0) {
+            LOGGER.info("[VoiceGroup] lobby reconcile queued {} player(s) missing LobbyChat", queued);
+        }
+    }
+
     // ========== 游戏结束清理 ==========
+
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {

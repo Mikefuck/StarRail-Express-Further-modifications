@@ -21,7 +21,8 @@ import java.util.UUID;
 
 /**
  * 破坏线路任务交互处理器。
- * <p>玩家右键红石块 或 煤炭块 → 给缓慢III(3秒) + 推进任务完成。
+ * <p>玩家右键红石块 → 给缓慢III(3秒) + 推进任务完成。
+ * <p>煤炭块归添煤任务，不接受为破坏线路目标。
  * <p>缓慢效果在 END_SERVER_TICK 中重新施加以对抗 betel-nut-mod 每 tick 清除。
  */
 public class SabotageWiringHandler {
@@ -39,7 +40,7 @@ public class SabotageWiringHandler {
     }
 
     public static void clearAll() {
-        SlownessReapplyManager.clearAll();
+        // 无 per-player map；缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -49,7 +50,7 @@ public class SabotageWiringHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:sabotage_wiring".equals(task.getFullId())) {
+        if (task == null || !com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_SABOTAGE_WIRING.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
@@ -57,14 +58,14 @@ public class SabotageWiringHandler {
         }
 
         BlockState state = world.getBlockState(hitResult.getBlockPos());
-        if (!state.is(Blocks.REDSTONE_BLOCK) && !state.is(Blocks.COAL_BLOCK)) {
+        if (!state.is(Blocks.REDSTONE_BLOCK)) {
             return InteractionResult.PASS;
         }
 
-        // 给缓慢 III (3 秒)
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:sabotage_wiring")));
+        // 给缓慢 III (3 秒)，到期后由 SlownessReapplyManager 自动 unregister
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, SLOW_TICKS + 10,
+                ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_SABOTAGE_WIRING));
 
         // 推进任务完成
         task.setProgress(task.getMaxProgress());

@@ -3,7 +3,12 @@ package com.habitrain.core;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteApi;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MapPoolEntry;
+import com.habitrain.core.config.MapPoolRotationSettings;
+import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
+import com.habitrain.core.vote.MapPoolRotationService;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -33,7 +38,7 @@ public final class CommandRegistrar {
                                     IntegerArgumentType.getInteger(ctx, "range")))
                     )
             );
-            // /habi_api 命令族 (OP 命令: blackout/list/vote; 玩家命令: buy_gun/buy_ammo)
+            // /habi_api 命令族（OP：blackout/list/vote；玩家：greed_trade 兼容回退）
             dispatcher.register(Commands.literal("habi_api")
                     .then(Commands.literal("blackout")
                             .requires(source -> source.hasPermission(2))
@@ -96,7 +101,34 @@ public final class CommandRegistrar {
                                 return 1;
                             }))
                     )
-                    // 贪婪匿名交易双确认（聊天点击 / RUN_COMMAND）
+                    .then(Commands.literal("mappool")
+                            .then(Commands.literal("status")
+                                    .requires(source -> source.hasPermission(2))
+                                    .executes(ctx -> {
+                                        ModeMapVoteSettings s = ConfigManager.getInstance().getModeMapVoteSettings();
+                                        MapPoolRotationSettings rot = s.rotationOrDefault();
+                                        MapPoolEntry p = rot.poolAt(rot.activePoolIndex);
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§e地图池: " + (rot.enabled ? "§a启用" : "§c关闭")
+                                                        + " §7共" + rot.poolCount() + "池"
+                                                        + " §7当前池" + (rot.activePoolIndex + 1)
+                                                        + " §f" + p.displayName
+                                                        + " §8(" + (p.mapIds != null ? p.mapIds.size() : 0) + "图)"
+                                                        + " §7模式=" + rot.applyMode
+                                                        + " §7自动重分=" + rot.autoRepartition
+                                                        + " §7日期=" + rot.lastRotationDate
+                                        ), false);
+                                        return 1;
+                                    }))
+                            .then(Commands.literal("skip")
+                                    .requires(source -> source.hasPermission(4))
+                                    .executes(ctx -> {
+                                        ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                        boolean ok = MapPoolRotationService.skip(player);
+                                        return ok ? 1 : 0;
+                                    }))
+                    )
+                    // 贪婪匿名交易双确认的命令兼容回退
                     .then(Commands.literal("greed_trade")
                             .then(Commands.literal("confirm")
                                     .then(Commands.argument("session", StringArgumentType.string())
@@ -117,6 +149,6 @@ public final class CommandRegistrar {
                     )
               );
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|greed_trade");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|greed_trade");
     }
 }

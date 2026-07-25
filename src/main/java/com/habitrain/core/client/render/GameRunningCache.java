@@ -9,16 +9,16 @@ import net.minecraft.client.Minecraft;
  *
  * <p>规则：
  * <ul>
- *   <li>{@code true} 可缓存，直到 {@link #invalidate()}（游戏开始/结束/进出服）</li>
- *   <li>{@code false} 不永久缓存：level 为 null 时直接返回 false 且不写入缓存；
- *       已查到 false 时用短 TTL 重查，避免大厅首帧 sticky-false 把整局透视关掉</li>
+ *   <li>{@code true}/{@code false} 均带 TTL，防止 OnGameFinished 漏发时 sticky-true 残留大厅 ESP</li>
+ *   <li>level 为 null 时直接返回 false 且不写入缓存</li>
+ *   <li>{@link #invalidate()} 立即清空（游戏开始/结束/进出服）</li>
  * </ul>
  */
 public final class GameRunningCache {
 
     private static Boolean cachedValue = null;
-    /** 仅在缓存为 false 时使用的下次允许重查时间戳（ms）。 */
-    private static long falseUntilMs = 0L;
+    private static long cacheUntilMs = 0L;
+    private static final long TRUE_TTL_MS = 1000L;
     private static final long FALSE_TTL_MS = 250L;
 
     private GameRunningCache() {}
@@ -30,16 +30,10 @@ public final class GameRunningCache {
     public static boolean isGameRunning() {
         long now = System.currentTimeMillis();
 
-        if (cachedValue != null) {
-            if (Boolean.TRUE.equals(cachedValue)) {
-                return true;
-            }
-            // cached false: allow re-query after short TTL
-            if (now < falseUntilMs) {
-                return false;
-            }
-            cachedValue = null;
+        if (cachedValue != null && now < cacheUntilMs) {
+            return cachedValue;
         }
+        cachedValue = null;
 
         var instance = Minecraft.getInstance();
         if (instance == null || instance.level == null) {
@@ -50,17 +44,13 @@ public final class GameRunningCache {
         try {
             var gameWorld = SREGameWorldComponent.KEY.get(instance.level);
             boolean running = gameWorld != null && gameWorld.isRunning();
-            if (running) {
-                cachedValue = true;
-            } else {
-                cachedValue = false;
-                falseUntilMs = now + FALSE_TTL_MS;
-            }
+            cachedValue = running;
+            cacheUntilMs = now + (running ? TRUE_TTL_MS : FALSE_TTL_MS);
             return running;
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("[GameRunningCache] 查询 SREGameWorldComponent 失败", e);
             cachedValue = false;
-            falseUntilMs = now + FALSE_TTL_MS;
+            cacheUntilMs = now + FALSE_TTL_MS;
             return false;
         }
     }
@@ -71,6 +61,6 @@ public final class GameRunningCache {
      */
     public static void invalidate() {
         cachedValue = null;
-        falseUntilMs = 0L;
+        cacheUntilMs = 0L;
     }
 }

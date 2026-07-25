@@ -101,11 +101,10 @@ public final class MikeCodeEditSkill {
         }
 
         if (target.level() instanceof ServerLevel level) {
-            BlackoutRoleManager.Faction faction = next.canUseKiller()
-                    ? BlackoutRoleManager.Faction.BAD
-                    : BlackoutRoleManager.Faction.GOOD;
+            // 必须走 resolveFactionFromSreRole（经 reassignRole null override），
+            // 否则独立罪/共享罪会被错误压成 GOOD/BAD。
             try {
-                BlackoutRoleManager.reassignRole(level, target.getUUID(), next, faction);
+                BlackoutRoleManager.reassignRole(level, target.getUUID(), next, null);
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[Mike] reassignRole failed for {}", target.getUUID(), t);
             }

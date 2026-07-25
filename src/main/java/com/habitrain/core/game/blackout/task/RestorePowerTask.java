@@ -6,13 +6,9 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
-import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
-import com.habitrain.core.util.SubtitleNotifier;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.List;
@@ -49,16 +45,11 @@ public class RestorePowerTask {
                 BlackoutTaskShopState.markRestoreUsed(level);
 
                 // 通过 applyTimeImpact 调用 restorePower（替代硬编码 BlackoutTimerSystem.restorePower(level)）
-                BlackoutTaskHelper.applyTimeImpact(level, "habitrain_core:restore_power");
+                BlackoutTaskHelper.applyTimeImpact(level, com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER);
 
                 // 仅完成者拿奖励
-                BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:restore_power");
-                SubtitleNotifier.sendTop(
-                        serverPlayer,
-                        Component.translatable("task.restore_power"),
-                        Component.literal("§a电力已恢复！供电维护阶段开始。"),
-                        80
-                );
+                BlackoutTaskHelper.grantRewards(serverPlayer, com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER);
+                // 恢复提示由 BlackoutTimerSystem.restorePower 统一广播，此处不发个人 toast。
 
                 // 同步完成其它正在做 restore_power 的 GOOD 玩家（仅清理状态，不发奖、不重复 restorePower）
                 completeAllGoodPlayers(level, serverPlayer.getUUID());
@@ -82,7 +73,7 @@ public class RestorePowerTask {
             if (BlackoutRoleManager.getFaction(level, uuid) != BlackoutRoleManager.Faction.GOOD) continue;
 
             TaskInstance task = mgr.getActiveTask(uuid);
-            if (task == null || !"habitrain_core:restore_power".equals(task.getFullId())) continue;
+            if (task == null || !com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER.equals(task.getFullId())) continue;
             if (task.isFulfilled()) continue;
 
             task.setFulfilled(true);

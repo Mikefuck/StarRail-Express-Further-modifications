@@ -57,6 +57,8 @@ public final class ModeMapVoteOrchestrator {
         @Nullable String selectedModeDisplay;
         int phaseDurationSeconds;
         long phaseStartMs;
+        /** C10: 模式解析时用了 map pool，仅在 finishWithMap 开局成功后再 advance。 */
+        boolean pendingPoolAdvance = false;
     }
 
     public static boolean start(ServerLevel level, ModeMapVoteConfig config) {
@@ -213,20 +215,9 @@ public final class ModeMapVoteOrchestrator {
             int usedPool = rot.activePoolIndex;
             LOGGER.info("[ModeMapVote] map pool applied mode={} poolIndex={} candidates={} effective={} applyMode={}",
                     winnerId, usedPool, candidateIds.size(), effectiveIds.size(), rot.applyMode);
-
-            // B1: this round uses current pool; advance for the next round.
-            boolean advanced = MapPoolRotationService.advance(settings, rng);
-            ConfigManager.getInstance().setModeMapVoteSettings(settings);
-            ConfigManager.getInstance().save();
-            try {
-                if (level.getServer() != null && !level.getServer().isSingleplayer()) {
-                    FullConfigSyncPayload.broadcastToAll(level.getServer());
-                }
-            } catch (Throwable t) {
-                LOGGER.warn("[ModeMapVote] map pool config sync failed", t);
-            }
-            LOGGER.info("[ModeMapVote] map pool post-resolve advance={} nextIndex={}",
-                    advanced, settings.rotationOrDefault().activePoolIndex);
+            // C10: 不在此处 advance。地图投票 start 失败 / loadMap 失败时不应推进池。
+            // advance 挪到 finishWithMap 开局成功后。
+            session.pendingPoolAdvance = true;
         }
 
         if (MapPoolRotationService.shouldApply(settings, candidateIds.size()) && rot.isDirectPick()) {
@@ -314,12 +305,39 @@ public final class ModeMapVoteOrchestrator {
 
         boolean started = SREModeStartAdapter.startMode(level, modeId);
         if (!started) {
-            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept)", modeId, mapId);
+            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept); pool not advanced",
+                    modeId, mapId);
         } else {
             LOGGER.info("[ModeMapVote] started mode={} map={}", modeId, mapId);
+            if (session.pendingPoolAdvance) {
+                commitPoolAdvance(level);
+            }
         }
 
         clearSession(level);
+    }
+
+    /** Advance map pool only after a successful mode start (C10). */
+    private static void commitPoolAdvance(ServerLevel level) {
+        try {
+            ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
+            if (settings == null) return;
+            Random rng = new Random(level.getRandom().nextLong());
+            boolean advanced = MapPoolRotationService.advance(settings, rng);
+            ConfigManager.getInstance().setModeMapVoteSettings(settings);
+            ConfigManager.getInstance().save();
+            try {
+                if (level.getServer() != null && !level.getServer().isSingleplayer()) {
+                    FullConfigSyncPayload.broadcastToAll(level.getServer());
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("[ModeMapVote] map pool config sync failed", t);
+            }
+            LOGGER.info("[ModeMapVote] map pool post-start advance={} nextIndex={}",
+                    advanced, settings.rotationOrDefault().activePoolIndex);
+        } catch (Throwable t) {
+            LOGGER.warn("[ModeMapVote] map pool advance failed", t);
+        }
     }
 
     public static void cancel(ServerLevel level) {

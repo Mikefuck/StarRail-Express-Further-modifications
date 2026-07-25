@@ -2,12 +2,10 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.sre.*;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.Nullable;
@@ -79,20 +77,17 @@ public abstract class GenerateTaskMixin {
 
         FactionFilter.FactionContext ctx = FactionFilter.determineFaction(player, !this.tasks.isEmpty());
 
-        // Blackout restore-power guard
+        // 电话专属 / 强制恢复供电活跃时：禁止 SRE 再生成任务进左上角。
         if (ctx.activeMode() instanceof BlackoutMode
-                && !ctx.killerDualTask() && player instanceof ServerPlayer sp
-                && sp.level() instanceof ServerLevel level) {
+                && !ctx.killerDualTask() && player instanceof ServerPlayer sp) {
             TaskInstance activeTask = mgr.getActiveTask(sp.getUUID());
-            if (activeTask != null && "habitrain_core:restore_power".equals(activeTask.getFullId())
-                    && !activeTask.isFulfilled()) {
-                var phase = BlackoutTimerSystem.getPhase(level);
-                if (phase == BlackoutTimerSystem.Phase.FIRST_BLACKOUT
-                        || phase == BlackoutTimerSystem.Phase.SECOND_BLACKOUT) {
-                    LOGGER.info("[HabiDebug] Player has active restore_power task during blackout, skipping dispatch");
-                    cir.setReturnValue(null);
-                    return;
-                }
+            if (activeTask != null
+                    && !activeTask.isFulfilled()
+                    && com.habitrain.core.game.blackout.BlackoutExclusiveTasks.isExclusive(activeTask.getFullId())) {
+                LOGGER.info("[HabiDebug] Player has active exclusive task {}, skipping SRE dispatch",
+                        activeTask.getFullId());
+                cir.setReturnValue(null);
+                return;
             }
         }
 

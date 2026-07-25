@@ -48,7 +48,7 @@ public class RestorePowerHandler {
                 ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
 
                 TaskInstance task = TaskManager.getInstance().getActiveTask(uuid);
-                if (task == null || !"habitrain_core:restore_power".equals(task.getFullId())) {
+                if (task == null || !com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER.equals(task.getFullId())) {
                     if (sp != null) sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     it.remove();
                     continue;
@@ -96,13 +96,13 @@ public class RestorePowerHandler {
     public static void clearAll() {
         activeStates.clear();
         restoreCompleted.clear();
-        SlownessReapplyManager.clearAll();
+        // 缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     public static void resetCompleted(ServerLevel level) {
         restoreCompleted.remove(level.dimension());
         activeStates.clear();
-        SlownessReapplyManager.clearAll();
+        // 缓慢表由 GameLifecycleHandler 统一 clear；此处只清本 handler 状态
     }
 
     public static boolean isRestoreCompleted(ServerLevel level) {
@@ -120,7 +120,7 @@ public class RestorePowerHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:restore_power".equals(task.getFullId())) {
+        if (task == null || !com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
@@ -145,7 +145,7 @@ public class RestorePowerHandler {
 
         SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
                 new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:restore_power")));
+                        ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER)));
 
         return InteractionResult.FAIL;
     }

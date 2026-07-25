@@ -2,6 +2,8 @@ package com.habitrain.core.game.sre;
 
 import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
+import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerPlayer;
@@ -36,6 +38,7 @@ public class PerPlayerTaskTicker {
     }
 
     private static void handleMainTaskDone(TaskManager mgr, TaskInstance customTask, Player player) {
+        boolean exclusive = BlackoutExclusiveTasks.isExclusive(customTask.getFullId());
         if (customTask.isFailed()) {
             LOGGER.debug("[HabiDebug] Custom task {} failed, removing tracking without completion reward",
                     customTask.getFullId());
@@ -48,12 +51,23 @@ public class PerPlayerTaskTicker {
             mgr.removeActiveTask(player.getUUID());
             if (player instanceof ServerPlayer sp) {
                 ActiveTaskPayload.clearForPlayer(sp);
+                if (exclusive) {
+                    // 立刻恢复原版派发，避免左上角空白后再闪
+                    ExclusiveTaskHudSync.resumeVanillaDispatch(sp);
+                } else {
+                    ExclusiveTaskHudSync.clear(sp);
+                }
             }
         } else {
             LOGGER.debug("[HabiDebug] Custom task {} fulfilled, removing tracking", customTask.getFullId());
             if (player instanceof ServerPlayer sp) {
                 mgr.handleTaskCompletion(sp, customTask);
                 ActiveTaskPayload.clearForPlayer(sp);
+                if (exclusive) {
+                    ExclusiveTaskHudSync.resumeVanillaDispatch(sp);
+                } else {
+                    ExclusiveTaskHudSync.clear(sp);
+                }
             }
         }
     }
@@ -77,7 +91,4 @@ public class PerPlayerTaskTicker {
         }
     }
 
-    public static boolean mgrHasActiveDlcTask(Player player) {
-        return TaskManager.getInstance().getActiveTask(player.getUUID()) != null;
-    }
 }

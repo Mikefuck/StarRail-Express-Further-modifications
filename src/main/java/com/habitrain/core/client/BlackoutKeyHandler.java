@@ -1,7 +1,5 @@
 package com.habitrain.core.client;
 
-import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
-import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.OptionVoteScreen;
@@ -17,10 +15,6 @@ import org.lwjgl.glfw.GLFW;
 public class BlackoutKeyHandler {
     private static boolean registered = false;
     private static KeyMapping openVoteKey;
-
-    public static KeyMapping getOpenVoteKey() {
-        return openVoteKey;
-    }
 
     /**
      * Client-bound key display for HUD tips. Never hardcodes "V" — if unregistered, "?".
@@ -58,13 +52,6 @@ public class BlackoutKeyHandler {
         if (OptionVoteState.isActive()) {
             if (client.screen instanceof OptionVoteScreen) return;
             client.setScreen(new OptionVoteScreen(client.screen));
-            return;
-        }
-
-        // Sheriff vote takes priority over exile while active.
-        if (BlackoutSheriffVoteState.isActive()) {
-            if (client.screen instanceof BlackoutSheriffVoteScreen) return;
-            client.setScreen(new BlackoutSheriffVoteScreen(client.screen));
             return;
         }
 

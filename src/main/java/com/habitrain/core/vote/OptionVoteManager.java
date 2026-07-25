@@ -254,8 +254,8 @@ public final class OptionVoteManager {
         state.lastPayloadHash = hash;
 
         List<OptionVotePayload.Entry> entries = buildEntries(state);
-        OptionVotePayload.broadcastToAll(
-                level.getServer(),
+        OptionVotePayload.broadcastToLevel(
+                level,
                 state.voteId,
                 state.active,
                 state.remainingSeconds,

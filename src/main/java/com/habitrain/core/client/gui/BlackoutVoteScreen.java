@@ -44,11 +44,12 @@ public class BlackoutVoteScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        if (BlackoutVoteState.isActive() && BlackoutVoteState.getRemainingSeconds() > 0) {
-            // Trigger local decrement — the state object's remainingSeconds is mutated by
-            // incoming network updates too. We only decrement on the client side so the
-            // timer visually counts down even when network packets are delayed or batched.
-            // The server is the authoritative source; the next update will override.
+        // 客户端本地每秒递减，网络包延迟时 UI 仍走秒；权威仍以服务端下一次 payload 为准。
+        if (BlackoutVoteState.isActive() && BlackoutVoteState.getRemainingSeconds() > 0
+                && minecraft != null && minecraft.level != null
+                && minecraft.level.getGameTime() % 20 == 0) {
+            BlackoutVoteState.setRemainingSeconds(
+                    Math.max(0, BlackoutVoteState.getRemainingSeconds() - 1));
         }
         if (!BlackoutVoteState.isActive()) {
             Minecraft.getInstance().setScreen(null);

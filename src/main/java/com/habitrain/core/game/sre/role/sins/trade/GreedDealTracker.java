@@ -41,19 +41,6 @@ public final class GreedDealTracker {
         return Math.max(BASE_PRICE, BUY_CEILING - BASE_PRICE * clamped);
     }
 
-    public static int sellPriceFor(@Nullable ServerLevel level, @Nullable String itemId) {
-        return sellPrice(getDealCount(level, itemId));
-    }
-
-    public static int buyPriceFor(@Nullable ServerLevel level, @Nullable String itemId) {
-        return buyPrice(getDealCount(level, itemId));
-    }
-
-    /** @return false if already at cap (no more deals for this item this round) */
-    public static boolean canDeal(@Nullable ServerLevel level, @Nullable String itemId) {
-        return getDealCount(level, itemId) < MAX_DEALS;
-    }
-
     /**
      * Increment deal count after successful commit. Caps at {@link #MAX_DEALS}.
      *

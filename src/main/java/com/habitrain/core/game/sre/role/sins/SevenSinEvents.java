@@ -14,7 +14,6 @@ import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.event.AllowPlayerDeathWithKiller;
 import io.wifi.starrailexpress.event.OnGameTrueStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeathWithKiller;
-import io.wifi.starrailexpress.event.ShouldDropOnDeath;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -30,6 +29,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.agmas.harpymodloader.events.ModdedRoleAssigned;
 
 import java.util.ArrayList;
@@ -69,19 +69,44 @@ public final class SevenSinEvents {
             }
         });
 
-        // Safe time end → sloth sleep (SRE + Blackout both fire OnGameTrueStarted).
+        // Safe time end → sloth sleep + wrath first psycho (SRE + Blackout both fire OnGameTrueStarted).
         OnGameTrueStarted.EVENT.register(level -> {
             try {
+                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+                // Natural Lust without lovers is demoted; forced Lust is kept for testing.
+                if (game != null && SevenSins.LUST != null
+                        && LustComponent.findTrueLoverPair(level) == null) {
+                    boolean changed = false;
+                    for (ServerPlayer player : level.players()) {
+                        if (!game.isRole(player, SevenSins.LUST)) continue;
+                        if (SevenSinsMutex.isForcedSinPlayer(player, SevenSins.LUST)) {
+                            HabiTrainCore.LOGGER.info(
+                                    "[Lust] forced keep for {} without lover pair",
+                                    player.getGameProfile().getName());
+                            continue;
+                        }
+                        game.addRole(player, SevenSinsMutex.fallbackNonSin(SevenSins.LUST), true);
+                        changed = true;
+                        HabiTrainCore.LOGGER.warn(
+                                "[Lust] removed at true start because no non-Lust mutual lover pair exists");
+                    }
+                    if (changed) {
+                        game.syncRoles();
+                    }
+                }
                 SlothComponent.onSafeTimeEnd(level);
+                WrathComponent.onSafeTimeEnd(level);
             } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Sloth] onSafeTimeEnd failed", t);
+                HabiTrainCore.LOGGER.warn("[SevenSinEvents] onSafeTimeEnd failed", t);
             }
         });
 
         registerSlothInputLocks();
+        registerEnvyAttackGate();
+        registerWrathHitGate();
         registerGreedPouchHooks();
 
-        // Pride aura + Envy mark balance gate (order: each handler independent).
+        // Pride aura + Envy gates + Wrath good-hit + Sloth gates.
         AllowPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
             if (!(victim instanceof ServerPlayer dead)) return true;
             if (!(dead.level() instanceof ServerLevel level)) return true;
@@ -102,18 +127,34 @@ public final class SevenSinEvents {
                 }
             }
 
-            // Envy: marked victim only killable when envy gold <= target gold.
+            // Envy: no current mark → cannot kill anyone; richer than mark → cannot kill mark.
             if (killer instanceof ServerPlayer killerSp
                     && SevenSins.ENVY != null
                     && game.isRole(killerSp, SevenSins.ENVY)) {
                 EnvyComponent envy = EnvyComponent.KEY.get(killerSp);
-                if (envy != null && envy.isMark(dead)) {
+                if (envy != null) {
+                    if (envy.getMarkedUuid() == null) {
+                        dead.setHealth(dead.getMaxHealth());
+                        killerSp.displayClientMessage(
+                                Component.literal("§c[嫉妒] 未标记目标，无法击杀。"),
+                                true
+                        );
+                        return false;
+                    }
+                    if (!envy.isMark(dead)) {
+                        dead.setHealth(dead.getMaxHealth());
+                        killerSp.displayClientMessage(
+                                Component.literal("§c[嫉妒] 只能击杀当前标记的目标。"),
+                                true
+                        );
+                        return false;
+                    }
                     int envyBal = shopBalance(killerSp);
                     int targetBal = shopBalance(dead);
                     if (envyBal > targetBal) {
                         dead.setHealth(dead.getMaxHealth());
                         killerSp.displayClientMessage(
-                                Component.literal("§c[嫉妒] 目标金币不足（你 " + envyBal
+                                Component.literal("§c[嫉妒] 你比对方更有钱（你 " + envyBal
                                         + " > 对方 " + targetBal + "），无法击杀标记。"),
                                 true
                         );
@@ -121,33 +162,23 @@ public final class SevenSinEvents {
                                 Component.literal("§e[嫉妒] 对方比你更有钱，标记未能致命。"),
                                 true
                         );
-                        HabiTrainCore.LOGGER.debug(
-                                "[Envy] blocked mark kill {} -> {} envyBal={} targetBal={}",
-                                killerSp.getGameProfile().getName(),
-                                dead.getGameProfile().getName(),
-                                envyBal, targetBal
-                        );
                         return false;
                     }
                 }
             }
 
-            // Wrath: good/innocent conventional weapon → stage machine (may cancel death).
-            // Fist/bare-hand does NOT advance stages (even though fist is "conventional" for pride).
+            // Wrath: good-aligned hit triggers second psycho (cancels this death while protectable).
             if (killer instanceof ServerPlayer killerSp
                     && SevenSins.WRATH != null
                     && game.isRole(dead, SevenSins.WRATH)) {
-                if (!SinDeathReasons.isForcePath(deathReason)
-                        && SinDeathReasons.isConventionalWeapon(deathReason)
-                        && !SinDeathReasons.isFistPath(deathReason)
-                        && WrathComponent.isInnocentAttacker(level, killerSp)) {
+                if (!SinDeathReasons.isForcePath(deathReason)) {
                     try {
                         WrathComponent wrath = WrathComponent.KEY.get(dead);
-                        if (wrath != null && !wrath.onLethalFromGoodWeapon(dead, killerSp)) {
+                        if (wrath != null && wrath.onHitByGood(dead, killerSp)) {
                             return false;
                         }
                     } catch (Throwable t) {
-                        HabiTrainCore.LOGGER.warn("[Wrath] stage advance failed", t);
+                        HabiTrainCore.LOGGER.warn("[Wrath] onHitByGood failed", t);
                     }
                 }
             }
@@ -200,7 +231,7 @@ public final class SevenSinEvents {
             return true;
         });
 
-        // Pride kill break + Envy mark loot + Wrath kill stage down / frenzy exhaustion + Sloth berserk kills.
+        // Pride kill break + Envy mark loot + Sloth berserk kills.
         OnPlayerDeathWithKiller.EVENT.register((victim, killer, deathReason) -> {
             if (!(killer instanceof ServerPlayer killerSp)) return;
             if (!(killerSp.level() instanceof ServerLevel level)) return;
@@ -227,28 +258,11 @@ public final class SevenSinEvents {
                     EnvyComponent envy = EnvyComponent.KEY.get(killerSp);
                     if (envy != null && envy.isMark(dead)) {
                         handleEnvyMarkLoot(killerSp, dead);
-                        // clear mark after successful kill
+                        // clear current mark after successful kill (history retained)
                         envy.setMarkedUuid(null);
                     }
                 } catch (Throwable t) {
                     HabiTrainCore.LOGGER.warn("[Envy] mark loot failed", t);
-                }
-            }
-
-            if (SevenSins.WRATH != null && game.isRole(killerSp, SevenSins.WRATH)) {
-                // Skip self-exhaustion force death path counting as a "wrath kill".
-                if (deathReason != null
-                        && WrathComponent.WRATH_EXHAUSTION.getPath().equals(deathReason.getPath())
-                        && killerSp.getUUID().equals(victim != null ? victim.getUUID() : null)) {
-                    return;
-                }
-                try {
-                    WrathComponent wrath = WrathComponent.KEY.get(killerSp);
-                    if (wrath != null) {
-                        wrath.onWrathKill(killerSp);
-                    }
-                } catch (Throwable t) {
-                    HabiTrainCore.LOGGER.warn("[Wrath] onWrathKill failed", t);
                 }
             }
 
@@ -302,17 +316,10 @@ public final class SevenSinEvents {
             return net.minecraft.world.InteractionResultHolder.pass(used);
         });
 
-        // Death drops: never drop bound greed pouch on death (steal/lose still kills via tick).
-        try {
-            ShouldDropOnDeath.EVENT.register(stack -> {
-                if (GreedPouchItem.isGreedPouch(stack)) {
-                    return false;
-                }
-                return true;
-            });
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Greed] ShouldDropOnDeath unavailable", t);
-        }
+        // NOTE: Do NOT register ShouldDropOnDeath here.
+        // That event is OR/any-true (see SRE ShouldDropOnDeath). Returning true for
+        // non-pouch stacks forced full inventory death drops and overrode the original
+        // whitelist. Bound-pouch no-drop is handled by GreedPouchDropMixin.
     }
 
     private static void registerSlothInputLocks() {
@@ -348,6 +355,16 @@ public final class SevenSinEvents {
             if (SlothComponent.isSleepingSloth(player)) {
                 notifySleepLock(player);
                 return InteractionResult.FAIL;
+            }
+            // Ordinary melee attacks against a sleeping Sloth are shield hits, not health damage.
+            if (player instanceof ServerPlayer attacker
+                    && entity instanceof ServerPlayer target
+                    && SlothComponent.isSleepingSloth(target)) {
+                SlothComponent sloth = SlothComponent.KEY.get(target);
+                if (sloth != null) {
+                    sloth.onShieldHit(target, attacker);
+                    return InteractionResult.FAIL;
+                }
             }
             // Limited berserk: only attackers set; open berserk unrestricted.
             if (player instanceof ServerPlayer sp
@@ -404,6 +421,55 @@ public final class SevenSinEvents {
         }
     }
 
+    private static void registerEnvyAttackGate() {
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (!(player instanceof ServerPlayer attacker)) return InteractionResult.PASS;
+            if (!(entity instanceof ServerPlayer target)) return InteractionResult.PASS;
+            if (!(world instanceof ServerLevel level)) return InteractionResult.PASS;
+            try {
+                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+                if (game == null || SevenSins.ENVY == null || !game.isRole(attacker, SevenSins.ENVY)) {
+                    return InteractionResult.PASS;
+                }
+                EnvyComponent envy = EnvyComponent.KEY.get(attacker);
+                if (envy != null && !envy.canHarm(target)) {
+                    attacker.displayClientMessage(
+                            Component.literal(envy.getMarkedUuid() == null
+                                    ? "§c[嫉妒] 未标记目标，无法攻击。"
+                                    : "§c[嫉妒] 只能攻击当前标记的目标。"),
+                            true
+                    );
+                    return InteractionResult.FAIL;
+                }
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Envy] attack gate failed", t);
+            }
+            return InteractionResult.PASS;
+        });
+    }
+
+    private static void registerWrathHitGate() {
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
+            if (world.isClientSide()) return InteractionResult.PASS;
+            if (!(player instanceof ServerPlayer attacker)) return InteractionResult.PASS;
+            if (!(entity instanceof ServerPlayer target)) return InteractionResult.PASS;
+            if (!(world instanceof ServerLevel level)) return InteractionResult.PASS;
+            try {
+                if (!WrathComponent.isWrathPlayer(level, target)) {
+                    return InteractionResult.PASS;
+                }
+                WrathComponent wrath = WrathComponent.KEY.get(target);
+                if (wrath != null && wrath.onHitByGood(target, attacker)) {
+                    return InteractionResult.FAIL;
+                }
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Wrath] melee hit gate failed", t);
+            }
+            return InteractionResult.PASS;
+        });
+    }
+
     private static void notifySleepLock(net.minecraft.world.entity.player.Player player) {
         if (player instanceof ServerPlayer sp) {
             sp.displayClientMessage(
@@ -425,11 +491,9 @@ public final class SevenSinEvents {
     private static void handleEnvyMarkLoot(ServerPlayer envy, ServerPlayer victim) {
         List<SlotRef> candidates = new ArrayList<>();
         Inventory inv = victim.getInventory();
-        for (int i = 0; i < inv.items.size(); i++) {
-            ItemStack stack = inv.items.get(i);
-            if (EnvyComponent.isTransferable(stack, envy)) {
-                candidates.add(new SlotRef(SlotKind.MAIN, i));
-            }
+        // Prefer main/offhand first so death-drop races still have a shot at held items.
+        if (EnvyComponent.isTransferable(victim.getMainHandItem(), envy)) {
+            candidates.add(new SlotRef(SlotKind.MAIN, inv.selected));
         }
         for (int i = 0; i < inv.offhand.size(); i++) {
             ItemStack stack = inv.offhand.get(i);
@@ -437,21 +501,30 @@ public final class SevenSinEvents {
                 candidates.add(new SlotRef(SlotKind.OFF, i));
             }
         }
-
-        if (!candidates.isEmpty()) {
-            SlotRef pick = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
-            ItemStack taken = pick.takeAll(inv);
-            if (taken != null && !taken.isEmpty()) {
-                if (!envy.getInventory().add(taken)) {
-                    envy.drop(taken, false);
-                }
-                envy.displayClientMessage(
-                        Component.literal("§a[嫉妒] 从标记目标夺得 " + taken.getHoverName().getString() + "。"),
-                        true
-                );
-                inv.setChanged();
-                return;
+        for (int i = 0; i < inv.items.size(); i++) {
+            if (i == inv.selected) continue; // already considered main hand
+            ItemStack stack = inv.items.get(i);
+            if (EnvyComponent.isTransferable(stack, envy)) {
+                candidates.add(new SlotRef(SlotKind.MAIN, i));
             }
+        }
+
+        while (!candidates.isEmpty()) {
+            int idx = ThreadLocalRandom.current().nextInt(candidates.size());
+            SlotRef pick = candidates.remove(idx);
+            ItemStack taken = pick.takeOne(inv);
+            if (taken == null || taken.isEmpty() || taken.is(Items.AIR)) {
+                continue;
+            }
+            if (!envy.getInventory().add(taken)) {
+                envy.drop(taken, false);
+            }
+            envy.displayClientMessage(
+                    Component.literal("§a[嫉妒] 从标记目标夺得 " + taken.getHoverName().getString() + "。"),
+                    true
+            );
+            inv.setChanged();
+            return;
         }
 
         // No transferable item → steal up to 100 coins
@@ -482,17 +555,21 @@ public final class SevenSinEvents {
     private enum SlotKind { MAIN, OFF }
 
     private record SlotRef(SlotKind kind, int index) {
-        /** Move the entire stack out of the slot (not a single item). */
-        ItemStack takeAll(Inventory inv) {
+        /** Move one exact item, preserving its components/NBT. */
+        ItemStack takeOne(Inventory inv) {
             ItemStack stack = switch (kind) {
                 case MAIN -> inv.items.get(index);
                 case OFF -> inv.offhand.get(index);
             };
-            if (stack == null || stack.isEmpty()) return ItemStack.EMPTY;
-            ItemStack taken = stack.copy();
-            switch (kind) {
-                case MAIN -> inv.items.set(index, ItemStack.EMPTY);
-                case OFF -> inv.offhand.set(index, ItemStack.EMPTY);
+            if (stack == null || stack.isEmpty() || stack.is(Items.AIR)) return ItemStack.EMPTY;
+            ItemStack taken = stack.copyWithCount(1);
+            if (taken.isEmpty() || taken.is(Items.AIR)) return ItemStack.EMPTY;
+            stack.shrink(1);
+            if (stack.isEmpty()) {
+                switch (kind) {
+                    case MAIN -> inv.items.set(index, ItemStack.EMPTY);
+                    case OFF -> inv.offhand.set(index, ItemStack.EMPTY);
+                }
             }
             return taken;
         }

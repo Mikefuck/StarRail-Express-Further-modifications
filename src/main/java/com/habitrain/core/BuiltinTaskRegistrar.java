@@ -5,12 +5,9 @@ import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
-import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -31,7 +28,6 @@ import java.util.stream.Collectors;
 public class BuiltinTaskRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|BuiltinTaskRegistrar");
 
-    private static final int GRASS_BLOCK_TYPE_ID = 12;
     private static final int CAT_BLOCK_TYPE_ID = 13;
     private static final int BACKPACK_TYPE_ID = 15;
     private static final int NO_BLOCK_TYPE_ID = -1;
@@ -44,49 +40,7 @@ public class BuiltinTaskRegistrar {
     private static Set<Block> cachedCatBlocks = null;
 
     public static void register() {
-        TaskRegistry.register(HabiTrainCore.MOD_ID, "test_grass", builder -> builder
-            .displayName("test_grass")
-            .category(TaskCategory.MURDER)
-            .weight(1.0f)
-            .blockTypeId(GRASS_BLOCK_TYPE_ID)
-            .instinctColor(0, 200, 0, 180)
-            .scanBlocks(Blocks.GRASS_BLOCK)
-            .onAssign((player, task) -> {
-                task.setMaxProgress(80);
-            })
-            .onTick((player, task) -> {
-                if (task.getProgress() >= task.getMaxProgress()) return;
-
-                Vec3 eyePos = player.getEyePosition();
-                Vec3 lookVec = player.getLookAngle();
-                double reach = 5.0;
-                Vec3 targetPos = eyePos.add(
-                    lookVec.x * reach,
-                    lookVec.y * reach,
-                    lookVec.z * reach
-                );
-
-                BlockHitResult hitResult = player.level().clip(
-                    new ClipContext(
-                        eyePos, targetPos,
-                        ClipContext.Block.OUTLINE,
-                        ClipContext.Fluid.NONE,
-                        player
-                    )
-                );
-
-                if (hitResult.getType() == HitResult.Type.BLOCK
-                    && player.level().getBlockState(hitResult.getBlockPos()).is(Blocks.GRASS_BLOCK)) {
-                    task.setProgress(Math.min(task.getProgress() + 1, task.getMaxProgress()));
-                } else {
-                    if (task.getProgress() > 0) {
-                        task.setProgress(Math.max(0, task.getProgress() - 2));
-                    }
-                }
-            })
-            .completionChecker((player, task) ->
-                task.getProgress() >= task.getMaxProgress())
-        );
+        // test_grass 已于 2026-07-10 从任务池移除（调试任务误入派发）
 
         TaskRegistry.register(HabiTrainCore.MOD_ID, "pet_cat", builder -> builder
             .displayName("摸猫猫")
@@ -182,7 +136,8 @@ public class BuiltinTaskRegistrar {
             .blockTypeId(NO_BLOCK_TYPE_ID)
             .instinctColor(255, 105, 180, 200)
             .onAssign((player, task) -> {
-                task.setMaxProgress(60);
+                // 7 秒对视：maxProgress=140；下方每 5 tick 检测时 +5，等效每 tick +1
+                task.setMaxProgress(140);
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
@@ -220,7 +175,8 @@ public class BuiltinTaskRegistrar {
                 }
 
                 if (eyeContact) {
-                    task.setProgress(Math.min(task.getProgress() + 1, task.getMaxProgress()));
+                    // +5 抵消 5-tick 节流，使有效进度速率 = 1/tick → 140 tick = 7 秒
+                    task.setProgress(Math.min(task.getProgress() + 5, task.getMaxProgress()));
                 } else {
                     if (task.getProgress() > 0) {
                         task.setProgress(0);
@@ -229,21 +185,7 @@ public class BuiltinTaskRegistrar {
             })
             .completionChecker((player, task) ->
                 task.getProgress() >= task.getMaxProgress())
-            .onComplete((player, task) -> {
-                if (player instanceof ServerPlayer serverPlayer) {
-                    serverPlayer.serverLevel().playSound(
-                        null,
-                        serverPlayer.blockPosition(),
-                        HabiTrainCore.LOOK_MY_EYES_SOUND,
-                        SoundSource.PLAYERS,
-                        1.0f,
-                        1.0f
-                    );
-                }
-                if (player instanceof ServerPlayer serverPlayer) {
-                    SubtitleNotifier.sendTop(serverPlayer, Component.translatable("task.look_my_eyes"), Component.literal("§a✔ LOOK MY EYES 完成！你们对视了3秒！"));
-                }
-            })
+            // onComplete: no sound (look_my_eyes SFX removed)
         );
     }
 

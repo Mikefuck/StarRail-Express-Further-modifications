@@ -3,7 +3,6 @@ package com.habitrain.core.game.sre.modifier.virtue;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.modifier.HabiModifiers;
 import io.wifi.starrailexpress.cca.DynamicShopComponent;
-import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -56,14 +55,21 @@ public final class TemperanceVirtue {
         return BuiltInRegistries.ITEM.getKey(stack.getItem());
     }
 
+    public static String entryKeyOf(ShopEntry entry) {
+        ResourceLocation id = itemIdOf(entry);
+        if (entry == null || id == null) return null;
+        return id + "|" + entry.price() + "|" + entry.type()
+                + "|" + entry.currency() + "|" + entry.weight();
+    }
+
     /**
      * Quote after temperance decay, before DynamicShop.
      * first buy: base; later: max(base*0.5, last*0.9).
      */
-    public static int temperanceQuote(Player player, ResourceLocation itemId, int basePrice) {
+    public static int temperanceQuote(Player player, String entryKey, int basePrice) {
         if (basePrice < 0) return basePrice;
-        if (player == null || itemId == null || !hasTemperance(player)) return basePrice;
-        Integer last = TemperancePurchaseState.getLastPrice(player.getUUID(), itemId);
+        if (player == null || entryKey == null || !hasTemperance(player)) return basePrice;
+        Integer last = TemperancePurchaseState.getLastPrice(player.getUUID(), entryKey);
         if (last == null) return basePrice;
         int floor = (int) Math.floor(basePrice * FLOOR_OF_BASE);
         int decayed = (int) Math.floor(last * DECAY_OF_LAST);
@@ -77,7 +83,7 @@ public final class TemperanceVirtue {
         if (entry == null) return 0;
         int base = entry.price();
         ResourceLocation id = itemIdOf(entry);
-        int tempered = temperanceQuote(player, id, base);
+        int tempered = temperanceQuote(player, entryKeyOf(entry), base);
         try {
             DynamicShopComponent dyn = DynamicShopComponent.KEY.get(player);
             if (dyn != null && id != null) {
@@ -91,14 +97,16 @@ public final class TemperanceVirtue {
     /**
      * After a successful purchase, remember the charged price for next decay.
      */
-    public static void onSuccessfulBuy(Player player, ShopEntry entry, int pricePaid) {
+    public static void onSuccessfulBuy(Player player, ShopEntry entry, int ignoredPricePaid) {
         if (player == null || entry == null || !hasTemperance(player)) return;
         ResourceLocation id = itemIdOf(entry);
-        if (id == null) return;
-        TemperancePurchaseState.recordPurchase(player.getUUID(), id, pricePaid);
+        String entryKey = entryKeyOf(entry);
+        if (id == null || entryKey == null) return;
+        int temperedBase = temperanceQuote(player, entryKey, entry.price());
+        TemperancePurchaseState.recordPurchase(player.getUUID(), entryKey, temperedBase);
         if (player instanceof ServerPlayer sp) {
-            HabiTrainCore.LOGGER.debug("[Temperance] {} bought {} for {} (next decay base)",
-                    sp.getGameProfile().getName(), id, pricePaid);
+            HabiTrainCore.LOGGER.debug("[Temperance] {} bought {} temperedBase={}",
+                    sp.getGameProfile().getName(), id, temperedBase);
         }
     }
 
@@ -107,11 +115,4 @@ public final class TemperanceVirtue {
         TemperancePurchaseState.clearAll();
     }
 
-    /**
-     * Helper for mixins that need the shop component player field.
-     */
-    public static int quoteFromShop(SREPlayerShopComponent shop, ShopEntry entry) {
-        if (shop == null || entry == null) return entry == null ? 0 : entry.price();
-        return effectiveBuyPrice(shop.getPlayer(), entry);
-    }
 }

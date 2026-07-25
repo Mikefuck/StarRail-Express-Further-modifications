@@ -53,12 +53,12 @@ public class AddCoalTask {
                 cleanup(serverPlayer);
 
                 // 通过 applyTimeImpact 统一调用（替代硬编码 reduceTime(level, 30)）
-                BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), "habitrain_core:add_coal");
-                BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:add_coal");
+                BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), com.habitrain.core.HabiTrainCore.TASK_ADD_COAL);
+                BlackoutTaskHelper.grantRewards(serverPlayer, com.habitrain.core.HabiTrainCore.TASK_ADD_COAL);
 
                 // 同步完成其它正在做 add_coal 的 GOOD 玩家
                 SupplyTaskSyncHelper.syncCompletion(
-                        serverPlayer.serverLevel(), serverPlayer.getUUID(), "habitrain_core:add_coal");
+                        serverPlayer.serverLevel(), serverPlayer.getUUID(), com.habitrain.core.HabiTrainCore.TASK_ADD_COAL);
             })
             .onFail((player, task) -> cleanup(player))
             .onRemove((player, task) -> cleanup(player))

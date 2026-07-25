@@ -4,7 +4,6 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.cache.ActiveTaskCache;
-import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.render.BlockStageScanner;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.client.render.PhoneOverlayRenderer;
@@ -91,13 +90,13 @@ public class CustomTaskBlockRendererMixin {
         Color taskColor = resolveColor(taskName);
         float lineWidth = resolveOutlineWidth(taskName);
 
-        boolean isAddCoalTask = "habitrain_core:add_coal".equals(taskName);
+        boolean isAddCoalTask = com.habitrain.core.HabiTrainCore.TASK_ADD_COAL.equals(taskName);
         boolean hasCoal = isAddCoalTask && BlockStageScanner.hasPlayerCoal(instance.player);
 
-        boolean isFurnaceExplosionTask = "habitrain_core:furnace_explosion".equals(taskName);
+        boolean isFurnaceExplosionTask = com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION.equals(taskName);
         boolean hasTorch = isFurnaceExplosionTask && BlockStageScanner.hasPlayerRedstoneTorch(instance.player);
 
-        boolean shouldRenderPhone = BlackoutVoteState.isBlackoutModeActive();
+        boolean shouldRenderPhone = com.habitrain.core.client.gui.ClientBlackoutState.isBlackoutModeActive();
 
         int renderedCount = 0;
         var level = renderContext.world();
@@ -150,21 +149,32 @@ public class CustomTaskBlockRendererMixin {
         }
     }
 
+    private static final java.util.Map<String, Color> COLOR_CACHE = new java.util.HashMap<>();
+    private static final Color FALLBACK_COLOR = new Color(200, 200, 200, 180);
+
     private static int resolveBlockTypeId(String taskFullId) {
         TaskDefinition def = TaskRegistry.get(taskFullId);
         return def != null ? def.getBlockTypeId() : -1;
     }
 
     private static Color resolveColor(String taskFullId) {
+        Color cached = COLOR_CACHE.get(taskFullId);
+        if (cached != null) return cached;
+
+        Color resolved;
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
         if (cfg != null) {
-            return new Color(cfg.getColor(), true);
+            resolved = new Color(cfg.getColor(), true);
+        } else {
+            TaskDefinition def = TaskRegistry.get(taskFullId);
+            if (def != null) {
+                resolved = new Color(def.getInstinctColorRGB(), true);
+            } else {
+                return FALLBACK_COLOR;
+            }
         }
-        TaskDefinition def = TaskRegistry.get(taskFullId);
-        if (def != null) {
-            return new Color(def.getInstinctColorRGB(), true);
-        }
-        return new Color(200, 200, 200, 180);
+        COLOR_CACHE.put(taskFullId, resolved);
+        return resolved;
     }
 
     private static float resolveOutlineWidth(String taskFullId) {

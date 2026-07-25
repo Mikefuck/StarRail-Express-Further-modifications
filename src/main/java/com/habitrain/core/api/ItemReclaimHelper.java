@@ -14,8 +14,8 @@ import net.minecraft.world.item.ItemStack;
  *   在任务因取消/隐藏而失效时应被回收，避免玩家无奖励获得强大道具。
  *
  * 机制：
- *   1. 发放时：giveRandomBackpackItem 给 ItemStack 打 NBT 标签
- *      habitrain_grant = "<任务 fullId>"，再 addGrantedItem 到 TaskInstance。
+ *   1. 发放时：给 ItemStack 打 CUSTOM_DATA NBT 标签 habitrain_grant = 任务 fullId
+ *      （见 {@link #tagGrantedItem}）。不维护 TaskInstance 列表。
  *   2. 回收时：扫描玩家背包 + 副手，移除所有带匹配标签的 ItemStack。
  *
  * 注意：成功完成的任务不回收（玩家保留道具作为奖励）。

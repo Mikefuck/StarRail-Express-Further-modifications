@@ -2,8 +2,7 @@ package com.habitrain.core.game.sre.modifier.virtue;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.modifier.HabiModifiers;
-import io.wifi.starrailexpress.api.SRERole;
-import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import com.habitrain.core.game.sre.role.sins.SinRoleRules;
 import io.wifi.starrailexpress.event.AllowPlayerDeathWithKiller;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -28,7 +27,7 @@ public final class MercyVirtue {
             if (!(killer instanceof ServerPlayer killerSp)) return true;
             if (!(dead.level() instanceof ServerLevel level)) return true;
             if (!hasMercy(dead)) return true;
-            if (!isInnocentKiller(level, killerSp)) return true;
+            if (!SinRoleRules.isGoodAligned(level, killerSp)) return true;
 
             // Only cancel death after mercy is successfully consumed.
             boolean consumed = false;
@@ -74,15 +73,4 @@ public final class MercyVirtue {
      * Killer is "good/innocent" when their role cannot use killer tools.
      * Null / missing role treated as non-innocent (do not cancel).
      */
-    static boolean isInnocentKiller(ServerLevel level, ServerPlayer killer) {
-        try {
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null) return false;
-            SRERole role = game.getRole(killer);
-            if (role == null) return false;
-            return !role.canUseKiller();
-        } catch (Throwable t) {
-            return false;
-        }
-    }
 }

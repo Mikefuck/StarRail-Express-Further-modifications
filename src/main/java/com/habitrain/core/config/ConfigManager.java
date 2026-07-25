@@ -273,6 +273,16 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
     }
 
+    public RoleOverrideConfigSection getRoleOverrides() {
+        return repository.getRoleOverrides();
+    }
+
+    public void setRoleOverrides(RoleOverrideConfigSection section) {
+        repository.setRoleOverrides(section);
+        store.markDirty();
+        com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild(section);
+    }
+
     public void ensureModeMapVoteDefaults(java.util.Collection<String> modeIds,
                                           java.util.Collection<String> mapIds) {
         ModeMapVoteSettings s = repository.getModeMapVote();

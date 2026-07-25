@@ -9,6 +9,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.HoneyBottleItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.MilkBucketItem;
 import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
@@ -49,8 +50,9 @@ public class BlackoutDrinkItemMixin {
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) return;
 
         Item item = stack.getItem();
-        // 与 SRE 原版一致：药水、蜂蜜瓶、鸡尾酒都算"喝"
-        if (item instanceof PotionItem || item instanceof HoneyBottleItem || item instanceof CocktailItem) {
+        // 与 SRE 原版一致：药水、蜂蜜瓶、鸡尾酒都算"喝"；额外包含牛奶桶
+        if (item instanceof PotionItem || item instanceof HoneyBottleItem
+                || item instanceof CocktailItem || item instanceof MilkBucketItem) {
             task.setProgress(task.getMaxProgress());
         }
     }

@@ -9,7 +9,6 @@ import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
-import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.role.sins.win.GreedRole;
 import com.habitrain.core.game.sre.role.sins.win.LustRole;
 import com.habitrain.core.game.sre.role.sins.win.PrideRole;
@@ -70,22 +69,10 @@ public final class SevenSins {
     }
 
     private static void registerSkills() {
-        if (PRIDE != null) {
-            RoleSkill.register(PRIDE,
-                    RoleSkill.skill(
-                            HabiTrainCore.id("sin_pride_copy_shop"),
-                            "skill.habitrain_core.sin_pride.copy_shop",
-                            PrideComponent::useCopyShop
-                    ).cooldownSeconds(PrideComponent.COPY_SHOP_CD_SECONDS)
-                            .showOnHud(true)
-                            .announceToSelf(true)
-                            .build()
-            );
-        }
         if (ENVY != null) {
             RoleSkill.register(ENVY,
                     RoleSkill.skill(
-                            HabiTrainCore.id("sin_envy_mark"),
+                            EnvyComponent.MARK_SKILL_ID,
                             "skill.habitrain_core.sin_envy.mark",
                             EnvyComponent::useMark
                     ).cooldownSeconds(EnvyComponent.MARK_CD_SECONDS)
@@ -129,15 +116,28 @@ public final class SevenSins {
             );
         }
         if (GREED != null) {
-            // Anonymous trade: crosshair partner + sample item in other hand.
+            // Steal one random transferable item from crosshair target.
             RoleSkill.register(GREED,
                     RoleSkill.skill(
-                            HabiTrainCore.id("sin_greed_trade"),
-                            "skill.habitrain_core.sin_greed.trade",
-                            GreedTradeManager::useTradeSkill
-                    ).cooldownSeconds(5)
+                            GreedComponent.STEAL_SKILL_ID,
+                            "skill.habitrain_core.sin_greed.steal",
+                            GreedComponent::useSteal
+                    ).cooldownSeconds(GreedComponent.STEAL_CD_SECONDS)
                             .showOnHud(true)
                             .announceToSelf(true)
+                            .build()
+            );
+        }
+        if (GLUTTONY != null) {
+            // Passive eat-buff CD shown on unified skill HUD (handler never activates).
+            RoleSkill.register(GLUTTONY,
+                    RoleSkill.skill(
+                            GluttonyComponent.BUFF_SKILL_ID,
+                            "skill.habitrain_core.sin_gluttony.buff",
+                            GluttonyComponent::useBuffSkillHud
+                    ).cooldownSeconds(GluttonyComponent.BUFF_CD_SECONDS)
+                            .showOnHud(true)
+                            .announceToSelf(false)
                             .build()
             );
         }
@@ -155,20 +155,22 @@ public final class SevenSins {
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
 
-        // Envy: killer
+        // Envy: killer — shop override is authoritative (not customEntries)
         ENVY = TMMRoles.registerRole(new NormalRole(
                 ENVY_ID, new Color(40, 160, 60).getRGB(),
                 false, true, SRERole.MoodType.FAKE, Integer.MAX_VALUE, false
         ) {
             @Override
             public List<ShopEntry> getShopEntries() {
+                // Fresh list each open so prices/items cannot be mutated by shop UI.
                 return SevenSinShops.envyShop();
             }
         }.setComponentKey(EnvyComponent.KEY)
+                .setCanUseInstinct(true)
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
 
-        // Wrath: neutral for killer, see time, no instinct; no shop; fake knife/gun start
+        // Wrath: neutral for killer, see time, no instinct; no shop; no default items
         WRATH = TMMRoles.registerRole(new NormalRole(
                 WRATH_ID, new Color(200, 30, 30).getRGB(),
                 false, false, SRERole.MoodType.FAKE,
@@ -176,7 +178,7 @@ public final class SevenSins {
         ) {
             @Override
             public List<ItemStack> getDefaultItems() {
-                return WrathComponent.defaultItems();
+                return List.of();
             }
 
             @Override
@@ -189,15 +191,17 @@ public final class SevenSins {
                 .setCanSeeCoin(true)
                 .setDefaultMax(1));
 
-        // Greed: independent neutral CustomWinner
+        // Greed: independent neutral CustomWinner; natural spawn >12 players (mutex gate)
         GREED = TMMRoles.registerRole(new GreedRole(
                 GREED_ID, new Color(200, 160, 20).getRGB(),
                 false, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), false
+                TMMRoles.CIVILIAN.getMaxSprintTime(), true
         ).setComponentKey(GreedComponent.KEY)
                 .setNeutrals(true)
+                .setCanUseInstinct(true)
                 .setCanSeeCoin(true)
-                .setDefaultMax(1));
+                .setDefaultMax(1)
+                .setDefaultEnableNeededPlayerCount(13));
 
         // Gluttony: innocent civilian
         GLUTTONY = TMMRoles.registerRole(new NormalRole(

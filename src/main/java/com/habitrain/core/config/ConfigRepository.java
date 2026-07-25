@@ -15,6 +15,7 @@ public class ConfigRepository {
     private int tempPowerPrice = 100;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
+    private RoleOverrideConfigSection roleOverrides = RoleOverrideConfigSection.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -141,6 +142,12 @@ public class ConfigRepository {
 
     public void setEnvironment(EnvironmentSettings s) {
         this.environment = s != null ? s : EnvironmentSettings.createDefault();
+    }
+
+    public RoleOverrideConfigSection getRoleOverrides() { return roleOverrides; }
+
+    public void setRoleOverrides(RoleOverrideConfigSection s) {
+        this.roleOverrides = s != null ? s : RoleOverrideConfigSection.createDefault();
     }
 
     @Nullable

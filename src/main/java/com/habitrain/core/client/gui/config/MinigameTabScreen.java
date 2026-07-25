@@ -24,7 +24,6 @@ import java.util.Locale;
  */
 public class MinigameTabScreen {
 
-    private static final int CARD_W = 240;
     private static final int CARD_H = 56;
     private static final int CARD_GAP = 6;
     private static final int HEADER_H = 28;

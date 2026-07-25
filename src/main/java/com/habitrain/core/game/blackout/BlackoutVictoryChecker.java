@@ -75,6 +75,14 @@ public class BlackoutVictoryChecker {
             return;
         }
 
+        // 3) MODIFY win-condition hooks from role override API.
+        WinResult hookResult = RoleOverrideWinHook.check(level);
+        if (hookResult != null) {
+            mode.setLastWinningFaction(null);
+            endGame(level, hookResult, hookResult.getReason());
+            return;
+        }
+
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
         // SIN_* never enter getRemainingGood/Bad; pride block can still
@@ -96,7 +104,7 @@ public class BlackoutVictoryChecker {
             return;
         }
         // Timer can still end even if pride is alive (spec §6.2 step 3).
-        // Sloth hijacks timer GOOD end when alive (design §5.7).
+        // Sloth hijacks timer GOOD end when alive (design §5.7) — same as wipe paths.
         if (BlackoutTimerSystem.isTimeUp(level)) {
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
@@ -393,7 +401,7 @@ public class BlackoutVictoryChecker {
     void forceAssignRestorePowerToAllGood(ServerLevel level) {
         if (level == null) return;
         TaskManager mgr = TaskManager.getInstance();
-        var restoreDef = TaskRegistry.get("habitrain_core:restore_power");
+        var restoreDef = TaskRegistry.get(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER);
         if (restoreDef == null) return;
 
         int assigned = 0;

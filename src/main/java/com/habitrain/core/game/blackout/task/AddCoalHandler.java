@@ -66,7 +66,7 @@ public class AddCoalHandler {
 
                 ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
                 TaskInstance task = sp != null ? TaskManager.getInstance().getActiveTask(uuid) : null;
-                boolean isAddCoalTask = task != null && "habitrain_core:add_coal".equals(task.getFullId());
+                boolean isAddCoalTask = task != null && HabiTrainCore.TASK_ADD_COAL.equals(task.getFullId());
 
                 if (state.slowUntilTick <= tick) {
                     if (sp != null) {
@@ -99,10 +99,9 @@ public class AddCoalHandler {
         SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
-    /** 清空全部状态（游戏结束时调用）。 */
+    /** 清空本 handler 状态。缓慢表由 GameLifecycleHandler 统一 clear。 */
     public static void clearAll() {
         activeStates.clear();
-        SlownessReapplyManager.clearAll();
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
@@ -112,7 +111,7 @@ public class AddCoalHandler {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
-        if (task == null || !"habitrain_core:add_coal".equals(task.getFullId())) {
+        if (task == null || !HabiTrainCore.TASK_ADD_COAL.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= PROGRESS_DONE) {
@@ -174,9 +173,10 @@ public class AddCoalHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, boolean phaseProgressed) {
-        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse("habitrain_core:add_coal")));
+        int duration = SLOW_TICKS + 10;
+        SlownessReapplyManager.register(sp.serverLevel(), uuid,
+                2, duration,
+                ResourceLocation.parse(HabiTrainCore.TASK_ADD_COAL));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         CoalState s = new CoalState();
         s.slowUntilTick = tick + SLOW_TICKS;

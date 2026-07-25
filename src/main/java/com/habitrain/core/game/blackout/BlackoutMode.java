@@ -28,7 +28,7 @@ public class BlackoutMode implements GameMode {
             new TaskCategory("habitrain:blackout_bad", "坏人任务", MODE_ID);
 
     public static final Set<String> ONCE_PER_GAME_TASK_IDS =
-            Collections.unmodifiableSet(new HashSet<>(List.of("habitrain_core:furnace_explosion")));
+            Collections.unmodifiableSet(new HashSet<>(List.of(BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION)));
 
     private ServerLevel currentLevel;
     private boolean gameEnded = false;
@@ -88,14 +88,12 @@ public class BlackoutMode implements GameMode {
         assignedOncePerGameTasks.clear();
 
         BlackoutRoleManager.clear(level);
-        BlackoutSheriffVoteManager.reset(level);
         BlackoutTimerSystem.init(level,
                 () -> victoryChecker.triggerSREPermanentBlackout(currentLevel),
                 () -> victoryChecker.endSREBlackout(currentLevel));
         BlackoutPoliceHireService.reset(level);
         BlackoutExileVoteManager.reset(level);
         BlackoutHornVoteHandler.clearAll();
-        BlackoutShopService.resetRound(level);
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.reset(level);
         syncManager.onPreStart();
         syncManager.syncReset(level);
@@ -141,11 +139,13 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onPlayerJoin(ServerPlayer player) {
-        BlackoutSheriffVoteManager.onPlayerJoined(currentLevel, player);
+        // 警长投票表面已移除；join 钩子保留供后续同步扩展，须防清理竞态。
+        if (currentLevel == null || player == null) return;
     }
 
     @Override
     public void onPlayerLeave(ServerPlayer player) {
+        if (currentLevel == null || player == null) return;
         BlackoutRoleManager.eliminate(currentLevel, player.getUUID());
         victoryChecker.checkVictory(currentLevel);
     }
@@ -161,12 +161,10 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onCleanup(ServerLevel level) {
         syncManager.syncReset(level);
-        BlackoutSheriffVoteManager.reset(level);
         BlackoutPoliceHireService.cleanup(level);
         BlackoutExileVoteManager.reset(level);
         BlackoutHornVoteHandler.clearAll();
         BlackoutTimerSystem.reset(level);
-        BlackoutShopService.resetRound(level);
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.cleanup(level);
         // 局末回收所有在线玩家的临时电源提灯，防跨局残留
         for (ServerPlayer p : level.players()) {

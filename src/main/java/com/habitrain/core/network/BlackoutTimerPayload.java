@@ -39,9 +39,20 @@ public record BlackoutTimerPayload(
         PayloadTypeRegistry.playS2C().register(TYPE, CODEC);
     }
 
+    /** 全服广播（配置类场景）。对局 HUD 请用 {@link #broadcastToLevel}。 */
     public static void broadcastToAll(MinecraftServer server, int totalTime, long endTimeTick, boolean active, int phase) {
         var payload = new BlackoutTimerPayload(totalTime, endTimeTick, active, phase);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            ServerPlayNetworking.send(player, payload);
+        }
+    }
+
+    /** 仅发给该世界在线玩家，避免跨维度污染 HUD。 */
+    public static void broadcastToLevel(net.minecraft.server.level.ServerLevel level,
+                                        int totalTime, long endTimeTick, boolean active, int phase) {
+        if (level == null) return;
+        var payload = new BlackoutTimerPayload(totalTime, endTimeTick, active, phase);
+        for (ServerPlayer player : level.players()) {
             ServerPlayNetworking.send(player, payload);
         }
     }

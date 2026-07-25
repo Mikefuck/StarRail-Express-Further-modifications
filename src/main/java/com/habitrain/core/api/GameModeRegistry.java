@@ -136,9 +136,14 @@ public class GameModeRegistry {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode explicit = ACTIVE_MODES.get(levelKey);
         if (explicit != null) return Optional.of(explicit);
-        // fallback: passive check (cached)
+        // fallback: passive check (cached only while still isActive)
         GameMode cached = PASSIVE_CACHE.get(levelKey);
-        if (cached != null) return Optional.of(cached);
+        if (cached != null) {
+            if (cached.isActive(level)) {
+                return Optional.of(cached);
+            }
+            PASSIVE_CACHE.remove(levelKey);
+        }
         return REGISTRY.values().stream()
                 .filter(m -> m.isActive(level))
                 .findFirst()

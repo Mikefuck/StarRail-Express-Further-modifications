@@ -103,16 +103,8 @@ public class TaskPoolBuilder {
     }
 
     public static boolean isTaskMapEnabled(String fullId, String mapName) {
-        TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);
-        if (entry == null) return true;
-        if (!entry.enabled) return false;
-        if (entry.mapFilterMode == 0) return true;
-
-        boolean listEmpty = entry.enabledMaps == null || entry.enabledMaps.isEmpty();
-        boolean contained = !listEmpty && entry.enabledMaps.contains(mapName);
-
-        if (entry.mapFilterMode == 1) return listEmpty || contained;
-        return listEmpty || !contained;
+        // 单一真相：委托 ConfigManager（含 enabled + mapFilterMode）
+        return ConfigManager.getInstance().isTaskEnabled(fullId, mapName);
     }
 
     public static boolean isTaskAllowedForPool(TaskDefinition def, TaskCategory currentCategory,

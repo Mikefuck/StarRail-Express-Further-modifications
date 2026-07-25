@@ -1,7 +1,9 @@
 package com.habitrain.core.game.sre;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
@@ -70,6 +72,11 @@ public final class SREModeStartAdapter {
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
                 return isSreGameBlocking(level);
             }
+            // Original SRE modes bridged as thin proxies (wifi:tnt_tag, wifi:lover, …)
+            GameMode registered = GameModeRegistry.get(registryFullId);
+            if (registered instanceof SreOriginalModeProxy proxy) {
+                return startSreModeById(level, proxy.getSreId());
+            }
             // generic explicit registry start
             if (GameModeRegistry.isRegistered(registryFullId)) {
                 GameModeRegistry.start(registryFullId, level);
@@ -80,5 +87,19 @@ public final class SREModeStartAdapter {
             HabiTrainCore.LOGGER.error("startMode failed: {}", registryFullId, t);
             return false;
         }
+    }
+
+    private static boolean startSreModeById(ServerLevel level, ResourceLocation sreId) {
+        if (sreId == null) {
+            return false;
+        }
+        var sreMode = io.wifi.starrailexpress.api.SREGameModes.GAME_MODES.get(sreId);
+        if (sreMode == null) {
+            HabiTrainCore.LOGGER.warn("SRE mode not found in GAME_MODES: {}", sreId);
+            return false;
+        }
+        int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(sreMode.defaultStartTime, 0);
+        io.wifi.starrailexpress.game.GameUtils.startGame(level, sreMode, ticks);
+        return isSreGameBlocking(level);
     }
 }

@@ -42,8 +42,8 @@ public class RepairWiringTask {
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     // 通过 applyTimeImpact 统一调用（替代硬编码 delayMaintenanceOrCountdown(level, 40)）
-                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), "habitrain_core:repair_wiring");
-                    BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:repair_wiring");
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(), com.habitrain.core.HabiTrainCore.TASK_REPAIR_WIRING);
+                    BlackoutTaskHelper.grantRewards(serverPlayer, com.habitrain.core.HabiTrainCore.TASK_REPAIR_WIRING);
                     SubtitleNotifier.sendTop(
                             serverPlayer,
                             Component.translatable("task.repair_wiring"),
@@ -52,7 +52,7 @@ public class RepairWiringTask {
                     );
                     // 同步完成其它正在做 repair_wiring 的 GOOD 玩家
                     SupplyTaskSyncHelper.syncCompletion(
-                            serverPlayer.serverLevel(), serverPlayer.getUUID(), "habitrain_core:repair_wiring");
+                            serverPlayer.serverLevel(), serverPlayer.getUUID(), com.habitrain.core.HabiTrainCore.TASK_REPAIR_WIRING);
                 }
             })
             .onRemove((player, task) -> cleanup(player))

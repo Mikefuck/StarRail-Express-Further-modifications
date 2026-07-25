@@ -4,8 +4,6 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutPhoneHireScreen;
-import com.habitrain.core.client.gui.BlackoutSheriffVoteScreen;
-import com.habitrain.core.client.gui.BlackoutSheriffVoteState;
 import com.habitrain.core.client.gui.BlackoutTaskShopScreen;
 import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
@@ -20,7 +18,6 @@ import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.BlackoutAnnouncePayload;
 import com.habitrain.core.network.BlackoutHireResultPayload;
 import com.habitrain.core.network.BlackoutPhoneOpenPayload;
-import com.habitrain.core.network.BlackoutSheriffVotePayload;
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
@@ -32,6 +29,7 @@ import com.habitrain.core.network.TaskConfigPayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.screens.Screen;
 
 /**
  * 注册所有服务端到客户端（S2C）的网络载荷接收器。
@@ -108,6 +106,8 @@ public class NetworkReceiverRegistrar {
                 HabiTrainCore.LOGGER.info("收到服务端完整配置同步 ({} 字节)", payload.getConfigJson().length());
                 ConfigManager.getInstance().applySyncFromJson(payload.getConfigJson());
                 InstinctColorHelper.markDirty();
+                // Refresh role override engine with synced config
+                com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
             });
         });
 
@@ -116,9 +116,12 @@ public class NetworkReceiverRegistrar {
         // =========================================================
 
         // 6) 时间同步
+        // remaining<=0 且 endTimeTick==0：局终/重置包 → 拆 HUD
+        // remaining<=0 但 endTimeTick>0：仍在对局时钟内（极短瞬间）→ 更新，不拆 active
         ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
-                if (payload.totalTimeRemaining() <= 0) {
+                boolean sessionReset = payload.totalTimeRemaining() <= 0 && payload.endTimeTick() <= 0L;
+                if (sessionReset) {
                     BlackoutHudOverlay.reset();
                     BlackoutWelcomeRenderer.reset();
                     ClientBlackoutState.setBlackoutModeActive(false);
@@ -127,21 +130,14 @@ public class NetworkReceiverRegistrar {
 
                 ClientBlackoutState.setBlackoutModeActive(true);
                 BlackoutHudOverlay.updateTime(
-                    payload.totalTimeRemaining(), payload.endTimeTick(), payload.blackoutActive(), payload.phase());
+                    Math.max(0, payload.totalTimeRemaining()),
+                    payload.endTimeTick(),
+                    payload.blackoutActive(),
+                    payload.phase());
             });
         });
 
-        // 7) 警长投票 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutSheriffVotePayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                BlackoutSheriffVoteState.update(payload);
-                if (!payload.active() && ctx.client().screen instanceof BlackoutSheriffVoteScreen) {
-                    ctx.client().setScreen(null);
-                }
-            });
-        });
-
-        // 8) 电话打开状态 S2C 接收器
+        // 7) 电话打开状态 S2C 接收器
         ClientPlayNetworking.registerGlobalReceiver(BlackoutPhoneOpenPayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
@@ -206,17 +202,28 @@ public class NetworkReceiverRegistrar {
         // 14) 通用选项投票（模式/地图等） S2C 接收器
         ClientPlayNetworking.registerGlobalReceiver(OptionVotePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
-                OptionVoteState.update(payload);
-                // Tip-only UX: never auto-open; close when vote ends if screen is open.
-                if (!payload.active() && ctx.client().screen instanceof OptionVoteScreen) {
-                    ctx.client().setScreen(null);
+                OptionVoteState.UpdateResult result = OptionVoteState.update(payload);
+                // Auto-open once per phase (inactive→active or voteId change).
+                // 1Hz rebroadcasts must not re-force the screen if the player closed it.
+                if (result.shouldClose()) {
+                    if (ctx.client().screen instanceof OptionVoteScreen) {
+                        ctx.client().setScreen(null);
+                    }
+                } else if (result.shouldAutoOpen()) {
+                    Screen parent = ctx.client().screen;
+                    // Rebuild if already open (mode→map) so title/list refresh; unwrap nested parents.
+                    while (parent instanceof OptionVoteScreen open) {
+                        parent = open.getParentScreen();
+                    }
+                    ctx.client().setScreen(new OptionVoteScreen(parent));
                 }
             });
         });
 
-        // 15) 贪婪匿名交易提示 — MVP 用聊天确认按钮，此处仅吞包防未处理告警
-        ClientPlayNetworking.registerGlobalReceiver(GreedTradePromptPayload.TYPE, (payload, ctx) -> {
-            // no-op: server also sends chat click-confirm buttons
-        });
+        // 15) 贪婪匿名交易提示 — 打开专用双确认界面
+        ClientPlayNetworking.registerGlobalReceiver(GreedTradePromptPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> ctx.client().setScreen(
+                        new com.habitrain.core.client.gui.GreedTradePromptScreen(
+                                ctx.client().screen, payload))));
     }
 }

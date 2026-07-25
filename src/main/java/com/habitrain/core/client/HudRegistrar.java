@@ -1,5 +1,6 @@
 package com.habitrain.core.client;
 
+import com.habitrain.core.client.gui.BlackoutActiveTaskHud;
 import com.habitrain.core.client.gui.BlackoutHudOverlay;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import net.fabricmc.api.EnvType;
@@ -21,6 +22,7 @@ public class HudRegistrar {
         // HUD 渲染
         HudRenderCallback.EVENT.register((g, tickDelta) -> {
             BlackoutHudOverlay.render(g);
+            BlackoutActiveTaskHud.render(g);
             BlackoutWelcomeRenderer.render(g);
         });
     }

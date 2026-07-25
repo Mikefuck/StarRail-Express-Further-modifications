@@ -72,10 +72,6 @@ public class TaskManager {
                 .merge(fullId, 1, Integer::sum);
     }
 
-    public void clearDlcTaskCounts(UUID playerUuid) {
-        dlcTaskCounts.remove(playerUuid);
-    }
-
     public boolean isBlackoutNextDailyPool(UUID playerUuid) {
         return blackoutNextDailyPool.getOrDefault(playerUuid, false);
     }
@@ -140,21 +136,8 @@ public class TaskManager {
 
     public boolean isOriginalTaskDisabled(String taskName, String mapName) {
         String fullId = "habitrain_core:" + taskName.toLowerCase();
-        TaskConfigEntry entry = ConfigManager.getInstance().getTaskConfig(fullId);
-        if (entry == null) return false;
-        return !isTaskEnabledForMap(entry, mapName);
-    }
-
-    private boolean isTaskEnabledForMap(TaskConfigEntry entry, String mapName) {
-        if (entry == null) return true;
-        if (!entry.enabled) return false;
-        if (entry.mapFilterMode == 0) return true;
-
-        boolean listEmpty = entry.enabledMaps == null || entry.enabledMaps.isEmpty();
-        boolean contained = !listEmpty && entry.enabledMaps.contains(mapName);
-
-        if (entry.mapFilterMode == 1) return listEmpty || contained;
-        return listEmpty || !contained;
+        // 与 TaskPoolBuilder / 配置 UI 同一条 isTaskEnabled 语义
+        return !ConfigManager.getInstance().isTaskEnabled(fullId, mapName);
     }
 
     // ==================== 任务完成处理 ====================
@@ -186,7 +169,7 @@ public class TaskManager {
             LOGGER.debug("MimeKiller task discount apply failed", t);
         }
 
-        // 谦卑：自定义任务完成时附近玩家 actionbar「谢谢」
+// 谦卑：自定义任务完成时附近玩家 actionbar「谢谢」
         try {
             com.habitrain.core.game.sre.modifier.virtue.HumilityVirtue.onTaskComplete(player);
         } catch (Throwable t) {

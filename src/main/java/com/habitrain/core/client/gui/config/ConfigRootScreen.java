@@ -18,10 +18,11 @@ public class ConfigRootScreen extends Screen {
     public static final int TAB_GLOBAL = 2;
     public static final int TAB_VOTE = 3;
     public static final int TAB_ENV = 4;
+    public static final int TAB_ROLE_OVERRIDES = 5;
 
-    private static final String[] TAB_LABELS = {"任务配置", "小游戏", "全局设置", "投票设置", "环境设置"};
+    private static final String[] TAB_LABELS = {"任务配置", "小游戏", "全局设置", "投票设置", "环境设置", "角色覆盖"};
     private static final int[] TAB_ACCENTS = {
-            0xFF57C6D6, 0xFFD4A55A, 0xFF8B6B47, 0xFF7C9CFF, 0xFF55C28A
+            0xFF57C6D6, 0xFFD4A55A, 0xFF8B6B47, 0xFF7C9CFF, 0xFF55C28A, 0xFFD45A5A
     };
 
     private static final int TAB_H = 28;
@@ -37,6 +38,7 @@ public class ConfigRootScreen extends Screen {
     private GlobalTabScreen globalTab;
     private VoteTabScreen voteTab;
     private EnvironmentTabScreen envTab;
+    private RoleOverrideTabScreen roleOverrideTab;
 
     private int[] tabX;
     private int[] tabW;
@@ -45,6 +47,13 @@ public class ConfigRootScreen extends Screen {
         super(Component.literal("哈比列车核心 — 配置中心"));
         this.parent = parent;
         this.remoteEditable = LiveConfigAccess.canEditRemoteConfigs();
+    }
+
+    /** Open config center directly on the vote/map-pool tab (used by lottery hub bridge). */
+    public static ConfigRootScreen openVote(Screen parent) {
+        ConfigRootScreen screen = new ConfigRootScreen(parent);
+        screen.selectedTab = TAB_VOTE;
+        return screen;
     }
 
     @Override
@@ -65,6 +74,9 @@ public class ConfigRootScreen extends Screen {
         }
         if (envTab == null) {
             envTab = new EnvironmentTabScreen(this, font, remoteEditable);
+        }
+        if (roleOverrideTab == null) {
+            roleOverrideTab = new RoleOverrideTabScreen(this, font, remoteEditable);
         }
 
         // 计算 Tab 宽度（等分）
@@ -96,6 +108,7 @@ public class ConfigRootScreen extends Screen {
             case TAB_GLOBAL -> globalTab.render(g, mx, my, delta, PAD, contentY, width - PAD, contentH);
             case TAB_VOTE -> voteTab.render(g, mx, my, delta, PAD, contentY, width - PAD, contentH);
             case TAB_ENV -> envTab.render(g, mx, my, delta, PAD, contentY, width - PAD, contentH);
+            case TAB_ROLE_OVERRIDES -> roleOverrideTab.render(g, mx, my, delta, PAD, contentY, width - PAD, contentH);
         }
         g.disableScissor();
 
@@ -154,6 +167,7 @@ public class ConfigRootScreen extends Screen {
                 case TAB_GLOBAL -> { return globalTab.mouseClicked(mx, my, btn, PAD, contentY, width - PAD, contentH); }
                 case TAB_VOTE -> { return voteTab.mouseClicked(mx, my, btn, PAD, contentY, width - PAD, contentH); }
                 case TAB_ENV -> { return envTab.mouseClicked(mx, my, btn, PAD, contentY, width - PAD, contentH); }
+                case TAB_ROLE_OVERRIDES -> { return roleOverrideTab.mouseClicked(mx, my, btn, PAD, contentY, width - PAD, contentH); }
             }
         }
         return super.mouseClicked(mx, my, btn);
@@ -175,6 +189,9 @@ public class ConfigRootScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mx, double my, int btn) {
+        if (selectedTab == TAB_GLOBAL && globalTab != null && globalTab.mouseReleased(mx, my, btn)) {
+            return true;
+        }
         if (selectedTab == TAB_VOTE && voteTab != null && voteTab.mouseReleased(mx, my, btn)) {
             return true;
         }
@@ -194,6 +211,7 @@ public class ConfigRootScreen extends Screen {
             case TAB_GLOBAL -> { return globalTab.mouseScrolled(mx, my, scrollX, scrollY, PAD, contentY, width - PAD, contentH); }
             case TAB_VOTE -> { return voteTab.mouseScrolled(mx, my, scrollX, scrollY, PAD, contentY, width - PAD, contentH); }
             case TAB_ENV -> { return envTab.mouseScrolled(mx, my, scrollX, scrollY, PAD, contentY, width - PAD, contentH); }
+            case TAB_ROLE_OVERRIDES -> { return roleOverrideTab.mouseScrolled(mx, my, scrollX, scrollY, PAD, contentY, width - PAD, contentH); }
         }
         return super.mouseScrolled(mx, my, scrollX, scrollY);
     }
@@ -206,6 +224,7 @@ public class ConfigRootScreen extends Screen {
             case TAB_GLOBAL -> { if (globalTab.keyPressed(key, scan, mod)) return true; }
             case TAB_VOTE -> { if (voteTab.keyPressed(key, scan, mod)) return true; }
             case TAB_ENV -> { if (envTab.keyPressed(key, scan, mod)) return true; }
+            case TAB_ROLE_OVERRIDES -> {}
         }
         if (key == 256) { // ESC
             onClose();
@@ -222,6 +241,7 @@ public class ConfigRootScreen extends Screen {
             case TAB_GLOBAL -> { if (globalTab.charTyped(ch, mod)) return true; }
             case TAB_VOTE -> { if (voteTab.charTyped(ch, mod)) return true; }
             case TAB_ENV -> { if (envTab.charTyped(ch, mod)) return true; }
+            case TAB_ROLE_OVERRIDES -> {}
         }
         return super.charTyped(ch, mod);
     }

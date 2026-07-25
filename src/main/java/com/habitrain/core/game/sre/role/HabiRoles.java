@@ -12,10 +12,8 @@ import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
 import java.awt.Color;
 import java.util.ArrayList;
@@ -47,9 +45,10 @@ public final class HabiRoles {
     public static void init() {
         registerRoles();
         registerSkills();
+        // Seven sins first so sin shop customEntries can be pinned after roles exist.
+        com.habitrain.core.game.sre.role.sins.SevenSins.init();
         HabiRoleShops.register();
         HabiRoleEvents.init();
-        com.habitrain.core.game.sre.role.sins.SevenSins.init();
         HabiTrainCore.LOGGER.info("[HabiRoles] registered 5 roles: crime_scapegoat, flower_girl, swift_wind, mime_killer, mike");
     }
 
@@ -193,13 +192,4 @@ public final class HabiRoles {
         return game != null && game.isRole(player, role);
     }
 
-    public static ServerPlayer asServer(Player player) {
-        return player instanceof ServerPlayer sp ? sp : null;
-    }
-
-    /** 防止未使用 import 被清理器误伤（Items 在商店/物品工具中使用）。 */
-    @SuppressWarnings("unused")
-    private static ItemStack air() {
-        return Items.AIR.getDefaultInstance();
-    }
 }

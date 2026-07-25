@@ -12,31 +12,23 @@ public class BlackoutPhoneHireScreen extends Screen {
     private static final int PANEL_W = 280;
     private static final int PANEL_H = 180;
 
-    private static final int HIRE_COST = 300;
+    private static final int HIRE_COST = 50;
 
     private final Screen parent;
     private BlackoutPhoneOpenPayload state;
     private Button hireButton;
     private Component statusText = Component.empty();
-    // 客户端本地的解锁倒计时（tick）。打开屏幕时若服务端尚未解锁，按 remainingLockSeconds 起算，
-    // 本地倒数到 0 即视为解锁，避免屏幕打开期间不刷新导致按钮一直禁用（M1-L2）。实际聘请仍由服务端二次校验。
-    private int lockCountdownTicks = 0;
 
     public BlackoutPhoneHireScreen(Screen parent, BlackoutPhoneOpenPayload state) {
         super(Component.literal("电话聘请警察"));
         this.parent = parent;
         this.state = state;
-        this.lockCountdownTicks = state.unlocked() ? 0 : state.remainingLockSeconds() * 20;
     }
 
     /** 服务端推送了最新状态时调用 */
     public void updateState(BlackoutPhoneOpenPayload newState) {
         this.state = newState;
         this.statusText = Component.empty(); // 清除之前的请求状态
-        // 服务端确认已解锁则清零本地倒计时；否则沿用本地倒计时（不覆盖正在进行的倒数）
-        if (newState.unlocked()) {
-            this.lockCountdownTicks = 0;
-        }
         if (hireButton != null) {
             boolean canHire = canHire();
             hireButton.active = canHire;
@@ -62,10 +54,8 @@ public class BlackoutPhoneHireScreen extends Screen {
         }
     }
 
-    /** 综合判断是否可以聘请 */
+    /** 综合判断是否可以聘请（无开局解锁 CD） */
     private boolean canHire() {
-        // 服务端已解锁，或本地倒计时已到 0（屏幕打开期间解锁）
-        if (!state.unlocked() && lockCountdownTicks > 0) return false;
         if (state.hasHiredThisGame()) return false;
         if (state.balance() < HIRE_COST) return false;
         if (state.killerCount() <= 0) return false;
@@ -76,11 +66,6 @@ public class BlackoutPhoneHireScreen extends Screen {
     /** 获取不能聘请的原因文本 */
     private Component getHireDisabledReason() {
         if (state.hasHiredThisGame()) return Component.literal("§7你本局已经拨打过110");
-        boolean locked = !state.unlocked() && lockCountdownTicks > 0;
-        if (locked) {
-            int secs = Math.max(0, lockCountdownTicks / 20);
-            return Component.literal("§7报警线路尚未接通（剩余 " + secs + " 秒）");
-        }
         if (state.balance() < HIRE_COST) return Component.literal("§c话费不足，需要 " + HIRE_COST + " 金币");
         if (state.killerCount() <= 0) return Component.literal("§c当前没有杀手，无需聘请警察");
         if (state.sheriffCount() + 1 > state.killerCount()) return Component.literal("§c当前警力已足够，无法继续聘请");
@@ -115,19 +100,6 @@ public class BlackoutPhoneHireScreen extends Screen {
     }
 
     @Override
-    public void tick() {
-        // 本地解锁倒计时：每 tick 递减，到 0 即视为解锁，刷新按钮可用状态
-        if (lockCountdownTicks > 0) {
-            lockCountdownTicks--;
-            if (lockCountdownTicks == 0 && hireButton != null) {
-                boolean canHire = canHire();
-                hireButton.active = canHire;
-                hireButton.setMessage(Component.literal(canHire ? "§e拨打110" : "§7拨打110"));
-            }
-        }
-    }
-
-    @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         renderBackground(g, mouseX, mouseY, partialTick);
         super.render(g, mouseX, mouseY, partialTick);
@@ -146,7 +118,7 @@ public class BlackoutPhoneHireScreen extends Screen {
         Component reason = getHireDisabledReason();
         g.drawCenteredString(font, reason, width / 2, panelY + 40, 0xB9C7D9);
 
-        // 按钮下方固定常驻费用提示（需求：下方写"花费300话费拨打110"，不论可否聘请都显示）
+        // 按钮下方固定常驻费用提示（不论可否聘请都显示）
         g.drawCenteredString(font, Component.literal("§7花费" + HIRE_COST + "话费拨打110"),
                 width / 2, panelY + 100, 0xB9C7D9);
 

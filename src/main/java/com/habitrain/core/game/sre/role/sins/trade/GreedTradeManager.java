@@ -3,6 +3,7 @@ package com.habitrain.core.game.sre.role.sins.trade;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import com.habitrain.core.game.sre.role.sins.component.GreedComponent;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import com.habitrain.core.network.GreedTradePromptPayload;
@@ -11,11 +12,7 @@ import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -34,10 +31,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 贪婪匿名交易 MVP：服务端会话 + 双确认（聊天点击 / C2S）+ 原子结算。
+ * 贪婪匿名交易：服务端会话 + GUI 双确认 + 原子结算。
  * <p>
  * 流程：贪婪 G 技能对准目标，另一手持样本物品 → 若已收集该种类则发起「卖出」，否则「买入」。
- * 双方 30s 内均确认后二次校验（金币 / 袋归属 / 物品 / 成交上限）再转账与改收集表。
+ * 双方 30s 内均确认后二次校验（金币 / 袋归属 / 物品 / 会话状态）再转账与改收集表。
  * <p>
  * 永不转移收纳袋；成交不改变 pouch OWNER。
  */
@@ -130,6 +127,21 @@ public final class GreedTradeManager {
             return false;
         }
 
+        return prepareTrade(level, greed, partner);
+    }
+
+    /** Backpack player-selection entry. Target identity is revalidated on the server. */
+    public static boolean openSelectedTrade(ServerPlayer greed, UUID partnerId) {
+        if (greed == null || partnerId == null || greed.isSpectator()
+                || !(greed.level() instanceof ServerLevel level)) return false;
+        if (!isGreedRole(level, greed) || !GreedPouchItem.playerHasOwnPouch(greed)) return false;
+        Player candidate = level.getPlayerByUUID(partnerId);
+        if (!(candidate instanceof ServerPlayer partner) || partner == greed
+                || partner.isSpectator() || !partner.isAlive()) return false;
+        return prepareTrade(level, greed, partner);
+    }
+
+    private static boolean prepareTrade(ServerLevel level, ServerPlayer greed, ServerPlayer partner) {
         ItemStack sample = resolveSample(greed);
         if (sample.isEmpty() || GreedPouchItem.isGreedPouch(sample) || sample.is(Items.AIR)) {
             greed.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.trade_need_sample"), true);
@@ -145,11 +157,6 @@ public final class GreedTradeManager {
 
         GreedComponent gc = GreedComponent.KEY.get(greed);
         Side side = gc.getCollectedTypeIds().contains(itemId) ? Side.SELL : Side.BUY;
-
-        if (!GreedDealTracker.canDeal(level, itemId)) {
-            greed.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.trade_cap", itemId), true);
-            return false;
-        }
 
         int n = GreedDealTracker.getDealCount(level, itemId);
         int price = side == Side.SELL
@@ -205,10 +212,11 @@ public final class GreedTradeManager {
         Component itemName = itemDisplayName(itemId);
 
         // Anonymous to partner: do not reveal greed identity in copy; use generic label
+        // Neither side receives the other participant's identity.
         greed.displayClientMessage(
                 Component.translatable(
-                        "message.habitrain_core.sin_greed.trade_offer_self",
-                        sideKey, itemName, price, partner.getGameProfile().getName()
+                        "message.habitrain_core.sin_greed.trade_offer_partner",
+                        sideKey, itemName, price
                 ),
                 false
         );
@@ -220,17 +228,14 @@ public final class GreedTradeManager {
                 false
         );
 
-        sendConfirmButtons(greed, sid);
-        sendConfirmButtons(partner, sid);
-
-        // Optional S2C prompt for future GUI clients
+        // Dedicated double-confirm UI; command handling remains only as compatibility fallback.
         try {
             GreedTradePromptPayload prompt = new GreedTradePromptPayload(
                     sid.toString(),
                     side.name(),
                     itemId,
                     price,
-                    side == Side.SELL ? partner.getGameProfile().getName() : "???"
+                    "???"
             );
             ServerPlayNetworking.send(greed, prompt);
             ServerPlayNetworking.send(partner, prompt);
@@ -242,34 +247,6 @@ public final class GreedTradeManager {
                 sid, side, itemId, price,
                 greed.getGameProfile().getName(), partner.getGameProfile().getName());
         return true;
-    }
-
-    private static void sendConfirmButtons(ServerPlayer player, UUID sessionId) {
-        String id = sessionId.toString();
-        MutableComponent confirm = Component.translatable("message.habitrain_core.sin_greed.trade_btn_confirm")
-                .withStyle(Style.EMPTY
-                        .withColor(0x55FF55)
-                        .withUnderlined(true)
-                        .withClickEvent(new ClickEvent(
-                                ClickEvent.Action.RUN_COMMAND,
-                                "/habi_api greed_trade confirm " + id))
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                Component.translatable("message.habitrain_core.sin_greed.trade_btn_confirm_tip"))));
-        MutableComponent cancel = Component.translatable("message.habitrain_core.sin_greed.trade_btn_cancel")
-                .withStyle(Style.EMPTY
-                        .withColor(0xFF5555)
-                        .withUnderlined(true)
-                        .withClickEvent(new ClickEvent(
-                                ClickEvent.Action.RUN_COMMAND,
-                                "/habi_api greed_trade cancel " + id))
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                Component.translatable("message.habitrain_core.sin_greed.trade_btn_cancel_tip"))));
-        player.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_greed.trade_buttons", confirm, cancel),
-                false
-        );
     }
 
     public static void confirm(ServerPlayer player, String sessionIdRaw) {
@@ -345,12 +322,6 @@ public final class GreedTradeManager {
             forceClose(s);
             return;
         }
-        if (!GreedDealTracker.canDeal(level, s.itemId)) {
-            notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_cap", s.itemId));
-            forceClose(s);
-            return;
-        }
-
         // Fail closed if price tier drifted since session open
         int n = GreedDealTracker.getDealCount(level, s.itemId);
         int price = s.side == Side.SELL
@@ -389,17 +360,17 @@ public final class GreedTradeManager {
                     return;
                 }
                 // Remove type from collection; give partner 1 stack (never pouch)
-                if (!gc.removeCollectedType(s.itemId)) {
+                ItemStack give = gc.removeStoredItem(s.itemId);
+                if (give.isEmpty()) {
                     // refund
                     transferCoins(greed, partner, price);
                     notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_collect"));
                     forceClose(s);
                     return;
                 }
-                ItemStack give = new ItemStack(item, 1);
                 if (GreedPouchItem.isGreedPouch(give)) {
                     // safety: never give pouch
-                    gc.addCollectedTypeSilent(s.itemId);
+                    gc.restoreStoredItem(give);
                     transferCoins(greed, partner, price);
                     notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_invalid_item"));
                     forceClose(s);
@@ -446,8 +417,8 @@ public final class GreedTradeManager {
                     return;
                 }
                 // Consume taken stack into virtual collection only if type is newly added
-                boolean fresh = gc.addCollectedType(greed, s.itemId, taken.getHoverName());
-                if (!fresh) {
+                boolean stored = gc.addStoredItem(greed, taken);
+                if (!stored) {
                     // collection complete / already had type — refund coins + item, no deal
                     transferCoins(partner, greed, price);
                     if (!partner.getInventory().add(taken)) {
@@ -457,7 +428,6 @@ public final class GreedTradeManager {
                     forceClose(s);
                     return;
                 }
-                taken.setCount(0);
             }
 
             GreedDealTracker.recordDeal(level, s.itemId);
@@ -570,29 +540,7 @@ public final class GreedTradeManager {
     }
 
     private static ServerPlayer resolveTarget(ServerPlayer self, @Nullable UUID targetId) {
-        if (targetId != null) {
-            Player p = self.level().getPlayerByUUID(targetId);
-            if (p instanceof ServerPlayer sp && !sp.isSpectator()) return sp;
-        }
-        Vec3 eye = self.getEyePosition();
-        Vec3 look = self.getLookAngle();
-        double range = TRADE_RANGE;
-        AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
-        ServerPlayer best = null;
-        double bestDot = 0.85;
-        for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
-            if (p == self || p.isSpectator()) continue;
-            if (!(p instanceof ServerPlayer sp)) continue;
-            Vec3 to = p.getEyePosition().subtract(eye);
-            double dist = to.length();
-            if (dist <= 0 || dist > range) continue;
-            double angleDot = to.dot(look) / dist;
-            if (angleDot > bestDot) {
-                bestDot = angleDot;
-                best = sp;
-            }
-        }
-        return best;
+        return ServerAimTargeting.resolve(self, targetId, TRADE_RANGE);
     }
 
     private static boolean isGreedRole(ServerLevel level, ServerPlayer player) {
@@ -620,6 +568,11 @@ public final class GreedTradeManager {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    /** 断线/淘汰时取消该玩家所在交易 session。 */
+    public static void onPlayerDisconnect(MinecraftServer server, UUID player) {
+        cancelPlayerSession(server, player, "disconnect");
     }
 
     private static void cancelPlayerSession(MinecraftServer server, UUID player, String reason) {

@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 /**
- * C2S：贪婪交易确认/取消。MVP 聊天点击走命令；此包供未来 GUI 复用。
+ * C2S：贪婪交易界面的确认或取消操作。
  * <p>
  * 编码：action(utf) + sessionId(utf)
  */

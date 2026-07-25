@@ -8,7 +8,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -163,15 +162,6 @@ public class BetelLeafHandler {
             if (!serverPlayer.getInventory().add(betelNut)) {
                 serverPlayer.drop(betelNut, false);
             }
-            // 播放获得槟榔音效（玩家位置，周围玩家可听到）
-            serverPlayer.serverLevel().playSound(
-                    null,
-                    serverPlayer.blockPosition(),
-                    HabiTrainCore.BETEL_NUT_GET_SOUND,
-                    SoundSource.PLAYERS,
-                    1.0f,
-                    1.0f
-            );
             serverPlayer.displayClientMessage(Component.literal("§a§o你从槟榔叶中获取了一颗槟榔"), true);
             HabiTrainCore.LOGGER.info("玩家 {} 从槟榔叶中获得了一颗槟榔", player.getName().getString());
         }

@@ -130,8 +130,7 @@ public final class SinVictoryHooks {
         }
 
         if (proposed == GameUtils.WinStatus.KILLERS
-                || proposed == GameUtils.WinStatus.PASSENGERS
-                || proposed == GameUtils.WinStatus.TIME) {
+                || proposed == GameUtils.WinStatus.PASSENGERS) {
             if (isSlothAlive(world)) {
                 ServerPlayer sloth = findAliveSlothPlayer(world);
                 triggerCustomSinWin(world, SevenSins.SLOTH, sloth);
@@ -164,11 +163,6 @@ public final class SinVictoryHooks {
     public static boolean isPrideBlocking(ServerLevel level) {
         PridePresence p = scanPride(level);
         return p.prideAlive && p.otherAlive;
-    }
-
-    /** Alias for plan interface name. */
-    public static boolean isPrideBlockingFactionEnd(ServerLevel level) {
-        return isPrideBlocking(level);
     }
 
     /** Pride is the sole remaining assigned/alive participant. */
@@ -250,20 +244,6 @@ public final class SinVictoryHooks {
             HabiTrainCore.LOGGER.warn("[SinVictoryHooks] clear CustomWinnerPlayers for lust failed", t);
         }
         triggerCustomSinWin(level, SevenSins.LUST, lust);
-    }
-
-    /**
-     * Blackout helper: if lovers win surfaces and lust is alive, end as lust custom.
-     * Currently lovers are SRE-murder path; this is reserved for shared API.
-     *
-     * @return true if lust stole the end
-     */
-    public static boolean tryBlackoutLustLoversSteal(ServerLevel level) {
-        if (level == null || !isLustAlive(level)) return false;
-        if (!wouldLoversWin(level)) return false;
-        ServerPlayer lust = findAliveLustPlayer(level);
-        stealLoversWinForLust(level, lust);
-        return true;
     }
 
     private static PridePresence scanPride(ServerLevel level) {
@@ -369,21 +349,6 @@ public final class SinVictoryHooks {
             }
         }
         return out;
-    }
-
-    /**
-     * Alive players excluding {@link BlackoutRoleManager.Faction#SIN_INDEPENDENT}.
-     */
-    public static int countAliveExcludingIndependent(ServerLevel level) {
-        if (level == null) return 0;
-        int n = 0;
-        for (UUID id : BlackoutRoleManager.getAllAlive(level)) {
-            BlackoutRoleManager.Faction f = BlackoutRoleManager.getFaction(level, id);
-            if (f != BlackoutRoleManager.Faction.SIN_INDEPENDENT) {
-                n++;
-            }
-        }
-        return n;
     }
 
     /**

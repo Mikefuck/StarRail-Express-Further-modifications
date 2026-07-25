@@ -5,9 +5,9 @@ import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.network.BlackoutPhoneOpenPayload;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
-import com.habitrain.core.game.blackout.BlackoutSheriffVoteManager;
 import com.habitrain.core.network.*;
 import com.habitrain.core.util.SubtitleNotifier;
+import com.habitrain.core.vote.MapPoolRotationService;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
@@ -39,6 +39,8 @@ public final class C2SReceiverRegistrar {
                 ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
+                // Rebuild role override engine with updated config
+                com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild();
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
                 if (context.server().isSingleplayer()) return;
                 // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
@@ -64,16 +66,6 @@ public final class C2SReceiverRegistrar {
                             "§7请更换为允许的光影包后重新加入。\n\n" +
                             "§7如需帮助，请联系服务器管理员。"));
                 }
-            });
-        });
-        // C2S 警长投票接收器：客户端投票 → 服务端记票
-        ServerPlayNetworking.registerGlobalReceiver(BlackoutSheriffVoteCastPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer voter = context.player();
-                if (voter == null) return;
-                ServerLevel level = voter.serverLevel();
-                if (level == null) return;
-                BlackoutSheriffVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId(), payload.slotIndex());
             });
         });
         // C2S 电话聘请警察接收器
@@ -161,6 +153,14 @@ public final class C2SReceiverRegistrar {
                 OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
             });
         });
+        // C2S 地图池跳过（OP ≥ 4）
+        ServerPlayNetworking.registerGlobalReceiver(MapPoolSkipPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                MapPoolRotationService.skip(player);
+            });
+        });
         // C2S 贪婪匿名交易确认/取消（与 /habi_api greed_trade 等价）
         ServerPlayNetworking.registerGlobalReceiver(GreedTradeActionPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -175,6 +175,14 @@ public final class C2SReceiverRegistrar {
                 }
             });
         });
+        ServerPlayNetworking.registerGlobalReceiver(GreedTradeSelectPayload.TYPE, (payload, context) ->
+                context.server().execute(() -> {
+                    ServerPlayer player = context.player();
+                    if (player != null) {
+                        com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager
+                                .openSelectedTrade(player, payload.partnerId());
+                    }
+                }));
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

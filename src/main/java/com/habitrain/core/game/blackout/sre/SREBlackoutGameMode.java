@@ -56,7 +56,8 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         BlackoutRoleManager.syncFactionsFromSreRoles(world, game, players);
         game.syncRoles();
 
-        com.habitrain.core.network.BlackoutTimerPayload.broadcastToAll(world.getServer(), 300, 120, false, 0);
+        // 不再发占位 timer 包（旧 300/120 与真实 600s / gameTime 时钟不一致）。
+        // 正式同步由 BlackoutTimerSystem.init + BlackoutSyncManager.tickSecond 负责。
         executeFunction(world.getServer().createCommandSourceStack(), "harpymodloader:start_game");
     }
 
@@ -70,9 +71,16 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
         return true;
     }
 
+    /**
+     * 与上游默认 {@code GameMode.requiresAssignedRole()=true} 对齐。
+     * <p>
+     * 先前返回 false 会在局末 clearRoleMap 后、gameMode 仍指向 blackout 时，
+     * 让主城/大厅持刀的 {@code killPlayer} 仍能把人切旁观（无角色门禁）。
+     * 改回 true：无分配角色则无法击杀，行为与原版谋杀模式一致。
+     */
     @Override
     public boolean requiresAssignedRole() {
-        return false;
+        return true;
     }
 
     /**

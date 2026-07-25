@@ -8,6 +8,7 @@ import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.task.GameLifecycleHandler;
+import com.habitrain.core.vote.MapPoolRotationService;
 import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -20,28 +21,45 @@ public class ModTickHandler {
 
     public static void register() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // 大厅阶段周期性补拉未进 LobbyChat 的玩家（必须在 processPending 前，以便本 tick 即可尝试）
+            SREGameModeBase.reconcileLobbyGroupMembership(server);
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);
 
-            // 1Hz option-vote tick (mode/map lobby vote countdown)
+            // 1Hz option-vote tick (mode/map lobby vote countdown) + map pool calendar
             voteTickCounter++;
             if (voteTickCounter % 20 == 0) {
                 for (ServerLevel level : server.getAllLevels()) {
                     OptionVoteManager.tickSecond(level);
+                }
+                try {
+                    MapPoolRotationService.onCalendarTick(server);
+                } catch (Throwable t) {
+                    // never break server tick loop
+                    HabiTrainCore.LOGGER.warn("[ModTick] MapPoolRotationService.onCalendarTick failed", t);
                 }
             }
 
             // Greed anonymous trade session timeouts
             try {
                 GreedTradeManager.tick(server);
-            } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[ModTick] GreedTradeManager.tick failed", t);
+            }
 
             tickMoreMods(server);
         });
     }
 
     public static void tickMoreMods(MinecraftServer server) {
+        // Apply MODIFY flags/spawnInfo patches on each tick
+        try {
+            com.habitrain.core.role.override.RoleOverrideTickApplier.tick(server);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[ModTick] RoleOverrideTickApplier.tick failed", t);
+        }
+
         boolean isGameActive = false;
         for (ServerLevel world : server.getAllLevels()) {
             BetelLeafHandler.tickHarvests(world);
