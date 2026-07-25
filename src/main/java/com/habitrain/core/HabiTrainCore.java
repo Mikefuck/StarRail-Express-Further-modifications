@@ -84,6 +84,8 @@ public class HabiTrainCore implements ModInitializer {
         SREBlackoutGameMode.register();
         // 投稿职业注册进 TMMRoles（须在对局开始前）
         com.habitrain.core.game.sre.role.HabiRoles.init();
+        // 角色覆盖注册系统初始化
+        com.habitrain.core.role.override.RoleOverrideRegistry.init();
         // 七美德修饰符（须在 HabiRoles 之后；慷慨只关联上游，不重复注册）
         com.habitrain.core.game.sre.modifier.HabiModifiers.init();
         // 装配 SRE 游戏状态提供者到 TaskManager（解除对 SRE 具体类的编译依赖）
