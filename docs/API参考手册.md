@@ -622,6 +622,214 @@ TaskRegistry.register("habitrain_core", "add_coal", b -> b
 
 ---
 
+## 11. 角色替换与修改 API
+
+> **包:** `com.habitrain.core.api.role`  
+> **入口:** `RoleOverrideApi`  
+> **版本:** v1.0 (2026-07-25)
+
+### 11.1 概述
+
+本 API 允许 DLC/附属模组**替换**或**修改**哈比列车中已注册的 SRE 角色（包括原版 `sre:killer`、`sre:civilian` 以及 `habitrain_core` 的自定义角色）。
+
+- **REPLACE（替换）**：用新角色完全取代目标角色。原角色从分配池、角色介绍书、命令补全中隐藏，新角色取而代之。
+- **MODIFY（调整）**：不改变目标角色 ID，动态覆盖其显示名、颜色、商店、初始物品、阵营 flags、生成参数、技能/被动、胜利条件。
+
+**核心原则：**
+- Core 掌控启用权 — 外部模组只提交定义，最终是否生效由 core 的配置 + 冲突裁决决定。
+- 不物理删除原角色 — 采用过滤/补丁层实现隐藏。
+- 新角色 ID 必须是 `modId:roleName` 格式。
+- 同一目标不能同时生效 REPLACE 和 MODIFY。
+- 多条覆盖同一目标 → 冲突，需在 ModMenu 中手动选择。
+
+### 11.2 注册入口
+
+所有注册必须在模组的 `onInitialize()` 中调用。注册在 `SERVER_STARTED` 时冻结。
+
+```java
+// 替换角色
+RoleOverrideApi.registerReplace(ReplaceRoleDefinition.builder()
+    .sourceModId("my_dlc")
+    .displayName(Component.literal("暗影列车员"))
+    .customTypeLabel("完全替换")
+    .targetRoleId(ResourceLocation.parse("sre:killer"))
+    .replacementRole(shadowKiller)
+    .build());
+
+// 调整角色
+RoleOverrideApi.registerModify(ModifyRoleDefinition.builder()
+    .sourceModId("my_dlc")
+    .displayName(Component.literal("杀手·狂暴化"))
+    .customTypeLabel("属性调整")
+    .targetRoleId(ResourceLocation.parse("sre:killer"))
+    .namePatch((original, server) -> Component.literal("狂暴杀手"))
+    .shopPatch((original, server) -> MyShops.berzerkShop())
+    .build());
+```
+
+### 11.3 REPLACE 完整示例
+
+```java
+public class MyDlcMod implements ModInitializer {
+    @Override
+    public void onInitialize() {
+        // 1. 构造新角色（遵循 NormalRole 构造规则）
+        SRERole shadowKiller = new NormalRole(
+            ResourceLocation.fromNamespaceAndPath("my_dlc", "shadow_killer"),
+            0x5A3A8A,   // 颜色 RGB
+            false,      // isInnocent
+            true,       // canUseKiller
+            SRERole.MoodType.FAKE,
+            Integer.MAX_VALUE,  // maxSprintTime
+            true        // canSeeTime
+        );
+
+        // 2. 注册技能（由 DLC 自己负责）
+        RoleSkill.register(shadowKiller, RoleSkill.skill(
+            ResourceLocation.fromNamespaceAndPath("my_dlc", "shadow_teleport"),
+            "skill.my_dlc.shadow_teleport",
+            ctx -> { /* 技能逻辑 */ }
+        ).cooldownSeconds(30).showOnHud(true).build());
+
+        // 3. 提交替换意图（不要调用 TMMRoles.registerRole！）
+        RoleOverrideApi.registerReplace(ReplaceRoleDefinition.builder()
+            .sourceModId("my_dlc")
+            .displayName(Component.literal("暗影列车员"))
+            .description(Component.literal("来自暗影的杀手，拥有传送能力"))
+            .customTypeLabel("完全替换")
+            .targetRoleId(ResourceLocation.parse("sre:killer"))
+            .replacementRole(shadowKiller)
+            .build());
+    }
+}
+```
+
+### 11.4 MODIFY 补丁说明
+
+MODIFY 支持以下补丁类型，每个都是可选的：
+
+| 补丁 | 接口 | 说明 |
+|------|------|------|
+| 显示名 | `NamePatch` | 覆盖 `getName()` |
+| 颜色 | `ColorPatch` | 覆盖 `getColor()` |
+| 商店 | `ShopPatch` | 完全替换 `getShopEntries()` |
+| 初始物品 | `DefaultItemsPatch` | 完全替换 `getDefaultItems()` |
+| 阵营 flags | `FlagsPatch` | 修改 isInnocent/canUseKiller/isNeutrals 等 |
+| 生成参数 | `SpawnInfoPatch` | 修改 defaultMax/enableChance 等 |
+| 技能注册 | `SkillRegistrar` | 在 MODIFY 启用时注册技能 |
+| 胜利条件 | `WinConditionHook` | 劫持停电模式胜利判定 |
+
+```java
+RoleOverrideApi.registerModify(ModifyRoleDefinition.builder()
+    .sourceModId("my_dlc")
+    .displayName(Component.literal("平民·强化"))
+    .targetRoleId(ResourceLocation.parse("sre:civilian"))
+    .namePatch((original, server) -> Component.literal("武装平民"))
+    .colorPatch((original, server) -> 0x00FF00)
+    .flagsPatch((original, server, out) -> {
+        out.canUseKiller = true;
+        out.isInnocent = true;
+    })
+    .shopPatch((original, server) -> List.of(
+        new KillerKnifeShopEntry(1, 0)
+    ))
+    .skillRegistrar(original -> {
+        RoleSkill.register(original, RoleSkill.skill(
+            ResourceLocation.fromNamespaceAndPath("my_dlc", "civilian_boost"),
+            "skill.my_dlc.civilian_boost",
+            ctx -> { /* 技能逻辑 */ }
+        ).cooldownSeconds(60).build());
+    })
+    .winConditionHook(ctx -> {
+        if (ctx.roleIsModified()) {
+            // 自定义胜利判定
+            return WinResult.singleWinner(
+                ctx.level().players().get(0).getUUID(),
+                "武装平民胜利"
+            );
+        }
+        return null;
+    })
+    .build());
+```
+
+### 11.5 ID 与命名规范
+
+- 新角色 ID 必须是 `modId:roleName` 格式（标准 `ResourceLocation`）。
+- `sourceModId` 必须与 Fabric 模组 ID 一致，core 会校验该模组是否已加载。
+- `replacementRole.identifier()` 的 namespace 必须与 `sourceModId` 一致。
+- 不要自己调用 `TMMRoles.registerRole()` — core 会在启用时自动注册。
+
+### 11.6 冲突与启用机制
+
+- **全局开关**：ModMenu "角色覆盖" Tab 顶部有全局总开关，关闭时所有覆盖不生效。
+- **逐条目开关**：每个条目可单独启用/停用。
+- **冲突检测**：同一目标有多条 REPLACE、多条 MODIFY、或 REPLACE+MODIFY 共存时，全部标记为 CONFLICT，均不生效。
+- **冲突解决**：在 ModMenu 中启用一条时，core 自动关闭同目标的其他条目。
+- **实时生效**：开关变更后立即影响分配池、角色介绍书、命令补全；但不影响已分配到玩家身上的角色。
+
+### 11.7 ModMenu 展示
+
+在 ModMenu 配置页新增"角色覆盖" Tab，显示：
+
+- 全局总开关
+- 冲突横幅（有冲突时显示黄色提示）
+- 条目列表（每行显示：类型标签[替换/调整]、显示名、目标角色 ID、启用状态）
+- 点击行切换启用/停用
+- 非 OP 客户端只读
+
+DLC 可通过 `customTypeLabel` 自定义类型标签（如"完全替换"、"属性调整"），显示在条目行中。
+
+### 11.8 运行时查询
+
+```java
+// 判断某角色是否被替换
+boolean replaced = RoleOverrideApi.isReplaced(ResourceLocation.parse("sre:killer"));
+
+// 获取替换后的角色实例
+SRERole replacement = RoleOverrideApi.getReplacement(ResourceLocation.parse("sre:killer"));
+
+// 判断某角色是否被修改
+boolean modified = RoleOverrideApi.isModified(ResourceLocation.parse("sre:civilian"));
+
+// 获取生效的 MODIFY 定义
+ModifyRoleDefinition def = RoleOverrideApi.getActiveModify(ResourceLocation.parse("sre:civilian"));
+
+// 获取所有生效条目
+Collection<RoleOverrideEntry> entries = RoleOverrideApi.getEffectiveEntries();
+```
+
+### 11.9 限制与注意事项
+
+1. **注册时机**：必须在 `onInitialize()` 中调用，`SERVER_STARTED` 后冻结。
+2. **技能无注销 API**：MODIFY 禁用后，已注册的技能不会自动注销。建议在技能 handler 内用 `RoleOverrideApi.isModified(targetId)` 做守卫。
+3. **局中不改**：开关变更不影响已分配角色的玩家。
+4. **不物理删除**：被替换的原角色仍在 `TMMRoles.ROLES` 中，只是被过滤隐藏。
+5. **CCA 组件**：REPLACE 新角色需要自己设置 `setComponentKey()` 并注册 CCA 组件。
+6. **商店覆盖**：MODIFY 的 `shopPatch` 完全替换商店列表，不会与原有商店合并。
+
+### 11.10 类索引
+
+| 类型 | 说明 |
+|------|------|
+| `RoleOverrideApi` | 注册入口 + 运行时查询 |
+| `ReplaceRoleDefinition` | REPLACE 定义 + Builder |
+| `ModifyRoleDefinition` | MODIFY 定义 + Builder |
+| `RoleOverrideEntry` | 运行时条目视图 |
+| `RoleOverrideKind` | REPLACE / MODIFY 枚举 |
+| `OverrideStatus` | ACTIVE / CONFLICT / DISABLED / INVALID / PENDING |
+| `NamePatch` | 显示名补丁接口 |
+| `ColorPatch` | 颜色补丁接口 |
+| `ShopPatch` | 商店补丁接口 |
+| `DefaultItemsPatch` | 初始物品补丁接口 |
+| `FlagsPatch` | 阵营 flags 补丁接口 |
+| `SpawnInfoPatch` | 生成参数补丁接口 |
+| `SkillRegistrar` | 技能注册回调 |
+| `WinConditionHook` | 胜利条件钩子 |
+| `BlackoutWinCheckContext` | 胜利检查上下文 |
+
+---
+
 ## 附录 A — 任务 tick 流水线（引擎侧约定）
 
 ```
