@@ -35,6 +35,10 @@ public class ConfigStore {
         this.dirty = true;
     }
 
+    public boolean isDirty() {
+        return dirty;
+    }
+
     /**
      * Save to file only if dirty. Resets the dirty flag on success.
      * @return true if the file was actually written, false if no-op

@@ -64,6 +64,10 @@ public class ConfigManager implements ConfigQueryService {
         }
     }
 
+    public boolean isDirty() {
+        return store.isDirty();
+    }
+
     @Override
     public TaskConfigEntry getTaskConfig(String fullId) {
         return repository.getTaskConfig(fullId);
