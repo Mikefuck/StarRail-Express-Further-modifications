@@ -64,7 +64,7 @@ public class ConfigMenuScreen extends Screen {
         return s;
     }
 
-    private ConfigPage[] ensurePages() {
+    private ConfigPage[][] ensurePages() {
         if (pages != null) return pages;
         pages = new ConfigPage[4][];
         pages[TOP_IN_GAME] = new ConfigPage[]{

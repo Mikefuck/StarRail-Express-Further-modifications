@@ -122,9 +122,9 @@ public class OutGameLobbyEnvPage implements ConfigPage {
         // 文本框优先（手动边界，停靠哨兵坐标自然落空）
         EnvEditorShared.unfocusAll(profileTickField, profileFogEndField);
         if (EnvEditorShared.tryFocusEditBox(mx, my, profileTickField.getX(), profileTickField.getY(),
-                profileTickField.getWidth(), profileTickField.getHeight(), profileTickField)) return true;
+                profileTickField.getWidth(), profileTickField.getHeight(), profileTickField, editable)) return true;
         if (EnvEditorShared.tryFocusEditBox(mx, my, profileFogEndField.getX(), profileFogEndField.getY(),
-                profileFogEndField.getWidth(), profileFogEndField.getHeight(), profileFogEndField)) return true;
+                profileFogEndField.getWidth(), profileFogEndField.getHeight(), profileFogEndField, editable)) return true;
 
         for (EnvEditorShared.ButtonHit hit : buttonHits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;

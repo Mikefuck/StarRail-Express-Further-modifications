@@ -127,7 +127,7 @@ public final class EnvEditorShared {
     }
 
     /**
-     * 动作分发：处理旧 handleAction 中的环境相关动作（profile:*/good:*/other:*/rain:enabled）。
+     * 动作分发：处理旧 handleAction 中的环境相关动作（profile:*, good:*, other:*, rain:enabled）。
      * 每次状态变更都调用 dirty.run()。good/other 的 apply_tick 由调用方把对应规则的时间框
      * 作为 profileTickField 传入；profile 的 tick/fog 分别经 profileTickField/profileFogEndField 写出。
      * hits/font/labelX 保留在签名中供页面沿用同一分发入口（本方法内不直接使用）。
@@ -250,10 +250,10 @@ public final class EnvEditorShared {
      * 停靠在 (-10000,-10000) 的框自然落在边界外而返回 false。
      * 只读时（box 创建时 setEditable(false)）弹权限拒绝消息。调用方应在调用前自行 unfocusAll。
      */
-    static boolean tryFocusEditBox(double mx, double my, int x, int y, int w, int h, EditBox box) {
+    static boolean tryFocusEditBox(double mx, double my, int x, int y, int w, int h, EditBox box, boolean editable) {
         if (box == null) return false;
         if (mx < x || mx >= x + w || my < y || my >= y + h) return false;
-        if (!box.isEditable()) {
+        if (!editable) {
             MenuPermissions.showDeniedMessage();
             return true;
         }

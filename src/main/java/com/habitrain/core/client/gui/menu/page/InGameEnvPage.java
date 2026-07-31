@@ -448,19 +448,19 @@ public class InGameEnvPage implements ConfigPage {
         // EditBoxes first（手动边界；停靠哨兵坐标的框自然落在边界外）
         if (subTab == SUB_MATCH) {
             if (EnvEditorShared.tryFocusEditBox(mx, my, profileTickField.getX(), profileTickField.getY(),
-                    profileTickField.getWidth(), profileTickField.getHeight(), profileTickField)) return true;
+                    profileTickField.getWidth(), profileTickField.getHeight(), profileTickField, editable)) return true;
             if (EnvEditorShared.tryFocusEditBox(mx, my, profileFogEndField.getX(), profileFogEndField.getY(),
-                    profileFogEndField.getWidth(), profileFogEndField.getHeight(), profileFogEndField)) return true;
+                    profileFogEndField.getWidth(), profileFogEndField.getHeight(), profileFogEndField, editable)) return true;
         }
         if (subTab == SUB_POST) {
             if (EnvEditorShared.tryFocusEditBox(mx, my, goodTickField.getX(), goodTickField.getY(),
-                    goodTickField.getWidth(), goodTickField.getHeight(), goodTickField)) return true;
+                    goodTickField.getWidth(), goodTickField.getHeight(), goodTickField, editable)) return true;
             if (EnvEditorShared.tryFocusEditBox(mx, my, otherTickField.getX(), otherTickField.getY(),
-                    otherTickField.getWidth(), otherTickField.getHeight(), otherTickField)) return true;
+                    otherTickField.getWidth(), otherTickField.getHeight(), otherTickField, editable)) return true;
         }
         if (subTab == SUB_RAIN) {
             if (EnvEditorShared.tryFocusEditBox(mx, my, minPlayersField.getX(), minPlayersField.getY(),
-                    minPlayersField.getWidth(), minPlayersField.getHeight(), minPlayersField)) return true;
+                    minPlayersField.getWidth(), minPlayersField.getHeight(), minPlayersField, editable)) return true;
         }
 
         // 地图列表选择
