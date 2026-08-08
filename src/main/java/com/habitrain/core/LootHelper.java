@@ -14,10 +14,10 @@ import java.util.List;
 public class LootHelper {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|LootHelper");
 
-    private static final int ROLE_TYPE_GOOD_POLICE = 4;
-    private static final int ROLE_TYPE_BAD = 5;
-    private static final int NUNCHUCK_COOLDOWN_GOOD_POLICE = 1000;
-    private static final int NUNCHUCK_COOLDOWN_BAD = 200;
+    private static final int ROLE_TYPE_KILLER = 4;
+    private static final int ROLE_TYPE_SHERIFF = 5;
+    private static final int NUNCHUCK_COOLDOWN_KILLER = 1000;
+    private static final int NUNCHUCK_COOLDOWN_SHERIFF = 200;
 
     public static ItemStack giveRandomBackpackItem(ServerPlayer player) {
         try {
@@ -32,7 +32,7 @@ public class LootHelper {
             int roleType = role.getRoleType();
             List<String> itemPool;
 
-            if (roleType == ROLE_TYPE_GOOD_POLICE) {
+            if (roleType == ROLE_TYPE_KILLER) {
                 itemPool = List.of(
                     "trainmurdermystery:crowbar",
                     "trainmurdermystery:nunchuck",
@@ -47,9 +47,10 @@ public class LootHelper {
                     "noellesroles:signed_paper",
                     "noellesroles:delivery_box",
                     "exposure_polaroid:instant_camera",
-                    "noellesroles:extinguisher"
+                    "noellesroles:extinguisher",
+                    "trainmurdermystery:poison_vial"
                 );
-            } else if (roleType == ROLE_TYPE_BAD) {
+            } else if (roleType == ROLE_TYPE_SHERIFF) {
                 itemPool = List.of(
                     "trainmurdermystery:lockpick",
                     "trainmurdermystery:firecracker",
@@ -61,7 +62,6 @@ public class LootHelper {
                     "betel-nut-mod:synthetic_world_betel",
                     "trainmurdermystery:emoji_helmet",
                     "trainmurdermystery:defense_vial",
-                    "trainmurdermystery:poison_vial",
                     "noellesroles:noell_paperclip",
                     "noellesroles:screwdriver"
                 );
@@ -78,7 +78,7 @@ public class LootHelper {
                 }
 
                 if ("trainmurdermystery:nunchuck".equals(itemId)) {
-                    int initialCooldown = (roleType == ROLE_TYPE_GOOD_POLICE) ? NUNCHUCK_COOLDOWN_GOOD_POLICE : NUNCHUCK_COOLDOWN_BAD;
+                    int initialCooldown = (roleType == ROLE_TYPE_KILLER) ? NUNCHUCK_COOLDOWN_KILLER : NUNCHUCK_COOLDOWN_SHERIFF;
                     player.getCooldowns().addCooldown(item, initialCooldown);
                     LOGGER.debug("双节棍初始冷却: {} ticks ({}秒, roleType={})",
                             initialCooldown, initialCooldown / 20, roleType);

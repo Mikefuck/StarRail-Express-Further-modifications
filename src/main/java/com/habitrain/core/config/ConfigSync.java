@@ -25,6 +25,7 @@ public class ConfigSync {
             List<String> newShaderWhitelist = new ArrayList<>();
             float newDlcTarget = 0.5f;
             boolean newShaderEnabled = false;
+            boolean newKnifeDurability = true;
             int newSheriffDivisor = 6;
             int newTempPowerPrice = 100;
             boolean newMgGlobal = true;
@@ -54,6 +55,9 @@ public class ConfigSync {
                 if (global.has("tempPowerPrice")) {
                     int price = global.get("tempPowerPrice").getAsInt();
                     if (price >= 0) newTempPowerPrice = price;
+                }
+                if (global.has("knifeDurabilityEnabled")) {
+                    newKnifeDurability = global.get("knifeDurabilityEnabled").getAsBoolean();
                 }
             }
 
@@ -112,6 +116,7 @@ public class ConfigSync {
             repo.getShaderWhitelist().addAll(newShaderWhitelist);
             repo.setSheriffCountDivisor(newSheriffDivisor);
             repo.setTempPowerPrice(newTempPowerPrice);
+            repo.setKnifeDurabilityEnabled(newKnifeDurability);
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
             repo.setEnvironment(newEnv);
@@ -160,6 +165,9 @@ public class ConfigSync {
                 if (global.has("tempPowerPrice")) {
                     int price = global.get("tempPowerPrice").getAsInt();
                     if (price >= 0) repo.setTempPowerPrice(price);
+                }
+                if (global.has("knifeDurabilityEnabled")) {
+                    repo.setKnifeDurabilityEnabled(global.get("knifeDurabilityEnabled").getAsBoolean());
                 }
             }
 

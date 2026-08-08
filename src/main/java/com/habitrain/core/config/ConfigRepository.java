@@ -12,6 +12,7 @@ public class ConfigRepository {
     private int sheriffCountDivisor = 6;
     private boolean minigameGlobalEnabled = true;
     private boolean shaderWhitelistEnabled = false;
+    private boolean knifeDurabilityEnabled = true;
     private int tempPowerPrice = 100;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
@@ -77,6 +78,12 @@ public class ConfigRepository {
 
     public void setShaderWhitelistEnabled(boolean enabled) {
         this.shaderWhitelistEnabled = enabled;
+    }
+
+    public boolean isKnifeDurabilityEnabled() { return knifeDurabilityEnabled; }
+
+    public void setKnifeDurabilityEnabled(boolean enabled) {
+        this.knifeDurabilityEnabled = enabled;
     }
 
     public List<String> getShaderWhitelist() { return shaderWhitelist; }

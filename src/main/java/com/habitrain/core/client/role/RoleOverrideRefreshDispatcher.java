@@ -1,5 +1,6 @@
 package com.habitrain.core.client.role;
 
+import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import net.minecraft.client.Minecraft;
@@ -28,9 +29,14 @@ public final class RoleOverrideRefreshDispatcher {
 
         mc.execute(() -> {
             Screen screen = mc.screen;
-            if (screen instanceof com.habitrain.core.client.gui.config.ConfigRootScreen configScreen) {
-                // The RoleOverrideTabScreen will be rebuilt on next render
-                // by calling rebuildRows() through the tab's render cycle
+            if (screen instanceof ConfigMenuScreen configScreen) {
+                // The role-override list will be rebuilt on the next render cycle
+                // by refreshRoleOverrideTab(), which rebuilds ModeRolesPage rows.
+                try {
+                    configScreen.refreshRoleOverrideTab();
+                } catch (Throwable t) {
+                    // Rebuild is best-effort; ignore transient UI state.
+                }
             }
         });
     }

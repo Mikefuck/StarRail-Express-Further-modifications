@@ -111,6 +111,10 @@ public class ConfigStore {
                     if (price >= 0) repo.setTempPowerPrice(price);
                 }
 
+                if (global.has("knifeDurabilityEnabled")) {
+                    repo.setKnifeDurabilityEnabled(global.get("knifeDurabilityEnabled").getAsBoolean());
+                }
+
                 LOGGER.info("全局设置: DLC目标占比={}%, 光影白名单={}, 允许{}个光影, 警长除数={}",
                         Math.round(repo.getDlcProbabilityTarget() * 100),
                         repo.isShaderWhitelistEnabled() ? "启用" : "禁用",
@@ -227,6 +231,7 @@ public class ConfigStore {
         global.add("shaderWhitelist", whitelistArray);
         global.addProperty("sheriffCountDivisor", repo.getSheriffCountDivisor());
         global.addProperty("tempPowerPrice", repo.getTempPowerPrice());
+        global.addProperty("knifeDurabilityEnabled", repo.isKnifeDurabilityEnabled());
         root.add("global", global);
 
         JsonObject tasks = new JsonObject();

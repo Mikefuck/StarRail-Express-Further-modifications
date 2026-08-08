@@ -6,7 +6,7 @@ import com.habitrain.core.client.gui.BlackoutTaskShopState;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
-import com.habitrain.core.client.gui.LiveConfigAccess;
+import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
@@ -63,7 +63,7 @@ public class ClientLifecycleHandler {
             // ★ 单机模式（集成服务器）：配置已保存在本地，无需同步
             //    mc.getSingleplayerServer() != null 表示当前正在运行本地集成服务器
             if (mc.getSingleplayerServer() != null) return;
-            if (!LiveConfigAccess.canEditRemoteConfigs()) return;
+            if (!MenuPermissions.canEditRemoteConfigs()) return;
 
             // 发送当前完整配置到服务端
             // 服务端会校验 OP 权限，非 OP 的请求会被拒绝

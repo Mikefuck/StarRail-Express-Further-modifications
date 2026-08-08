@@ -113,12 +113,12 @@ public final class RoleOverrideEngine {
         return Collections.unmodifiableList(list);
     }
 
-    private static String entryId(ReplaceRoleDefinition def) {
+    public static String entryId(ReplaceRoleDefinition def) {
         ResourceLocation replId = def.replacementId().orElse(def.replacementRole().identifier());
         return def.sourceModId() + "$" + replId.getPath() + "@" + def.targetRoleId();
     }
 
-    private static String entryId(ModifyRoleDefinition def) {
+    public static String entryId(ModifyRoleDefinition def) {
         return def.sourceModId() + "$" + def.targetRoleId().getPath() + "@" + def.targetRoleId();
     }
 

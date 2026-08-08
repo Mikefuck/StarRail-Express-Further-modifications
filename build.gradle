@@ -38,8 +38,34 @@ dependencies {
     testImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 }
 
+def stagedTestRuntimeDir = new File(gradle.gradleUserHomeDir, "habitrain-core-test-runtime")
+
+tasks.register("stageTestRuntime", Sync) {
+    dependsOn(tasks.named("testClasses"))
+    into(stagedTestRuntimeDir)
+    from(sourceSets.test.output.classesDirs) {
+        into("test")
+    }
+    from(sourceSets.main.output) {
+        into("main")
+    }
+    from(configurations.testRuntimeClasspath) {
+        into("libs")
+    }
+}
+
 test {
     useJUnitPlatform()
+    dependsOn(tasks.named("stageTestRuntime"))
+    // Gradle's Windows test worker corrupts non-ASCII classpath entries
+    // (project path contains 哈比列车), so stage to an ASCII runtime dir first.
+    testClassesDirs = files(new File(stagedTestRuntimeDir, "test"))
+    classpath = files(
+            new File(stagedTestRuntimeDir, "test"),
+            new File(stagedTestRuntimeDir, "main")
+    ) + fileTree(new File(stagedTestRuntimeDir, "libs")) {
+        include("*.jar")
+    }
 }
 
 processResources {

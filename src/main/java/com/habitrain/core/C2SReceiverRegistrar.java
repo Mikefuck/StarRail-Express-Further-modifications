@@ -38,6 +38,7 @@ public final class C2SReceiverRegistrar {
                 // merge 语义：仅覆盖 OP 客户端发送的条目，不删除客户端视图缺失的服务端独有条目（P5-36）
                 ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
+                ConfigManager.getInstance().applyKnifeDurabilityToSreConfig();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 // Rebuild role override engine with updated config
                 com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild();

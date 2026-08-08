@@ -33,6 +33,16 @@ public final class RoleOverrideApi {
         return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().isModified(targetRoleId);
     }
 
+    /** 计算 REPLACE 覆盖条目的稳定 ID（与引擎/配置键一致）。 */
+    public static String getEntryId(ReplaceRoleDefinition def) {
+        return def == null ? "" : com.habitrain.core.role.override.RoleOverrideEngine.entryId(def);
+    }
+
+    /** 计算 MODIFY 覆盖条目的稳定 ID（与引擎/配置键一致）。 */
+    public static String getEntryId(ModifyRoleDefinition def) {
+        return def == null ? "" : com.habitrain.core.role.override.RoleOverrideEngine.entryId(def);
+    }
+
     public static @Nullable ModifyRoleDefinition getActiveModify(ResourceLocation targetRoleId) {
         return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().getActiveModify(targetRoleId);
     }

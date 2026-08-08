@@ -210,6 +210,32 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
     }
 
+    public boolean isKnifeDurabilityEnabled() {
+        return repository.isKnifeDurabilityEnabled();
+    }
+
+    public void setKnifeDurabilityEnabled(boolean enabled) {
+        repository.setKnifeDurabilityEnabled(enabled);
+        store.markDirty();
+        applyKnifeDurabilityToSreConfig();
+    }
+
+    /**
+     * 把 api 侧的刀耐久开关同步到 SRE 配置（SREConfig.knifeDurabilityMode）。
+     * 服务端配置加载/更新后调用，客户端不生效。
+     * <p>不直接依赖 {@code SREConfig} 类型（autoconfig ConfigData 不在 compile classpath），
+     * 与 {@code RoleMethodDispatcherMixin.readCivilianTaskReward} 一致用反射访问。
+     */
+    public void applyKnifeDurabilityToSreConfig() {
+        try {
+            Class<?> cfgClass = Class.forName("io.wifi.starrailexpress.SREConfig");
+            Object instance = cfgClass.getMethod("instance").invoke(null);
+            cfgClass.getField("knifeDurabilityMode").setBoolean(instance, repository.isKnifeDurabilityEnabled());
+        } catch (Throwable t) {
+            LOGGER.warn("applyKnifeDurabilityToSreConfig failed: {}", t.toString());
+        }
+    }
+
     @Override
     public MinigameConfigEntry getMinigameConfig(String minigameId) {
         return repository.getMinigameConfig(minigameId);
