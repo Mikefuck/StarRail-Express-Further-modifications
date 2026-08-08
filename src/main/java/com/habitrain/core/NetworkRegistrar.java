@@ -34,6 +34,7 @@ public final class NetworkRegistrar {
         GreedTradeActionPayload.register();
         GreedTradePromptPayload.register();
         GreedTradeSelectPayload.register();
-        LOGGER.info("Registered 23 HabiTrain network payload types");
+        GameEndTransitionPayload.register();
+        LOGGER.info("Registered 24 HabiTrain network payload types");
     }
 }

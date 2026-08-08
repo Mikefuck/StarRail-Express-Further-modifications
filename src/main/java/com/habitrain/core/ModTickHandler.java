@@ -4,6 +4,7 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.EnvironmentController;
+import com.habitrain.core.game.sre.GameEndTransitionCoordinator;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
@@ -46,6 +47,13 @@ public class ModTickHandler {
                 GreedTradeManager.tick(server);
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[ModTick] GreedTradeManager.tick failed", t);
+            }
+
+            // 对局结束结算画面：环境就绪后二次广播
+            try {
+                GameEndTransitionCoordinator.tick(server);
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[ModTick] GameEndTransitionCoordinator.tick failed", t);
             }
 
             tickMoreMods(server);

@@ -1,4 +1,11 @@
 {
+    "gameend.habitrain_core.title": "对局结束",
+    "gameend.habitrain_core.returning": "正在返回大厅…",
+    "gameend.habitrain_core.win.killers": "杀手阵营获胜",
+    "gameend.habitrain_core.win.passengers": "乘客阵营获胜",
+    "gameend.habitrain_core.win.time": "时间耗尽",
+    "gameend.habitrain_core.win.generic": "对局结束",
+    "gameend.habitrain_core.win.custom": "%s 获胜",
     "screen.habitrain_core.greed_trade.title": "匿名交易",
     "screen.habitrain_core.greed_trade.confirm": "确认交易",
     "screen.habitrain_core.greed_trade.cancel": "取消",

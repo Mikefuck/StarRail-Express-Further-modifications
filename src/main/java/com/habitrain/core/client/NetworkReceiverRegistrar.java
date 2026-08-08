@@ -225,5 +225,19 @@ public class NetworkReceiverRegistrar {
                 ctx.client().execute(() -> ctx.client().setScreen(
                         new com.habitrain.core.client.gui.GreedTradePromptScreen(
                                 ctx.client().screen, payload))));
+
+        // 16) 对局结束结算画面 — 打开/更新 GameEndTransitionScreen
+        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.GameEndTransitionPayload.TYPE, (payload, ctx) -> {
+            ctx.client().execute(() -> {
+                if (ctx.client().screen instanceof com.habitrain.core.client.gui.GameEndTransitionScreen endScreen) {
+                    endScreen.update(payload);
+                    if (payload.environmentReady()) {
+                        endScreen.markGameFinished();
+                    }
+                } else {
+                    ctx.client().setScreen(new com.habitrain.core.client.gui.GameEndTransitionScreen(payload));
+                }
+            });
+        });
     }
 }

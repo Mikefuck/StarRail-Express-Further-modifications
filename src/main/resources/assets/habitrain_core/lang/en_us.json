@@ -1,4 +1,11 @@
 {
+    "gameend.habitrain_core.title": "Game Over",
+    "gameend.habitrain_core.returning": "Returning to lobby…",
+    "gameend.habitrain_core.win.killers": "Killers win",
+    "gameend.habitrain_core.win.passengers": "Passengers win",
+    "gameend.habitrain_core.win.time": "Time ran out",
+    "gameend.habitrain_core.win.generic": "Game Over",
+    "gameend.habitrain_core.win.custom": "%s wins",
     "screen.habitrain_core.greed_trade.title": "Anonymous Trade",
     "screen.habitrain_core.greed_trade.confirm": "Confirm",
     "screen.habitrain_core.greed_trade.cancel": "Cancel",

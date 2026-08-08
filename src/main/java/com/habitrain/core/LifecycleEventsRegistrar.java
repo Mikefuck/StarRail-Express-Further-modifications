@@ -45,6 +45,7 @@ public final class LifecycleEventsRegistrar {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
             ConfigManager.getInstance().setServer(server);
+            ConfigManager.getInstance().applyKnifeDurabilityToSreConfig();
             ConfigManager.getInstance().applyMinigameEnforcement(server);
             // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
             // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
@@ -109,6 +110,7 @@ public final class LifecycleEventsRegistrar {
             EnvironmentController.clearRuntimeState();
             com.habitrain.core.game.sre.SREWeatherController.resetAll();
             GreedTradeManager.clearAll();
+            com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
         });
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

@@ -63,6 +63,8 @@ public final class EnvironmentController {
                 if (game != null) status = game.getLastWinStatus();
             } catch (Throwable ignored) {}
             applyPostMatch(level, status);
+            // 局后环境已应用 → 通知结算画面协调器（等待天气同步后二次广播）
+            GameEndTransitionCoordinator.onEnvironmentReady(level);
         } catch (Throwable t) {
             LOGGER.error("onGameEnd env apply failed", t);
         }
