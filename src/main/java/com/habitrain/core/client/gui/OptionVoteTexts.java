@@ -19,12 +19,70 @@ public final class OptionVoteTexts {
         return Component.translatable("vote.habitrain_core.ui.votes", votes);
     }
 
+    public static Component compactVotes(int votes) {
+        return Component.translatable("vote.habitrain_core.ui.votes_compact", votes);
+    }
+
+    public static Component voteShare(int votes, int percent) {
+        return Component.translatable("vote.habitrain_core.ui.vote_share", votes, percent);
+    }
+
     public static Component timeLeft(int seconds) {
         return Component.translatable("vote.habitrain_core.ui.time_left", seconds);
     }
 
     public static Component ended() {
         return Component.translatable("vote.habitrain_core.ui.ended");
+    }
+
+    public static Component phaseFor(String voteId) {
+        if ("mode".equals(voteId)) {
+            return Component.translatable("vote.habitrain_core.ui.phase_mode");
+        }
+        if ("map".equals(voteId)) {
+            return Component.translatable("vote.habitrain_core.ui.phase_map");
+        }
+        return Component.translatable("vote.habitrain_core.ui.phase_generic");
+    }
+
+    public static Component candidateProgress(int current, int total) {
+        return Component.translatable("vote.habitrain_core.ui.candidate_progress", current, total);
+    }
+
+    public static Component optionId(String id) {
+        return Component.translatable("vote.habitrain_core.ui.option_id", id == null ? "" : id);
+    }
+
+    public static Component selectedStatus() {
+        return Component.translatable("vote.habitrain_core.ui.selected");
+    }
+
+    public static Component availableStatus() {
+        return Component.translatable("vote.habitrain_core.ui.available");
+    }
+
+    public static Component controlHint() {
+        return Component.translatable("vote.habitrain_core.ui.hint");
+    }
+
+    public static Component noCandidates() {
+        return Component.translatable("vote.habitrain_core.ui.no_candidates");
+    }
+
+    public static Component winnerStatus() {
+        return Component.translatable("vote.habitrain_core.ui.winner");
+    }
+
+    public static Component transitionPreparing() {
+        return Component.translatable("vote.habitrain_core.transition.preparing");
+    }
+
+    public static Component transitionTitle() {
+        return Component.translatable("vote.habitrain_core.transition.title");
+    }
+
+    public static Component transitionDestination(Component destination) {
+        return Component.translatable("vote.habitrain_core.transition.destination", destination);
     }
 
     public static Component titleFor(String voteId) {

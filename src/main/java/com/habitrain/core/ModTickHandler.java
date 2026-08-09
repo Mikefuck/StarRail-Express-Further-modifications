@@ -4,12 +4,10 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.EnvironmentController;
-import com.habitrain.core.game.sre.GameEndTransitionCoordinator;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.task.GameLifecycleHandler;
-import com.habitrain.core.vote.MapPoolRotationService;
 import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -27,19 +25,20 @@ public class ModTickHandler {
             SREGameModeBase.processPendingVoiceJoins(server);
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);
+            // 天气状态需先经过世界 tick 同步到客户端，再发送开局/结算动画的环境就绪阶段。
+            com.habitrain.core.game.sre.MapVoteLoadCoordinator.tick(server);
+            com.habitrain.core.game.sre.GameEndTransitionCoordinator.tick(server);
 
-            // 1Hz option-vote tick (mode/map lobby vote countdown) + map pool calendar
+            // 1Hz option-vote tick (mode/map lobby vote countdown)
             voteTickCounter++;
             if (voteTickCounter % 20 == 0) {
                 for (ServerLevel level : server.getAllLevels()) {
                     OptionVoteManager.tickSecond(level);
                 }
-                try {
-                    MapPoolRotationService.onCalendarTick(server);
-                } catch (Throwable t) {
-                    // never break server tick loop
-                    HabiTrainCore.LOGGER.warn("[ModTick] MapPoolRotationService.onCalendarTick failed", t);
-                }
+                // 1Hz 开局加载进度广播（投票→地图重置→真正开局窗口内）
+                com.habitrain.core.game.sre.MapVoteLoadCoordinator.tickSecond(server);
+                // 维修人员模式：异常兜底，释放「离线但仍持锁」的记录（覆盖崩溃/异常断线）
+                com.habitrain.core.game.sre.RepairModeManager.checkAbnormal(server);
             }
 
             // Greed anonymous trade session timeouts
@@ -47,13 +46,6 @@ public class ModTickHandler {
                 GreedTradeManager.tick(server);
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[ModTick] GreedTradeManager.tick failed", t);
-            }
-
-            // 对局结束结算画面：环境就绪后二次广播
-            try {
-                GameEndTransitionCoordinator.tick(server);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[ModTick] GameEndTransitionCoordinator.tick failed", t);
             }
 
             tickMoreMods(server);

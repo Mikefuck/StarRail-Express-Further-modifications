@@ -2,7 +2,6 @@ package com.habitrain.core.api;
 
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -20,6 +19,6 @@ public record VoteResult(
         boolean randomPick
 ) {
     public VoteResult {
-        tallies = tallies == null ? Map.of() : Collections.unmodifiableMap(tallies);
+        tallies = tallies == null ? Map.of() : Map.copyOf(tallies);
     }
 }

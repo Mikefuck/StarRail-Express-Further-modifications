@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre;
 
 import com.habitrain.core.api.*;
+import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.AbstractGameMode;
 import com.habitrain.core.task.TaskManager;
 import de.maxhenkel.voicechat.api.Group;
@@ -113,8 +114,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     /**
      * 玩家加入大厅语音群组的重试队列。
      * 当玩家加入世界时无活跃游戏对局，将其加入队列等待 voicechat 连接就绪。
+     * 大厅语音群组开关关闭时不入队（不产生任何拉入行为）。
      */
     public static void queueLobbyGroupJoin(MinecraftServer server, UUID playerUUID) {
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return;
         STATE.getPendingVoiceJoins().put(playerUUID, MAX_VOICE_JOIN_RETRIES);
         LOGGER.info("[VoiceGroup] queued {} for lobby group join", playerUUID);
     }
@@ -124,6 +127,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * @return true 表示成功加入 / 已在大厅群 / 无需再试，false 表示需要重试
      */
     private static boolean tryAddPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return false;
         if (TrainVoicePlugin.isVoiceChatMissing()) return false;
         if (TrainVoicePlugin.SERVER_API == null) return false;
 
@@ -219,6 +223,17 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         }
     }
 
+    /**
+     * 应用大厅语音群组开关（配置保存/同步后调用）。
+     * 关闭时立即把所有在线玩家移出 LobbyChat，避免已加入的玩家停留在群组内。
+     */
+    public static void applyLobbyGroupToggle(MinecraftServer server) {
+        if (server == null) return;
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) {
+            leaveLobbyGroupForAllOnline(server);
+        }
+    }
+
     /** 断线时立刻从 pending 队列移除（不必等下一 tick 扫描）。 */
     public static void removePendingVoiceJoin(UUID playerUUID) {
         if (playerUUID == null) return;
@@ -227,6 +242,11 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     public static void processPendingVoiceJoins(MinecraftServer server) {
         if (STATE.getPendingVoiceJoins().isEmpty()) return;
+        // 大厅语音群组开关关闭：清空遗留队列，不产生任何拉入行为
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) {
+            STATE.getPendingVoiceJoins().clear();
+            return;
+        }
         // 对局已进入 STARTING/ACTIVE/STOPPING：不再把任何人拉进大厅群，直接清空队列
         if (isAnySreGameStartingOrRunning(server)) {
             STATE.getPendingVoiceJoins().clear();
@@ -269,6 +289,12 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         if (!STATE.isPendingGameEndGroupJoin()) return;
         STATE.setPendingGameEndGroupJoin(false);
 
+        // 大厅语音群组开关关闭：对局结束后不再把玩家拉入大厅语音群组
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) {
+            LOGGER.info("[VoiceGroup] 大厅语音群组已关闭，跳过对局结束入队");
+            return;
+        }
+
         // 等待对局完全结束（没有运行中的 SRE 游戏）
         if (isAnySreGameRunning(server)) {
             STATE.setPendingGameEndGroupJoin(true); // 下一 tick 再试
@@ -293,6 +319,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      */
     public static void reconcileLobbyGroupMembership(MinecraftServer server) {
         if (server == null) return;
+        if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return;
         lobbyReconcileTickCounter++;
         if (lobbyReconcileTickCounter < LOBBY_RECONCILE_INTERVAL_TICKS) return;
         lobbyReconcileTickCounter = 0;

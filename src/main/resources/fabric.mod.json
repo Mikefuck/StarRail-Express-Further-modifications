@@ -1,6 +1,7 @@
 {
     "schemaVersion": 1,
     "id": "habitrain_core",
+    "provides": ["habitrain_taskapi"],
     "version": "${version}",
     "name": "哈比列车核心 (HabiTrain Core)",
     "description": "哈比列车游戏框架与任务系统API模组",
@@ -33,6 +34,7 @@
     },
     "mixins": [
         "habitrain_core.mixins.json",
+        "habitrain_core.rest_area.mixins.json",
         { "config": "habitrain_core.client.mixins.json", "environment": "client" }
     ],
     "depends": {

@@ -6,7 +6,7 @@ import com.habitrain.core.game.sre.role.sins.component.EnvyComponent;
 import com.habitrain.core.game.sre.role.sins.component.LustComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.event.client.OnGetInstinctHighlight;
+import io.wifi.starrailexpress.event.client.CommonInstinctEvents;
 import io.wifi.starrailexpress.util.TrueFalseAndCustomResult;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -36,7 +36,7 @@ public final class HabiRoleClientHooks {
     public static void init() {
         if (registered) return;
         registered = true;
-        OnGetInstinctHighlight.ALIVE_EVENT.register(HabiRoleClientHooks::sinInstinctHighlight);
+        CommonInstinctEvents.ALIVE_COMMON_AFTER_EVENT.register(HabiRoleClientHooks::sinInstinctHighlight);
         HabiTrainCore.LOGGER.info("[HabiRoleClientHooks] sin highlights registered");
     }
 

@@ -2,6 +2,7 @@ package com.habitrain.core.client.gui.menu.page;
 
 import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.MenuTheme;
+import com.habitrain.core.client.gui.menu.ui.PillToggle;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.EnvProfile;
 import com.habitrain.core.config.EnvTimeSpec;
@@ -302,8 +303,7 @@ public final class EnvEditorShared {
                                   String label, boolean on, String action,
                                   List<ButtonHit> buttonHits) {
         int tw = 50;
-        g.fill(labelX, cy, labelX + tw, cy + 16, on ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, on ? "§a开" : "§c关", labelX + 16, cy + 4, 0xFFFFFFFF, false);
+        PillToggle.render(g, font, labelX, cy, tw, 16, on, "开", "关");
         buttonHits.add(new ButtonHit(action, labelX, cy, tw, 16));
         g.drawString(font, label, labelX + tw + 8, cy + 4, MenuTheme.TEXT_PRIMARY, false);
         return cy + ROW_H;

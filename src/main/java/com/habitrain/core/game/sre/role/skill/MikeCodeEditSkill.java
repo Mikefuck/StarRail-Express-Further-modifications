@@ -4,6 +4,8 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.NecromancerReviveSupport;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
 import io.wifi.starrailexpress.SRE;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
@@ -12,7 +14,6 @@ import io.wifi.starrailexpress.api.replay.GameReplayUtils;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.GameUtils;
-import io.wifi.starrailexpress.roster.RoleRosterManager;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -88,8 +89,13 @@ public final class MikeCodeEditSkill {
         clearAllItems(target);
 
         try {
-            // record=false：不写默认「职业从 A 切换到 B」时间线，改记自定义文案
-            RoleUtils.changeRole(target, next, false, true, false);
+            if (target.level() instanceof ServerLevel level) {
+                // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
+                // record=false：时间线不写默认「职业从 A 切换到 B」，改记自定义文案；
+                // addStats=true；faction 传 null 由 resolveFactionFromSreRole 推导，
+                // 否则独立罪/共享罪会被错误压成 GOOD/BAD。
+                BlackoutRoleManager.reassignRole(level, target.getUUID(), next, null, false, true);
+            }
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Mike] changeRole failed for {}", target.getName().getString(), t);
             // 尽量退款，避免吞金
@@ -100,16 +106,6 @@ public final class MikeCodeEditSkill {
             return false;
         }
 
-        if (target.level() instanceof ServerLevel level) {
-            // 必须走 resolveFactionFromSreRole（经 reassignRole null override），
-            // 否则独立罪/共享罪会被错误压成 GOOD/BAD。
-            try {
-                BlackoutRoleManager.reassignRole(level, target.getUUID(), next, null);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Mike] reassignRole failed for {}", target.getUUID(), t);
-            }
-        }
-
         if (target.level() instanceof ServerLevel levelForNecro) {
             try {
                 NecromancerReviveSupport.onKillerConvertedAway(levelForNecro, current, next);
@@ -118,7 +114,7 @@ public final class MikeCodeEditSkill {
             }
         }
 
-        // changeRole + reassignRole 都可能触发 ModdedRoleAssigned 发初始物：清一次再发一次
+        // 统一后仅 reassignRole 触发一次 ModdedRoleAssigned（组件 init）；此处仍清一次再按目标角色发初始物
         clearAllItems(target);
         try {
             RoleInitialItems.addInitialItemsForRole(target, next);
@@ -229,17 +225,14 @@ public final class MikeCodeEditSkill {
 
     private static List<SRERole> buildPool(SRERole current) {
         List<SRERole> pool = new ArrayList<>();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        for (SRERole role :
+                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
             if (role == null) continue;
-            if (role.isOtherModeRole()) continue;
-            try {
-                if (!RoleRosterManager.isRoleEnabled(role)) continue;
-            } catch (Throwable t) {
-                // roster 不可用时不挡池子
-            }
+            if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
             if (current != null && role.equals(current)) continue;
             pool.add(role);
         }
+        SreRolePoolFilter.warnIfLeaky("MikeCodeEdit", pool);
         return pool;
     }
 

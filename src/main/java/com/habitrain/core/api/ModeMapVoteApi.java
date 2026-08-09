@@ -20,8 +20,7 @@ public final class ModeMapVoteApi {
     }
 
     public static boolean cancel(ServerLevel level) {
-        ModeMapVoteOrchestrator.cancel(level);
-        return true;
+        return ModeMapVoteOrchestrator.cancel(level);
     }
 
     public static boolean isRunning(ServerLevel level) {

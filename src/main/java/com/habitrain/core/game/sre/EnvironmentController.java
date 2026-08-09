@@ -53,6 +53,10 @@ public final class EnvironmentController {
             applyMatch(level, mapId);
         } catch (Throwable t) {
             LOGGER.error("onGameStarted env apply failed", t);
+        } finally {
+            // SRE 的地图天气已在 baseInitialize 中应用；此回调又完成了 API 对局环境。
+            // 现在才允许客户端播放「对局开始」标题，避免动画中途突然切换天气。
+            MapVoteLoadCoordinator.onMatchEnvironmentReady(level);
         }
     }
 
@@ -63,10 +67,12 @@ public final class EnvironmentController {
                 if (game != null) status = game.getLastWinStatus();
             } catch (Throwable ignored) {}
             applyPostMatch(level, status);
-            // 局后环境已应用 → 通知结算画面协调器（等待天气同步后二次广播）
-            GameEndTransitionCoordinator.onEnvironmentReady(level);
         } catch (Throwable t) {
             LOGGER.error("onGameEnd env apply failed", t);
+        } finally {
+            // SRE finalizeGame 已先恢复天气；此回调又完成了 API 赛后环境。
+            // 通知结束转场开始第二阶段，真正的结算标题动画从此刻才播放。
+            GameEndTransitionCoordinator.onEnvironmentReady(level);
         }
     }
 

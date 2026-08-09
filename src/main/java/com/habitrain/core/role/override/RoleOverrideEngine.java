@@ -1,6 +1,10 @@
 package com.habitrain.core.role.override;
 
-import com.habitrain.core.api.role.*;
+import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.api.role.OverrideStatus;
+import com.habitrain.core.api.role.ReplaceRoleDefinition;
+import com.habitrain.core.api.role.RoleOverrideEntry;
+import com.habitrain.core.api.role.RoleOverrideKind;
 import com.habitrain.core.config.RoleOverrideConfigSection;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -9,13 +13,28 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 public final class RoleOverrideEngine {
     private static final RoleOverrideEngine INSTANCE = new RoleOverrideEngine();
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleOverrideEngine");
 
-    private EffectiveSnapshot snapshot = new EffectiveSnapshot(Map.of(), Map.of());
+    private volatile EffectiveSnapshot snapshot = new EffectiveSnapshot(Map.of(), Map.of(), List.of());
+
+    /**
+     * Replacement ids successfully adopted by core. Entries remain here after
+     * deactivation because TMMRoles has no safe remove API.
+     */
+    private final Map<ResourceLocation, ManagedReplacement> managedReplacements = new LinkedHashMap<>();
 
     private RoleOverrideEngine() {}
 
@@ -23,66 +42,176 @@ public final class RoleOverrideEngine {
 
     public EffectiveSnapshot getSnapshot() { return snapshot; }
 
-    public void rebuild() {
+    public synchronized void rebuild() {
         rebuild(com.habitrain.core.config.ConfigManager.getInstance().getRoleOverrides());
     }
 
-    public void rebuild(@Nullable RoleOverrideConfigSection section) {
+    public synchronized void rebuild(@Nullable RoleOverrideConfigSection section) {
         boolean globalEnabled = section == null || section.isGlobalEnabled();
-        Map<ResourceLocation, List<ReplaceRoleDefinition>> replaceByTarget = new HashMap<>();
-        Map<ResourceLocation, List<ModifyRoleDefinition>> modifyByTarget = new HashMap<>();
+        List<ReplaceRoleDefinition> allReplaces = RoleOverrideRegistry.INSTANCE.getReplaces();
+        List<ModifyRoleDefinition> allModifies = RoleOverrideRegistry.INSTANCE.getModifies();
 
-        for (ReplaceRoleDefinition def : RoleOverrideRegistry.INSTANCE.getReplaces()) {
-            if (!globalEnabled) continue;
-            if (section != null && !section.isEnabled(entryId(def))) continue;
-            if (TMMRoles.getRole(def.targetRoleId()) == null) continue;
-            replaceByTarget.computeIfAbsent(def.targetRoleId(), k -> new ArrayList<>()).add(def);
+        IdentityHashMap<Object, StatusInfo> statuses = new IdentityHashMap<>();
+        Map<ResourceLocation, List<ReplaceRoleDefinition>> replaceByTarget = new LinkedHashMap<>();
+        Map<ResourceLocation, List<ModifyRoleDefinition>> modifyByTarget = new LinkedHashMap<>();
+
+        for (ReplaceRoleDefinition def : allReplaces) {
+            String id = RoleOverrideRegistry.entryId(def);
+            StatusInfo excluded = exclusionStatus(globalEnabled, section, id, def.targetRoleId());
+            if (excluded != null) {
+                statuses.put(def, excluded);
+            } else {
+                replaceByTarget.computeIfAbsent(def.targetRoleId(), ignored -> new ArrayList<>()).add(def);
+            }
         }
 
-        for (ModifyRoleDefinition def : RoleOverrideRegistry.INSTANCE.getModifies()) {
-            if (!globalEnabled) continue;
-            if (section != null && !section.isEnabled(entryId(def))) continue;
-            if (TMMRoles.getRole(def.targetRoleId()) == null) continue;
-            modifyByTarget.computeIfAbsent(def.targetRoleId(), k -> new ArrayList<>()).add(def);
+        for (ModifyRoleDefinition def : allModifies) {
+            String id = RoleOverrideRegistry.entryId(def);
+            StatusInfo excluded = exclusionStatus(globalEnabled, section, id, def.targetRoleId());
+            if (excluded != null) {
+                statuses.put(def, excluded);
+            } else {
+                modifyByTarget.computeIfAbsent(def.targetRoleId(), ignored -> new ArrayList<>()).add(def);
+            }
         }
 
-        Map<ResourceLocation, ReplaceRoleDefinition> activeReplaces = new HashMap<>();
-        Map<ResourceLocation, ModifyRoleDefinition> activeModifies = new HashMap<>();
-
-        Set<ResourceLocation> targets = new HashSet<>();
+        Map<ResourceLocation, ReplaceRoleDefinition> replaceCandidates = new LinkedHashMap<>();
+        Map<ResourceLocation, ModifyRoleDefinition> modifyCandidates = new LinkedHashMap<>();
+        Set<ResourceLocation> targets = new LinkedHashSet<>();
         targets.addAll(replaceByTarget.keySet());
         targets.addAll(modifyByTarget.keySet());
 
         for (ResourceLocation target : targets) {
-            List<ReplaceRoleDefinition> rs = replaceByTarget.getOrDefault(target, List.of());
-            List<ModifyRoleDefinition> ms = modifyByTarget.getOrDefault(target, List.of());
-            if (rs.size() == 1 && ms.isEmpty()) {
-                activeReplaces.put(target, rs.get(0));
-            } else if (ms.size() == 1 && rs.isEmpty()) {
-                activeModifies.put(target, ms.get(0));
+            List<ReplaceRoleDefinition> replaces = replaceByTarget.getOrDefault(target, List.of());
+            List<ModifyRoleDefinition> modifies = modifyByTarget.getOrDefault(target, List.of());
+            if (replaces.size() == 1 && modifies.isEmpty()) {
+                replaceCandidates.put(target, replaces.get(0));
+            } else if (modifies.size() == 1 && replaces.isEmpty()) {
+                modifyCandidates.put(target, modifies.get(0));
             } else {
-                LOGGER.warn("Conflict on target {}: {} REPLACE(s), {} MODIFY(s); none activated",
-                    target, rs.size(), ms.size());
+                String message = replaces.size() + " REPLACE(s), " + modifies.size()
+                        + " MODIFY(s) enabled for " + target;
+                replaces.forEach(def -> statuses.put(def,
+                        new StatusInfo(OverrideStatus.CONFLICT, message)));
+                modifies.forEach(def -> statuses.put(def,
+                        new StatusInfo(OverrideStatus.CONFLICT, message)));
+                LOGGER.warn("Conflict on target {}: {}", target, message);
             }
         }
 
-        snapshot = new EffectiveSnapshot(activeReplaces, activeModifies);
-        applySnapshot(snapshot);
+        Map<ResourceLocation, ReplaceRoleDefinition> activeReplaces =
+                activateReplacementCandidates(replaceCandidates, statuses);
+
+        // Keep the legacy method for source/binary compatibility, but never
+        // execute a one-way callback that Core cannot safely deactivate.
+        for (var entry : new ArrayList<>(modifyCandidates.entrySet())) {
+            ModifyRoleDefinition def = entry.getValue();
+            if (def.skillRegistrar().isPresent()) {
+                statuses.put(def, new StatusInfo(OverrideStatus.INVALID,
+                        "Legacy skillRegistrar is not reversible; use managedSkillPatch"));
+                modifyCandidates.remove(entry.getKey());
+            }
+        }
+
+        Set<ResourceLocation> managedSkillFailures =
+                RoleOverrideSkillManager.reconcile(modifyCandidates);
+        for (ResourceLocation target : managedSkillFailures) {
+            ModifyRoleDefinition failed = modifyCandidates.remove(target);
+            if (failed != null) {
+                statuses.put(failed, new StatusInfo(OverrideStatus.INVALID,
+                        "Managed skill patch activation failed"));
+            }
+        }
+
+        RoleOverrideTickApplier.reconcile(modifyCandidates);
+
+        activeReplaces.values().forEach(def -> statuses.put(def,
+                new StatusInfo(OverrideStatus.ACTIVE, null)));
+        modifyCandidates.values().forEach(def -> statuses.put(def,
+                new StatusInfo(OverrideStatus.ACTIVE, null)));
+
+        List<RoleOverrideEntry> entries = new ArrayList<>(allReplaces.size() + allModifies.size());
+        for (ReplaceRoleDefinition def : allReplaces) {
+            StatusInfo status = statuses.getOrDefault(def,
+                    new StatusInfo(OverrideStatus.INVALID, "Definition was not evaluated"));
+            entries.add(toEntry(def, status.status, status.message));
+        }
+        for (ModifyRoleDefinition def : allModifies) {
+            StatusInfo status = statuses.getOrDefault(def,
+                    new StatusInfo(OverrideStatus.INVALID, "Definition was not evaluated"));
+            entries.add(toEntry(def, status.status, status.message));
+        }
+
+        // Publish only after registration, skill reconciliation and baseline
+        // restoration have completed.
+        snapshot = new EffectiveSnapshot(activeReplaces, modifyCandidates, entries);
         LOGGER.info("RoleOverrideEngine rebuilt: {} replaces, {} modifies active",
-            activeReplaces.size(), activeModifies.size());
+                activeReplaces.size(), modifyCandidates.size());
     }
 
-    private void applySnapshot(EffectiveSnapshot snap) {
-        for (ReplaceRoleDefinition def : snap.getActiveReplaces().values()) {
-            SRERole role = def.replacementRole();
-            if (TMMRoles.getRole(role.identifier()) == null) {
-                TMMRoles.registerRole(role);
-                LOGGER.info("Registered replacement role {}", role.identifier());
+    private @Nullable StatusInfo exclusionStatus(
+            boolean globalEnabled,
+            @Nullable RoleOverrideConfigSection section,
+            String entryId,
+            ResourceLocation targetId) {
+        if (!globalEnabled) {
+            return new StatusInfo(OverrideStatus.DISABLED, "Global role override switch is disabled");
+        }
+        if (section != null && !section.isEnabled(entryId)) {
+            return new StatusInfo(OverrideStatus.DISABLED, "Entry is disabled");
+        }
+        if (TMMRoles.getRole(targetId) == null) {
+            return new StatusInfo(OverrideStatus.INVALID, "Target role does not exist: " + targetId);
+        }
+        return null;
+    }
+
+    private Map<ResourceLocation, ReplaceRoleDefinition> activateReplacementCandidates(
+            Map<ResourceLocation, ReplaceRoleDefinition> candidates,
+            IdentityHashMap<Object, StatusInfo> statuses) {
+        Map<ResourceLocation, ReplaceRoleDefinition> active = new LinkedHashMap<>();
+        for (var entry : candidates.entrySet()) {
+            ResourceLocation targetId = entry.getKey();
+            ReplaceRoleDefinition def = entry.getValue();
+            SRERole replacement = def.replacementRole();
+            ResourceLocation replacementId = replacement.identifier();
+
+            ManagedReplacement managed = managedReplacements.get(replacementId);
+            SRERole registered = TMMRoles.getRole(replacementId);
+            if (managed != null && managed.role != replacement) {
+                statuses.put(def, new StatusInfo(OverrideStatus.INVALID,
+                        "Replacement id is already managed by a different role: " + replacementId));
+                continue;
             }
+            if (registered != null && registered != replacement) {
+                statuses.put(def, new StatusInfo(OverrideStatus.INVALID,
+                        "Replacement id collides with an existing TMM role: " + replacementId));
+                continue;
+            }
+
+            if (registered == null) {
+                try {
+                    TMMRoles.registerRole(replacement);
+                    registered = TMMRoles.getRole(replacementId);
+                } catch (Throwable t) {
+                    LOGGER.error("Failed to register replacement role {}", replacementId, t);
+                    statuses.put(def, new StatusInfo(OverrideStatus.INVALID,
+                            "TMM role registration failed: " + t.getClass().getSimpleName()));
+                    continue;
+                }
+                if (registered != replacement) {
+                    statuses.put(def, new StatusInfo(OverrideStatus.INVALID,
+                            "TMM role registration did not publish the replacement instance"));
+                    continue;
+                }
+                LOGGER.info("Registered replacement role {}", replacementId);
+            }
+
+            managedReplacements.putIfAbsent(replacementId,
+                    new ManagedReplacement(targetId, replacement));
+            active.put(targetId, def);
         }
-        for (ModifyRoleDefinition def : snap.getActiveModifies().values()) {
-            def.skillRegistrar().ifPresent(reg -> reg.register(TMMRoles.getRole(def.targetRoleId())));
-        }
+        return active;
     }
 
     public boolean isReplaced(ResourceLocation targetId) {
@@ -94,6 +223,26 @@ public final class RoleOverrideEngine {
         return def == null ? null : def.replacementRole();
     }
 
+    public boolean isManagedReplacementId(ResourceLocation roleId) {
+        synchronized (this) {
+            return managedReplacements.containsKey(roleId);
+        }
+    }
+
+    public boolean isActiveReplacementId(ResourceLocation roleId) {
+        for (ReplaceRoleDefinition def : snapshot.getActiveReplaces().values()) {
+            if (def.replacementRole().identifier().equals(roleId)) return true;
+        }
+        return false;
+    }
+
+    public @Nullable ResourceLocation getManagedTargetId(ResourceLocation replacementId) {
+        synchronized (this) {
+            ManagedReplacement managed = managedReplacements.get(replacementId);
+            return managed == null ? null : managed.targetId;
+        }
+    }
+
     public boolean isModified(ResourceLocation targetId) {
         return snapshot.getActiveModifies().containsKey(targetId);
     }
@@ -102,39 +251,42 @@ public final class RoleOverrideEngine {
         return snapshot.getActiveModifies().get(targetId);
     }
 
+    /**
+     * Returns every registered definition with ACTIVE, DISABLED, CONFLICT or
+     * INVALID status, in registration order.
+     */
     public Collection<RoleOverrideEntry> getEffectiveEntries() {
-        List<RoleOverrideEntry> list = new ArrayList<>();
-        for (ReplaceRoleDefinition def : snapshot.getActiveReplaces().values()) {
-            list.add(toEntry(def, OverrideStatus.ACTIVE, null));
-        }
-        for (ModifyRoleDefinition def : snapshot.getActiveModifies().values()) {
-            list.add(toEntry(def, OverrideStatus.ACTIVE, null));
-        }
-        return Collections.unmodifiableList(list);
+        return Collections.unmodifiableList(snapshot.getEntries());
     }
 
-    public static String entryId(ReplaceRoleDefinition def) {
-        ResourceLocation replId = def.replacementId().orElse(def.replacementRole().identifier());
-        return def.sourceModId() + "$" + replId.getPath() + "@" + def.targetRoleId();
-    }
-
-    public static String entryId(ModifyRoleDefinition def) {
-        return def.sourceModId() + "$" + def.targetRoleId().getPath() + "@" + def.targetRoleId();
-    }
-
-    private RoleOverrideEntry toEntry(ReplaceRoleDefinition def, OverrideStatus status, String msg) {
+    private static RoleOverrideEntry toEntry(
+            ReplaceRoleDefinition def, OverrideStatus status, @Nullable String message) {
         return new RoleOverrideEntry(
-            entryId(def), def.sourceModId(), RoleOverrideKind.REPLACE, def.displayName(),
-            def.targetRoleId(), def.replacementId().or(() -> Optional.of(def.replacementRole().identifier())),
-            status, Optional.ofNullable(msg)
+                RoleOverrideRegistry.entryId(def),
+                def.sourceModId(),
+                RoleOverrideKind.REPLACE,
+                def.displayName(),
+                def.targetRoleId(),
+                Optional.of(def.replacementRole().identifier()),
+                status,
+                Optional.ofNullable(message)
         );
     }
 
-    private RoleOverrideEntry toEntry(ModifyRoleDefinition def, OverrideStatus status, String msg) {
+    private static RoleOverrideEntry toEntry(
+            ModifyRoleDefinition def, OverrideStatus status, @Nullable String message) {
         return new RoleOverrideEntry(
-            entryId(def), def.sourceModId(), RoleOverrideKind.MODIFY, def.displayName(),
-            def.targetRoleId(), Optional.empty(),
-            status, Optional.ofNullable(msg)
+                RoleOverrideRegistry.entryId(def),
+                def.sourceModId(),
+                RoleOverrideKind.MODIFY,
+                def.displayName(),
+                def.targetRoleId(),
+                Optional.empty(),
+                status,
+                Optional.ofNullable(message)
         );
     }
+
+    private record ManagedReplacement(ResourceLocation targetId, SRERole role) {}
+    private record StatusInfo(OverrideStatus status, @Nullable String message) {}
 }

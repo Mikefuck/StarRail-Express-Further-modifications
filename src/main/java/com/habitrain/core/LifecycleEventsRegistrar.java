@@ -16,6 +16,7 @@ import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
+import com.habitrain.core.network.MenuGatePayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
 import com.habitrain.core.task.BackpackQuestState;
@@ -45,12 +46,13 @@ public final class LifecycleEventsRegistrar {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
             ConfigManager.getInstance().setServer(server);
-            ConfigManager.getInstance().applyKnifeDurabilityToSreConfig();
             ConfigManager.getInstance().applyMinigameEnforcement(server);
             // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
             // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
             TaskRegistry.freeze();
             GameModeRegistry.freeze();
+            // 角色覆盖引擎在配置加载后重建，确保读取真实配置而非默认值。
+            com.habitrain.core.role.override.RoleOverrideLifecycleHandler.rebuildAfterConfigLoad();
             LOGGER.info("配置已加载，共 {} 个已注册任务（注册表已冻结）", TaskRegistry.size());
 
             // Seed modeMapVote defaults so ModMenu maps list is usable before first vote.
@@ -93,8 +95,13 @@ public final class LifecycleEventsRegistrar {
                 BlackoutExileVoteManager.reset(level);
                 OptionVoteManager.reset(level);
                 ModeMapVoteOrchestrator.reset(level);
+                com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
             }
             // 清理所有跨局残留状态
+            com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
+            com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
+            // 维修人员模式：停服前恢复所有维修员参与状态与游戏模式，避免 NBT 残留「不参与」
+            com.habitrain.core.game.sre.RepairModeManager.resetAll(server);
             SlownessReapplyManager.clearAll();
             BetelLeafHandler.clearAllHarvests();
             BackpackSearchHandler.clearAllSearches();
@@ -110,7 +117,6 @@ public final class LifecycleEventsRegistrar {
             EnvironmentController.clearRuntimeState();
             com.habitrain.core.game.sre.SREWeatherController.resetAll();
             GreedTradeManager.clearAll();
-            com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
         });
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -131,6 +137,10 @@ public final class LifecycleEventsRegistrar {
             // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
             // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
             FullConfigSyncPayload.sendToPlayer(player);
+            // Mod 菜单访问门控同步：让客户端立即按授权状态决定是否锁定受门控页面
+            MenuGatePayload.sendToPlayer(player);
+            // 处理离线背包里遗留的刀耐久组件，确保全局开关对刚上线玩家同样生效。
+            com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToPlayer(player);
             // 通知激活的 GameMode 玩家加入（用玩家所在维度，与 DISCONNECT 一致）
             ServerLevel joinLevel = player.serverLevel();
             if (joinLevel != null) {
@@ -154,6 +164,8 @@ public final class LifecycleEventsRegistrar {
                 EffectOwnershipTracker.clearPlayer(player.getUUID());
                 // 贪婪匿名交易：断线立即取消 session，避免对方卡 UI 等到超时
                 GreedTradeManager.onPlayerDisconnect(server, player.getUUID());
+                // 维修人员模式：断线自动解锁其锁定的地图并恢复参与状态/游戏模式
+                com.habitrain.core.game.sre.RepairModeManager.onPlayerDisconnect(player.getUUID(), server);
                 ServerLevel disconnectLevel = player.serverLevel();
                 if (disconnectLevel != null) {
                     GameModeRegistry.getActiveForLevel(disconnectLevel)

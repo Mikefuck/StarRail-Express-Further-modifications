@@ -5,11 +5,14 @@ import com.habitrain.core.network.BlackoutVotePayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class BlackoutVoteScreen extends Screen {
     private static final int PAD = 10;
@@ -26,6 +29,8 @@ public class BlackoutVoteScreen extends Screen {
 
     private final Screen parent;
     private double scrollOffset = 0;
+    private EditBox searchBox;
+    private String searchQuery = "";
 
     public BlackoutVoteScreen(Screen parent) {
         super(Component.literal(BlackoutVoteState.getTitle()));
@@ -39,6 +44,20 @@ public class BlackoutVoteScreen extends Screen {
                 btn -> onClose())
                 .bounds(width / 2 - 40, height - 32, 80, 20)
                 .build());
+        int panelX = (width - PANEL_W) / 2;
+        int listX = panelX + PAD;
+        int listW = PANEL_W - PAD * 2;
+        searchBox = new EditBox(font, listX, 28 + 50, listW, 18, Component.literal("搜索玩家名"));
+        searchBox.setMaxLength(64);
+        searchBox.setValue(searchQuery == null ? "" : searchQuery);
+        searchBox.setHint(Component.literal("搜索玩家名"));
+        searchBox.setResponder(s -> {
+            searchQuery = s == null ? "" : s;
+            scrollOffset = 0;
+        });
+        // Not a renderable: this screen paints its panel AFTER super.render, so the box
+        // must be drawn manually in render() after the panel fill to stay visible.
+        addWidget(searchBox);
     }
 
     @Override
@@ -64,7 +83,7 @@ public class BlackoutVoteScreen extends Screen {
         int panelX = (width - PANEL_W) / 2;
         int panelY = 28;
         int listX = panelX + PAD;
-        int listY = panelY + 52;
+        int listY = panelY + 78;
         int listW = PANEL_W - PAD * 2;
         int listH = PANEL_H - 84;
 
@@ -82,7 +101,11 @@ public class BlackoutVoteScreen extends Screen {
                 : "投票已结束";
         g.drawCenteredString(font, Component.literal(timer), width / 2, panelY + 36, 0xFFE6B566);
 
-        List<BlackoutVotePayload.Entry> candidates = BlackoutVoteState.getCandidates();
+        if (searchBox != null) {
+            searchBox.render(g, mouseX, mouseY, partialTick);
+        }
+
+        List<BlackoutVotePayload.Entry> candidates = visibleCandidates();
         g.enableScissor(listX, listY, listX + listW, listY + listH);
         for (int i = 0; i < candidates.size(); i++) {
             var entry = candidates.get(i);
@@ -97,6 +120,8 @@ public class BlackoutVoteScreen extends Screen {
 
         int totalHeight = candidates.isEmpty() ? 0 : candidates.size() * (ROW_H + ROW_GAP) - ROW_GAP;
         int maxScroll = Math.max(0, totalHeight - listH);
+        // Server payload can shrink the (filtered) list mid-scroll; keep offset valid.
+        scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
         if (maxScroll > 0) {
             int barH = Math.max(12, (int) ((float) listH * listH / totalHeight));
             int barY = listY + (int) ((listH - barH) * (scrollOffset / maxScroll));
@@ -133,10 +158,10 @@ public class BlackoutVoteScreen extends Screen {
         int panelX = (width - PANEL_W) / 2;
         int panelY = 28;
         int listX = panelX + PAD;
-        int listY = panelY + 52;
+        int listY = panelY + 78;
         int listW = PANEL_W - PAD * 2;
 
-        List<BlackoutVotePayload.Entry> candidates = BlackoutVoteState.getCandidates();
+        List<BlackoutVotePayload.Entry> candidates = visibleCandidates();
         for (int i = 0; i < candidates.size(); i++) {
             int rowY = listY + i * (ROW_H + ROW_GAP) - (int) scrollOffset;
             if (mouseX >= listX && mouseX < listX + listW && mouseY >= rowY && mouseY < rowY + ROW_H) {
@@ -160,18 +185,34 @@ public class BlackoutVoteScreen extends Screen {
         int panelX = (width - PANEL_W) / 2;
         int panelY = 28;
         int listX = panelX + PAD;
-        int listY = panelY + 52;
+        int listY = panelY + 78;
         int listW = PANEL_W - PAD * 2;
         int listH = PANEL_H - 84;
 
         if (mouseX >= listX && mouseX < listX + listW && mouseY >= listY && mouseY < listY + listH) {
-            List<BlackoutVotePayload.Entry> candidates = BlackoutVoteState.getCandidates();
+            List<BlackoutVotePayload.Entry> candidates = visibleCandidates();
             int totalHeight = candidates.isEmpty() ? 0 : candidates.size() * (ROW_H + ROW_GAP) - ROW_GAP;
             int maxScroll = Math.max(0, totalHeight - listH);
             scrollOffset = Mth.clamp(scrollOffset - scrollY * (ROW_H + ROW_GAP), 0, maxScroll);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    /** Candidates filtered by the name search; recomputed per call so server updates are picked up. */
+    private List<BlackoutVotePayload.Entry> visibleCandidates() {
+        List<BlackoutVotePayload.Entry> all = BlackoutVoteState.getCandidates();
+        if (all.isEmpty() || searchQuery == null || searchQuery.isBlank()) {
+            return all;
+        }
+        String q = searchQuery.toLowerCase(Locale.ROOT).trim();
+        List<BlackoutVotePayload.Entry> out = new ArrayList<>();
+        for (BlackoutVotePayload.Entry e : all) {
+            if (e.playerName() != null && e.playerName().toLowerCase(Locale.ROOT).contains(q)) {
+                out.add(e);
+            }
+        }
+        return out;
     }
 
     @Override

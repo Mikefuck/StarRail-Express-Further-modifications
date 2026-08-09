@@ -4,6 +4,8 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.SinRoleRules;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -19,7 +21,6 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import org.agmas.harpymodloader.SREDisableManager;
 import org.agmas.noellesroles.init.RoleInitialItems;
 import org.agmas.noellesroles.utils.RoleUtils;
 import org.jetbrains.annotations.NotNull;
@@ -218,20 +219,15 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         SRERole next = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
         try {
             clearInventory(self);
-            RoleUtils.changeRole(self, next, false, true, false);
+            // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
+            // record=false（不写默认时间线）、addStats=true；阵营由 resolveFactionFromSreRole 推导
+            BlackoutRoleManager.reassignRole(level, self.getUUID(), next,
+                    BlackoutRoleManager.resolveFactionFromSreRole(next), false, true);
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Wrath] changeRole failed for {}",
                     self.getGameProfile().getName(), t);
             transformRetryCooldown = 40;
             return;
-        }
-
-        try {
-            BlackoutRoleManager.Faction faction =
-                    BlackoutRoleManager.resolveFactionFromSreRole(next);
-            BlackoutRoleManager.reassignRole(level, self.getUUID(), next, faction);
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Wrath] reassignRole failed for {}", self.getUUID(), t);
         }
 
         clearInventory(self);
@@ -263,7 +259,9 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
 
     private static List<SRERole> buildNonSinPool() {
         Set<SRERole> occupationCompanions = new HashSet<>();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        List<SRERole> visibleRoles =
+                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
+        for (SRERole role : visibleRoles) {
             if (role == null) continue;
             try {
                 List<SRERole> companions = role.getoccupationRoles();
@@ -275,13 +273,10 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         }
 
         List<SRERole> pool = new ArrayList<>();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        for (SRERole role : visibleRoles) {
             if (role == null) continue;
             if (SevenSins.isSin(role)) continue;
-            try {
-                if (SREDisableManager.isRoleDisabled(role)) continue;
-            } catch (Throwable ignored) {
-            }
+            if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
             try {
                 List<SRERole> own = role.getoccupationRoles();
                 if (own != null && !own.isEmpty()) continue;
@@ -294,6 +289,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
             }
             pool.add(role);
         }
+        SreRolePoolFilter.warnIfLeaky("WrathTransform", pool);
         return pool;
     }
 

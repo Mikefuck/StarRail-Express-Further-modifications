@@ -35,10 +35,6 @@ public class ConfigStore {
         this.dirty = true;
     }
 
-    public boolean isDirty() {
-        return dirty;
-    }
-
     /**
      * Save to file only if dirty. Resets the dirty flag on success.
      * @return true if the file was actually written, false if no-op
@@ -60,6 +56,9 @@ public class ConfigStore {
         repo.getMutableGameModeConfigs().clear();
         repo.getMutableMinigameConfigs().clear();
         repo.setDlcProbabilityTarget(0.5f);
+        repo.setKnifeDurabilityEnabled(false);
+        repo.setLobbyVoiceGroupEnabled(true);
+        repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
 
         if (!configFile.exists()) {
@@ -115,11 +114,22 @@ public class ConfigStore {
                     repo.setKnifeDurabilityEnabled(global.get("knifeDurabilityEnabled").getAsBoolean());
                 }
 
-                LOGGER.info("全局设置: DLC目标占比={}%, 光影白名单={}, 允许{}个光影, 警长除数={}",
+                if (global.has("lobbyVoiceGroupEnabled")) {
+                    repo.setLobbyVoiceGroupEnabled(global.get("lobbyVoiceGroupEnabled").getAsBoolean());
+                }
+
+                if (global.has("blackoutEffectEnhancementEnabled")) {
+                    repo.setBlackoutEffectEnhancementEnabled(
+                            global.get("blackoutEffectEnhancementEnabled").getAsBoolean());
+                }
+
+                LOGGER.info("全局设置: DLC目标占比={}%, 光影白名单={}, 允许{}个光影, 警长除数={}, 大厅语音群组={}, 停电黑暗增强={}",
                         Math.round(repo.getDlcProbabilityTarget() * 100),
                         repo.isShaderWhitelistEnabled() ? "启用" : "禁用",
                         repo.getShaderWhitelist().size(),
-                        repo.getSheriffCountDivisor());
+                        repo.getSheriffCountDivisor(),
+                        repo.isLobbyVoiceGroupEnabled() ? "启用" : "禁用",
+                        repo.isBlackoutEffectEnhancementEnabled() ? "启用" : "禁用");
             }
 
             if (root.has("tasks")) {
@@ -232,6 +242,8 @@ public class ConfigStore {
         global.addProperty("sheriffCountDivisor", repo.getSheriffCountDivisor());
         global.addProperty("tempPowerPrice", repo.getTempPowerPrice());
         global.addProperty("knifeDurabilityEnabled", repo.isKnifeDurabilityEnabled());
+        global.addProperty("lobbyVoiceGroupEnabled", repo.isLobbyVoiceGroupEnabled());
+        global.addProperty("blackoutEffectEnhancementEnabled", repo.isBlackoutEffectEnhancementEnabled());
         root.add("global", global);
 
         JsonObject tasks = new JsonObject();
@@ -282,6 +294,8 @@ public class ConfigStore {
             mgMap.put(id, MinigameConfigEntry.createDefault());
         }
         repo.setMinigameGlobalEnabled(true);
+        repo.setLobbyVoiceGroupEnabled(true);
+        repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
     }

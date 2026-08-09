@@ -1,13 +1,13 @@
 package com.habitrain.core;
 
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.network.BlackoutPhoneOpenPayload;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.network.*;
 import com.habitrain.core.util.SubtitleNotifier;
-import com.habitrain.core.vote.MapPoolRotationService;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
@@ -35,13 +35,20 @@ public final class C2SReceiverRegistrar {
                     player.sendSystemMessage(Component.literal("§c你没有权限修改服务端配置（需要 OP 权限）"));
                     return;
                 }
+                // Mod 菜单门控：专用服务器上门控开启且未授权时，服务端权威拒绝配置写入
+                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
+                        && !MenuGateService.isAllowed(player)) {
+                    player.sendSystemMessage(Component.literal("§c当前为未授权的访问：未获得服务器授权修改配置"));
+                    return;
+                }
                 // merge 语义：仅覆盖 OP 客户端发送的条目，不删除客户端视图缺失的服务端独有条目（P5-36）
                 ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
                 ConfigManager.getInstance().save();
-                ConfigManager.getInstance().applyKnifeDurabilityToSreConfig();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 // Rebuild role override engine with updated config
                 com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild();
+                com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
+                        .refreshServer(context.server());
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
                 if (context.server().isSingleplayer()) return;
                 // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
@@ -152,14 +159,6 @@ public final class C2SReceiverRegistrar {
                 ServerLevel level = voter.serverLevel();
                 if (level == null) return;
                 OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
-            });
-        });
-        // C2S 地图池跳过（OP ≥ 4）
-        ServerPlayNetworking.registerGlobalReceiver(MapPoolSkipPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                MapPoolRotationService.skip(player);
             });
         });
         // C2S 贪婪匿名交易确认/取消（与 /habi_api greed_trade 等价）

@@ -28,7 +28,7 @@ public class SRERoleNameMixin {
         }
     }
 
-    @Inject(method = "getColor()I", at = @At("HEAD"), cancellable = true)
+    @Inject(method = {"getColor()I", "color()I"}, at = @At("HEAD"), cancellable = true)
     private void patchedColor(CallbackInfoReturnable<Integer> cir) {
         SRERole self = (SRERole) (Object) this;
         ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());

@@ -54,27 +54,28 @@ public class OutGameShaderPage implements ConfigPage {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
         rowHits.clear();
-        g.drawString(font, Component.literal("§lIris 光影白名单"), x + PAD(), y + 4, 0xFFFFFF, false);
-        g.drawString(font, Component.literal("§7设置服务器允许使用的 Iris 光影包，仅 OP 可修改"), x + PAD(), y + 18, 0x888888, false);
+        g.drawString(font, "Iris 光影白名单", x + PAD(), y + 4, MenuTheme.TEXT_PRIMARY, false);
+        g.drawString(font, "设置服务器允许使用的 Iris 光影包，仅 OP 可修改", x + PAD(), y + 18, MenuTheme.TEXT_SECONDARY, false);
         // 启用开关
         int toggleW = 160;
         PillToggle.render(g, font, x + PAD(), y + 30, toggleW, 18, whitelistEnabled,
-                "§a✔ 光影白名单已启用", "§c✘ 光影白名单已禁用");
+                "白名单 · 已启用", "白名单 · 已禁用");
         rowHits.add(new RowHit(-1, x + PAD(), y + 30, toggleW, 18));  // index=-1 表示总开关
 
         // 添加区
         addBox.setX(x + PAD()); addBox.setY(y + 52); addBox.setWidth(Math.min(260, w - PAD() * 2 - 60));
         addBox.render(g, mx, my, delta);
         int addX = addBox.getX() + addBox.getWidth() + 6;
-        g.fill(addX, y + 50, addX + 50, y + 70, editable ? MenuTheme.BG_EDIT : 0xFF222222);
-        g.drawString(font, "§a+ 添加", addX + 8, y + 54, editable ? 0xFFFFFFFF : 0xFF666666, false);
+        boolean addHover = editable && MenuTheme.inBounds(mx, my, addX, y + 50, 50, 20);
+        MenuTheme.button(g, font, "+ 添加", addX, y + 50, 50, 20,
+                MenuTheme.ACCENT_MINT, editable, addHover);
         rowHits.add(new RowHit(-2, addX, y + 50, 50, 20));            // index=-2 表示添加按钮
 
-        g.fill(x + PAD(), y + HEADER_H, x + w - PAD(), y + HEADER_H + 1, 0x30FFFFFF);
+        g.fill(x + PAD(), y + HEADER_H, x + w - PAD(), y + HEADER_H + 1, MenuTheme.BORDER);
 
         int listY = y + HEADER_H + 4;
         int listH = h - HEADER_H - 8;
-        area = new ScrollArea(x, listY, w, listH);
+        area.setBounds(x, listY, w, listH);
         g.enableScissor(x, listY, x + w, listY + listH);
         int cy = area.getContentY();
         if (whitelist.isEmpty()) {
@@ -83,10 +84,10 @@ public class OutGameShaderPage implements ConfigPage {
         } else {
             for (int i = 0; i < whitelist.size(); i++) {
                 boolean hover = MenuTheme.inBounds(mx, my, x, cy, w, ROW_H);
-                g.fill(x, cy, x + w, cy + ROW_H, hover ? 0x18FFFFFF : 0x08FFFFFF);
-                g.drawString(font, "§7" + (i + 1) + ".", x + 4, cy + 6, 0x888888, false);
-                g.drawString(font, "§e📦", x + 4, cy + 6, 0, false);
-                g.drawString(font, "§f" + whitelist.get(i), x + 24, cy + 6, 0xFFFFFF, false);
+                MenuTheme.row(g, x, cy, w, ROW_H, hover, false);
+                String index = String.format("%02d", i + 1);
+                g.drawString(font, index, x + 7, cy + 8, MenuTheme.TEXT_DIM, false);
+                g.drawString(font, whitelist.get(i), x + 29, cy + 8, MenuTheme.TEXT_PRIMARY, false);
                 int delX = x + w - 22;
                 boolean delHover = hover && mx >= delX && mx < delX + 18 && my >= cy + 4 && my < cy + 22;
                 if (delHover) g.fill(delX, cy + 4, delX + 18, cy + 22, 0x44FF0000);
@@ -100,9 +101,11 @@ public class OutGameShaderPage implements ConfigPage {
         g.disableScissor();
 
         int infoY = y + h - 24;
-        g.drawString(font, Component.literal("§7💡 已允许 §e" + whitelist.size() + " §7个光影包  |  白名单状态: "
-                        + (whitelistEnabled ? "§a启用" : "§c禁用")), x + PAD(), infoY, 0, false);
-        g.drawString(font, Component.literal("§7⚡ 白名单外光影的玩家将被踢出服务器"), x + PAD(), infoY + 10, 0x555555, false);
+        g.drawString(font, "已允许 " + whitelist.size() + " 个光影包  /  状态 "
+                        + (whitelistEnabled ? "启用" : "禁用"), x + PAD(), infoY,
+                whitelistEnabled ? MenuTheme.ACCENT_MINT : MenuTheme.TEXT_SECONDARY, false);
+        g.drawString(font, "白名单外光影的玩家将被服务器移出", x + PAD(), infoY + 10,
+                MenuTheme.TEXT_DIM, false);
     }
 
     private static int PAD() { return 12; }
@@ -113,6 +116,7 @@ public class OutGameShaderPage implements ConfigPage {
         for (RowHit hit : rowHits) {
             if (hit.index() == -1) {
                 if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
+                    MenuSounds.playClick();
                     if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                     whitelistEnabled = !whitelistEnabled;
                     saveToServer();
@@ -122,6 +126,7 @@ public class OutGameShaderPage implements ConfigPage {
             }
             if (hit.index() == -2) {
                 if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
+                    MenuSounds.playClick();
                     if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                     addCurrentText();
                     return true;
@@ -132,6 +137,7 @@ public class OutGameShaderPage implements ConfigPage {
             int delX = hit.x() + hit.w() - 22;
             int delY = hit.y() + 4;
             if (MenuTheme.inBounds(mx, my, delX, delY, 18, 18)) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 whitelist.remove(hit.index());
                 saveToServer();

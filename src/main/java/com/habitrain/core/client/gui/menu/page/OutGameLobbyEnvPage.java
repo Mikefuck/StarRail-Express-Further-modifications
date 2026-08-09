@@ -3,6 +3,7 @@ package com.habitrain.core.client.gui.menu.page;
 import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ui.ScrollArea;
 import com.habitrain.core.config.ConfigManager;
@@ -92,7 +93,7 @@ public class OutGameLobbyEnvPage implements ConfigPage {
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
         buttonHits.clear();
-        area = new ScrollArea(x, y, w, h);
+        area.setBounds(x, y, w, h);
         g.enableScissor(x, y, x + w, y + h);
 
         int startCy = area.getContentY();
@@ -101,7 +102,7 @@ public class OutGameLobbyEnvPage implements ConfigPage {
         int innerW = w - PAD * 2 - 6;
 
         // ===== 标题 + 说明（对应旧版 renderLobby） =====
-        g.drawString(font, Component.literal("§e§l大厅环境配置"), labelX, cy, MenuTheme.ACCENT_CYAN, false);
+        g.drawString(font, "大厅环境配置", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H + 2;
         g.drawString(font, "§7控制大厅（非对局）时段的时间、天气与雾效", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
         cy += ROW_H;
@@ -128,6 +129,7 @@ public class OutGameLobbyEnvPage implements ConfigPage {
 
         for (EnvEditorShared.ButtonHit hit : buttonHits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
+            MenuSounds.playClick();
             if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
             EnvEditorShared.applyTimeOrToggle(hit.action(), settings(), lobbyProfile(),
                     buttonHits, font, x + PAD, profileTickField, profileFogEndField, editable, this::dirty);

@@ -1,6 +1,8 @@
 package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -169,9 +171,66 @@ public class BlackoutRoleManager {
      */
     public static void reassignRole(ServerLevel level, UUID playerId, SRERole sreRole,
                                     Faction factionOverride) {
+        reassignRole(level, playerId, sreRole, factionOverride, true, true);
+    }
+
+    /**
+     * 统一转职入口：所有「把玩家变成另一个角色」的路径（替罪羊转杀手、Mike 代码修改、
+     * 暴怒转职、警长选举）只走这里，替代上游 {@code RoleUtils.changeRole} 以避免
+     * 双重 {@code ModdedRoleAssigned}（重复 init/初始物）。
+     * <p>流程：旧角色清理（ModdedRoleRemoved，含上游精神病杀手清理）→ 时间线（可选）→
+     * 统计（可选）→ 写 blackout 阵营表/历史 → 覆盖 SRE 角色并同步 → 单次 ModdedRoleAssigned。
+     *
+     * @param factionOverride null 时按 {@link #resolveFactionFromSreRole(SRERole)} 推导
+     * @param record         是否记录「职业从 A 切换到 B」时间线（Mike/暴怒改记自定义文案，传 false）
+     * @param addStats       是否计入角色/阵营场次统计
+     */
+    public static void reassignRole(ServerLevel level, UUID playerId, SRERole sreRole,
+                                    Faction factionOverride, boolean record, boolean addStats) {
         if (level == null || playerId == null || sreRole == null) {
             return;
         }
+        var gameWorld = SREGameWorldComponent.KEY.get(level);
+        SRERole oldRole = gameWorld != null && gameWorld.getRoles() != null
+                ? gameWorld.getRoles().get(playerId) : null;
+        ServerPlayer sp = level.getServer().getPlayerList().getPlayer(playerId);
+
+        // 旧角色清理 + 时间线（对齐原 RoleUtils.changeRole 的移除段）
+        if (sp != null && oldRole != null) {
+            try {
+                org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
+                        .removeModdedRole(sp, oldRole);
+            } catch (Throwable t) {
+                LOGGER.warn("reassignRole: ModdedRoleRemoved failed for {}", playerId, t);
+            }
+            if (record) {
+                try {
+                    io.wifi.starrailexpress.SRE.REPLAY_MANAGER
+                            .recordPlayerRoleChange(playerId, oldRole, sreRole);
+                } catch (Throwable t) {
+                    LOGGER.warn("reassignRole: recordPlayerRoleChange failed for {}", playerId, t);
+                }
+            }
+        }
+        // 统计（对齐原 RoleUtils.changeRole 的 addStats 段）
+        if (addStats && sp != null) {
+            try {
+                var stats = io.wifi.starrailexpress.stats.PlayerStatsManager.get(sp);
+                stats.getOrCreateRoleStats(sreRole.getIdentifier()).incrementTimesPlayed();
+                if (sreRole.isVigilanteTeam()) {
+                    stats.incrementTotalSheriffGames();
+                } else if (sreRole.canUseKiller()) {
+                    stats.incrementTotalKillerGames();
+                } else if (sreRole.isNeutrals()) {
+                    stats.incrementTotalNeutralGames();
+                } else if (sreRole.isInnocent() && !sreRole.isVigilanteTeam()) {
+                    stats.incrementTotalCivilianGames();
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("reassignRole: stats update failed for {}", playerId, t);
+            }
+        }
+
         Faction faction = factionOverride != null ? factionOverride
                 : resolveFactionFromSreRole(sreRole);
         ResourceLocation roleId = sreRole.getIdentifier();
@@ -182,7 +241,6 @@ public class BlackoutRoleManager {
         state.factionHistory.put(playerId, faction);
         state.roleHistory.put(playerId, roleId);
 
-        var gameWorld = SREGameWorldComponent.KEY.get(level);
         if (gameWorld != null) {
             gameWorld.addRole(playerId, sreRole, false);
             gameWorld.syncRoles();
@@ -190,7 +248,6 @@ public class BlackoutRoleManager {
                 io.wifi.starrailexpress.SRE.REPLAY_MANAGER.updateRolesFromComponent(gameWorld);
             } catch (Throwable ignored) {}
 
-            ServerPlayer sp = level.getServer().getPlayerList().getPlayer(playerId);
             if (sp != null) {
                 try {
                     org.agmas.harpymodloader.events.ModdedRoleAssigned.EVENT.invoker()
@@ -238,14 +295,17 @@ public class BlackoutRoleManager {
     @org.jetbrains.annotations.Nullable
     public static SRERole getRandomPoliceRole(Random random) {
         Set<SRERole> occupationCompanions = new HashSet<>();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        List<SRERole> visibleRoles =
+                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
+        for (SRERole role : visibleRoles) {
             List<SRERole> companions = role.getoccupationRoles();
             if (companions != null && !companions.isEmpty()) {
                 occupationCompanions.addAll(companions);
             }
         }
 
-        List<SRERole> police = TMMRoles.ROLES.values().stream()
+        List<SRERole> police = visibleRoles.stream()
+                .filter(SreRolePoolFilter::isCurrentModeRandomizable)
                 .filter(SRERole::isVigilanteTeam)
                 .filter(role -> {
                     List<SRERole> own = role.getoccupationRoles();
@@ -338,7 +398,8 @@ public class BlackoutRoleManager {
      */
     public static void disableAllVigilanteRoles() {
         disabledVigilanteRoles.clear();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        for (SRERole role :
+                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
             if (role.isVigilanteTeam()) {
                 ResourceLocation id = role.getIdentifier();
                 disabledVigilanteRoles.add(id);

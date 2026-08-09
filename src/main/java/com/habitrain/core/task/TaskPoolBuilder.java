@@ -32,9 +32,10 @@ public class TaskPoolBuilder {
         String categoryId = forcedCategory != null ? forcedCategory.getId() :
                 (currentCategory != null ? currentCategory.getId() : "null");
         PoolKey key = new PoolKey(modeId, mapName, categoryId);
-        return CACHE.computeIfAbsent(key, k -> getAvailableDlcTasks(
+        List<TaskDefinition> cached = CACHE.computeIfAbsent(key, k -> List.copyOf(getAvailableDlcTasks(
                 TaskManager.getInstance(), mapName, currentCategory, activeMode,
-                forcedCategory, builtinSreTaskIds, player));
+                forcedCategory, builtinSreTaskIds, player)));
+        return filterForPlayer(cached, activeMode, player);
     }
 
     public static List<TaskDefinition> getAvailableDlcTasks(TaskManager mgr, String mapName,
@@ -109,12 +110,6 @@ public class TaskPoolBuilder {
 
     public static boolean isTaskAllowedForPool(TaskDefinition def, TaskCategory currentCategory,
                                                 @Nullable GameMode activeMode, Player player) {
-        if (activeMode != null && player instanceof ServerPlayer sp) {
-            if (activeMode.filterAvailableTasks(List.of(def), sp).isEmpty()) {
-                return false;
-            }
-        }
-
         TaskCategory category = def.getCategory();
         if (TaskCategory.ALL.equals(category)
                 || TaskCategory.CUSTOM.equals(category)
@@ -124,6 +119,28 @@ public class TaskPoolBuilder {
 
         return activeMode != null
                 && activeMode.getTaskCategories().stream().anyMatch(category::equals);
+    }
+
+    private static List<TaskDefinition> filterForPlayer(List<TaskDefinition> tasks,
+                                                         @Nullable GameMode activeMode,
+                                                         Player player) {
+        if (activeMode == null || !(player instanceof ServerPlayer serverPlayer)) {
+            return tasks;
+        }
+        List<TaskDefinition> filtered = activeMode.filterAvailableTasks(tasks, serverPlayer);
+        if (filtered == null) {
+            LOGGER.warn("GameMode {} returned null from filterAvailableTasks for player {}",
+                    activeMode.getId(), serverPlayer.getGameProfile().getName());
+            return List.of();
+        }
+        List<TaskDefinition> sanitized = filtered.stream()
+                .filter(tasks::contains)
+                .toList();
+        if (sanitized.size() != filtered.size()) {
+            LOGGER.warn("GameMode {} returned tasks outside the candidate pool for player {}; ignored",
+                    activeMode.getId(), serverPlayer.getGameProfile().getName());
+        }
+        return sanitized;
     }
 
     public static void invalidateAll() {

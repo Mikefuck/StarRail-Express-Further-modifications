@@ -3,6 +3,7 @@ package com.habitrain.core.client.gui.menu.page;
 import com.habitrain.core.api.role.*;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
+import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ui.PillToggle;
 import com.habitrain.core.config.ConfigManager;
@@ -119,7 +120,7 @@ public class ModeRolesPage implements ConfigPage {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta,
                        int x, int y, int w, int h) {
-        g.fill(x, y, x + w, y + h, 0xFF1E1E1E);
+        g.fill(x, y, x + w, y + h, MenuTheme.BG_PANEL);
 
         // Global toggle header
         RoleOverrideConfigSection cfg = ConfigManager.getInstance().getRoleOverrides();
@@ -138,7 +139,7 @@ public class ModeRolesPage implements ConfigPage {
 
         // Separator
         int listTop = headerY + 30;
-        g.fill(x + 4, listTop, x + w - 4, listTop + 1, 0x30FFFFFF);
+        g.fill(x + 4, listTop, x + w - 4, listTop + 1, MenuTheme.BORDER);
 
         // Scrollable list
         int listY = listTop + 4;
@@ -175,7 +176,7 @@ public class ModeRolesPage implements ConfigPage {
     private void renderRow(GuiGraphics g, int x, int y, int w, int h, RowModel row,
                            int mx, int my, boolean globalEnabled) {
         boolean hover = MenuTheme.inBounds(mx, my, x, y, w, h);
-        int bg = hover ? 0xFF2A3440 : 0xFF1B222B;
+        int bg = hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW;
         if (row.status == OverrideStatus.CONFLICT) bg = hover ? 0xFF3A2A20 : 0xFF2A2018;
         if (row.status == OverrideStatus.INVALID) bg = hover ? 0xFF3A2020 : 0xFF2A1818;
         g.fill(x, y, x + w, y + h, bg);
@@ -233,6 +234,7 @@ public class ModeRolesPage implements ConfigPage {
 
         // Global toggle click
         if (PillToggle.hit(mx, my, x + w - 72, headerY, 64, 14)) {
+            MenuSounds.playClick();
             RoleOverrideConfigSection cfg = ConfigManager.getInstance().getRoleOverrides();
             cfg.setGlobalEnabled(!cfg.isGlobalEnabled());
             ConfigManager.getInstance().setRoleOverrides(cfg);
@@ -247,6 +249,7 @@ public class ModeRolesPage implements ConfigPage {
             RowModel row = rows.get(rowIndex);
             int rowVisualY = listY + rowIndex * (ROW_H + ROW_GAP) - (int) scrollOffset;
             if (MenuTheme.inBounds(mx, my, x + 4, rowVisualY, w - 8, ROW_H)) {
+                MenuSounds.playClick();
                 toggleRow(row);
                 return true;
             }

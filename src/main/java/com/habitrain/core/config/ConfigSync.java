@@ -25,9 +25,11 @@ public class ConfigSync {
             List<String> newShaderWhitelist = new ArrayList<>();
             float newDlcTarget = 0.5f;
             boolean newShaderEnabled = false;
-            boolean newKnifeDurability = true;
             int newSheriffDivisor = 6;
             int newTempPowerPrice = 100;
+            boolean newKnifeDurabilityEnabled = false;
+            boolean newLobbyVoiceGroupEnabled = true;
+            boolean newBlackoutEffectEnhancementEnabled = false;
             boolean newMgGlobal = true;
             ModeMapVoteSettings newModeMapVote = ModeMapVoteSettings.createDefault();
             EnvironmentSettings newEnv = EnvironmentSettings.createDefault();
@@ -57,7 +59,14 @@ public class ConfigSync {
                     if (price >= 0) newTempPowerPrice = price;
                 }
                 if (global.has("knifeDurabilityEnabled")) {
-                    newKnifeDurability = global.get("knifeDurabilityEnabled").getAsBoolean();
+                    newKnifeDurabilityEnabled = global.get("knifeDurabilityEnabled").getAsBoolean();
+                }
+                if (global.has("lobbyVoiceGroupEnabled")) {
+                    newLobbyVoiceGroupEnabled = global.get("lobbyVoiceGroupEnabled").getAsBoolean();
+                }
+                if (global.has("blackoutEffectEnhancementEnabled")) {
+                    newBlackoutEffectEnhancementEnabled =
+                            global.get("blackoutEffectEnhancementEnabled").getAsBoolean();
                 }
             }
 
@@ -116,7 +125,9 @@ public class ConfigSync {
             repo.getShaderWhitelist().addAll(newShaderWhitelist);
             repo.setSheriffCountDivisor(newSheriffDivisor);
             repo.setTempPowerPrice(newTempPowerPrice);
-            repo.setKnifeDurabilityEnabled(newKnifeDurability);
+            repo.setKnifeDurabilityEnabled(newKnifeDurabilityEnabled);
+            repo.setLobbyVoiceGroupEnabled(newLobbyVoiceGroupEnabled);
+            repo.setBlackoutEffectEnhancementEnabled(newBlackoutEffectEnhancementEnabled);
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
             repo.setEnvironment(newEnv);
@@ -168,6 +179,13 @@ public class ConfigSync {
                 }
                 if (global.has("knifeDurabilityEnabled")) {
                     repo.setKnifeDurabilityEnabled(global.get("knifeDurabilityEnabled").getAsBoolean());
+                }
+                if (global.has("lobbyVoiceGroupEnabled")) {
+                    repo.setLobbyVoiceGroupEnabled(global.get("lobbyVoiceGroupEnabled").getAsBoolean());
+                }
+                if (global.has("blackoutEffectEnhancementEnabled")) {
+                    repo.setBlackoutEffectEnhancementEnabled(
+                            global.get("blackoutEffectEnhancementEnabled").getAsBoolean());
                 }
             }
 
@@ -245,10 +263,10 @@ public class ConfigSync {
                     s.maps.clear();
                     s.maps.putAll(rebuilt);
                 }
-                // Full replace so pool mapIds deletions apply (merge put-only would keep stale ids).
-                if (mmv.has("mapPoolRotation") && mmv.get("mapPoolRotation").isJsonObject()) {
-                    s.mapPoolRotation = MapPoolRotationSettings.fromJson(
-                            mmv.getAsJsonObject("mapPoolRotation"));
+                // Full replace so player-count draw settings apply (merge put-only would keep stale).
+                if (mmv.has("mapPlayerCountDraw") && mmv.get("mapPlayerCountDraw").isJsonObject()) {
+                    s.mapPlayerCountDraw = MapPlayerCountSettings.fromJson(
+                            mmv.getAsJsonObject("mapPlayerCountDraw"));
                 }
             }
 

@@ -9,9 +9,13 @@ import com.habitrain.core.client.gui.BlackoutVoteScreen;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
+import com.habitrain.core.client.gui.GameEndOverlayState;
 import com.habitrain.core.client.gui.OptionVoteScreen;
 import com.habitrain.core.client.gui.OptionVoteState;
+import com.habitrain.core.client.gui.VoteLaunchTransitionScreen;
+import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.InstinctColorHelper;
+import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.network.ActiveTaskPayload;
@@ -21,9 +25,15 @@ import com.habitrain.core.network.BlackoutPhoneOpenPayload;
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
+import com.habitrain.core.network.EliminatedRestPromptPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
 import com.habitrain.core.network.GreedTradePromptPayload;
+import com.habitrain.core.network.MenuGatePayload;
+import com.habitrain.core.network.MapVoteLaunchAbortPayload;
+import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
+import com.habitrain.core.network.MapVoteProgressPayload;
 import com.habitrain.core.network.OptionVotePayload;
+import com.habitrain.core.network.RepairModeSyncPayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
 import net.fabricmc.api.EnvType;
@@ -88,6 +98,10 @@ public class NetworkReceiverRegistrar {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(EliminatedRestPromptPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> EliminatedRestPromptState.update(
+                        payload.visible(), payload.canToggle())));
+
         // 4) 接收服务端光影白名单同步（仅更新内存，不触发 save 回调）
         ClientPlayNetworking.registerGlobalReceiver(ShaderConfigPayload.TYPE, (payload, context) -> {
             context.client().execute(() -> {
@@ -109,6 +123,11 @@ public class NetworkReceiverRegistrar {
                 // Refresh role override engine with synced config
                 com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
             });
+        });
+
+        // 5b) 接收服务端 Mod 菜单访问门控状态（专用服务器联机时锁定未授权玩家页面）
+        ClientPlayNetworking.registerGlobalReceiver(MenuGatePayload.TYPE, (payload, context) -> {
+            context.client().execute(() -> MenuAccessGuard.update(payload));
         });
 
         // =========================================================
@@ -203,9 +222,21 @@ public class NetworkReceiverRegistrar {
         ClientPlayNetworking.registerGlobalReceiver(OptionVotePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {
                 OptionVoteState.UpdateResult result = OptionVoteState.update(payload);
+                // 维修员不看投票/开局转场界面：状态照常更新，但绝不自动打开或强制切换画面。
+                if (RepairModeClientState.isLocalRepairer()) {
+                    if (result.shouldStartMapTransition()
+                            && ctx.client().screen instanceof VoteLaunchTransitionScreen) {
+                        ctx.client().setScreen(null); // 进入维修模式时残留的转场屏立即交还
+                    }
+                    return;
+                }
                 // Auto-open once per phase (inactive→active or voteId change).
                 // 1Hz rebroadcasts must not re-force the screen if the player closed it.
-                if (result.shouldClose()) {
+                if (result.shouldStartMapTransition()) {
+                    Screen destination = ctx.client().screen;
+                    ctx.client().setScreen(new VoteLaunchTransitionScreen(
+                            destination, result.resolvedOptionId()));
+                } else if (result.shouldClose()) {
                     if (ctx.client().screen instanceof OptionVoteScreen) {
                         ctx.client().setScreen(null);
                     }
@@ -220,24 +251,92 @@ public class NetworkReceiverRegistrar {
             });
         });
 
-        // 15) 贪婪匿名交易提示 — 打开专用双确认界面
+        // 15) 开局加载进度 — 更新转场屏的加载面板（人数/地图/模式/杀手/进度条）
+        ClientPlayNetworking.registerGlobalReceiver(MapVoteProgressPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    if (RepairModeClientState.isLocalRepairer()) {
+                        return; // 维修员不看加载转场
+                    }
+                    if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
+                        transition.updateProgress(payload.progress(), payload.playerCount(),
+                                payload.killerCount(), payload.mapId(), payload.modeId());
+                    }
+                }));
+
+        // 16) 开局环境就绪 — SRE 自带地图天气与 API 对局环境均应用完成后广播，触发扫场亮标题。
+        //     仅当当前已是转场屏（刷新）或仍是投票屏（从投票结果直接确认）时才创建/更新转场屏；
+        //     用户已手动关闭投票屏、或转场已交还/中止时不得强制重开，避免覆盖用户关闭的界面。
+        ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchTransitionPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    if (RepairModeClientState.isLocalRepairer()) {
+                        return; // 维修员不看开局转场
+                    }
+                    if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
+                        transition.confirmLaunch(payload.winningMapId());
+                        return;
+                    }
+                    if (!(ctx.client().screen instanceof OptionVoteScreen)) {
+                        return;
+                    }
+                    Screen destination = ctx.client().screen;
+                    VoteLaunchTransitionScreen transition = new VoteLaunchTransitionScreen(
+                            destination, payload.winningMapId());
+                    transition.confirmLaunch(payload.winningMapId());
+                    ctx.client().setScreen(transition);
+                }));
+
+        // 16b) 开局中止 — 服务端在开局确认前发现游戏未真正启动（人数不足等）时广播，
+        //      客户端立即交还画面，避免在加载/扫场画面无限等待。
+        //      无论当前是否为转场屏，都清理覆盖层状态（黑场/相机屏蔽），防止动画残留。
+        ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchAbortPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    if (RepairModeClientState.isLocalRepairer()) {
+                        return; // 维修员无转场屏可交还
+                    }
+                    if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
+                        transition.markGameAborted();
+                    }
+                    VoteLaunchOverlayState.scheduleGrace(0L);
+                }));
+
+        // 17) 贪婪匿名交易提示 — 打开专用双确认界面
         ClientPlayNetworking.registerGlobalReceiver(GreedTradePromptPayload.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> ctx.client().setScreen(
                         new com.habitrain.core.client.gui.GreedTradePromptScreen(
                                 ctx.client().screen, payload))));
 
-        // 16) 对局结束结算画面 — 打开/更新 GameEndTransitionScreen
-        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.GameEndTransitionPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof com.habitrain.core.client.gui.GameEndTransitionScreen endScreen) {
-                    endScreen.update(payload);
-                    if (payload.environmentReady()) {
-                        endScreen.markGameFinished();
+        // 18) 对局结束转场 — STOPPING 时先发静态遮挡，赛后环境应用完成后再发动画阶段。
+        //     对局结束是权威事件，无条件接管当前画面（此时不可能有投票屏；
+        //     极端情况下开局转场屏残留也会被本屏覆盖）。维修员不接收（服务端也过滤）。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.GameEndTransitionPayload.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            if (RepairModeClientState.isLocalRepairer()) {
+                                return; // 维修员不看对局结束转场
+                            }
+                            if (ctx.client().screen
+                                    instanceof com.habitrain.core.client.gui.GameEndTransitionScreen transition) {
+                                transition.update(payload);
+                                return;
+                            }
+                            ctx.client().setScreen(
+                                    new com.habitrain.core.client.gui.GameEndTransitionScreen(payload));
+                        }));
+
+        // 19) 维修模式状态同步 — 客户端据此屏蔽开局黑场/转场与结尾动画。
+        //     进入时若正停留在投票/开局转场界面立即交还并清空覆盖层，避免残留画面。
+        ClientPlayNetworking.registerGlobalReceiver(RepairModeSyncPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    RepairModeClientState.setRepairing(payload.isRepairing());
+                    if (payload.isRepairing()) {
+                        VoteLaunchOverlayState.scheduleGrace(0L);
+                        GameEndOverlayState.scheduleGrace(0L);
+                        if (ctx.client().screen instanceof OptionVoteScreen
+                                || ctx.client().screen instanceof VoteLaunchTransitionScreen
+                                || ctx.client().screen instanceof com.habitrain.core.client.gui.GameEndTransitionScreen) {
+                            ctx.client().setScreen(null);
+                        }
                     }
-                } else {
-                    ctx.client().setScreen(new com.habitrain.core.client.gui.GameEndTransitionScreen(payload));
-                }
-            });
-        });
+                }));
     }
 }

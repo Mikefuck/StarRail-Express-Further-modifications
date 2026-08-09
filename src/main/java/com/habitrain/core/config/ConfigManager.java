@@ -45,6 +45,7 @@ public class ConfigManager implements ConfigQueryService {
     /** 由 LifecycleEventsRegistrar 在 SERVER_STARTED 注入，供运行时改 minigame 配置后 re-enforce。 */
     public void setServer(@Nullable MinecraftServer server) {
         this.currentServer = server;
+        com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(server);
     }
 
     public void load() {
@@ -62,10 +63,6 @@ public class ConfigManager implements ConfigQueryService {
                 }
             }
         }
-    }
-
-    public boolean isDirty() {
-        return store.isDirty();
     }
 
     @Override
@@ -173,11 +170,15 @@ public class ConfigManager implements ConfigQueryService {
     public void loadFromJsonString(String json) {
         sync.loadFromJsonString(repository, json);
         store.markDirty();
+        com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
+        com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
     }
 
     public void mergeFromJsonString(String json) {
         sync.mergeFromJsonString(repository, json);
         store.markDirty();
+        com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
+        com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
     }
 
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
@@ -217,23 +218,26 @@ public class ConfigManager implements ConfigQueryService {
     public void setKnifeDurabilityEnabled(boolean enabled) {
         repository.setKnifeDurabilityEnabled(enabled);
         store.markDirty();
-        applyKnifeDurabilityToSreConfig();
+        com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
     }
 
-    /**
-     * 把 api 侧的刀耐久开关同步到 SRE 配置（SREConfig.knifeDurabilityMode）。
-     * 服务端配置加载/更新后调用，客户端不生效。
-     * <p>不直接依赖 {@code SREConfig} 类型（autoconfig ConfigData 不在 compile classpath），
-     * 与 {@code RoleMethodDispatcherMixin.readCivilianTaskReward} 一致用反射访问。
-     */
-    public void applyKnifeDurabilityToSreConfig() {
-        try {
-            Class<?> cfgClass = Class.forName("io.wifi.starrailexpress.SREConfig");
-            Object instance = cfgClass.getMethod("instance").invoke(null);
-            cfgClass.getField("knifeDurabilityMode").setBoolean(instance, repository.isKnifeDurabilityEnabled());
-        } catch (Throwable t) {
-            LOGGER.warn("applyKnifeDurabilityToSreConfig failed: {}", t.toString());
-        }
+    public boolean isLobbyVoiceGroupEnabled() {
+        return repository.isLobbyVoiceGroupEnabled();
+    }
+
+    public void setLobbyVoiceGroupEnabled(boolean enabled) {
+        repository.setLobbyVoiceGroupEnabled(enabled);
+        store.markDirty();
+        com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+    }
+
+    public boolean isBlackoutEffectEnhancementEnabled() {
+        return repository.isBlackoutEffectEnhancementEnabled();
+    }
+
+    public void setBlackoutEffectEnhancementEnabled(boolean enabled) {
+        repository.setBlackoutEffectEnhancementEnabled(enabled);
+        store.markDirty();
     }
 
     @Override

@@ -68,7 +68,7 @@ public class TaskMapFilterEditor {
         g.drawString(f, Component.literal("§7地图列表:"), labelX, r2 + 4, 0xCCCCCC, false);
         mapField.setX(rowX);
         mapField.setY(r2 + 4);
-        mapField.setWidth(Math.min(200, w - (rowX - labelX) - 40));
+        mapField.setWidth(Math.max(40, Math.min(200, w - (rowX - labelX) - 40)));
         mapField.setEditable(!disabled && remoteEditable);
         mapField.render(g, mx, my, delta);
 

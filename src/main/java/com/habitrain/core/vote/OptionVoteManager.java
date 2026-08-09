@@ -2,6 +2,7 @@ package com.habitrain.core.vote;
 
 import com.habitrain.core.api.VoteOption;
 import com.habitrain.core.api.VoteResult;
+import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.network.OptionVotePayload;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -38,6 +39,7 @@ public final class OptionVoteManager {
         String voteId = "";
         String title = "";
         String description = "";
+        String resolvedOptionId = "";
         int remainingSeconds;
         int totalSeconds;
         final List<VoteOption> options = new ArrayList<>();
@@ -74,6 +76,7 @@ public final class OptionVoteManager {
         state.voteId = voteId;
         state.title = title == null ? "" : title;
         state.description = description == null ? "" : description;
+        state.resolvedOptionId = "";
         state.remainingSeconds = durationSeconds;
         state.totalSeconds = durationSeconds;
         state.options.clear();
@@ -92,12 +95,14 @@ public final class OptionVoteManager {
      * 投票或弃票。
      * {@code voteId} 必须与当前 active 投票匹配，否则 no-op。
      * {@code optionId == null} 表示弃票。
+     *
+     * @return true 表示投票或弃票请求已被当前投票接受
      */
-    public static void cast(ServerLevel level, UUID voterId, @Nullable String voteId, @Nullable String optionId) {
-        if (level == null || voterId == null) return;
+    public static boolean cast(ServerLevel level, UUID voterId, @Nullable String voteId, @Nullable String optionId) {
+        if (level == null || voterId == null) return false;
         State state = STATES.get(level.dimension());
-        if (state == null || !state.active) return;
-        if (voteId == null || !voteId.equals(state.voteId)) return;
+        if (state == null || !state.active) return false;
+        if (voteId == null || !voteId.equals(state.voteId)) return false;
 
         if (optionId != null) {
             boolean known = false;
@@ -107,12 +112,13 @@ public final class OptionVoteManager {
                     break;
                 }
             }
-            if (!known) return;
+            if (!known) return false;
             state.votesByVoter.put(voterId, optionId);
         } else {
             state.votesByVoter.remove(voterId);
         }
         broadcastState(level);
+        return true;
     }
 
     /** 当前 active 投票 id；无 active 时返回 null。 */
@@ -176,6 +182,7 @@ public final class OptionVoteManager {
         }
 
         VoteResult result = new VoteResult(state.voteId, winnerId, tallies, randomPick);
+        state.resolvedOptionId = winnerId == null ? "" : winnerId;
         Consumer<VoteResult> callback = state.onResolved;
         state.onResolved = null;
 
@@ -207,6 +214,7 @@ public final class OptionVoteManager {
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
         state.active = false;
+        state.resolvedOptionId = "";
         state.onResolved = null;
         state.votesByVoter.clear();
         broadcastState(level);
@@ -226,6 +234,8 @@ public final class OptionVoteManager {
     /** 玩家加入时同步当前 active 投票状态。 */
     public static void syncTo(ServerPlayer player) {
         if (player == null) return;
+        // 维修人员不进入对局，不收到大厅投票 GUI
+        if (RepairModeManager.isRepairer(player)) return;
         ServerLevel level = player.serverLevel();
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
@@ -248,23 +258,28 @@ public final class OptionVoteManager {
         if (state == null) return;
 
         int hash = Objects.hash(state.active, state.remainingSeconds, state.voteId,
-                state.title, state.description, state.votesByVoter);
+                state.title, state.description, state.resolvedOptionId, state.votesByVoter);
         hash = 31 * hash + state.options.hashCode();
         if (hash == state.lastPayloadHash) return;
         state.lastPayloadHash = hash;
 
         List<OptionVotePayload.Entry> entries = buildEntries(state);
-        OptionVotePayload.broadcastToLevel(
-                level,
-                state.voteId,
-                state.active,
-                state.remainingSeconds,
-                state.totalSeconds,
-                1,
-                state.title,
-                state.description,
-                entries
-        );
+        for (ServerPlayer player : level.players()) {
+            // 维修人员不进入对局，不收到大厅投票 GUI
+            if (RepairModeManager.isRepairer(player)) continue;
+            OptionVotePayload.sendTo(
+                    player,
+                    state.voteId,
+                    state.active,
+                    state.remainingSeconds,
+                    state.totalSeconds,
+                    1,
+                    state.title,
+                    state.description,
+                    state.resolvedOptionId,
+                    entries
+            );
+        }
     }
 
     private static List<OptionVotePayload.Entry> buildEntries(State state) {

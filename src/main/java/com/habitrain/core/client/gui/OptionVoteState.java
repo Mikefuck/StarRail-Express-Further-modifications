@@ -20,7 +20,10 @@ public final class OptionVoteState {
 
     private OptionVoteState() {}
 
-    public record UpdateResult(boolean shouldAutoOpen, boolean shouldClose) {}
+    public record UpdateResult(boolean shouldAutoOpen,
+                               boolean shouldClose,
+                               boolean shouldStartMapTransition,
+                               String resolvedOptionId) {}
 
     /**
      * Apply S2C payload. Returns open/close hints so the network receiver can
@@ -47,7 +50,13 @@ public final class OptionVoteState {
 
         boolean shouldAutoOpen = active && (!wasActive || voteIdChanged);
         boolean shouldClose = !active;
-        return new UpdateResult(shouldAutoOpen, shouldClose);
+        String resolvedOptionId = payload.resolvedOptionId() == null
+                ? "" : payload.resolvedOptionId();
+        boolean shouldStartMapTransition = !active
+                && "map".equals(voteId)
+                && !resolvedOptionId.isBlank();
+        return new UpdateResult(shouldAutoOpen, shouldClose,
+                shouldStartMapTransition, resolvedOptionId);
     }
 
     public static void clear() {

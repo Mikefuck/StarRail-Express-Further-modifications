@@ -19,7 +19,6 @@ import java.util.Set;
 
 public class CustomTaskBlockPayload implements CustomPacketPayload {
 
-    private static final int MAX_ENTRIES = 1024;
     private static final int MAX_MAPS_PER_ENTRY = 64;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "custom_task_blocks");
@@ -39,7 +38,7 @@ public class CustomTaskBlockPayload implements CustomPacketPayload {
         @Override
         public CustomTaskBlockPayload decode(ByteBuf buf) {
             int entryCount = buf.readInt();
-            if (entryCount < 0 || entryCount > MAX_ENTRIES) {
+            if (entryCount < 0) {
                 throw new DecoderException("Invalid entryCount: " + entryCount);
             }
             Map<BlockPos, Set<Integer>> data = new HashMap<>();

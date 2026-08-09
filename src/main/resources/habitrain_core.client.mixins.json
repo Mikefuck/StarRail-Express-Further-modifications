@@ -18,6 +18,12 @@
         "SlothScreenLockMixin",
         "ScreenWidgetAccessor",
         "GreedBackpackTradeMixin",
-        "RoleArgumentTypeMixin"
+        "TaskSettingsMenuEntriesMixin",
+        "TaskSettingsBackpackPermissionMixin",
+        "TaskSettingsWaitingButtonMixin",
+        "RoleIntroduceScreenMixin",
+        "VoteLaunchFadeBlockMixin",
+        "VoteLaunchCameraBlockMixin",
+        "VoteLaunchAmbientSoundBlockMixin"
     ]
 }

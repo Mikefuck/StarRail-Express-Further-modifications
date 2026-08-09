@@ -78,7 +78,9 @@ public class LootHelper {
                 }
 
                 if ("trainmurdermystery:nunchuck".equals(itemId)) {
-                    int initialCooldown = (roleType == ROLE_TYPE_KILLER) ? NUNCHUCK_COOLDOWN_KILLER : NUNCHUCK_COOLDOWN_SHERIFF;
+                    int initialCooldown = (roleType == ROLE_TYPE_KILLER)
+                            ? NUNCHUCK_COOLDOWN_KILLER
+                            : NUNCHUCK_COOLDOWN_SHERIFF;
                     player.getCooldowns().addCooldown(item, initialCooldown);
                     LOGGER.debug("双节棍初始冷却: {} ticks ({}秒, roleType={})",
                             initialCooldown, initialCooldown / 20, roleType);

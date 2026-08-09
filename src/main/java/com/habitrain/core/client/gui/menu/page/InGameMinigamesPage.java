@@ -44,10 +44,13 @@ public class InGameMinigamesPage implements ConfigPage {
         this.font = font;
         this.editable = editable;
         this.searchBox = new EditBox(font, 0, 0, 10, 14, Component.literal(""));
+        this.area = new ScrollArea(0, 0, 0, 0);
         this.searchBox.setMaxLength(64);
         this.searchBox.setHint(Component.literal("搜索小游戏..."));
-        this.searchBox.setResponder(t -> { searchText = t == null ? "" : t.trim().toLowerCase(Locale.ROOT); });
-        this.area = new ScrollArea(0, 0, 0, 0);
+        this.searchBox.setResponder(t -> {
+            searchText = t == null ? "" : t.trim().toLowerCase(Locale.ROOT);
+            area.reset();
+        });
         try { minigames.addAll(QuestMinigames.getAll()); } catch (Throwable ignored) {}
     }
 
@@ -70,7 +73,7 @@ public class InGameMinigamesPage implements ConfigPage {
 
         int listY = y + HEADER_H;
         int listH = h - HEADER_H;
-        area = new ScrollArea(x, listY, w, listH);
+        area.setBounds(x, listY, w, listH);
         cardHits.clear();
         g.enableScissor(x, listY, x + w, listY + listH);
 
@@ -104,7 +107,7 @@ public class InGameMinigamesPage implements ConfigPage {
         boolean on = cfg == null || cfg.enabled;
         int color = cfg != null ? cfg.instinctColor : MenuTheme.accentFor(mg.id());
         boolean hover = MenuTheme.inBounds(mx, my, x, y, w, CARD_H);
-        g.fill(x, y, x + w, y + CARD_H, hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+        MenuTheme.row(g, x, y, w, CARD_H, hover, false);
         MenuTheme.drawAccentStripe(g, x, y, CARD_H, color);
         String name = dn.length() > 22 ? dn.substring(0, 20) + "…" : dn;
         g.drawString(font, name, x + 8, y + 6, MenuTheme.TEXT_PRIMARY, false);
@@ -117,10 +120,11 @@ public class InGameMinigamesPage implements ConfigPage {
         if (reward.length() > 0) g.drawString(font, reward.toString(), x + 8, y + 34, 0xFFAAAAAA, false);
 
         int toggleX = x + w - 60, toggleW = 40;
-        PillToggle.render(g, font, toggleX, y + 6, toggleW, 14, on, "§a启用", "§c停用");
+        PillToggle.render(g, font, toggleX, y + 6, toggleW, 14, on, "启用", "停用");
         int editX = x + w - 60, editW = 40;
-        g.fill(editX, y + 28, editX + editW, y + 42, MenuTheme.BG_EDIT);
-        g.drawString(font, "§e编辑", editX + (editW - font.width("编辑")) / 2, y + 30, 0xFFFFFFFF, false);
+        boolean editHover = MenuTheme.inBounds(mx, my, editX, y + 28, editW, 14);
+        MenuTheme.button(g, font, "编辑", editX, y + 28, editW, 14,
+                MenuTheme.ACCENT_AMBER, true, editHover);
         cardHits.add(new CardHit(mg, x, y, w, CARD_H, toggleX, y + 6, toggleW, 14, editX, y + 28, editW, 14));
     }
 
@@ -136,6 +140,7 @@ public class InGameMinigamesPage implements ConfigPage {
         for (CardHit hit : cardHits) {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
             if (PillToggle.hit(mx, my, hit.toggleX(), hit.toggleY(), hit.toggleW(), hit.toggleH())) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
                 if (cfg == null) cfg = MinigameConfigEntry.createDefault();
@@ -145,6 +150,7 @@ public class InGameMinigamesPage implements ConfigPage {
                 return true;
             }
             if (PillToggle.hit(mx, my, hit.editX(), hit.editY(), hit.editW(), hit.editH())) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
                 if (cfg == null) cfg = MinigameConfigEntry.createDefault();

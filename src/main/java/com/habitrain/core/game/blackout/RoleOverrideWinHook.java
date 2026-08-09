@@ -26,6 +26,8 @@ public final class RoleOverrideWinHook {
         for (var entry : RoleOverrideEngine.getInstance().getSnapshot().getActiveModifies().entrySet()) {
             ModifyRoleDefinition def = entry.getValue();
             if (def.winConditionHook().isEmpty()) continue;
+            if (!com.habitrain.core.game.sre.roleoverride.SreRoleOverrideWinBridge
+                    .hasAssignedRole(level, entry.getKey())) continue;
             SRERole role = TMMRoles.getRole(entry.getKey());
             if (role == null) continue;
             BlackoutWinCheckContext ctx = new BlackoutWinCheckContext(

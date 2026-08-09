@@ -14,8 +14,11 @@ import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameLauncher;
 import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.EnvironmentController;
+import com.habitrain.core.game.sre.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.MvpScoreTracker;
 import com.habitrain.core.game.sre.SREGameStateProvider;
 import com.habitrain.core.game.sre.SREMurderMode;
+import com.habitrain.core.game.sre.SREOriginalModeBridge;
 import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
@@ -80,6 +83,9 @@ public class HabiTrainCore implements ModInitializer {
         LOGGER.info("哈比列车核心 (HabiTrain Core) 初始化中...");
         // 1. 配置系统
         ConfigManager.getInstance().load();
+        // Mod 菜单访问门控（独立文件 config/habitrain_menu_gate.json，服务端权威）
+        com.habitrain.core.config.MenuGateService.load();
+        com.habitrain.core.game.sre.KnifeDurabilityToggleService.register();
         // 2. 注册内置 GameMode（SRE 模式 + 停电模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
@@ -89,6 +95,9 @@ public class HabiTrainCore implements ModInitializer {
         GameModeRegistry.register(MOD_ID, "habitrain:blackout", blackoutMode);
         // 注册停电模式专用的 SRE GameMode（复用 SRE 原版角色分配流程）。
         SREBlackoutGameMode.register();
+        // 扫描 SRE 原版模式，注册轻量代理进 GameModeRegistry（须在 SERVER_STARTED freeze 前）。
+        // 这样 SRE/Wathe 新版本新增的模式会自动出现在注册表、/habi_api list 与模式投票中。
+        SREOriginalModeBridge.registerAll();
         // 投稿职业注册进 TMMRoles（须在对局开始前）
         com.habitrain.core.game.sre.role.HabiRoles.init();
         // 角色覆盖注册系统初始化
@@ -107,8 +116,10 @@ public class HabiTrainCore implements ModInitializer {
         LifecycleEventsRegistrar.init();
         // 5b. 环境控制器（对局开始/结束应用 lobby/match/post-match 天气与时间）
         EnvironmentController.registerEvents();
+        MvpScoreTracker.init();
         // 6. C2S 接收器注册（4 个客户端→服务端包处理器）
         C2SReceiverRegistrar.init();
+        EliminatedRestAreaService.init();
         // 7. 注册集中式缓慢重施管理器
         SlownessReapplyManager.registerTickHandler();
         // 8. 注册内置任务

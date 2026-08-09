@@ -6,7 +6,6 @@ import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
@@ -221,11 +220,6 @@ public final class BlackoutTaskShopService {
         def.onAssign(player, instance);
         mgr.setActiveTask(player.getUUID(), instance);
 
-        // once-per-game 登记（炸毁发电机）
-        var activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
-        if (activeMode instanceof BlackoutMode bm) {
-            bm.onTaskAssign(player, instance);
-        }
         if (entry.oncePerGame()) {
             BlackoutTaskShopState.markFurnaceExplosionTaken(level);
         }

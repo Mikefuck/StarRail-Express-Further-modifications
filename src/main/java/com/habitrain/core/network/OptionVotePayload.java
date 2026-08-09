@@ -16,6 +16,7 @@ import java.util.List;
 /**
  * 通用选项投票 S2C 状态同步。
  * 候选人使用字符串 optionId（模式/地图 id），而非玩家 UUID。
+ * {@code resolvedOptionId} 仅在正常结算的 inactive 包中有值；管理员取消时为空。
  */
 public record OptionVotePayload(
         String voteId,
@@ -25,6 +26,7 @@ public record OptionVotePayload(
         int maxSelections,
         String title,
         String description,
+        String resolvedOptionId,
         List<Entry> candidates
 ) implements CustomPacketPayload {
 
@@ -38,12 +40,14 @@ public record OptionVotePayload(
             StreamCodec.ofMember(OptionVotePayload::write, OptionVotePayload::new);
 
     public OptionVotePayload {
+        resolvedOptionId = resolvedOptionId == null ? "" : resolvedOptionId;
         candidates = List.copyOf(candidates);
     }
 
     private OptionVotePayload(FriendlyByteBuf buf) {
         this(buf.readUtf(64), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
-                buf.readVarInt(), buf.readUtf(128), buf.readUtf(256), readCandidates(buf));
+                buf.readVarInt(), buf.readUtf(128), buf.readUtf(256), buf.readUtf(64),
+                readCandidates(buf));
     }
 
     private static List<Entry> readCandidates(FriendlyByteBuf buf) {
@@ -66,6 +70,7 @@ public record OptionVotePayload(
         buf.writeVarInt(maxSelections);
         buf.writeUtf(title, 128);
         buf.writeUtf(description, 256);
+        buf.writeUtf(resolvedOptionId, 64);
         buf.writeVarInt(candidates.size());
         for (Entry e : candidates) {
             buf.writeUtf(e.optionId(), 64);
@@ -92,7 +97,7 @@ public record OptionVotePayload(
                                       List<Entry> candidates) {
         OptionVotePayload payload = new OptionVotePayload(
                 voteId, active, remainingSeconds, totalSeconds, maxSelections,
-                title, description, candidates);
+                title, description, "", candidates);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ServerPlayNetworking.send(player, payload);
         }
@@ -103,10 +108,20 @@ public record OptionVotePayload(
                                         int totalSeconds, int maxSelections,
                                         String title, String description,
                                         List<Entry> candidates) {
+        broadcastToLevel(level, voteId, active, remainingSeconds, totalSeconds,
+                maxSelections, title, description, "", candidates);
+    }
+
+    public static void broadcastToLevel(net.minecraft.server.level.ServerLevel level,
+                                        String voteId, boolean active, int remainingSeconds,
+                                        int totalSeconds, int maxSelections,
+                                        String title, String description,
+                                        String resolvedOptionId,
+                                        List<Entry> candidates) {
         if (level == null) return;
         OptionVotePayload payload = new OptionVotePayload(
                 voteId, active, remainingSeconds, totalSeconds, maxSelections,
-                title, description, candidates);
+                title, description, resolvedOptionId, candidates);
         for (ServerPlayer player : level.players()) {
             ServerPlayNetworking.send(player, payload);
         }
@@ -117,8 +132,18 @@ public record OptionVotePayload(
                               int totalSeconds, int maxSelections,
                               String title, String description,
                               List<Entry> candidates) {
+        sendTo(player, voteId, active, remainingSeconds, totalSeconds,
+                maxSelections, title, description, "", candidates);
+    }
+
+    public static void sendTo(ServerPlayer player,
+                              String voteId, boolean active, int remainingSeconds,
+                              int totalSeconds, int maxSelections,
+                              String title, String description,
+                              String resolvedOptionId,
+                              List<Entry> candidates) {
         ServerPlayNetworking.send(player, new OptionVotePayload(
                 voteId, active, remainingSeconds, totalSeconds, maxSelections,
-                title, description, candidates));
+                title, description, resolvedOptionId, candidates));
     }
 }

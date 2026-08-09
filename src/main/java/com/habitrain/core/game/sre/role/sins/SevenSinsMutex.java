@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.server.level.ServerLevel;
@@ -165,17 +166,22 @@ public final class SevenSinsMutex {
      * (亡命徒) for neutral sins — that was turning forced Lust into 亡命徒.
      */
     public static SRERole fallbackNonSin(SRERole removed) {
-        if (removed == null) return TMMRoles.CIVILIAN;
+        SRERole civilian = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
+        SRERole killer = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.KILLER);
+        SRERole vigilante = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.VIGILANTE);
+        SRERole looseEnd = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.LOOSE_END);
+        if (removed == null) return civilian;
         int type = removed.getRoleType();
-        if (type == TMMRoles.KILLER.getRoleType()) return TMMRoles.KILLER;
-        if (type == TMMRoles.VIGILANTE.getRoleType()) return TMMRoles.VIGILANTE;
-        if (type == TMMRoles.CIVILIAN.getRoleType()) return TMMRoles.CIVILIAN;
+        if (type == killer.getRoleType()) return killer;
+        if (type == vigilante.getRoleType()) return vigilante;
+        if (type == civilian.getRoleType()) return civilian;
 
         // Neutrals / other: prefer a non-sin same-type role that is not loose-end / other-mode.
-        SRERole candidate = TMMRoles.ROLES.values().stream()
+        SRERole candidate =
+                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values()).stream()
                 .filter(role -> role != null && !SevenSins.isSin(role))
                 .filter(role -> role.getRoleType() == type)
-                .filter(role -> role != TMMRoles.LOOSE_END)
+                .filter(role -> role != looseEnd)
                 .filter(role -> {
                     try {
                         return !role.isOtherModeRole();
@@ -197,6 +203,6 @@ public final class SevenSinsMutex {
         if (candidate != null) return candidate;
 
         // Last resort for neutrals: civilian, never loose_end.
-        return TMMRoles.CIVILIAN;
+        return civilian;
     }
 }

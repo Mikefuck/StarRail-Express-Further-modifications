@@ -6,13 +6,22 @@ import net.minecraft.util.Mth;
 
 /** 可滚动内容区：负责滚动偏移、拖拽、滚轮与滚动条。 */
 public class ScrollArea {
-    private final int x, y, w, h;
+    private int x, y, w, h;
     private double scroll;
     private boolean dragging;
     private double dragStartY, dragStartScroll;
     private int contentHeight;
 
     public ScrollArea(int x, int y, int w, int h) { this.x = x; this.y = y; this.w = w; this.h = h; }
+
+    /** 页面尺寸变化时只更新视口，不清空该页面自己的滚动位置。 */
+    public void setBounds(int x, int y, int w, int h) {
+        this.x = x;
+        this.y = y;
+        this.w = Math.max(1, w);
+        this.h = Math.max(1, h);
+        scroll = Mth.clamp(scroll, 0, maxScroll());
+    }
 
     public void setContentHeight(int contentHeight) {
         this.contentHeight = contentHeight;
@@ -28,7 +37,9 @@ public class ScrollArea {
     }
 
     public boolean mouseClicked(double mx, double my, int btn) {
-        if (!isInside(mx, my)) return false;
+        if (btn != 0 || mx < x + w - 7 || mx >= x + w || my < y || my >= y + h || maxScroll() <= 0) {
+            return false;
+        }
         dragging = true;
         dragStartY = my;
         dragStartScroll = scroll;

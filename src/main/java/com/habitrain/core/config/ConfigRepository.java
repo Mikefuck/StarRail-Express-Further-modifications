@@ -12,8 +12,11 @@ public class ConfigRepository {
     private int sheriffCountDivisor = 6;
     private boolean minigameGlobalEnabled = true;
     private boolean shaderWhitelistEnabled = false;
-    private boolean knifeDurabilityEnabled = true;
     private int tempPowerPrice = 100;
+    private boolean knifeDurabilityEnabled = false;
+    private boolean lobbyVoiceGroupEnabled = true;
+    /** 停电黑暗时长增强：普通停电 20 秒黑暗+失明，忍者 10 秒（默认关闭，关闭时保持 SRE 原版 10 秒）。 */
+    private boolean blackoutEffectEnhancementEnabled = false;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
     private RoleOverrideConfigSection roleOverrides = RoleOverrideConfigSection.createDefault();
@@ -74,16 +77,29 @@ public class ConfigRepository {
         this.tempPowerPrice = Math.max(0, price);
     }
 
-    public boolean isShaderWhitelistEnabled() { return shaderWhitelistEnabled; }
-
-    public void setShaderWhitelistEnabled(boolean enabled) {
-        this.shaderWhitelistEnabled = enabled;
-    }
-
     public boolean isKnifeDurabilityEnabled() { return knifeDurabilityEnabled; }
 
     public void setKnifeDurabilityEnabled(boolean enabled) {
         this.knifeDurabilityEnabled = enabled;
+    }
+
+    /** 对局结束后 / 进服 / 大厅巡检时是否把玩家拉入 LobbyChat 大厅语音群组。 */
+    public boolean isLobbyVoiceGroupEnabled() { return lobbyVoiceGroupEnabled; }
+
+    public void setLobbyVoiceGroupEnabled(boolean enabled) {
+        this.lobbyVoiceGroupEnabled = enabled;
+    }
+
+    public boolean isBlackoutEffectEnhancementEnabled() { return blackoutEffectEnhancementEnabled; }
+
+    public void setBlackoutEffectEnhancementEnabled(boolean enabled) {
+        this.blackoutEffectEnhancementEnabled = enabled;
+    }
+
+    public boolean isShaderWhitelistEnabled() { return shaderWhitelistEnabled; }
+
+    public void setShaderWhitelistEnabled(boolean enabled) {
+        this.shaderWhitelistEnabled = enabled;
     }
 
     public List<String> getShaderWhitelist() { return shaderWhitelist; }

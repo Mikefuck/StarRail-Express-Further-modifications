@@ -32,6 +32,11 @@ public class TaskInstance {
     public boolean isFulfilled() { return fulfilled; }
     public boolean isFailed() { return failed; }
 
+    void bindOwner(Player player) {
+        this.ownerPlayer = player;
+        this.progressUpdatePlayer = player;
+    }
+
     public void setProgress(int progress) {
         int old = this.progress;
         this.progress = progress;
@@ -41,6 +46,10 @@ public class TaskInstance {
             Player p = progressUpdatePlayer != null ? progressUpdatePlayer : ownerPlayer;
             if (p != null) {
                 definition.onProgressUpdate(p, this, old);
+                if (p instanceof ServerPlayer serverPlayer) {
+                    GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).ifPresent(mode ->
+                            mode.onTaskProgressChange(serverPlayer, this, old));
+                }
             }
         }
     }
@@ -65,8 +74,7 @@ public class TaskInstance {
         if (fulfilled) return;
 
         // 记录归属玩家，tick 外 setProgress 可回退使用
-        this.ownerPlayer = player;
-        progressUpdatePlayer = player;
+        bindOwner(player);
         try {
             if (definition.getTimeLimit() > 0) {
                 elapsedTicks++;
@@ -79,11 +87,32 @@ public class TaskInstance {
 
             definition.onTick(player, this);
 
-            if (definition.checkCompletion(player, this)) {
+            ServerPlayer serverPlayer = null;
+            if (player instanceof ServerPlayer sp) {
+                serverPlayer = sp;
+                GameMode activeMode = GameModeRegistry.getActiveForLevel(sp.serverLevel()).orElse(null);
+                if (activeMode != null) {
+                    activeMode.onTaskTick(sp, this);
+                }
+            }
+
+            boolean completed = definition.checkCompletion(player, this);
+            if (serverPlayer != null) {
+                GameMode completionMode = GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).orElse(null);
+                if (completionMode != null) {
+                    completed = completionMode.overrideCompletionCheck(serverPlayer, this).orElse(completed);
+                }
+            }
+
+            if (completed) {
                 this.fulfilled = true;
                 // 与 onFail 保持对称：对所有 Player 调用 onComplete。
                 // DLC 回调内部可自行用 instanceof ServerPlayer 判断是否在服务端上下文。
                 definition.onComplete(player, this);
+            } else if (!failed) {
+                // completion override=false 时撤销本 tick 内由任务逻辑写入的 fulfilled，
+                // 确保模式覆盖结果真正控制完成状态。
+                this.fulfilled = false;
             }
         } finally {
             // 恢复为 owner，tick 外 setProgress 仍可派发回调

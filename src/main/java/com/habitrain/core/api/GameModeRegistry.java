@@ -124,6 +124,12 @@ public class GameModeRegistry {
             GameMode mode = ACTIVE_MODES.get(levelKey);
             if (mode != null) {
                 mode.onTick(level);
+                if (ACTIVE_MODES.get(levelKey) == mode) {
+                    Optional<WinResult> result = mode.checkWinCondition(level);
+                    if (result.isPresent() && ACTIVE_MODES.get(levelKey) == mode) {
+                        stop(level, result.get());
+                    }
+                }
             }
         }
     }

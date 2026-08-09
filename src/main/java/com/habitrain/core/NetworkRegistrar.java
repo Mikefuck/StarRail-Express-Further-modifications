@@ -30,11 +30,17 @@ public final class NetworkRegistrar {
         BlackoutTaskShopResultPayload.register();
         OptionVotePayload.register();
         OptionVoteCastPayload.register();
-        MapPoolSkipPayload.register();
+        MapVoteLaunchTransitionPayload.register();
+        MapVoteLaunchAbortPayload.register();
+        MapVoteProgressPayload.register();
+        GameEndTransitionPayload.register();
         GreedTradeActionPayload.register();
         GreedTradePromptPayload.register();
         GreedTradeSelectPayload.register();
-        GameEndTransitionPayload.register();
-        LOGGER.info("Registered 24 HabiTrain network payload types");
+        EliminatedRestTogglePayload.register();
+        EliminatedRestPromptPayload.register();
+        MenuGatePayload.register();
+        RepairModeSyncPayload.register();
+        LOGGER.info("Registered {} HabiTrain network payload types", 30);
     }
 }

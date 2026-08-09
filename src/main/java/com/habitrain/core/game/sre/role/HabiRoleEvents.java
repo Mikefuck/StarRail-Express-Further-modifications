@@ -206,7 +206,7 @@ public final class HabiRoleEvents {
     }
 
     /**
-     * 刀窗口内被杀 → 转随机杀手（参照赌徒 RoleUtils.changeRole）。
+     * 刀窗口内被杀 → 转随机杀手（统一走 BlackoutRoleManager.reassignRole 转职入口）。
      */
     private static void convertScapegoatToRandomKiller(ServerPlayer victim, CrimeScapegoatComponent c) {
         List<SRERole> pool = CrimeScapegoatComponent.randomKillerPool();
@@ -216,12 +216,13 @@ public final class HabiRoleEvents {
         }
         SRERole next = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
         try {
-            RoleUtils.changeRole(victim, next);
-            c.markConverted();
             if (victim.level() instanceof ServerLevel level) {
-                BlackoutRoleManager.reassignRole(
-                        level, victim.getUUID(), next, BlackoutRoleManager.Faction.BAD);
+                // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
+                // record=true 记时间线、addStats=true（对齐原 changeRole 默认）；
+                // faction 传 null 由 resolveFactionFromSreRole 推导，避免带罪阵营角色被错误压成 BAD
+                BlackoutRoleManager.reassignRole(level, victim.getUUID(), next, null, true, true);
             }
+            c.markConverted();
             try {
                 RoleUtils.sendWelcomeAnnouncement(victim);
             } catch (Throwable ignored) {}

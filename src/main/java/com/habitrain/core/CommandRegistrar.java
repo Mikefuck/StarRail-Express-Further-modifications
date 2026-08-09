@@ -4,16 +4,21 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteApi;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MapPoolEntry;
-import com.habitrain.core.config.MapPoolRotationSettings;
+import com.habitrain.core.config.MapPlayerCountSettings;
+import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
-import com.habitrain.core.vote.MapPoolRotationService;
+import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.game.sre.SREModeStartAdapter;
+import com.habitrain.core.network.MenuGatePayload;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
@@ -106,27 +111,230 @@ public final class CommandRegistrar {
                                     .requires(source -> source.hasPermission(2))
                                     .executes(ctx -> {
                                         ModeMapVoteSettings s = ConfigManager.getInstance().getModeMapVoteSettings();
-                                        MapPoolRotationSettings rot = s.rotationOrDefault();
-                                        MapPoolEntry p = rot.poolAt(rot.activePoolIndex);
+                                        MapPlayerCountSettings pc = s.playerCountOrDefault();
                                         ctx.getSource().sendSuccess(() -> Component.literal(
-                                                "§e地图池: " + (rot.enabled ? "§a启用" : "§c关闭")
-                                                        + " §7共" + rot.poolCount() + "池"
-                                                        + " §7当前池" + (rot.activePoolIndex + 1)
-                                                        + " §f" + p.displayName
-                                                        + " §8(" + (p.mapIds != null ? p.mapIds.size() : 0) + "图)"
-                                                        + " §7模式=" + rot.applyMode
-                                                        + " §7自动重分=" + rot.autoRepartition
-                                                        + " §7日期=" + rot.lastRotationDate
+                                                "§e按人数抽图: " + (pc.enabled ? "§a启用" : "§c关闭")
+                                                        + " §7抽取数量=" + pc.drawCount
                                         ), false);
                                         return 1;
                                     }))
-                            .then(Commands.literal("skip")
-                                    .requires(source -> source.hasPermission(4))
+                    )
+                    // 维修人员模式（OP2）：进入维修模式并锁定地图，被锁地图不进投票池
+                    .then(Commands.literal("repair")
+                            // 进入维修模式并锁定一张地图
+                            .then(Commands.argument("map", StringArgumentType.string())
+                                    .suggests(availableMaps())
+                                    .requires(source -> source.hasPermission(2))
                                     .executes(ctx -> {
                                         ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                        boolean ok = MapPoolRotationService.skip(player);
-                                        return ok ? 1 : 0;
+                                        String mapId = StringArgumentType.getString(ctx, "map");
+                                        if (!isValidMap(ctx.getSource().getLevel(), mapId)) {
+                                            ctx.getSource().sendFailure(
+                                                    Component.literal("§c无效地图: " + mapId + " §7（按 Tab 可查看服务器当前可用地图）"));
+                                            return 0;
+                                        }
+                                        boolean shared = RepairModeManager.isMapLocked(mapId);
+                                        boolean ok = RepairModeManager.enter(player, mapId);
+                                        if (!ok) {
+                                            ctx.getSource().sendFailure(
+                                                    Component.literal("§c进入维修模式失败（可能已在维修模式中）"));
+                                            return 0;
+                                        }
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§a已进入维修模式（创造模式），锁定地图 §e" + mapId
+                                                        + (shared ? " §7（该地图已被他人锁定，多人同时维修）" : "")), true);
+                                        return 1;
                                     }))
+                            // 取消自己的维修模式
+                            .then(Commands.literal("cancel")
+                                    .requires(source -> source.hasPermission(2))
+                                    .executes(ctx -> {
+                                        ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                        boolean ok = RepairModeManager.exit(player);
+                                        if (!ok) {
+                                            ctx.getSource().sendFailure(
+                                                    Component.literal("§c你当前不在维修模式中"));
+                                            return 0;
+                                        }
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§a已退出维修模式，恢复原参与状态与游戏模式"), true);
+                                        return 1;
+                                    }))
+                            // 列出当前维修人员与锁定的地图
+                            .then(Commands.literal("list")
+                                    .requires(source -> source.hasPermission(2))
+                                    .executes(ctx -> {
+                                        var list = RepairModeManager.list();
+                                        if (list.isEmpty()) {
+                                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                                    "§7当前无维修人员，无地图被锁定"), false);
+                                            return 1;
+                                        }
+                                        StringBuilder sb = new StringBuilder("§e当前维修人员(" + list.size() + "):");
+                                        for (RepairModeManager.RepairEntryView v : list) {
+                                            sb.append("\n §f").append(v.playerName())
+                                                    .append(" §7→ 锁定地图 §e").append(v.mapId());
+                                        }
+                                        ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
+                                        return 1;
+                                    }))
+                            // 强制解锁一张地图（移除所有负责玩家）
+                            .then(Commands.literal("unlock")
+                                    .then(Commands.argument("map", StringArgumentType.string())
+                                            .suggests(lockedMaps())
+                                            .requires(source -> source.hasPermission(2))
+                                            .executes(ctx -> {
+                                                String mapId = StringArgumentType.getString(ctx, "map");
+                                                int removed = RepairModeManager.unlockMap(mapId, ctx.getSource().getServer());
+                                                if (removed <= 0) {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§e地图 " + mapId + " 当前未被锁定"), false);
+                                                } else {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§a已强制解锁地图 §e" + mapId + " §7（移除 " + removed + " 名维修员）"), true);
+                                                }
+                                                return 1;
+                                            })))
+                            // 强制指定某玩家进入维修模式并锁定一张地图
+                            .then(Commands.literal("add")
+                                    .then(Commands.argument("player", StringArgumentType.string())
+                                            .suggests(onlinePlayerNames())
+                                            .then(Commands.argument("map", StringArgumentType.string())
+                                                    .suggests(availableMaps())
+                                                    .requires(source -> source.hasPermission(2))
+                                                    .executes(ctx -> {
+                                                        String name = StringArgumentType.getString(ctx, "player");
+                                                        String mapId = StringArgumentType.getString(ctx, "map");
+                                                        ServerPlayer target = findPlayer(ctx.getSource().getServer(), name);
+                                                        if (target == null) {
+                                                            ctx.getSource().sendFailure(
+                                                                    Component.literal("§c未找到在线玩家 " + name));
+                                                            return 0;
+                                                        }
+                                                        if (!isValidMap(ctx.getSource().getLevel(), mapId)) {
+                                                            ctx.getSource().sendFailure(
+                                                                    Component.literal("§c无效地图: " + mapId));
+                                                            return 0;
+                                                        }
+                                                        boolean ok = RepairModeManager.enter(target, mapId);
+                                                        if (!ok) {
+                                                            ctx.getSource().sendFailure(
+                                                                    Component.literal("§c" + name + " 已在维修模式中"));
+                                                            return 0;
+                                                        }
+                                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                                "§a已将 §e" + name + " §a设为维修模式，锁定地图 §e" + mapId), true);
+                                                        return 1;
+                                                    }))))
+                            // 强制某玩家退出维修模式
+                            .then(Commands.literal("remove")
+                                    .then(Commands.argument("player", StringArgumentType.string())
+                                            .suggests(onlinePlayerNames())
+                                            .requires(source -> source.hasPermission(2))
+                                            .executes(ctx -> {
+                                                String name = StringArgumentType.getString(ctx, "player");
+                                                ServerPlayer target = findPlayer(ctx.getSource().getServer(), name);
+                                                boolean ok;
+                                                if (target != null) {
+                                                    ok = RepairModeManager.exit(target);
+                                                } else {
+                                                    ok = false;
+                                                }
+                                                if (!ok) {
+                                                    ctx.getSource().sendFailure(
+                                                            Component.literal("§c" + name + " 不在维修模式中（或不在线）"));
+                                                    return 0;
+                                                }
+                                                ctx.getSource().sendSuccess(() -> Component.literal(
+                                                        "§a已强制移除 §e" + name + " §a的维修模式"), true);
+                                                return 1;
+                                            })))
+                    )
+                    // Mod 菜单访问门控（OP4 且非玩家：仅服务器后台控制台可维护允许列表）
+                    .then(Commands.literal("menugate")
+                            .requires(source -> source.hasPermission(4) && !source.isPlayer())
+                            .then(Commands.literal("enable")
+                                    .executes(ctx -> {
+                                        MenuGateService.setEnabled(true);
+                                        MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
+                                        ctx.getSource().sendSuccess(
+                                                () -> Component.literal("§a已启用 Mod 菜单访问门控：未授权玩家页面将被锁定"), true);
+                                        return 1;
+                                    }))
+                            .then(Commands.literal("disable")
+                                    .executes(ctx -> {
+                                        MenuGateService.setEnabled(false);
+                                        MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
+                                        ctx.getSource().sendSuccess(
+                                                () -> Component.literal("§e已关闭 Mod 菜单访问门控：所有玩家可访问"), true);
+                                        return 1;
+                                    }))
+                            .then(Commands.literal("status")
+                                    .executes(ctx -> {
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§eMod 菜单门控: " + (MenuGateService.isEnabled() ? "§a启用" : "§c关闭")
+                                                        + " §7已允许 " + MenuGateService.getAllowed().size() + " 人"), false);
+                                        return 1;
+                                    }))
+                            .then(Commands.literal("list")
+                                    .executes(ctx -> {
+                                        var list = MenuGateService.getAllowed();
+                                        if (list.isEmpty()) {
+                                            ctx.getSource().sendSuccess(() -> Component.literal("§7允许访问列表为空"), false);
+                                            return 1;
+                                        }
+                                        StringBuilder sb = new StringBuilder("§e允许访问的玩家:");
+                                        for (MenuGateService.AllowedPlayer ap : list) {
+                                            String mark = isOnline(ctx.getSource().getServer(), ap) ? "§a●" : "§7○";
+                                            sb.append("\n").append(mark).append(" §f").append(ap.getName());
+                                            if (!ap.getUuid().isEmpty()) {
+                                                sb.append(" §7(").append(ap.getUuid()).append(")");
+                                            }
+                                        }
+                                        ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
+                                        return 1;
+                                    }))
+                            .then(Commands.literal("add")
+                                    .then(Commands.argument("player", StringArgumentType.string())
+                                            .suggests(onlinePlayerNames())
+                                            .executes(ctx -> {
+                                                String name = StringArgumentType.getString(ctx, "player");
+                                                String uuid = "";
+                                                ServerPlayer target = findPlayer(ctx.getSource().getServer(), name);
+                                                if (target != null) {
+                                                    name = target.getGameProfile().getName();
+                                                    uuid = target.getUUID().toString();
+                                                }
+                                                final String resolvedName = name;
+                                                final String resolvedUuid = uuid;
+                                                boolean added = MenuGateService.add(resolvedName, resolvedUuid);
+                                                MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
+                                                if (added) {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§a已将 " + resolvedName + " 加入允许列表"
+                                                                    + (resolvedUuid.isEmpty() ? "（离线，按名字匹配）" : "")), true);
+                                                } else {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§e" + resolvedName + " 已在允许列表中"), false);
+                                                }
+                                                return 1;
+                                            })))
+                            .then(Commands.literal("remove")
+                                    .then(Commands.argument("player", StringArgumentType.string())
+                                            .suggests(onlinePlayerNames())
+                                            .executes(ctx -> {
+                                                String name = StringArgumentType.getString(ctx, "player");
+                                                boolean removed = MenuGateService.remove(name);
+                                                MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
+                                                if (removed) {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§a已将 " + name + " 移出允许列表"), true);
+                                                } else {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                            "§c未找到 " + name + "（允许列表中无此玩家）"), false);
+                                                }
+                                                return 1;
+                                            })))
                     )
                     // 贪婪匿名交易双确认的命令兼容回退
                     .then(Commands.literal("greed_trade")
@@ -149,6 +357,74 @@ public final class CommandRegistrar {
                     )
               );
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|greed_trade");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|greed_trade|menugate");
+    }
+
+    /** 按名字解析在线玩家：先精确匹配，再忽略大小写匹配。 */
+    private static ServerPlayer findPlayer(MinecraftServer server, String name) {
+        if (server == null || name == null) return null;
+        ServerPlayer exact = server.getPlayerList().getPlayerByName(name);
+        if (exact != null) return exact;
+        for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+            if (sp.getGameProfile().getName().equalsIgnoreCase(name)) return sp;
+        }
+        return null;
+    }
+
+    /** Tab 补全：服务器当前在线玩家名（实时）。 */
+    private static SuggestionProvider<CommandSourceStack> onlinePlayerNames() {
+        return (ctx, builder) -> {
+            MinecraftServer server = ctx.getSource().getServer();
+            if (server != null) {
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                    builder.suggest(p.getGameProfile().getName());
+                }
+            }
+            return builder.buildFuture();
+        };
+    }
+
+    /** Tab 补全：服务器当前可用地图（每次调用实时扫描 train_maps，非缓存）。 */
+    private static SuggestionProvider<CommandSourceStack> availableMaps() {
+        return (ctx, builder) -> {
+            ServerLevel level = ctx.getSource().getLevel();
+            for (String mapId : SREModeStartAdapter.getAvailableMaps(level)) {
+                builder.suggest(mapId);
+            }
+            return builder.buildFuture();
+        };
+    }
+
+    /** Tab 补全：当前被维修员锁定的地图（供 unlock 使用）。 */
+    private static SuggestionProvider<CommandSourceStack> lockedMaps() {
+        return (ctx, builder) -> {
+            for (String mapId : RepairModeManager.getLockedMapIds()) {
+                builder.suggest(mapId);
+            }
+            return builder.buildFuture();
+        };
+    }
+
+    /** 校验地图名是否在当前服务器可用地图列表中。 */
+    private static boolean isValidMap(ServerLevel level, String mapId) {
+        if (level == null || mapId == null || mapId.isBlank()) return false;
+        try {
+            return SREModeStartAdapter.getAvailableMaps(level).contains(mapId);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 允许列表条目当前是否在线（有 UUID 按 UUID 查，无 UUID 按名字查）。 */
+    private static boolean isOnline(MinecraftServer server, MenuGateService.AllowedPlayer ap) {
+        if (server == null) return false;
+        if (ap.getUuid() != null && !ap.getUuid().isEmpty()) {
+            try {
+                return server.getPlayerList().getPlayer(java.util.UUID.fromString(ap.getUuid())) != null;
+            } catch (IllegalArgumentException ignored) {
+                return false;
+            }
+        }
+        return findPlayer(server, ap.getName()) != null;
     }
 }
