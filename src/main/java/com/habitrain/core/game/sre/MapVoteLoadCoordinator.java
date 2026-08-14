@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
 import com.habitrain.core.network.MapVoteProgressPayload;
+import com.habitrain.core.network.MapVoteStartConfirmedPayload;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -127,6 +128,8 @@ public final class MapVoteLoadCoordinator {
         if (st.settled) return;
         if (started) {
             st.startConfirmed = true;
+            // 判定点 A：通知客户端锁定 hide / 对已隐藏玩家左→右补盖（遮住随后 initializeGame 的 TP）
+            MapVoteStartConfirmedPayload.broadcastToLevel(level, st.mapId);
             LOGGER.info("[MapVoteLoad] game start confirmed dim={} map={} → waiting for environment",
                     level.dimension().location(), st.mapId);
         } else {
@@ -164,18 +167,34 @@ public final class MapVoteLoadCoordinator {
     }
 
     private static boolean isSreLoading(ServerLevel level) {
-        // startGame 已置 isStartingGame，或 SRE 世界组件处于 STARTING（fade 未满）。
-        if (GameUtils.isStartingGame) return true;
+        // Per-dimension only — never use global GameUtils.isStartingGame
+        // (that flag would make dim B look "loading" while dim A starts).
+        LoadState st = level == null ? null : LOADS.get(level.dimension());
+        if (st == null || st.settled) return false;
+
+        // Waiting for weather sync after trueStartGame → still "loading" for UI.
+        if (st.startConfirmed) return true;
+
         try {
             var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
-            if (gw != null && gw.getGameStatus()
-                    == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STARTING) {
-                return true;
+            if (gw != null) {
+                var status = gw.getGameStatus();
+                // Already ACTIVE/STOPPING without our startConfirmed → load finished
+                // or aborted; let tickSecond take the !loading branch (abort/remove).
+                if (status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE
+                        || status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STOPPING) {
+                    return false;
+                }
+                if (status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STARTING) {
+                    return true;
+                }
             }
         } catch (Throwable t) {
             // ignore
         }
-        return false;
+        // LOADS present, not settled, not confirmed, not ACTIVE:
+        // map-reset queue phase before STARTING — still loading for this dim.
+        return true;
     }
 
     /** 估算开局加载进度：基于 SRE 服务端任务队列（地图重置）。 */

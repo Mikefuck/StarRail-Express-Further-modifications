@@ -131,9 +131,7 @@ public class MinigameEditScreen extends Screen {
         addRenderableWidget(mapField);
 
         saveBtn = Button.builder(Component.literal("§a保存并返回"), b -> {
-            commitFields();
-            ConfigManager.getInstance().setMinigameConfig(minigame.id(), cfg);
-            Minecraft.getInstance().setScreen(parent);
+            goBack();
         }).bounds(-10000, -10000, 100, 20).build();
         addRenderableWidget(saveBtn);
 
@@ -158,7 +156,7 @@ public class MinigameEditScreen extends Screen {
         addRenderableWidget(resetBtn);
 
         topBackBtn = Button.builder(Component.literal("§7← 返回"), b -> {
-            Minecraft.getInstance().setScreen(parent);
+            goBack();
         }).bounds(PAD, 4, 70, 18).build();
         addRenderableWidget(topBackBtn);
 
@@ -190,6 +188,10 @@ public class MinigameEditScreen extends Screen {
     }
 
     private void saveCurrent() {
+        if (!remoteEditable || !MenuPermissions.canEditRemoteConfigs()) {
+            MenuPermissions.showDeniedMessage();
+            return;
+        }
         ConfigManager.getInstance().putMinigameConfig(minigame.id(), cfg);
     }
 
@@ -227,6 +229,14 @@ public class MinigameEditScreen extends Screen {
                 if (!t.isEmpty()) cfg.enabledMaps.add(t);
             }
         }
+    }
+
+    private void goBack() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            commitFields();
+            ConfigManager.getInstance().setMinigameConfig(minigame.id(), cfg);
+        }
+        Minecraft.getInstance().setScreen(parent);
     }
 
     @Override
@@ -371,7 +381,7 @@ public class MinigameEditScreen extends Screen {
             int contentBot = height - 30;
             int contentH = contentBot - contentTop;
             int maxScroll = Math.max(0, contentHeight - contentH);
-            double delta = dragStartY - my;
+            double delta = my - dragStartY;
             scrollOffset = Mth.clamp(dragStartOff + delta, 0, maxScroll);
             return true;
         }
@@ -415,7 +425,6 @@ public class MinigameEditScreen extends Screen {
 
     @Override
     public void onClose() {
-        ConfigManager.getInstance().save();
-        Minecraft.getInstance().setScreen(parent);
+        goBack();
     }
 }

@@ -11,13 +11,13 @@ base {
 }
 
 repositories {
-    maven { url "https://maven.aliyun.com/repository/public/" }
-    maven { url "https://maven.ladysnake.org/releases" }
-    maven { url "https://maven.shedaniel.me/" }
-    maven { url "https://api.modrinth.com/maven" }
-    maven { url "https://maven.terraformersmc.com/releases/" }
-    maven { url "https://maven.uuid.gg/releases" }
-    maven { url "https://maven.bawnorton.com/releases" }
+    maven { url = "https://maven.aliyun.com/repository/public/" }
+    maven { url = "https://maven.ladysnake.org/releases" }
+    maven { url = "https://maven.shedaniel.me/" }
+    maven { url = "https://api.modrinth.com/maven" }
+    maven { url = "https://maven.terraformersmc.com/releases/" }
+    maven { url = "https://maven.uuid.gg/releases" }
+    maven { url = "https://maven.bawnorton.com/releases" }
     flatDir { dirs "libs" }
 }
 
@@ -123,8 +123,11 @@ java {
     targetCompatibility = JavaVersion.VERSION_21
 }
 
+def releaseArchiveBaseName = project.archives_base_name
+def releaseVersion = project.version.toString()
+
 jar {
-    from("LICENSE") { rename { "${it}_${project.archives_base_name}" } }
+    from("LICENSE") { rename { "${it}_${releaseArchiveBaseName}" } }
 }
 
 // 先在 build 内暂存，完整构建成功后再把带 restored 后缀的 JAR 交付到父目录。
@@ -135,7 +138,7 @@ tasks.register("copyReleaseJar", Copy) {
     dependsOn(tasks.named("remapJar"))
     from(tasks.named("remapJar").flatMap { it.archiveFile })
     into(releaseOutputDir)
-    rename { "${project.archives_base_name}-${project.version}-restored.jar" }
+    rename { "${releaseArchiveBaseName}-${releaseVersion}-restored.jar" }
 }
 
 tasks.named("assemble") {

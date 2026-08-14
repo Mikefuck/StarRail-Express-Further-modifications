@@ -130,7 +130,11 @@ public final class GreedTradeManager {
         return prepareTrade(level, greed, partner);
     }
 
-    /** Backpack player-selection entry. Target identity is revalidated on the server. */
+    /**
+     * Backpack / GUI player-selection entry.
+     * Target identity <strong>and</strong> {@link #TRADE_RANGE} are revalidated on the server
+     * so C2S cannot open a session against arbitrary distant players.
+     */
     public static boolean openSelectedTrade(ServerPlayer greed, UUID partnerId) {
         if (greed == null || partnerId == null || greed.isSpectator()
                 || !(greed.level() instanceof ServerLevel level)) return false;
@@ -138,6 +142,12 @@ public final class GreedTradeManager {
         Player candidate = level.getPlayerByUUID(partnerId);
         if (!(candidate instanceof ServerPlayer partner) || partner == greed
                 || partner.isSpectator() || !partner.isAlive()) return false;
+        // Same range gate as the G-skill / aim entry — no remote session open.
+        if (greed.distanceToSqr(partner) > TRADE_RANGE * TRADE_RANGE) {
+            greed.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_greed.trade_no_target"), true);
+            return false;
+        }
         return prepareTrade(level, greed, partner);
     }
 
@@ -311,6 +321,12 @@ public final class GreedTradeManager {
             forceClose(s);
             return;
         }
+        // Re-check TRADE_RANGE at commit so parties cannot walk away after open and still settle.
+        if (greed.distanceToSqr(partner) > TRADE_RANGE * TRADE_RANGE) {
+            notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_target"));
+            forceClose(s);
+            return;
+        }
         if (!isGreedRole(level, greed)) {
             notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_not_greed"));
             forceClose(s);
@@ -343,6 +359,12 @@ public final class GreedTradeManager {
 
         try {
             if (s.side == Side.SELL) {
+                if (GreedDealTracker.hasSold(level, s.greedUuid, s.itemId)) {
+                    notifyBoth(server, s, Component.translatable(
+                            "message.habitrain_core.sin_greed.trade_no_collect"));
+                    forceClose(s);
+                    return;
+                }
                 if (!gc.getCollectedTypeIds().contains(s.itemId)) {
                     notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_collect"));
                     forceClose(s);
@@ -431,6 +453,9 @@ public final class GreedTradeManager {
             }
 
             GreedDealTracker.recordDeal(level, s.itemId);
+            if (s.side == Side.SELL) {
+                GreedDealTracker.recordSale(level, s.greedUuid, s.itemId);
+            }
             // Re-assert pouch still present after transfers
             if (!GreedPouchItem.playerHasOwnPouch(greed)) {
                 HabiTrainCore.LOGGER.error("[GreedTrade] pouch missing after commit for {} — trade must never strip pouch",

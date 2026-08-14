@@ -26,6 +26,11 @@ import net.minecraft.server.level.ServerPlayer;
 public record GameEndTransitionPayload(String winStatusName, String modeId, String customWinnerId, int customWinnerColor, String customTitleJson, List<MvpPlayer> mvpPlayers, boolean environmentReady) implements CustomPacketPayload
 {
     public static final int MAX_MVP_PLAYERS = 4;
+    public static final int ROLE_TYPE_CIVILIAN = 1;
+    public static final int ROLE_TYPE_NEUTRAL_PRIMARY = 2;
+    public static final int ROLE_TYPE_NEUTRAL_SECONDARY = 3;
+    public static final int ROLE_TYPE_KILLER = 4;
+    public static final int ROLE_TYPE_SHERIFF = 5;
     public static final CustomPacketPayload.Type<GameEndTransitionPayload> TYPE = new CustomPacketPayload.Type(HabiTrainCore.id("game_end_transition"));
     public static final StreamCodec<FriendlyByteBuf, GameEndTransitionPayload> CODEC = StreamCodec.ofMember(GameEndTransitionPayload::write, GameEndTransitionPayload::new);
 
@@ -95,7 +100,7 @@ public record GameEndTransitionPayload(String winStatusName, String modeId, Stri
         ServerPlayNetworking.send((ServerPlayer)player, (CustomPacketPayload)payload);
     }
 
-    public record MvpPlayer(UUID playerId, String playerName, int score, int kills, int survivalSeconds, int itemUses) {
+    public record MvpPlayer(UUID playerId, String playerName, int score, int kills, int survivalSeconds, int itemUses, int roleType) {
         public MvpPlayer {
             playerId = playerId == null ? new UUID(0L, 0L) : playerId;
             playerName = GameEndTransitionPayload.bounded(playerName, 64);
@@ -103,10 +108,12 @@ public record GameEndTransitionPayload(String winStatusName, String modeId, Stri
             kills = Math.max(0, kills);
             survivalSeconds = Math.max(0, survivalSeconds);
             itemUses = Math.max(0, itemUses);
+            roleType = roleType >= ROLE_TYPE_CIVILIAN && roleType <= ROLE_TYPE_SHERIFF
+                    ? roleType : ROLE_TYPE_CIVILIAN;
         }
 
         private MvpPlayer(FriendlyByteBuf buf) {
-            this(buf.readUUID(), buf.readUtf(64), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
+            this(buf.readUUID(), buf.readUtf(64), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
         }
 
         private void write(FriendlyByteBuf buf) {
@@ -116,6 +123,7 @@ public record GameEndTransitionPayload(String winStatusName, String modeId, Stri
             buf.writeVarInt(this.kills);
             buf.writeVarInt(this.survivalSeconds);
             buf.writeVarInt(this.itemUses);
+            buf.writeVarInt(this.roleType);
         }
     }
 }

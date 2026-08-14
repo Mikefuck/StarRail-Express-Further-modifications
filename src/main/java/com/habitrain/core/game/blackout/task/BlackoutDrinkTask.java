@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -21,12 +22,15 @@ public class BlackoutDrinkTask {
             .blockTypeId(40)
             .instinctColor(234, 88, 88, 200)
             .scanBlockIds("trainmurdermystery:drink_tray")
+            .timeImpact(TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN, 10)
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
             })
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(),
+                            "habitrain_core:blackout_drink");
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_drink");
                 }
             })

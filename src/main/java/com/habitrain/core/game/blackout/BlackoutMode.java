@@ -7,14 +7,28 @@ import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
+import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.task.TaskManager;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
+/**
+ * 停电模式。注册表中是单例，但对局状态按 dimension 隔离，
+ * 避免多维度并行开局时互相覆盖 gameEnded / 胜负结果等字段。
+ */
 public class BlackoutMode implements GameMode {
 
     public static final String MODE_ID = "habitrain:blackout";
@@ -27,41 +41,104 @@ public class BlackoutMode implements GameMode {
     public static final TaskCategory BLACKOUT_BAD =
             new TaskCategory("habitrain:blackout_bad", "坏人任务", MODE_ID);
 
-    public static final Set<String> ONCE_PER_GAME_TASK_IDS =
-            Collections.unmodifiableSet(new HashSet<>(List.of(BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION)));
+    /**
+     * 断线宽限（tick）。宽限期内仍计存活（避免瞬断终局），超时未重连再 eliminate。
+     * 设为 0 可恢复「掉线即死」旧行为。
+     */
+    public static final int DISCONNECT_GRACE_TICKS = 20 * 60;
 
-    private ServerLevel currentLevel;
-    private boolean gameEnded = false;
-    private String pendingEndMessage = null;
-    /** 供 finalize 延后 GameModeRegistry.stop 使用的结算结果。 */
-    private WinResult pendingWinResult = null;
+    /** Per-dimension round state (registry holds one BlackoutMode instance). */
+    private static final class RoundState {
+        boolean gameEnded;
+        String pendingEndMessage;
+        WinResult pendingWinResult;
+        BlackoutRoleManager.Faction lastWinningFaction;
+        /** playerId → gameTime when disconnect was recorded */
+        final ConcurrentMap<UUID, Long> offlineSince = new ConcurrentHashMap<>();
+        final BlackoutSyncManager syncManager = new BlackoutSyncManager();
+        final BlackoutVictoryChecker victoryChecker;
+        final BlackoutTickCoordinator tickCoordinator;
 
-    private final Set<String> assignedOncePerGameTasks = new HashSet<>();
+        RoundState(BlackoutMode mode) {
+            this.victoryChecker = new BlackoutVictoryChecker(mode, syncManager);
+            this.tickCoordinator = new BlackoutTickCoordinator(mode, victoryChecker, syncManager);
+        }
+    }
 
-    private final BlackoutSyncManager syncManager = new BlackoutSyncManager();
-    private final BlackoutVictoryChecker victoryChecker = new BlackoutVictoryChecker(this, syncManager);
-    private final BlackoutTickCoordinator tickCoordinator =
-            new BlackoutTickCoordinator(this, victoryChecker, syncManager);
-
-    private BlackoutRoleManager.Faction lastWinningFaction = null;
+    private final ConcurrentMap<ResourceKey<Level>, RoundState> rounds = new ConcurrentHashMap<>();
+    /** Survives cleanup briefly so finalizeGame fallback can still read winner/result. */
+    private final ConcurrentMap<ResourceKey<Level>, BlackoutRoleManager.Faction> finishedWinners = new ConcurrentHashMap<>();
+    private final ConcurrentMap<ResourceKey<Level>, WinResult> finishedResults = new ConcurrentHashMap<>();
 
     /** SRE 游戏启动器 — 通过 setter 注入以解除对 SRE 具体类的编译依赖。 */
     private SREGameLauncher sreGameLauncher;
 
-    ServerLevel getCurrentLevel() { return currentLevel; }
-    public boolean isGameEnded() { return gameEnded; }
-    void setGameEnded(boolean v) { gameEnded = v; }
-    void setPendingEndMessage(String m) { pendingEndMessage = m; }
-    void setLastWinningFaction(BlackoutRoleManager.Faction f) { lastWinningFaction = f; }
-    void setPendingWinResult(WinResult r) { pendingWinResult = r; }
+    private RoundState state(ServerLevel level) {
+        return level == null ? null : rounds.get(level.dimension());
+    }
 
-    BlackoutVictoryChecker getVictoryChecker() { return victoryChecker; }
+    boolean hasRound(ServerLevel level) {
+        return level != null && rounds.containsKey(level.dimension());
+    }
 
-    public WinResult getPendingWinResult() { return pendingWinResult; }
+    /**
+     * Whether the given level is the active blackout round.
+     * Preferred over the legacy no-arg form for multi-dimension safety.
+     */
+    public boolean isGameEnded(ServerLevel level) {
+        RoundState s = state(level);
+        return s != null && s.gameEnded;
+    }
+
+    void setGameEnded(ServerLevel level, boolean v) {
+        RoundState s = state(level);
+        if (s != null) s.gameEnded = v;
+    }
+
+    void setPendingEndMessage(ServerLevel level, String m) {
+        RoundState s = state(level);
+        if (s != null) s.pendingEndMessage = m;
+    }
+
+    void setLastWinningFaction(ServerLevel level, BlackoutRoleManager.Faction f) {
+        RoundState s = state(level);
+        if (s != null) s.lastWinningFaction = f;
+        if (level != null && f != null) {
+            finishedWinners.put(level.dimension(), f);
+        } else if (level != null) {
+            finishedWinners.remove(level.dimension());
+        }
+    }
+
+    void setPendingWinResult(ServerLevel level, WinResult r) {
+        RoundState s = state(level);
+        if (s != null) s.pendingWinResult = r;
+        if (level != null && r != null) {
+            finishedResults.put(level.dimension(), r);
+        }
+    }
+
+    BlackoutVictoryChecker getVictoryChecker(ServerLevel level) {
+        RoundState s = state(level);
+        return s == null ? null : s.victoryChecker;
+    }
+
+    public WinResult getPendingWinResult(ServerLevel level) {
+        RoundState s = state(level);
+        if (s != null && s.pendingWinResult != null) return s.pendingWinResult;
+        return level == null ? null : finishedResults.get(level.dimension());
+    }
+
+    public BlackoutRoleManager.Faction getLastWinningFaction(ServerLevel level) {
+        RoundState s = state(level);
+        if (s != null && s.lastWinningFaction != null) return s.lastWinningFaction;
+        return level == null ? null : finishedWinners.get(level.dimension());
+    }
 
     /** 供放逐投票调用：结算后立即检查胜负条件 */
     void checkVictoryAfterExile(ServerLevel level) {
-        victoryChecker.checkVictory(level);
+        RoundState s = state(level);
+        if (s != null) s.victoryChecker.checkVictory(level);
     }
 
     @Override
@@ -75,29 +152,39 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public boolean isActive(ServerLevel level) {
-        return currentLevel != null && currentLevel.dimension().equals(level.dimension());
+        return level != null && rounds.containsKey(level.dimension());
     }
 
     @Override
     public void onPreStart(ServerLevel level) {
-        currentLevel = level;
-        gameEnded = false;
-        pendingEndMessage = null;
-        pendingWinResult = null;
-        lastWinningFaction = null;
-        assignedOncePerGameTasks.clear();
+        finishedWinners.remove(level.dimension());
+        finishedResults.remove(level.dimension());
+        RoundState s = new RoundState(this);
+        rounds.put(level.dimension(), s);
+        s.gameEnded = false;
+        s.pendingEndMessage = null;
+        s.pendingWinResult = null;
+        s.lastWinningFaction = null;
+        s.offlineSince.clear();
 
         BlackoutRoleManager.clear(level);
         BlackoutTimerSystem.init(level,
-                () -> victoryChecker.triggerSREPermanentBlackout(currentLevel),
-                () -> victoryChecker.endSREBlackout(currentLevel));
+                () -> {
+                    RoundState rs = state(level);
+                    if (rs != null) rs.victoryChecker.triggerSREPermanentBlackout(level);
+                },
+                () -> {
+                    RoundState rs = state(level);
+                    if (rs != null) rs.victoryChecker.endSREBlackout(level);
+                });
         BlackoutPoliceHireService.reset(level);
         BlackoutExileVoteManager.reset(level);
-        BlackoutHornVoteHandler.clearAll();
+        BlackoutHornVoteHandler.clear(level);
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.reset(level);
-        syncManager.onPreStart();
-        syncManager.syncReset(level);
-        tickCoordinator.onPreStart();
+        BlackoutPhoneSessionGate.clearAll();
+        s.syncManager.onPreStart();
+        s.syncManager.syncReset(level);
+        s.tickCoordinator.onPreStart();
     }
 
     @Override
@@ -109,29 +196,24 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onTick(ServerLevel level) {
-        tickCoordinator.tick(level);
+        RoundState s = state(level);
+        if (s == null) return;
+        s.tickCoordinator.tick(level);
     }
 
     @Override
     public void onTaskComplete(ServerPlayer player, TaskInstance task) {
-        if (currentLevel != null && player != null && task != null) {
-            TaskCategory cat = task.getDefinition().getCategory();
-            if (BLACKOUT_BAD.equals(cat)) {
-                onKillerRealTaskComplete(player, task);
-            } else if (BLACKOUT_GOOD.equals(cat)) {
-                onKillerFakeTaskComplete(player, task);
-            }
+        if (player == null || task == null) return;
+        ServerLevel level = player.serverLevel();
+        RoundState s = state(level);
+        if (s == null) return;
+        TaskCategory cat = task.getDefinition().getCategory();
+        if (BLACKOUT_BAD.equals(cat)) {
+            onKillerRealTaskComplete(player, task);
+        } else if (BLACKOUT_GOOD.equals(cat)) {
+            onKillerFakeTaskComplete(player, task);
         }
-        victoryChecker.checkVictory(currentLevel);
-    }
-
-    @Override
-    public void onTaskAssign(ServerPlayer player, TaskInstance task) {
-        if (task != null && ONCE_PER_GAME_TASK_IDS.contains(task.getFullId())) {
-            assignedOncePerGameTasks.add(task.getFullId());
-            HabiTrainCore.LOGGER.info("[Blackout] Once-per-game task {} assigned to {}, will not reassign this round",
-                    task.getFullId(), player.getName().getString());
-        }
+        s.victoryChecker.checkVictory(level);
     }
 
     protected void onKillerRealTaskComplete(ServerPlayer player, TaskInstance task) {}
@@ -139,44 +221,124 @@ public class BlackoutMode implements GameMode {
 
     @Override
     public void onPlayerJoin(ServerPlayer player) {
-        // 警长投票表面已移除；join 钩子保留供后续同步扩展，须防清理竞态。
-        if (currentLevel == null || player == null) return;
+        if (player == null) return;
+        ServerLevel level = player.serverLevel();
+        RoundState s = state(level);
+        if (s == null) return;
+        UUID id = player.getUUID();
+        // 宽限期内重连：恢复互动，不复活已 eliminate 的玩家
+        if (BlackoutRoleManager.isAlive(level, id)) {
+            BlackoutRoleManager.clearDisconnected(level, id);
+            s.offlineSince.remove(id);
+            HabiTrainCore.LOGGER.info("[Blackout] {} reconnected during grace, interactable again",
+                    player.getName().getString());
+        }
     }
 
     @Override
     public void onPlayerLeave(ServerPlayer player) {
-        if (currentLevel == null || player == null) return;
-        BlackoutRoleManager.eliminate(currentLevel, player.getUUID());
-        victoryChecker.checkVictory(currentLevel);
+        if (player == null) return;
+        ServerLevel level = player.serverLevel();
+        RoundState s = state(level);
+        if (s == null) return;
+        UUID id = player.getUUID();
+        BlackoutPhoneSessionGate.clearPlayer(player);
+        // 未入存活表（观战/未分配）→ 无需处理
+        if (!BlackoutRoleManager.isAlive(level, id)) return;
+
+        if (DISCONNECT_GRACE_TICKS <= 0) {
+            // 兼容：宽限 0 = 掉线即死
+            BlackoutRoleManager.eliminate(level, id);
+            s.offlineSince.remove(id);
+            s.victoryChecker.checkVictory(level);
+            return;
+        }
+
+        // 断线宽限：仍计存活，标记 offline，超时由 tickOfflineGrace 淘汰
+        BlackoutRoleManager.markDisconnected(level, id);
+        s.offlineSince.put(id, level.getGameTime());
+        HabiTrainCore.LOGGER.info("[Blackout] {} disconnected — grace {}s before eliminate",
+                player.getName().getString(), DISCONNECT_GRACE_TICKS / 20);
+        // 不立即 checkVictory：宽限期内仍计存活
+    }
+
+    /**
+     * 每秒由 {@link BlackoutTickCoordinator} 调用：超时未重连的 offline 玩家 eliminate 并检查胜负。
+     */
+    void tickOfflineGrace(ServerLevel level) {
+        RoundState s = state(level);
+        if (s == null || s.gameEnded || DISCONNECT_GRACE_TICKS <= 0) return;
+        if (s.offlineSince.isEmpty()) return;
+
+        long now = level.getGameTime();
+        List<UUID> expired = new ArrayList<>();
+        for (Map.Entry<UUID, Long> e : s.offlineSince.entrySet()) {
+            long age = now - e.getValue();
+            if (age < 0 || age >= DISCONNECT_GRACE_TICKS) {
+                expired.add(e.getKey());
+            }
+        }
+        if (expired.isEmpty()) return;
+
+        boolean any = false;
+        for (UUID id : expired) {
+            s.offlineSince.remove(id);
+            if (!BlackoutRoleManager.isAlive(level, id)) continue;
+            // 若已在线（异常状态），清除 offline 标记即可
+            ServerPlayer online = level.getServer() != null
+                    ? level.getServer().getPlayerList().getPlayer(id) : null;
+            if (online != null) {
+                BlackoutRoleManager.clearDisconnected(level, id);
+                continue;
+            }
+            BlackoutRoleManager.eliminate(level, id);
+            any = true;
+            HabiTrainCore.LOGGER.info("[Blackout] offline grace expired for {} — eliminated", id);
+        }
+        if (any) {
+            s.victoryChecker.checkVictory(level);
+        }
     }
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
-        // 胜利 TOP 已在 endGame 取消；仅清理 pending，不补发字幕。
-        pendingEndMessage = null;
-        syncManager.syncReset(level);
-        currentLevel = null;
+        RoundState s = state(level);
+        if (s == null) return;
+        s.pendingEndMessage = null;
+        s.offlineSince.clear();
+        s.syncManager.syncReset(level);
     }
 
     @Override
     public void onCleanup(ServerLevel level) {
-        syncManager.syncReset(level);
+        RoundState s = state(level);
+        if (s != null) {
+            s.syncManager.syncReset(level);
+            if (s.pendingWinResult != null) {
+                finishedResults.put(level.dimension(), s.pendingWinResult);
+            }
+            if (s.lastWinningFaction != null) {
+                finishedWinners.put(level.dimension(), s.lastWinningFaction);
+            }
+            s.offlineSince.clear();
+        }
+        // 对齐 SREGameModeBase：清空自定义任务跟踪，避免 UUID 残留到下一局
+        TaskManager.getInstance().clearAllActiveTasks();
+        if (level != null) {
+            for (ServerPlayer p : level.players()) {
+                ActiveTaskPayload.clearForPlayer(p);
+                ActiveTaskPayload.clearForPlayer(p, true);
+                ExclusiveTaskHudSync.clear(p);
+                com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.reclaimTempLantern(p);
+                BlackoutPhoneSessionGate.clearPlayer(p);
+            }
+        }
         BlackoutPoliceHireService.cleanup(level);
         BlackoutExileVoteManager.reset(level);
-        BlackoutHornVoteHandler.clearAll();
+        BlackoutHornVoteHandler.clear(level);
         BlackoutTimerSystem.reset(level);
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.cleanup(level);
-        // 局末回收所有在线玩家的临时电源提灯，防跨局残留
-        for (ServerPlayer p : level.players()) {
-            com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.reclaimTempLantern(p);
-        }
-        BlackoutRoleManager.restoreVigilanteRoleMaxes();
-        // roleHistory / factionHistory 保留到下一局 onPreStart 的 clear，
-        // 以便 SRE finalize 阶段仍可读取结算身份。
-        currentLevel = null;
-        gameEnded = false;
-        pendingEndMessage = null;
-        pendingWinResult = null;
+        rounds.remove(level.dimension());
     }
 
     /**
@@ -189,19 +351,13 @@ public class BlackoutMode implements GameMode {
         return tasks.stream()
                 .filter(t -> {
                     TaskCategory cat = t.getCategory();
-                    // 排除停电专属任务（电话购买/强制派发，不走自动池）
                     return !BLACKOUT_GOOD.equals(cat) && !BLACKOUT_BAD.equals(cat);
                 })
                 .toList();
     }
 
-    public BlackoutRoleManager.Faction getLastWinningFaction() {
-        return lastWinningFaction;
-    }
-
     /**
      * 设置 SRE 游戏启动器。应在模组初始化时调用一次。
-     * 解除 BlackoutMode 对 SRE 具体类的直接编译依赖。
      */
     public void setSreGameLauncher(SREGameLauncher launcher) {
         this.sreGameLauncher = launcher;
@@ -223,11 +379,11 @@ public class BlackoutMode implements GameMode {
 
     /**
      * 强制派发恢复供电给所有存活好人（包可见委托，供炸毁发电机路径调用）。
-     * 仅当当前激活的模式是本 BlackoutMode 实例时生效。
      */
     public void forceAssignRestorePower(ServerLevel level) {
-        if (currentLevel != null && currentLevel.dimension().equals(level.dimension())) {
-            victoryChecker.forceAssignRestorePowerToAllGood(level);
+        RoundState s = state(level);
+        if (s != null) {
+            s.victoryChecker.forceAssignRestorePowerToAllGood(level);
         }
     }
 }

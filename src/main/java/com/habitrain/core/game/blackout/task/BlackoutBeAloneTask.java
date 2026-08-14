@@ -16,9 +16,7 @@ public class BlackoutBeAloneTask {
 
     private static final double HORIZONTAL_RADIUS = 6.0;
     private static final double VERTICAL_RADIUS = 3.0;
-    private static final int REQUIRED_SECONDS = 10;
-
-    private static final java.util.Map<java.util.UUID, Integer> tickCounters = new java.util.HashMap<>();
+    private static final int REQUIRED_TICKS = 10 * 20;
 
     public static void register() {
         TaskRegistry.register("habitrain_core", "blackout_be_alone", builder -> builder
@@ -28,19 +26,11 @@ public class BlackoutBeAloneTask {
             .blockTypeId(-1)
             .instinctColor(100, 149, 237, 200)
             .onAssign((player, task) -> {
-                task.setMaxProgress(REQUIRED_SECONDS);
-                tickCounters.put(player.getUUID(), 0);
+                task.setMaxProgress(REQUIRED_TICKS);
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
-
-                int counter = tickCounters.getOrDefault(player.getUUID(), 0) + 1;
-                if (counter < 20) {
-                    tickCounters.put(player.getUUID(), counter);
-                    return;
-                }
-                tickCounters.put(player.getUUID(), 0);
 
                 AABB box = serverPlayer.getBoundingBox().inflate(HORIZONTAL_RADIUS, VERTICAL_RADIUS, HORIZONTAL_RADIUS);
                 boolean alone = serverPlayer.level().getEntitiesOfClass(Player.class, box,
@@ -57,11 +47,9 @@ public class BlackoutBeAloneTask {
                 task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
-                    tickCounters.remove(player.getUUID());
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_be_alone");
                 }
             })
-            .onRemove((player, task) -> tickCounters.remove(player.getUUID()))
         );
     }
 }

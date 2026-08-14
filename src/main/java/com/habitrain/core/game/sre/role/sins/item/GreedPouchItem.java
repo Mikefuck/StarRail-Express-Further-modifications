@@ -17,7 +17,9 @@ import net.minecraft.world.item.component.ItemLore;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -131,34 +133,65 @@ public final class GreedPouchItem {
     }
 
     /**
-     * Read items from the physical pouch. Prefers vanilla bundle contents
-     * (what players actually put in via inventory UI), then falls back to CUSTOM_DATA.
+     * 读取完整收藏账本。CUSTOM_DATA 是权威全集；原版 Bundle 只是在容量限制内的可视子集。
+     * Bundle 中由玩家新放入的类型会被合并，但绝不能反向删掉账本中因容量不足未展示的类型。
      */
     public static List<ItemStack> getStoredItems(ItemStack pouch, HolderLookup.Provider registries) {
         if (!isGreedPouch(pouch)) return List.of();
-        ArrayList<ItemStack> result = new ArrayList<>();
+        Map<String, ItemStack> byItemId = new LinkedHashMap<>();
+        getLedgerItems(pouch, registries).forEach(stack -> addByItemId(byItemId, stack));
+        getBundleItems(pouch).forEach(stack -> addByItemId(byItemId, stack));
+        return List.copyOf(byItemId.values());
+    }
 
-        BundleContents bundle = pouch.get(DataComponents.BUNDLE_CONTENTS);
-        if (bundle != null) {
-            bundle.itemCopyStream().forEach(stack -> {
-                if (stack != null && !stack.isEmpty() && !isGreedPouch(stack)) {
-                    result.add(stack.copyWithCount(1));
-                }
-            });
-            if (!result.isEmpty()) {
-                return List.copyOf(result);
+    /** Read only the complete CUSTOM_DATA ledger, including entries hidden by bundle capacity. */
+    public static List<ItemStack> getLedgerItems(ItemStack pouch, HolderLookup.Provider registries) {
+        if (!isGreedPouch(pouch) || registries == null) return List.of();
+        Map<String, ItemStack> byItemId = new LinkedHashMap<>();
+        CustomData data = pouch.get(DataComponents.CUSTOM_DATA);
+        if (data != null) {
+            ListTag list = data.copyTag().getList(TAG_GREED_CONTENTS, Tag.TAG_COMPOUND);
+            for (int i = 0; i < list.size(); i++) {
+                ItemStack parsed = ItemStack.parseOptional(registries, list.getCompound(i));
+                addByItemId(byItemId, parsed);
             }
         }
+        return List.copyOf(byItemId.values());
+    }
 
-        if (registries == null) return List.of();
-        CustomData data = pouch.get(DataComponents.CUSTOM_DATA);
-        if (data == null) return List.of();
-        ListTag list = data.copyTag().getList(TAG_GREED_CONTENTS, Tag.TAG_COMPOUND);
-        for (int i = 0; i < list.size(); i++) {
-            ItemStack parsed = ItemStack.parseOptional(registries, list.getCompound(i));
-            if (!parsed.isEmpty() && !isGreedPouch(parsed)) result.add(parsed.copyWithCount(1));
+    /** Read only the items currently visible in the vanilla bundle component. */
+    public static List<ItemStack> getBundleItems(ItemStack pouch) {
+        if (!isGreedPouch(pouch)) return List.of();
+        Map<String, ItemStack> byItemId = new LinkedHashMap<>();
+        BundleContents bundle = pouch.get(DataComponents.BUNDLE_CONTENTS);
+        if (bundle != null) {
+            bundle.itemCopyStream().forEach(stack -> addByItemId(byItemId, stack));
         }
-        return List.copyOf(result);
+        return List.copyOf(byItemId.values());
+    }
+
+    /**
+     * Apply the same insertion/capacity rules as {@link #setStoredItems} and return the
+     * subset that should be visible. Entries outside this subset are ledger overflow,
+     * not evidence that a player removed them from the pouch.
+     */
+    public static List<ItemStack> getDisplayableItems(List<ItemStack> contents) {
+        BundleContents.Mutable mutable = new BundleContents.Mutable(BundleContents.EMPTY);
+        if (contents != null) {
+            for (ItemStack stack : contents) {
+                if (stack == null || stack.isEmpty() || isGreedPouch(stack)) continue;
+                mutable.tryInsert(stack.copyWithCount(1));
+            }
+        }
+        Map<String, ItemStack> byItemId = new LinkedHashMap<>();
+        mutable.toImmutable().itemCopyStream().forEach(stack -> addByItemId(byItemId, stack));
+        return List.copyOf(byItemId.values());
+    }
+
+    private static void addByItemId(Map<String, ItemStack> target, ItemStack stack) {
+        if (stack == null || stack.isEmpty() || isGreedPouch(stack)) return;
+        var id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (id != null) target.putIfAbsent(id.toString(), stack.copyWithCount(1));
     }
 
     /** Write only CUSTOM_DATA backup without rewriting vanilla BUNDLE_CONTENTS. */
@@ -176,6 +209,28 @@ public final class GreedPouchItem {
         }
         tag.put(TAG_GREED_CONTENTS, list);
         pouch.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+
+    /**
+     * Fill newly available vanilla bundle capacity from the full ledger without
+     * replacing existing stacks. This preserves counts and ordering created by the
+     * inventory UI while allowing hidden overflow entries to become visible later.
+     */
+    public static void fillBundleFromLedger(ItemStack pouch, List<ItemStack> contents) {
+        if (!isGreedPouch(pouch) || contents == null || contents.isEmpty()) return;
+        BundleContents current = pouch.getOrDefault(
+                DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
+        BundleContents.Mutable mutable = new BundleContents.Mutable(current);
+        Map<String, ItemStack> visibleByItemId = new LinkedHashMap<>();
+        current.itemCopyStream().forEach(stack -> addByItemId(visibleByItemId, stack));
+        for (ItemStack stack : contents) {
+            if (stack == null || stack.isEmpty() || isGreedPouch(stack)) continue;
+            var id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+            if (id == null || visibleByItemId.containsKey(id.toString())) continue;
+            mutable.tryInsert(stack.copyWithCount(1));
+            visibleByItemId.put(id.toString(), stack.copyWithCount(1));
+        }
+        pouch.set(DataComponents.BUNDLE_CONTENTS, mutable.toImmutable());
     }
 
     private static @Nullable UUID parseUuid(@Nullable String s) {

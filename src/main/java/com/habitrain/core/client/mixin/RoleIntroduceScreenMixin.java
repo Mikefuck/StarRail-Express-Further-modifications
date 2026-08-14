@@ -39,8 +39,15 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
      * A newly-created upstream screen fills {@code availableRoles} directly
      * from Noellesroles, after the last config-sync refresh has already run.
      * Replace that raw list before its first filter/card render.
+     *
+     * <p>{@code init()} overrides {@code Screen.init()} and is therefore remapped
+     * to {@code method_25404} in the production (intermediary) jar; injecting the
+     * literal name "init" with {@code remap = false} is silently dropped there.
+     * The private no-arg {@code refreshFilter()} keeps its name in production and
+     * is the first place {@code availableRoles} is iterated, so it is the safe
+     * injection point.
      */
-    @Inject(method = "init", at = @At("HEAD"))
+    @Inject(method = "refreshFilter()V", at = @At("HEAD"), remap = false)
     private void habitrain$prepareInitialRoleList(CallbackInfo ci) {
         habitrain$reloadAvailableRoles();
     }
@@ -81,6 +88,14 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
         if (modify != null) {
             modify.roleBookAppendices()
                     .forEach(page -> tabs.add(new RoleOverrideTextTab(page)));
+        }
+
+        var v2 = com.habitrain.core.role.book.RoleBookResolver.resolve(role.identifier());
+        if (!v2.isEmpty()) {
+            if (v2.replaceAll()) {
+                tabs.clear();
+            }
+            v2.pages().forEach(page -> tabs.add(new RoleOverrideTextTab(page)));
         }
     }
 

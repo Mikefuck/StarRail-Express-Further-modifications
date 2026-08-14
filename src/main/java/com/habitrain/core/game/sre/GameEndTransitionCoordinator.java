@@ -23,6 +23,7 @@ package com.habitrain.core.game.sre;
 import com.habitrain.core.game.sre.MvpScoreTracker;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.network.GameEndTransitionPayload;
+import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameUtils;
@@ -196,10 +197,18 @@ public final class GameEndTransitionCoordinator {
     private static ResultSnapshot snapshotResult(ServerLevel level, SREGameRoundEndComponent roundEnd) {
         GameUtils.WinStatus winStatus = roundEnd == null || roundEnd.getWinStatus() == null ? GameUtils.WinStatus.NONE : roundEnd.getWinStatus();
         String modeId = "";
+        LinkedHashMap<UUID, Integer> roleTypes = new LinkedHashMap<UUID, Integer>();
         try {
             SREGameWorldComponent game = (SREGameWorldComponent)SREGameWorldComponent.KEY.get((Object)level);
             if (game != null && game.getGameMode() != null && game.getGameMode().identifier != null) {
                 modeId = game.getGameMode().identifier.toString();
+            }
+            if (game != null && game.getRoles() != null) {
+                for (Map.Entry<UUID, SRERole> entry : game.getRoles().entrySet()) {
+                    SRERole role = entry.getValue();
+                    if (entry.getKey() == null || role == null) continue;
+                    roleTypes.put(entry.getKey(), role.getRoleType());
+                }
             }
         }
         catch (Throwable game) {
@@ -221,12 +230,12 @@ public final class GameEndTransitionCoordinator {
         ArrayList<PlayerResultSnapshot> players = new ArrayList<PlayerResultSnapshot>();
         if (roundEnd != null) {
             for (SREGameRoundEndComponent.RoundEndData data : roundEnd.players) {
-                PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer(data);
+                PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer(data, roleTypes);
                 if (player == null) continue;
                 players.add(player);
             }
         }
-        return new ResultSnapshot(winStatus, modeId, customWinnerId, customWinnerColor, customTitleJson, List.copyOf(players));
+        return new ResultSnapshot(winStatus, modeId, customWinnerId, customWinnerColor, customTitleJson, List.copyOf(players), Map.copyOf(roleTypes));
     }
 
     private static List<GameEndTransitionPayload.MvpPlayer> resolveMvpPlayers(ServerLevel level, SREGameRoundEndComponent roundEnd, ResultSnapshot result) {
@@ -247,7 +256,7 @@ public final class GameEndTransitionCoordinator {
         }
         if (roundEnd != null) {
             for (Object data : roundEnd.players) {
-                PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer((SREGameRoundEndComponent.RoundEndData)data);
+                PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer((SREGameRoundEndComponent.RoundEndData)data, result.roleTypes());
                 if (player == null || !player.hasWin() || player.wasDead()) continue;
                 candidates.putIfAbsent(player.id(), player);
             }
@@ -259,7 +268,7 @@ public final class GameEndTransitionCoordinator {
             }
             if (roundEnd != null) {
                 for (SREGameRoundEndComponent.RoundEndData data : roundEnd.players) {
-                    PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer(data);
+                    PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer(data, result.roleTypes());
                     if (player == null || player.wasDead() || !customWinners.contains(player.id())) continue;
                     candidates.putIfAbsent(player.id(), player);
                 }
@@ -270,7 +279,7 @@ public final class GameEndTransitionCoordinator {
             MvpScoreTracker.ScoreSnapshot score = (MvpScoreTracker.ScoreSnapshot)stats.get(candidate.id());
             if (score == null) continue;
             String name = candidate.name().isBlank() ? score.playerName() : candidate.name();
-            ranked.add(new GameEndTransitionPayload.MvpPlayer(candidate.id(), name, score.score(), score.kills(), score.survivalSeconds(), score.itemUses()));
+            ranked.add(new GameEndTransitionPayload.MvpPlayer(candidate.id(), name, score.score(), score.kills(), score.survivalSeconds(), score.itemUses(), candidate.roleType()));
         }
         ranked.sort(Comparator.comparingInt(GameEndTransitionPayload.MvpPlayer::score).reversed().thenComparing(Comparator.comparingInt(GameEndTransitionPayload.MvpPlayer::kills).reversed()).thenComparing(Comparator.comparingInt(GameEndTransitionPayload.MvpPlayer::survivalSeconds).reversed()).thenComparing(Comparator.comparingInt(GameEndTransitionPayload.MvpPlayer::itemUses).reversed()).thenComparing(GameEndTransitionPayload.MvpPlayer::playerId));
         if (ranked.size() > 4) {
@@ -279,16 +288,18 @@ public final class GameEndTransitionCoordinator {
         return List.copyOf(ranked);
     }
 
-    private static PlayerResultSnapshot snapshotPlayer(SREGameRoundEndComponent.RoundEndData data) {
+    private static PlayerResultSnapshot snapshotPlayer(SREGameRoundEndComponent.RoundEndData data, Map<UUID, Integer> roleTypes) {
         if (data == null || data.player() == null || data.player().getId() == null) {
             return null;
         }
-        return new PlayerResultSnapshot(data.player().getId(), data.player().getName(), data.wasDead(), data.hasWin());
+        UUID playerId = data.player().getId();
+        int roleType = roleTypes.getOrDefault(playerId, GameEndTransitionPayload.ROLE_TYPE_CIVILIAN);
+        return new PlayerResultSnapshot(playerId, data.player().getName(), data.wasDead(), data.hasWin(), roleType);
     }
 
-    private record ResultSnapshot(GameUtils.WinStatus winStatus, String modeId, String customWinnerId, int customWinnerColor, String customTitleJson, List<PlayerResultSnapshot> players) {
+    private record ResultSnapshot(GameUtils.WinStatus winStatus, String modeId, String customWinnerId, int customWinnerColor, String customTitleJson, List<PlayerResultSnapshot> players, Map<UUID, Integer> roleTypes) {
     }
 
-    private record PlayerResultSnapshot(UUID id, String name, boolean wasDead, boolean hasWin) {
+    private record PlayerResultSnapshot(UUID id, String name, boolean wasDead, boolean hasWin, int roleType) {
     }
 }

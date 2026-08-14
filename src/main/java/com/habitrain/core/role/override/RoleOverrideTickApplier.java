@@ -19,6 +19,7 @@ import java.util.Map;
 public final class RoleOverrideTickApplier {
     private static final Map<ResourceLocation, Baseline> BASELINES = new HashMap<>();
     private static final Map<ResourceLocation, String> ACTIVE_ENTRY_IDS = new HashMap<>();
+    private static final Map<ResourceLocation, SRERole> SERVER_APPLIED_OBJECTS = new HashMap<>();
 
     private RoleOverrideTickApplier() {}
 
@@ -32,6 +33,7 @@ public final class RoleOverrideTickApplier {
             String nextEntryId = nextDef == null ? null : RoleOverrideRegistry.entryId(nextDef);
             if (!old.getValue().equals(nextEntryId)) {
                 restore(old.getKey());
+                SERVER_APPLIED_OBJECTS.remove(old.getKey());
             }
         }
 
@@ -57,11 +59,14 @@ public final class RoleOverrideTickApplier {
             SRERole role = TMMRoles.getRole(entry.getKey());
             if (role == null) continue;
             ModifyRoleDefinition def = entry.getValue();
-            if (def.flagsPatch().isPresent() || def.spawnInfoPatch().isPresent()) {
-                capture(entry.getKey(), role);
-            }
+            Baseline baseline = BASELINES.get(entry.getKey());
+            // reconcile 已应用过当前对象；只在上游 refreshRoles 替换了对象时重放一次。
+            if (baseline != null && baseline.role == role
+                    && SERVER_APPLIED_OBJECTS.get(entry.getKey()) == role) continue;
+            capture(entry.getKey(), role);
             def.flagsPatch().ifPresent(p -> applyFlags(role, server, p));
             def.spawnInfoPatch().ifPresent(p -> applySpawnInfo(role, server, p));
+            SERVER_APPLIED_OBJECTS.put(entry.getKey(), role);
         }
     }
 
@@ -135,6 +140,7 @@ public final class RoleOverrideTickApplier {
             capture(id, role);
         }
         ACTIVE_ENTRY_IDS.remove(id);
+        SERVER_APPLIED_OBJECTS.remove(id);
     }
 
     private record Baseline(

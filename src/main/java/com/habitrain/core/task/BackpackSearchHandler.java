@@ -171,9 +171,8 @@ public class BackpackSearchHandler {
 
         // 给予缓慢3效果（时长按任务版本：谋杀6秒 / 停电3秒，+10 tick缓冲）；到期自动 unregister
         int slowDuration = searchTicks + 10;
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, slowDuration,
-                        ResourceLocation.parse(taskKey)));
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, slowDuration, ResourceLocation.parse(taskKey));
 
         // 记录翻找状态（onTick 会据此递增任务进度）
         // 用主世界 gameTime 与超时检查保持一致，避免跨维度偏差

@@ -32,6 +32,12 @@ public final class MenuAccessGuard {
         ALLOWED.addAll(payload.getAllowed());
     }
 
+    /** 换服/断线时清除上一台服务器下发的门控与白名单。 */
+    public static void reset() {
+        enabled = false;
+        ALLOWED.clear();
+    }
+
     /** 是否处于专用服务器联机场景（门控仅在专用服务器生效；单机/局域网返回 false）。 */
     public static boolean isDedicatedServer() {
         Minecraft mc = Minecraft.getInstance();

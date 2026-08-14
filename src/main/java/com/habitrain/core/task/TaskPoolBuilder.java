@@ -13,6 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -20,7 +22,7 @@ import java.util.stream.Collectors;
 public class TaskPoolBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskPoolBuilder");
 
-    private record PoolKey(String modeId, String mapName, String categoryId) {}
+    private record PoolKey(String modeId, String mapName, String categoryId, List<String> builtinIds) {}
 
     private static final ConcurrentHashMap<PoolKey, List<TaskDefinition>> CACHE = new ConcurrentHashMap<>();
 
@@ -31,7 +33,10 @@ public class TaskPoolBuilder {
         String modeId = activeMode != null ? activeMode.getId() : "null";
         String categoryId = forcedCategory != null ? forcedCategory.getId() :
                 (currentCategory != null ? currentCategory.getId() : "null");
-        PoolKey key = new PoolKey(modeId, mapName, categoryId);
+        List<String> builtinIds = builtinSreTaskIds == null
+                ? List.of() : new ArrayList<>(builtinSreTaskIds);
+        Collections.sort(builtinIds);
+        PoolKey key = new PoolKey(modeId, mapName, categoryId, List.copyOf(builtinIds));
         List<TaskDefinition> cached = CACHE.computeIfAbsent(key, k -> List.copyOf(getAvailableDlcTasks(
                 TaskManager.getInstance(), mapName, currentCategory, activeMode,
                 forcedCategory, builtinSreTaskIds, player)));

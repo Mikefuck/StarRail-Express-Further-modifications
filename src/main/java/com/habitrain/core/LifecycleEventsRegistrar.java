@@ -47,6 +47,8 @@ public final class LifecycleEventsRegistrar {
             ConfigManager.getInstance().load();
             ConfigManager.getInstance().setServer(server);
             ConfigManager.getInstance().applyMinigameEnforcement(server);
+            // 角色状态 v2：绑定实时 server 引用供 CCA store 与状态同步解析
+            com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.bind(server);
             // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
             // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
             TaskRegistry.freeze();
@@ -117,6 +119,18 @@ public final class LifecycleEventsRegistrar {
             EnvironmentController.clearRuntimeState();
             com.habitrain.core.game.sre.SREWeatherController.resetAll();
             GreedTradeManager.clearAll();
+            // 电话会话 / 汽笛确认窗：集成服同 JVM 重启后 static 不重置
+            com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.clearAll();
+            com.habitrain.core.game.blackout.BlackoutHornVoteHandler.clearAll();
+            // 角色扩展 v2：恢复所有 MODIFY overlay 到基线，清空快照会话状态
+            //（定义只加载一次；会话状态在 SERVER_STOPPED 清除）。
+            com.habitrain.core.role.extension.RoleRuntimeOverlayApplier.serverStop();
+            // 角色状态 v2：清空 transient + round 会话状态，保留 WORLD/PERMANENT 持久槽
+            //（真实世界组件随 world NBT 在下次启动恢复，fix-doc §20.2）。
+            ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                    com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).serverStop();
+            // 角色状态 v2：解绑 server 引用，避免集成服务器同 JVM 重启后残留陈旧引用。
+            com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.unbind();
         });
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -133,6 +147,22 @@ public final class LifecycleEventsRegistrar {
             // 同步配置
             TaskConfigPayload.sendToPlayer(player);
             CustomTaskBlockPayload.sendToPlayer(player);
+            // 中途重连：重发该玩家当前活跃/假 DLC 任务，否则客户端 ActiveTaskCache 为空 → 无自定义任务框
+            try {
+                var tm = com.habitrain.core.task.TaskManager.getInstance();
+                var active = tm.getActiveTask(player.getUUID());
+                if (active != null) {
+                    com.habitrain.core.network.ActiveTaskPayload.sendToPlayer(
+                            player, active.getFullId(), false);
+                }
+                var fake = tm.getFakeTask(player.getUUID());
+                if (fake != null) {
+                    com.habitrain.core.network.ActiveTaskPayload.sendToPlayer(
+                            player, fake.getFullId(), true);
+                }
+            } catch (Exception e) {
+                LOGGER.debug("ActiveTask resync on JOIN skipped", e);
+            }
             ShaderConfigPayload.sendToPlayer(player);
             // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
             // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
@@ -146,6 +176,13 @@ public final class LifecycleEventsRegistrar {
             if (joinLevel != null) {
                 GameModeRegistry.getActiveForLevel(joinLevel)
                     .ifPresent(mode -> mode.onPlayerJoin(player));
+            }
+            // 角色扩展 manifest 握手：晚加入/中途重连的玩家立即获得当前服务端配置
+            try {
+                com.habitrain.core.network.RoleManifestPayload.sendTo(player);
+                com.habitrain.core.network.RoleSnapshotPayload.sendTo(player);
+            } catch (Exception e) {
+                LOGGER.debug("Role manifest/snapshot send on JOIN skipped", e);
             }
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
             ModeMapVoteOrchestrator.onPlayerJoin(player);
@@ -173,6 +210,10 @@ public final class LifecycleEventsRegistrar {
                     // 从进行中的选项投票中移除断线玩家的票
                     OptionVoteManager.onVoterRemoved(disconnectLevel, player.getUUID());
                 }
+                // 角色动作 v2：断线清理该玩家的 sequence/rate/cooldown 窗口（fix-doc §12.2）
+                ((com.habitrain.core.role.action.RoleActionServiceImpl)
+                        com.habitrain.core.api.role.v2.action.RoleActionApi.instance())
+                        .onPlayerDisconnect(player.getUUID());
             } catch (Exception e) {
                 LOGGER.error("[GameMode] 处理玩家断线失败", e);
             }

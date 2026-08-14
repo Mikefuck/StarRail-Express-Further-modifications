@@ -83,6 +83,7 @@ public class MinigameConfigEntry {
     public boolean isAllowedOnMap(String mapName) {
         if (mapName == null || mapName.isEmpty()) return true;
         if (mapFilterMode == 0) return true;
+        if (enabledMaps == null || enabledMaps.isEmpty()) return true;
         if (mapFilterMode == 1) {
             for (String m : enabledMaps) if (m.equalsIgnoreCase(mapName)) return true;
             return false;

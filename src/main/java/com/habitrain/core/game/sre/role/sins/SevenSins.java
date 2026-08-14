@@ -63,6 +63,7 @@ public final class SevenSins {
         wireOpposingClique();
         SevenSinsMutex.init();
         com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks.init();
+        com.habitrain.core.game.sre.role.sins.win.SevenSinV2Hooks.register();
         SevenSinEvents.init();
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");

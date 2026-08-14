@@ -70,6 +70,7 @@ import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
@@ -78,6 +79,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ItemLike;
+import org.lwjgl.glfw.GLFW;
 
 public final class GameEndTransitionScreen
 extends Screen {
@@ -101,7 +103,9 @@ extends Screen {
     private static final long HARD_RELEASE_MILLIS = 30000L;
     private static final long END_CLEAR_GRACE_MILLIS = 4000L;
     private static final int FEATHER_WIDTH = 26;
-    private static final List<ResourceLocation> VICTORY_WEAPON_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"revolver"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"revolver"));
+    private static final List<ResourceLocation> KILLER_KNIFE_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"knife"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"knife"));
+    private static final List<ResourceLocation> SHERIFF_REVOLVER_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"revolver"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"revolver"));
+    private static final List<ResourceLocation> NEUTRAL_CROWBAR_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"crowbar"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"crowbar"));
     private static final int VOID = -16251126;
     private static final int INK = -15068912;
     private static final int GOLD_DARK = -7444434;
@@ -122,7 +126,7 @@ extends Screen {
     private long mvpAvailableAtMillis;
     private final Map<UUID, AbstractClientPlayer> previewPlayers = new LinkedHashMap<UUID, AbstractClientPlayer>();
     private ClientLevel previewLevel;
-    private ItemStack victoryWeaponTemplate;
+    private final Map<Integer, ItemStack> victoryWeaponTemplates = new LinkedHashMap<Integer, ItemStack>();
     private boolean environmentReady;
     private boolean exitStarted;
     private long exitStartAtMillis;
@@ -223,6 +227,17 @@ extends Screen {
             return;
         }
         this.renderLaunch(g, mouseX, mouseY, partialTick);
+        this.renderSkipHint(g);
+    }
+
+    /** 右上角纯文字提示：按 ESC 跳过（无底色）。 */
+    private void renderSkipHint(GuiGraphics g) {
+        if (this.completed) {
+            return;
+        }
+        Component skipHint = Component.translatable((String)"gameend.habitrain_core.skip_hint");
+        int hx = this.width - 12 - this.font.width((FormattedText)skipHint);
+        g.drawString(this.font, skipHint, hx, 12, GameEndTransitionScreen.withAlpha(-4675179, 220), false);
     }
 
     private void renderLaunch(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
@@ -461,7 +476,9 @@ extends Screen {
             this.renderEntranceDust(g, x, slotBottom, scale, moving * entranceAlpha, mvpElapsed, i, entersFromLeft);
             AbstractClientPlayer player = this.previewPlayer(entry.playerId(), entry.playerName());
             float lookOffset = (entersFromLeft ? 1.0f : -1.0f) * scale * 0.52f * moving;
-            this.renderPlayerModel(g, player, x, slotBottom + bob, Math.round(scale), moving, walkLinear * 10.0f + (float)i * 1.3f, false, lookOffset, this.victoryWeapon());
+            ItemStack heldItem = this.victoryWeapon(entry.roleType());
+            boolean raiseKnife = entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
+            this.renderPlayerModel(g, player, x, slotBottom + bob, Math.round(scale), moving, walkLinear * 10.0f + (float)i * 1.3f, false, lookOffset, heldItem, raiseKnife);
             float nameT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((walkLinear - 0.52f) / 0.28f), (float)0.0f, (float)1.0f)) * stageT;
             if (!(nameT > 0.01f)) continue;
             float nameY = slotBottom - scale * 2.42f - 26.0f;
@@ -492,7 +509,9 @@ extends Screen {
         }
         AbstractClientPlayer hero = this.previewPlayer(entry.playerId(), entry.playerName());
         float lookOffset = scale * 0.58f * moving;
-        this.renderPlayerModel(g, hero, heroX, bottom + bob, Math.round(scale), moving, walkLinear * 11.0f, sit > 0.38f, lookOffset, this.victoryWeapon());
+        ItemStack heldItem = this.victoryWeapon(entry.roleType());
+        boolean raiseKnife = entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
+        this.renderPlayerModel(g, hero, heroX, bottom + bob, Math.round(scale), moving, walkLinear * 11.0f, sit > 0.38f, lookOffset, heldItem, raiseKnife);
         float cardT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sitLinear - 0.35f) / 0.5f), (float)0.0f, (float)1.0f)) * stageT;
         if (cardT > 0.01f) {
             this.renderSoloNameCard(g, entry, cardT);
@@ -559,7 +578,7 @@ extends Screen {
             g.pose().mulPose(Axis.ZP.rotationDegrees(angle[i] * scatter));
             g.pose().translate(-px, -py, 0.0f);
             int pileScale = Math.round((float)Math.max(22, Math.min(34, this.height / 9)) * (0.72f + 0.28f * scatter));
-            this.renderPlayerModel(g, (AbstractClientPlayer)pile.get(i), px, py, pileScale, 0.0f, i, true, 0.0f, ItemStack.EMPTY);
+            this.renderPlayerModel(g, (AbstractClientPlayer)pile.get(i), px, py, pileScale, 0.0f, i, true, 0.0f, ItemStack.EMPTY, false);
             g.pose().popPose();
         }
         this.renderBloodParticles(g, centerX, baseY, mvpElapsed, alphaT);
@@ -725,7 +744,7 @@ extends Screen {
     /*
      * WARNING - Removed try catching itself - possible behaviour change.
      */
-    private void renderPlayerModel(GuiGraphics g, AbstractClientPlayer player, float centerX, float bottom, int scale, float walkAmount, float walkPhase, boolean crouching, float lookOffset, ItemStack heldItem) {
+    private void renderPlayerModel(GuiGraphics g, AbstractClientPlayer player, float centerX, float bottom, int scale, float walkAmount, float walkPhase, boolean crouching, float lookOffset, ItemStack heldItem, boolean usingHeldItem) {
         if (player == null || scale <= 0) {
             return;
         }
@@ -736,7 +755,11 @@ extends Screen {
         try {
             player.setInvisible(false);
             player.setPose(crouching ? Pose.CROUCHING : Pose.STANDING);
+            player.stopUsingItem();
             player.setItemSlot(EquipmentSlot.MAINHAND, heldItem == null ? ItemStack.EMPTY : heldItem.copy());
+            if (usingHeldItem && !player.getMainHandItem().isEmpty()) {
+                player.startUsingItem(InteractionHand.MAIN_HAND);
+            }
             float phaseDelta = walkPhase - player.walkAnimation.position();
             player.walkAnimation.update(phaseDelta, 1.0f);
             player.walkAnimation.setSpeed(Mth.clamp((float)walkAmount, (float)0.0f, (float)1.0f));
@@ -755,28 +778,40 @@ extends Screen {
             if (posePushed) {
                 g.pose().popPose();
             }
+            player.stopUsingItem();
             player.setItemSlot(EquipmentSlot.MAINHAND, oldMain);
             player.setPose(oldPose);
             player.setInvisible(oldInvisible);
         }
     }
 
-    private ItemStack victoryWeapon() {
-        if (this.victoryWeaponTemplate != null) {
-            return this.victoryWeaponTemplate;
+    private ItemStack victoryWeapon(int roleType) {
+        if (roleType == GameEndTransitionPayload.ROLE_TYPE_CIVILIAN) {
+            return ItemStack.EMPTY;
         }
-        for (ResourceLocation id : VICTORY_WEAPON_IDS) {
+        ItemStack cached = this.victoryWeaponTemplates.get(roleType);
+        if (cached != null) {
+            return cached;
+        }
+        List<ResourceLocation> itemIds = switch (roleType) {
+            case GameEndTransitionPayload.ROLE_TYPE_KILLER -> KILLER_KNIFE_IDS;
+            case GameEndTransitionPayload.ROLE_TYPE_SHERIFF -> SHERIFF_REVOLVER_IDS;
+            case GameEndTransitionPayload.ROLE_TYPE_NEUTRAL_PRIMARY, GameEndTransitionPayload.ROLE_TYPE_NEUTRAL_SECONDARY -> NEUTRAL_CROWBAR_IDS;
+            default -> List.of();
+        };
+        for (ResourceLocation id : itemIds) {
             try {
-                Item revolver = (Item)BuiltInRegistries.ITEM.get(id);
-                if (revolver == null || revolver == Items.AIR) continue;
-                this.victoryWeaponTemplate = new ItemStack((ItemLike)revolver);
-                return this.victoryWeaponTemplate;
+                Item item = (Item)BuiltInRegistries.ITEM.get(id);
+                if (item == null || item == Items.AIR) continue;
+                ItemStack result = new ItemStack((ItemLike)item);
+                this.victoryWeaponTemplates.put(roleType, result);
+                return result;
             }
             catch (Throwable throwable) {
             }
         }
-        this.victoryWeaponTemplate = new ItemStack((ItemLike)Items.CROSSBOW);
-        return this.victoryWeaponTemplate;
+        this.victoryWeaponTemplates.put(roleType, ItemStack.EMPTY);
+        return ItemStack.EMPTY;
     }
 
     private long mvpStageStartMillis() {
@@ -953,7 +988,19 @@ extends Screen {
     }
 
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (this.exitStarted) {
+                this.completeTransition();
+            } else {
+                this.startExit(Util.getMillis());
+            }
+            return true;
+        }
         return true;
+    }
+
+    public boolean shouldCloseOnEsc() {
+        return false;
     }
 
     public boolean isPauseScreen() {

@@ -149,7 +149,6 @@ public class CustomTaskBlockRendererMixin {
         }
     }
 
-    private static final java.util.Map<String, Color> COLOR_CACHE = new java.util.HashMap<>();
     private static final Color FALLBACK_COLOR = new Color(200, 200, 200, 180);
 
     private static int resolveBlockTypeId(String taskFullId) {
@@ -158,9 +157,6 @@ public class CustomTaskBlockRendererMixin {
     }
 
     private static Color resolveColor(String taskFullId) {
-        Color cached = COLOR_CACHE.get(taskFullId);
-        if (cached != null) return cached;
-
         Color resolved;
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
         if (cfg != null) {
@@ -173,7 +169,6 @@ public class CustomTaskBlockRendererMixin {
                 return FALLBACK_COLOR;
             }
         }
-        COLOR_CACHE.put(taskFullId, resolved);
         return resolved;
     }
 

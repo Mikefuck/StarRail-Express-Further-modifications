@@ -121,8 +121,7 @@ public class ConfigSync {
             repo.getMutableMinigameConfigs().putAll(newMinigames);
             repo.setDlcProbabilityTarget(newDlcTarget);
             repo.setShaderWhitelistEnabled(newShaderEnabled);
-            repo.getShaderWhitelist().clear();
-            repo.getShaderWhitelist().addAll(newShaderWhitelist);
+            repo.setShaderWhitelist(newShaderWhitelist);
             repo.setSheriffCountDivisor(newSheriffDivisor);
             repo.setTempPowerPrice(newTempPowerPrice);
             repo.setKnifeDurabilityEnabled(newKnifeDurabilityEnabled);
@@ -145,19 +144,33 @@ public class ConfigSync {
      * global 字段按 json 覆盖（整体项）。
      * modeMapVote 标量按 json 覆盖；modes/maps 按 JSON key 顺序整表重建并
      * 追加服务端独有键（不删缺失键，同时保留投票列表顺序）。
+     * <p>
+     * 先完整解析到临时结构，成功后再一次性写入 repo，避免半更新。
+     *
+     * @return true 合并成功；false 解析/校验失败（repo 保持不变）
      */
-    public void mergeFromJsonString(ConfigRepository repo, String json) {
+    public boolean mergeFromJsonString(ConfigRepository repo, String json) {
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+
+            // ---- stage 1: parse into temps (no repo writes) ----
+            Float newDlcTarget = null;
+            Boolean newShaderEnabled = null;
+            List<String> newShaderWhitelist = null;
+            Integer newSheriffDivisor = null;
+            Integer newTempPowerPrice = null;
+            Boolean newKnifeDurability = null;
+            Boolean newLobbyVoice = null;
+            Boolean newBlackoutFx = null;
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
                 if (global.has("dlcProbabilityTarget")) {
-                    repo.setDlcProbabilityTarget((float) Math.max(0.1, Math.min(0.8,
-                            global.get("dlcProbabilityTarget").getAsDouble())));
+                    newDlcTarget = (float) Math.max(0.1, Math.min(0.8,
+                            global.get("dlcProbabilityTarget").getAsDouble()));
                 }
                 if (global.has("shaderWhitelistEnabled")) {
-                    repo.setShaderWhitelistEnabled(global.get("shaderWhitelistEnabled").getAsBoolean());
+                    newShaderEnabled = global.get("shaderWhitelistEnabled").getAsBoolean();
                 }
                 if (global.has("shaderWhitelist")) {
                     var arr = global.getAsJsonArray("shaderWhitelist");
@@ -166,74 +179,80 @@ public class ConfigSync {
                         String name = el.getAsString();
                         if (!name.isEmpty()) list.add(name);
                     }
-                    repo.getShaderWhitelist().clear();
-                    repo.getShaderWhitelist().addAll(list);
+                    newShaderWhitelist = list;
                 }
                 if (global.has("sheriffCountDivisor")) {
                     int div = global.get("sheriffCountDivisor").getAsInt();
-                    if (div > 0) repo.setSheriffCountDivisor(div);
+                    if (div > 0) newSheriffDivisor = div;
                 }
                 if (global.has("tempPowerPrice")) {
                     int price = global.get("tempPowerPrice").getAsInt();
-                    if (price >= 0) repo.setTempPowerPrice(price);
+                    if (price >= 0) newTempPowerPrice = price;
                 }
                 if (global.has("knifeDurabilityEnabled")) {
-                    repo.setKnifeDurabilityEnabled(global.get("knifeDurabilityEnabled").getAsBoolean());
+                    newKnifeDurability = global.get("knifeDurabilityEnabled").getAsBoolean();
                 }
                 if (global.has("lobbyVoiceGroupEnabled")) {
-                    repo.setLobbyVoiceGroupEnabled(global.get("lobbyVoiceGroupEnabled").getAsBoolean());
+                    newLobbyVoice = global.get("lobbyVoiceGroupEnabled").getAsBoolean();
                 }
                 if (global.has("blackoutEffectEnhancementEnabled")) {
-                    repo.setBlackoutEffectEnhancementEnabled(
-                            global.get("blackoutEffectEnhancementEnabled").getAsBoolean());
+                    newBlackoutFx = global.get("blackoutEffectEnhancementEnabled").getAsBoolean();
                 }
             }
 
-            // 合并而非替换：json 中有的键覆盖，缺失的键保留服务端原值
+            Map<String, TaskConfigEntry> taskPatches = null;
             if (root.has("tasks")) {
+                taskPatches = new HashMap<>();
                 JsonObject tasks = root.getAsJsonObject("tasks");
                 for (var entry : tasks.entrySet()) {
-                    repo.getMutableTaskConfigs().put(entry.getKey(),
+                    taskPatches.put(entry.getKey(),
                             TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
                 }
             }
+
+            Map<String, GameModeConfigScope> modePatches = null;
             if (root.has("gameModes")) {
+                modePatches = new HashMap<>();
                 JsonObject modes = root.getAsJsonObject("gameModes");
                 for (var entry : modes.entrySet()) {
-                    repo.getMutableGameModeConfigs().put(entry.getKey(),
+                    modePatches.put(entry.getKey(),
                             GameModeConfigScope.fromJson(entry.getKey(), entry.getValue().getAsJsonObject()));
                 }
             }
+
+            Boolean newMgGlobal = null;
+            Map<String, MinigameConfigEntry> mgPatches = null;
             if (root.has("minigames")) {
                 JsonObject mg = root.getAsJsonObject("minigames");
                 if (mg.has("globalEnabled")) {
-                    repo.setMinigameGlobalEnabled(mg.get("globalEnabled").getAsBoolean());
+                    newMgGlobal = mg.get("globalEnabled").getAsBoolean();
                 }
                 if (mg.has("entries")) {
+                    mgPatches = new HashMap<>();
                     JsonObject entries = mg.getAsJsonObject("entries");
                     for (var e : entries.entrySet()) {
-                        repo.getMutableMinigameConfigs().put(e.getKey(),
+                        mgPatches.put(e.getKey(),
                                 MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
                     }
                 }
             }
 
+            // modeMapVote: compute next ModeMapVoteSettings copy-on-write from current
+            ModeMapVoteSettings nextModeMapVote = null;
             if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
                 JsonObject mmv = root.getAsJsonObject("modeMapVote");
                 ModeMapVoteSettings s = repo.getModeMapVote();
-                if (mmv.has("enabled")) s.enabled = mmv.get("enabled").getAsBoolean();
+                // clone current into a working copy via toJson/fromJson for isolation
+                ModeMapVoteSettings work = ModeMapVoteSettings.fromJson(s.toJson());
+                if (mmv.has("enabled")) work.enabled = mmv.get("enabled").getAsBoolean();
                 if (mmv.has("modeDurationSeconds")) {
                     int v = mmv.get("modeDurationSeconds").getAsInt();
-                    s.modeDurationSeconds = Math.max(5, Math.min(120, v));
+                    work.modeDurationSeconds = Math.max(5, Math.min(120, v));
                 }
                 if (mmv.has("mapDurationSeconds")) {
                     int v = mmv.get("mapDurationSeconds").getAsInt();
-                    s.mapDurationSeconds = Math.max(5, Math.min(120, v));
+                    work.mapDurationSeconds = Math.max(5, Math.min(120, v));
                 }
-                // Rebuild modes in JSON key order. Plain put() on LinkedHashMap does NOT
-                // reorder existing keys, so vote-tab ↑/↓ order would never stick after
-                // C2S merge + FullConfigSync. Keep server-only keys (missing from client
-                // view) appended at the end so merge still does not delete them.
                 if (mmv.has("modes") && mmv.get("modes").isJsonObject()) {
                     JsonObject modesObj = mmv.getAsJsonObject("modes");
                     LinkedHashMap<String, ModeVoteEntry> rebuilt = new LinkedHashMap<>();
@@ -242,13 +261,12 @@ public class ConfigSync {
                             rebuilt.put(e.getKey(), ModeVoteEntry.fromJson(e.getValue().getAsJsonObject()));
                         }
                     }
-                    for (var existing : s.modes.entrySet()) {
+                    for (var existing : work.modes.entrySet()) {
                         rebuilt.putIfAbsent(existing.getKey(), existing.getValue());
                     }
-                    s.modes.clear();
-                    s.modes.putAll(rebuilt);
+                    work.modes.clear();
+                    work.modes.putAll(rebuilt);
                 }
-                // Same for maps: preserve client/json key order, append server-only keys.
                 if (mmv.has("maps") && mmv.get("maps").isJsonObject()) {
                     JsonObject mapsObj = mmv.getAsJsonObject("maps");
                     LinkedHashMap<String, MapVoteEntry> rebuilt = new LinkedHashMap<>();
@@ -257,32 +275,67 @@ public class ConfigSync {
                             rebuilt.put(e.getKey(), MapVoteEntry.fromJson(e.getValue().getAsJsonObject()));
                         }
                     }
-                    for (var existing : s.maps.entrySet()) {
+                    for (var existing : work.maps.entrySet()) {
                         rebuilt.putIfAbsent(existing.getKey(), existing.getValue());
                     }
-                    s.maps.clear();
-                    s.maps.putAll(rebuilt);
+                    work.maps.clear();
+                    work.maps.putAll(rebuilt);
                 }
-                // Full replace so player-count draw settings apply (merge put-only would keep stale).
                 if (mmv.has("mapPlayerCountDraw") && mmv.get("mapPlayerCountDraw").isJsonObject()) {
-                    s.mapPlayerCountDraw = MapPlayerCountSettings.fromJson(
+                    work.mapPlayerCountDraw = MapPlayerCountSettings.fromJson(
                             mmv.getAsJsonObject("mapPlayerCountDraw"));
                 }
+                nextModeMapVote = work;
             }
 
+            EnvironmentSettings nextEnv = null;
             if (root.has("environment") && root.get("environment").isJsonObject()) {
-                repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
+                nextEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
             }
 
+            RoleOverrideConfigSection incomingRoleOverrides = null;
             if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
-                RoleOverrideConfigSection incoming = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
-                RoleOverrideConfigSection existing = repo.getRoleOverrides();
-                existing.setGlobalEnabled(incoming.isGlobalEnabled());
-                existing.getEntries().putAll(incoming.getEntries());
-                existing.getConflictResolution().putAll(incoming.getConflictResolution());
+                incomingRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
             }
+
+            // ---- stage 2: commit all temps to repo ----
+            if (newDlcTarget != null) repo.setDlcProbabilityTarget(newDlcTarget);
+            if (newShaderEnabled != null) repo.setShaderWhitelistEnabled(newShaderEnabled);
+            if (newShaderWhitelist != null) repo.setShaderWhitelist(newShaderWhitelist);
+            if (newSheriffDivisor != null) repo.setSheriffCountDivisor(newSheriffDivisor);
+            if (newTempPowerPrice != null) repo.setTempPowerPrice(newTempPowerPrice);
+            if (newKnifeDurability != null) repo.setKnifeDurabilityEnabled(newKnifeDurability);
+            if (newLobbyVoice != null) repo.setLobbyVoiceGroupEnabled(newLobbyVoice);
+            if (newBlackoutFx != null) repo.setBlackoutEffectEnhancementEnabled(newBlackoutFx);
+
+            if (taskPatches != null) {
+                repo.getMutableTaskConfigs().putAll(taskPatches);
+            }
+            if (modePatches != null) {
+                repo.getMutableGameModeConfigs().putAll(modePatches);
+            }
+            if (newMgGlobal != null) {
+                repo.setMinigameGlobalEnabled(newMgGlobal);
+            }
+            if (mgPatches != null) {
+                repo.getMutableMinigameConfigs().putAll(mgPatches);
+            }
+            if (nextModeMapVote != null) {
+                repo.setModeMapVote(nextModeMapVote);
+            }
+            if (nextEnv != null) {
+                repo.setEnvironment(nextEnv);
+            }
+            if (incomingRoleOverrides != null) {
+                RoleOverrideConfigSection existing = repo.getRoleOverrides();
+                existing.setGlobalEnabled(incomingRoleOverrides.isGlobalEnabled());
+                existing.getEntries().putAll(incomingRoleOverrides.getEntries());
+                existing.getConflictResolution().putAll(incomingRoleOverrides.getConflictResolution());
+            }
+            return true;
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串合并配置失败，保持原有内存状态不变", e);
+            return false;
         }
     }
 
@@ -310,7 +363,6 @@ public class ConfigSync {
 
     public void applyShaderWhitelistSync(ConfigRepository repo, boolean enabled, List<String> list) {
         repo.setShaderWhitelistEnabled(enabled);
-        repo.getShaderWhitelist().clear();
-        repo.getShaderWhitelist().addAll(list);
+        repo.setShaderWhitelist(list != null ? list : List.of());
     }
 }

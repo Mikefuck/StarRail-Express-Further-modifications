@@ -71,7 +71,7 @@ public class BlackoutVoteScreen extends Screen {
                     Math.max(0, BlackoutVoteState.getRemainingSeconds() - 1));
         }
         if (!BlackoutVoteState.isActive()) {
-            Minecraft.getInstance().setScreen(null);
+            onClose();
         }
     }
 

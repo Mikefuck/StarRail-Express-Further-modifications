@@ -47,7 +47,7 @@ public class ScrollArea {
     }
     public boolean mouseDragged(double my) {
         if (!dragging) return false;
-        scroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, maxScroll());
+        scroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxScroll());
         return true;
     }
     public boolean mouseReleased() {

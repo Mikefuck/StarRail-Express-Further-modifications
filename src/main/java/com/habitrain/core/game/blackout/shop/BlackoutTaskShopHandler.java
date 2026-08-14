@@ -5,8 +5,6 @@ import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -22,14 +20,8 @@ import net.minecraft.world.level.block.Blocks;
  */
 public final class BlackoutTaskShopHandler {
 
-    private static Block cachedRotaryPhone = null;
-
     public static Block getRotaryPhoneRedBlock() {
-        if (cachedRotaryPhone == null || cachedRotaryPhone == Blocks.AIR) {
-            cachedRotaryPhone = BuiltInRegistries.BLOCK.get(
-                    ResourceLocation.parse("decocraft:rotary_phone_red"));
-        }
-        return cachedRotaryPhone;
+        return com.habitrain.core.game.blackout.BlackoutOverlayTypes.getRotaryPhoneRedBlock();
     }
 
     public static void register() {
@@ -58,6 +50,11 @@ public final class BlackoutTaskShopHandler {
             if (!com.habitrain.core.game.blackout.BlackoutRoleManager.isAlive(serverLevel, serverPlayer.getUUID())) {
                 return InteractionResult.PASS;
             }
+
+            // 记录红色电话交互会话，C2S 购买必须通过此门闩
+            com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.markOpen(
+                    com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.Kind.TASK_SHOP,
+                    serverPlayer, pos);
 
             // 构建目录快照 + 发送 Open payload
             var entries = BlackoutTaskShopService.visibleEntries(serverLevel, serverPlayer);

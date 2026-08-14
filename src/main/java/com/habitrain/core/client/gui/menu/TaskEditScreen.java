@@ -119,8 +119,6 @@ public class TaskEditScreen extends Screen {
                 MenuPermissions.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
-            saveController.saveCurrent();
             goBack();
         }).bounds(centerX - 58, btnY, 100, 20).build();
         addRenderableWidget(saveReturnBtn);
@@ -351,7 +349,16 @@ public class TaskEditScreen extends Screen {
     }
 
     private void goBack() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
+            saveController.saveCurrent();
+        }
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    @Override
+    public void onClose() {
+        goBack();
     }
 
     private String getCategoryName(TaskCategory cat) {

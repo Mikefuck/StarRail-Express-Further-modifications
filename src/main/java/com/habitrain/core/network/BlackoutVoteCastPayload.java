@@ -27,7 +27,12 @@ public record BlackoutVoteCastPayload(VotePurpose purpose, UUID targetPlayerId) 
     private static VotePurpose readPurpose(FriendlyByteBuf buf) {
         String raw = buf.readUtf(32);
         VotePurpose p = VotePurpose.fromString(raw);
-        return p != null ? p : VotePurpose.EXILE;
+        // Unknown purpose must not silently become EXILE (would pollute exile votes).
+        if (p == null) {
+            throw new io.netty.handler.codec.DecoderException(
+                    "Unknown VotePurpose: " + raw);
+        }
+        return p;
     }
 
     /** 读取一次 boolean，根据结果返回 UUID 或 null */

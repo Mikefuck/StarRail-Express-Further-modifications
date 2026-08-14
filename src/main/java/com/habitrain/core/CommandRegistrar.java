@@ -11,6 +11,10 @@ import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.network.MenuGatePayload;
+import com.habitrain.core.role.config.RoleConfigApplyService;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
+import com.habitrain.core.role.diag.RoleConfigCommands;
+import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -23,6 +27,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * 命令注册器 — 负责注册所有 /instantgroup 和 /habi_api 命令。
@@ -356,11 +362,45 @@ public final class CommandRegistrar {
                                             })))
                     )
               );
+            dispatcher.register(roleApiRootCommand());
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|greed_trade|menugate");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|greed_trade|menugate, /habitrain roleapi");
+    }
+
+    private static java.util.UUID playerIdOrNull(MinecraftServer server, String name) {
+        ServerPlayer player = findPlayer(server, name);
+        return player == null ? null : player.getUUID();
+    }
+
+    /** Parses an on/off word into a Boolean, or {@code null} for anything else. */
+    private static Boolean parseBool(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return switch (raw.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "on", "true", "1" -> Boolean.TRUE;
+            case "off", "false", "0" -> Boolean.FALSE;
+            default -> null;
+        };
+    }
+
+    /** Tab 补全：on/off。 */
+    private static SuggestionProvider<CommandSourceStack> onOff() {
+        return (ctx, builder) -> {
+            builder.suggest("on");
+            builder.suggest("off");
+            return builder.buildFuture();
+        };
     }
 
     /** 按名字解析在线玩家：先精确匹配，再忽略大小写匹配。 */
+    private static int sendLines(CommandSourceStack source, List<String> lines) {
+        for (String line : lines) {
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
     private static ServerPlayer findPlayer(MinecraftServer server, String name) {
         if (server == null || name == null) return null;
         ServerPlayer exact = server.getPlayerList().getPlayerByName(name);
@@ -426,5 +466,167 @@ public final class CommandRegistrar {
             }
         }
         return findPlayer(server, ap.getName()) != null;
+    }
+
+    /**
+     * /habitrain roleapi 命令树：只读诊断（OP2）+ 角色扩展 v2 配置编辑（OP4）
+     * + manifest 摘要（OP2）。
+     */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> roleApiRootCommand() {
+        return Commands.literal("habitrain")
+                .then(Commands.literal("roleapi")
+                        .requires(source -> source.hasPermission(2))
+                        .then(Commands.literal("providers").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.providers())))
+                        .then(Commands.literal("list")
+                                .executes(ctx -> sendLines(ctx.getSource(),
+                                        RoleDiagnosticsCommands.list("effective")))
+                                .then(Commands.argument("filter", StringArgumentType.word())
+                                        .suggests((c, b) -> {
+                                            b.suggest("effective");
+                                            b.suggest("disabled");
+                                            b.suggest("conflict");
+                                            b.suggest("invalid");
+                                            b.suggest("legacy");
+                                            b.suggest("broken");
+                                            return b.buildFuture();
+                                        })
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.list(
+                                                        StringArgumentType.getString(ctx, "filter"))))))
+                        .then(Commands.literal("inspect")
+                                .then(Commands.argument("role", StringArgumentType.string())
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.inspect(
+                                                        StringArgumentType.getString(ctx, "role"))))))
+                        .then(Commands.literal("trace")
+                                .then(Commands.argument("role", StringArgumentType.string())
+                                        .then(Commands.argument("field", StringArgumentType.word())
+                                                .executes(ctx -> sendLines(ctx.getSource(),
+                                                        RoleDiagnosticsCommands.trace(
+                                                                StringArgumentType.getString(ctx, "role"),
+                                                                StringArgumentType.getString(ctx, "field")))))))
+                        .then(Commands.literal("aliases")
+                                .executes(ctx -> sendLines(ctx.getSource(),
+                                        RoleDiagnosticsCommands.aliases(null)))
+                                .then(Commands.argument("role", StringArgumentType.string())
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.aliases(
+                                                        StringArgumentType.getString(ctx, "role"))))))
+                        .then(Commands.literal("snapshot").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.snapshot())))
+                        .then(Commands.literal("hooks")
+                                .then(Commands.argument("role", StringArgumentType.string())
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.hooks(
+                                                        StringArgumentType.getString(ctx, "role"))))))
+                        .then(Commands.literal("actions")
+                                .executes(ctx -> sendLines(ctx.getSource(),
+                                        RoleDiagnosticsCommands.actions(null)))
+                                .then(Commands.argument("role", StringArgumentType.string())
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.actions(
+                                                        StringArgumentType.getString(ctx, "role"))))))
+                        .then(Commands.literal("capabilities").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.capabilities())))
+                        .then(Commands.literal("perf").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.perf())))
+                        .then(Commands.literal("archive").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.archive())))
+                        .then(Commands.literal("legacy").executes(ctx ->
+                                sendLines(ctx.getSource(), RoleDiagnosticsCommands.legacy())))
+                        .then(Commands.literal("state")
+                                .executes(ctx -> sendLines(ctx.getSource(),
+                                        RoleDiagnosticsCommands.state(null, null)))
+                                .then(Commands.argument("player", StringArgumentType.word())
+                                        .suggests(onlinePlayerNames())
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleDiagnosticsCommands.state(
+                                                        playerIdOrNull(ctx.getSource().getServer(),
+                                                                StringArgumentType.getString(ctx, "player")),
+                                                        null)))
+                                        .then(Commands.argument("role", StringArgumentType.string())
+                                                .executes(ctx -> sendLines(ctx.getSource(),
+                                                        RoleDiagnosticsCommands.state(
+                                                                playerIdOrNull(ctx.getSource().getServer(),
+                                                                        StringArgumentType.getString(ctx, "player")),
+                                                                StringArgumentType.getString(ctx, "role")))))))
+                        // 角色扩展 v2 配置（§13.1/13.4）：只读 status OP2，修改 OP4
+                        .then(Commands.literal("config")
+                                .then(Commands.literal("status")
+                                        .requires(source -> source.hasPermission(2))
+                                        .executes(ctx -> sendLines(ctx.getSource(),
+                                                RoleConfigCommands.status())))
+                                .then(Commands.literal("set")
+                                        .requires(source -> source.hasPermission(4))
+                                        .then(Commands.literal("provider")
+                                                .then(Commands.argument("id", StringArgumentType.word())
+                                                        .then(Commands.argument("on", StringArgumentType.word())
+                                                                .suggests(onOff())
+                                                                .executes(ctx -> {
+                                                                    String id = StringArgumentType.getString(ctx, "id");
+                                                                    Boolean on = parseBool(StringArgumentType.getString(ctx, "on"));
+                                                                    if (on == null) {
+                                                                        ctx.getSource().sendFailure(Component.literal("§con/off 参数必须是 on 或 off"));
+                                                                        return 0;
+                                                                    }
+                                                                    RoleExtensionConfigService.INSTANCE.setProviderEnabled(id, on);
+                                                                    RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                                            "§a已" + (on ? "启用" : "禁用") + " provider §e" + id), true);
+                                                                    return 1;
+                                                                }))))
+                                        .then(Commands.literal("entry")
+                                                .then(Commands.argument("entryId", StringArgumentType.string())
+                                                        .then(Commands.argument("on", StringArgumentType.word())
+                                                                .suggests(onOff())
+                                                                .executes(ctx -> {
+                                                                    String entryId = StringArgumentType.getString(ctx, "entryId");
+                                                                    Boolean on = parseBool(StringArgumentType.getString(ctx, "on"));
+                                                                    if (on == null) {
+                                                                        ctx.getSource().sendFailure(Component.literal("§con/off 参数必须是 on 或 off"));
+                                                                        return 0;
+                                                                    }
+                                                                    RoleExtensionConfigService.INSTANCE.setEntryEnabled(entryId, on);
+                                                                    RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                                                            "§a已" + (on ? "启用" : "禁用") + " entry §e" + entryId), true);
+                                                                    return 1;
+                                                                }))))
+                                        .then(Commands.literal("allowGlobalHooks")
+                                                .then(Commands.argument("on", StringArgumentType.word())
+                                                        .suggests(onOff())
+                                                        .executes(ctx -> {
+                                                            Boolean on = parseBool(StringArgumentType.getString(ctx, "on"));
+                                                            if (on == null) {
+                                                                ctx.getSource().sendFailure(Component.literal("§con/off 参数必须是 on 或 off"));
+                                                                return 0;
+                                                            }
+                                                            RoleExtensionConfigService.INSTANCE.setAllowGlobalHooks(on);
+                                                            RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                                                    "§a已" + (on ? "开启" : "关闭") + " 全局 hook"), true);
+                                                            return 1;
+                                                        }))))
+                                .then(Commands.literal("winner")
+                                        .requires(source -> source.hasPermission(4))
+                                        .then(Commands.argument("targetField", StringArgumentType.string())
+                                                .then(Commands.argument("winnerEntry", StringArgumentType.string())
+                                                        .executes(ctx -> {
+                                                            String targetField = StringArgumentType.getString(ctx, "targetField");
+                                                            String winner = StringArgumentType.getString(ctx, "winnerEntry");
+                                                            String resolved = "none".equalsIgnoreCase(winner) ? null : winner;
+                                                            RoleExtensionConfigService.INSTANCE.setConflictWinner(targetField, resolved);
+                                                            RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                                                    resolved == null
+                                                                            ? "§e已清除 " + targetField + " 的冲突裁决"
+                                                                            : "§a" + targetField + " -> §e" + resolved), true);
+                                                            return 1;
+                                                        }))))
+                        .then(Commands.literal("manifest")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(ctx -> sendLines(ctx.getSource(), RoleConfigCommands.manifest())))
+                ));
     }
 }

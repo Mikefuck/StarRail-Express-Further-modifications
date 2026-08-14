@@ -62,6 +62,10 @@ public final class BlackoutPhoneHandler {
             int sheriffCount = BlackoutRoleManager.getSheriffCount(serverLevel);
             int killerCount = BlackoutRoleManager.getRemainingBad(serverLevel);
 
+            // 记录电话交互会话，C2S 雇警必须通过此门闩
+            BlackoutPhoneSessionGate.markOpen(
+                    BlackoutPhoneSessionGate.Kind.HIRE, serverPlayer, pos);
+
             ServerPlayNetworking.send(serverPlayer, new BlackoutPhoneOpenPayload(
                     unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));
 

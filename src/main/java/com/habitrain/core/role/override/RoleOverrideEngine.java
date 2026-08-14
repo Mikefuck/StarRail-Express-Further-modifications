@@ -31,6 +31,13 @@ public final class RoleOverrideEngine {
     private volatile EffectiveSnapshot snapshot = new EffectiveSnapshot(Map.of(), Map.of(), List.of());
 
     /**
+     * Monotonic version of the published snapshot, incremented once per rebuild.
+     * Exposed to the v2 catalog so callers can tell when the effective role set
+     * may have changed.
+     */
+    private volatile long snapshotVersion;
+
+    /**
      * Replacement ids successfully adopted by core. Entries remain here after
      * deactivation because TMMRoles has no safe remove API.
      */
@@ -41,6 +48,8 @@ public final class RoleOverrideEngine {
     public static RoleOverrideEngine getInstance() { return INSTANCE; }
 
     public EffectiveSnapshot getSnapshot() { return snapshot; }
+
+    public long getSnapshotVersion() { return snapshotVersion; }
 
     public synchronized void rebuild() {
         rebuild(com.habitrain.core.config.ConfigManager.getInstance().getRoleOverrides());
@@ -84,6 +93,17 @@ public final class RoleOverrideEngine {
         for (ResourceLocation target : targets) {
             List<ReplaceRoleDefinition> replaces = replaceByTarget.getOrDefault(target, List.of());
             List<ModifyRoleDefinition> modifies = modifyByTarget.getOrDefault(target, List.of());
+            boolean v2Owns = com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isReplaced(target)
+                    || com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isModified(target);
+            if (v2Owns && (!replaces.isEmpty() || !modifies.isEmpty())) {
+                String message = "v1 override conflicts with a v2 REPLACE/MODIFY on " + target;
+                replaces.forEach(def -> statuses.put(def,
+                        new StatusInfo(OverrideStatus.CONFLICT, message)));
+                modifies.forEach(def -> statuses.put(def,
+                        new StatusInfo(OverrideStatus.CONFLICT, message)));
+                LOGGER.warn("Conflict on target {}: {}", target, message);
+                continue;
+            }
             if (replaces.size() == 1 && modifies.isEmpty()) {
                 replaceCandidates.put(target, replaces.get(0));
             } else if (modifies.size() == 1 && replaces.isEmpty()) {
@@ -145,6 +165,7 @@ public final class RoleOverrideEngine {
         // Publish only after registration, skill reconciliation and baseline
         // restoration have completed.
         snapshot = new EffectiveSnapshot(activeReplaces, modifyCandidates, entries);
+        snapshotVersion++;
         LOGGER.info("RoleOverrideEngine rebuilt: {} replaces, {} modifies active",
                 activeReplaces.size(), modifyCandidates.size());
     }

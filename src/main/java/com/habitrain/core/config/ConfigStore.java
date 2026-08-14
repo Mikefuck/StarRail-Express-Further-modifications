@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 public class ConfigStore {
@@ -56,10 +59,17 @@ public class ConfigStore {
         repo.getMutableGameModeConfigs().clear();
         repo.getMutableMinigameConfigs().clear();
         repo.setDlcProbabilityTarget(0.5f);
+        repo.setShaderWhitelistEnabled(false);
+        repo.setShaderWhitelist(List.of());
+        repo.setSheriffCountDivisor(6);
+        repo.setTempPowerPrice(100);
+        repo.setMinigameGlobalEnabled(true);
         repo.setKnifeDurabilityEnabled(false);
         repo.setLobbyVoiceGroupEnabled(true);
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+        repo.setEnvironment(EnvironmentSettings.createDefault());
+        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
 
         if (!configFile.exists()) {
             createDefaultConfig(repo);
@@ -96,8 +106,7 @@ public class ConfigStore {
                         String name = el.getAsString();
                         if (!name.isEmpty()) list.add(name);
                     }
-                    repo.getShaderWhitelist().clear();
-                    repo.getShaderWhitelist().addAll(list);
+                    repo.setShaderWhitelist(list);
                 }
 
                 if (global.has("sheriffCountDivisor")) {
@@ -190,11 +199,12 @@ public class ConfigStore {
                     repo.getMutableGameModeConfigs().size(),
                     repo.getMutableMinigameConfigs().size());
         } catch (Exception e) {
-            LOGGER.error("加载任务配置失败，重建默认配置并覆盖损坏的配置文件", e);
+            LOGGER.error("加载任务配置失败，备份损坏文件后重建默认配置", e);
+            quarantineCorruptConfig();
             createDefaultConfig(repo);
             repo.getMutableGameModeConfigs().clear();
             repo.setShaderWhitelistEnabled(false);
-            repo.getShaderWhitelist().clear();
+            repo.setShaderWhitelist(List.of());
             repo.getMutableMinigameConfigs().clear();
             repo.setMinigameGlobalEnabled(true);
             repo.setModeMapVote(ModeMapVoteSettings.createDefault());
@@ -204,25 +214,59 @@ public class ConfigStore {
     }
 
     /**
+     * Move a corrupt config aside before overwriting with defaults so operators can recover.
+     */
+    private void quarantineCorruptConfig() {
+        try {
+            if (!configFile.exists()) return;
+            Path src = configFile.toPath();
+            Path bak = src.resolveSibling(
+                    configFile.getName() + ".corrupt-" + System.currentTimeMillis() + ".bak");
+            Files.move(src, bak, StandardCopyOption.REPLACE_EXISTING);
+            LOGGER.warn("已将损坏配置备份为 {}", bak.getFileName());
+        } catch (Exception e) {
+            LOGGER.warn("备份损坏配置失败，将直接覆盖", e);
+        }
+    }
+
+    /**
      * @return true 写盘成功；false 失败（含 IO 与 buildJsonRoot 抛出的 RuntimeException），
      *         调用方据此决定是否保留 dirty flag（见 commit）。
      */
     public boolean save(ConfigRepository repo) {
         try {
-            if (!configFile.getParentFile().exists()) {
-                configFile.getParentFile().mkdirs();
+            File parent = configFile.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
             }
 
             JsonObject root = buildJsonRoot(repo, true);
+            Path target = configFile.toPath();
+            Path temp = target.resolveSibling(configFile.getName() + ".tmp");
 
-            try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(configFile), StandardCharsets.UTF_8)) {
+            // Write to temp, then atomic replace — avoids half-written JSON on crash.
+            try (OutputStreamWriter writer = new OutputStreamWriter(
+                    new FileOutputStream(temp.toFile()), StandardCharsets.UTF_8)) {
                 gson.toJson(root, writer);
+                writer.flush();
+            }
+            try {
+                Files.move(temp, target,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
             }
             return true;
         } catch (Exception e) {
             // 同时捕获 IOException 与 buildJsonRoot 抛出的 RuntimeException，
             // 避免非 IO 异常传出后 commit 已清 dirty 导致改动永久丢失。
             LOGGER.error("保存配置失败", e);
+            try {
+                Path temp = configFile.toPath().resolveSibling(configFile.getName() + ".tmp");
+                Files.deleteIfExists(temp);
+            } catch (Exception ignored) {
+            }
             return false;
         }
     }

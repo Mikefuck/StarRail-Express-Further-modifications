@@ -1,5 +1,7 @@
 package com.habitrain.core.api;
 
+import com.habitrain.core.network.GameEndTransitionPayload;
+import net.minecraft.nbt.CompoundTag;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -53,5 +55,49 @@ class ApiValueObjectTest {
         assertFalse(OptionVoteApi.cast(null, UUID.randomUUID(), "arena"));
         assertFalse(ModeMapVoteApi.cancel(null));
         assertTrue(ModeMapVoteApi.getSnapshot(null).isEmpty());
+    }
+
+    @Test
+    void gameEndPayloadBoundsAndSnapshotsMvpPlayers() {
+        List<GameEndTransitionPayload.MvpPlayer> players = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            players.add(new GameEndTransitionPayload.MvpPlayer(
+                    UUID.randomUUID(), "player-" + i, i, i, i, i,
+                    GameEndTransitionPayload.ROLE_TYPE_KILLER));
+        }
+
+        GameEndTransitionPayload payload = new GameEndTransitionPayload(
+                "WIN", "sre:murder", "", 0, "", players, true);
+        players.clear();
+
+        assertEquals(GameEndTransitionPayload.MAX_MVP_PLAYERS, payload.mvpPlayers().size());
+        assertThrows(UnsupportedOperationException.class,
+                () -> payload.mvpPlayers().add(payload.mvpPlayers().getFirst()));
+    }
+
+    @Test
+    void gameEndPayloadNormalizesUnknownRoleType() {
+        GameEndTransitionPayload.MvpPlayer player = new GameEndTransitionPayload.MvpPlayer(
+                UUID.randomUUID(), "player", 1, 2, 3, 4, Integer.MAX_VALUE);
+
+        assertEquals(GameEndTransitionPayload.ROLE_TYPE_CIVILIAN, player.roleType());
+    }
+
+    @Test
+    void taskNbtRestorePreservesRuntimeInvariants() {
+        TaskDefinition definition = TaskRegistry.register(
+                "habitrain_test", "nbt_runtime_invariants", builder -> {});
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("customId", definition.getFullId());
+        nbt.putBoolean("fulfilled", false);
+        nbt.putBoolean("failed", true);
+        nbt.putInt("maxProgress", 0);
+        nbt.putInt("elapsedTicks", -20);
+
+        TaskInstance restored = TaskInstance.fromNbt(nbt);
+
+        assertEquals(1, restored.getMaxProgress());
+        assertTrue(restored.isFailed());
+        assertTrue(restored.isFulfilled());
     }
 }

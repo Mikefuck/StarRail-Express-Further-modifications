@@ -30,6 +30,7 @@
         "HumilityTaskCompleteMixin",
         "TaskInteractTimeMixin",
         "TemperanceShopMixin",
+        "RoleShopHookMixin",
         "GreedPouchDropMixin",
         "GreedPouchClickMixin",
         "VirtueEffectImmunityMixin",
@@ -59,6 +60,8 @@
         "SRERepairRoleSelectionMixin",
         "SRERepairGameWorldTickMixin",
         "SRERepairResetPlayerMixin",
-        "SRERepairTeamJoinMixin"
+        "SRERepairTeamJoinMixin",
+        "TMMRolesLegacyScanMixin",
+        "SRERoleSkinMixin"
     ]
 }

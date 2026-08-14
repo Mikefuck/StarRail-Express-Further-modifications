@@ -63,13 +63,13 @@ public final class BlackoutHornVoteHandler {
                 return InteractionResult.PASS;
             }
 
-            // 发起者必须存活
-            if (!BlackoutRoleManager.isAlive(serverLevel, serverPlayer.getUUID())) {
+            // 发起者必须在线且存活（断线宽限内不可拉杆）
+            if (!BlackoutRoleManager.isInteractable(serverLevel, serverPlayer.getUUID())) {
                 return InteractionResult.PASS;
             }
 
-            // 存活人数不足时不可拉汽笛放逐
-            int aliveCount = BlackoutRoleManager.getAllAlive(serverLevel).size();
+            // 断线宽限玩家不能参与本轮投票，因此不计入最低在线存活人数。
+            int aliveCount = onlineAliveCount(serverLevel);
             if (aliveCount < MIN_ALIVE_FOR_EXILE) {
                 SubtitleNotifier.sendTop(serverPlayer, Component.empty(),
                         Component.literal("§c存活玩家不足 " + MIN_ALIVE_FOR_EXILE
@@ -87,7 +87,7 @@ public final class BlackoutHornVoteHandler {
                 confirmWindows.remove(key);
 
                 // 二次确认时再校验人数（期间可能有人死亡）
-                int aliveNow = BlackoutRoleManager.getAllAlive(serverLevel).size();
+                int aliveNow = onlineAliveCount(serverLevel);
                 if (aliveNow < MIN_ALIVE_FOR_EXILE) {
                     SubtitleNotifier.sendTop(serverPlayer, Component.empty(),
                             Component.literal("§c存活玩家不足 " + MIN_ALIVE_FOR_EXILE
@@ -141,13 +141,28 @@ public final class BlackoutHornVoteHandler {
         HabiTrainCore.LOGGER.info("[HornVoteHandler] registered for trainmurdermystery:horn");
     }
 
-    /** 玩家淘汰/死亡时清除确认窗口（所有维度）。 */
+    private static int onlineAliveCount(ServerLevel level) {
+        int count = 0;
+        for (UUID id : BlackoutRoleManager.getAllAlive(level)) {
+            if (BlackoutRoleManager.isInteractable(level, id)) count++;
+        }
+        return count;
+    }
+
+    /** 玩家淘汰/死亡/断线时清除确认窗口（所有维度）。 */
     public static void onPlayerRemoved(UUID playerId) {
         if (playerId == null) return;
         confirmWindows.keySet().removeIf(k -> Objects.equals(k.playerId(), playerId));
     }
 
-    /** 对局开始/清理时清空所有确认窗口，避免跨局二次拉动直接扣费 */
+    /** 仅清理指定维度的确认窗口（对局 cleanup / preStart 用，避免误清其它维）。 */
+    public static void clear(ServerLevel level) {
+        if (level == null) return;
+        ResourceKey<Level> dim = level.dimension();
+        confirmWindows.keySet().removeIf(k -> Objects.equals(k.dimension(), dim));
+    }
+
+    /** 停服或全局重置时清空所有确认窗口。 */
     public static void clearAll() {
         confirmWindows.clear();
     }

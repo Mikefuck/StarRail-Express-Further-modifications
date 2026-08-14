@@ -174,11 +174,16 @@ public class ConfigManager implements ConfigQueryService {
         com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
     }
 
-    public void mergeFromJsonString(String json) {
-        sync.mergeFromJsonString(repository, json);
+    /**
+     * @return true 合并成功并已 markDirty；false 解析失败（内存未改）
+     */
+    public boolean mergeFromJsonString(String json) {
+        boolean ok = sync.mergeFromJsonString(repository, json);
+        if (!ok) return false;
         store.markDirty();
         com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
         com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+        return true;
     }
 
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
@@ -315,6 +320,7 @@ public class ConfigManager implements ConfigQueryService {
         repository.setRoleOverrides(section);
         store.markDirty();
         com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild(section);
+        com.habitrain.core.role.override.RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
     }
 
     public void ensureModeMapVoteDefaults(java.util.Collection<String> modeIds,

@@ -1,6 +1,7 @@
 # gradle
 
 .gradle/
+.gradle-codex/
 build/
 out/
 classes/
@@ -42,3 +43,7 @@ replay_*.log
 # runtime logs
 
 logs/
+
+# local dependency backups
+
+libs/*.bak

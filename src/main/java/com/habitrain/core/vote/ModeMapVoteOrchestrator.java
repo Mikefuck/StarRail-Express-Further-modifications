@@ -14,6 +14,7 @@ import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.game.sre.SreOriginalModeProxy;
+import com.habitrain.core.network.MapVoteProfilePayload;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -27,10 +28,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Two-phase lobby vote: mode options → map options → loadMap → startMode.
@@ -239,6 +242,15 @@ public final class ModeMapVoteOrchestrator {
                     settings.playerCountOrDefault().drawCount);
         }
 
+        // 剔除 SRE 会把 map_vote 目录自身枚举成候选地图的保留 id（如 "map_vote/maps"）
+        List<String> filteredIds = new ArrayList<>();
+        for (String mapId : effectiveIds) {
+            if (!MapVoteProfileStore.isReservedMapId(mapId)) {
+                filteredIds.add(mapId);
+            }
+        }
+        effectiveIds = filteredIds;
+
         List<VoteOption> mapOptions = new ArrayList<>();
         for (String mapId : effectiveIds) {
             String name = resolveMapDisplayName(settings, mapId);
@@ -271,6 +283,33 @@ public final class ModeMapVoteOrchestrator {
             clearSession(level);
             return;
         }
+
+        // 磁盘 I/O 与图片读取移出服务端 tick；完成后回到服务端线程确认投票仍有效并分片发送。
+        List<String> profileIds = List.copyOf(effectiveIds);
+        Map<String, MapVoteEntry> profileConfig = new java.util.LinkedHashMap<>();
+        for (String id : profileIds) {
+            MapVoteEntry source = settings.maps.get(id);
+            if (source == null) continue;
+            MapVoteEntry copy = MapVoteEntry.createDefault();
+            copy.enabled = source.enabled;
+            copy.displayName = source.displayName;
+            copy.minPlayers = source.minPlayers;
+            copy.maxPlayers = source.maxPlayers;
+            profileConfig.put(id, copy);
+        }
+        CompletableFuture.supplyAsync(() -> {
+            MapVoteProfileStore.ensureProfiles(level, profileIds, profileConfig);
+            return MapVoteProfileStore.loadProfiles(level, profileIds);
+        }).whenComplete((profiles, error) -> level.getServer().execute(() -> {
+            if (error != null) {
+                LOGGER.warn("[ModeMapVote] async profile load failed", error);
+                return;
+            }
+            if (SESSIONS.get(level.dimension()) != session || session.phase != Phase.MAP_VOTING) {
+                return;
+            }
+            OptionVoteManager.pushProfiles(level, profiles);
+        }));
 
         LOGGER.info("[ModeMapVote] map vote started mode={} options={} duration={}s",
                 winnerId, mapOptions.size(), duration);
@@ -359,7 +398,7 @@ public final class ModeMapVoteOrchestrator {
                 session.phase.name(),
                 session.selectedModeId,
                 session.selectedMapId,
-                remainingSeconds(session)
+                remainingSeconds(level, session)
         );
     }
 
@@ -372,16 +411,14 @@ public final class ModeMapVoteOrchestrator {
         OptionVoteManager.syncTo(player);
     }
 
-    private static int remainingSeconds(Session session) {
+    private static int remainingSeconds(ServerLevel level, Session session) {
         if (session.phase != Phase.MODE_VOTING && session.phase != Phase.MAP_VOTING) {
             return 0;
         }
         if (session.phaseDurationSeconds <= 0) {
             return 0;
         }
-        long elapsed = (System.currentTimeMillis() - session.phaseStartMs) / 1000L;
-        long left = session.phaseDurationSeconds - elapsed;
-        return (int) Math.max(0, left);
+        return OptionVoteManager.remainingSeconds(level);
     }
 
     private static void clearSession(ServerLevel level) {

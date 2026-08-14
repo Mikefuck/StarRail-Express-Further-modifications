@@ -88,20 +88,18 @@ public class TaskInstance {
             definition.onTick(player, this);
 
             ServerPlayer serverPlayer = null;
+            GameMode activeMode = null;
             if (player instanceof ServerPlayer sp) {
                 serverPlayer = sp;
-                GameMode activeMode = GameModeRegistry.getActiveForLevel(sp.serverLevel()).orElse(null);
+                activeMode = GameModeRegistry.getActiveForLevel(sp.serverLevel()).orElse(null);
                 if (activeMode != null) {
                     activeMode.onTaskTick(sp, this);
                 }
             }
 
             boolean completed = definition.checkCompletion(player, this);
-            if (serverPlayer != null) {
-                GameMode completionMode = GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).orElse(null);
-                if (completionMode != null) {
-                    completed = completionMode.overrideCompletionCheck(serverPlayer, this).orElse(completed);
-                }
+            if (serverPlayer != null && activeMode != null) {
+                completed = activeMode.overrideCompletionCheck(serverPlayer, this).orElse(completed);
             }
 
             if (completed) {
@@ -143,8 +141,11 @@ public class TaskInstance {
         instance.fulfilled = nbt.getBoolean("fulfilled");
         instance.failed = nbt.getBoolean("failed");
         instance.progress = nbt.getInt("progress");
-        instance.maxProgress = nbt.getInt("maxProgress");
-        instance.elapsedTicks = nbt.getInt("elapsedTicks");
+        instance.setMaxProgress(nbt.getInt("maxProgress"));
+        instance.elapsedTicks = Math.max(0, nbt.getInt("elapsedTicks"));
+        if (instance.failed) {
+            instance.fulfilled = true;
+        }
         return instance;
     }
 }

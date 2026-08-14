@@ -94,9 +94,17 @@ public class ActiveTaskCache {
     }
 
     /**
-     * 清空所有缓存（真实任务 + 假任务）
+     * 清空真实任务缓存。假任务请用 {@link #clearFakeTask()} 或 {@link #clearAll()}。
+     * <p>注意：真实任务 clear 包不得顺带清掉杀手假任务，否则双任务 ESP 会丢一半。
      */
     public static void clear() {
+        activeTaskFullId = null;
+    }
+
+    /**
+     * 清空真实任务 + 假任务（断线 / 局终等需要全清时用）。
+     */
+    public static void clearAll() {
         activeTaskFullId = null;
         fakeTaskFullId = null;
     }

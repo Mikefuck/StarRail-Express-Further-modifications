@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.BuiltinTaskRegistrar;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.util.SubtitleNotifier;
 import net.minecraft.network.chat.Component;
@@ -32,11 +33,14 @@ public class BlackoutPetCatTask {
             .blockTypeId(37)
             .instinctColor(255, 182, 193, 200)
             .scanBlockIds(BuiltinTaskRegistrar.CAT_BLOCK_IDS)
+            .timeImpact(TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN, 15)
             .onAssign((player, task) -> {
                 task.setMaxProgress(100);
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
+                // 两 tick 采样一次，命中时按两 tick 记进度，保持 5 秒完成语义。
+                if (player.level().getGameTime() % 2L != 0L) return;
 
                 Set<Block> currentCatBlocks = BuiltinTaskRegistrar.resolveCatBlocks();
                 if (currentCatBlocks.isEmpty()) return;
@@ -62,19 +66,21 @@ public class BlackoutPetCatTask {
                 if (hitResult.getType() == HitResult.Type.BLOCK) {
                     Block lookedBlock = player.level().getBlockState(hitResult.getBlockPos()).getBlock();
                     if (currentCatBlocks.contains(lookedBlock)) {
-                        task.setProgress(Math.min(task.getProgress() + 1, task.getMaxProgress()));
+                        task.setProgress(Math.min(task.getProgress() + 2, task.getMaxProgress()));
                         return;
                     }
                 }
 
                 if (task.getProgress() > 0) {
-                    task.setProgress(Math.max(0, task.getProgress() - 2));
+                    task.setProgress(Math.max(0, task.getProgress() - 4));
                 }
             })
             .completionChecker((player, task) ->
                 task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(),
+                            "habitrain_core:blackout_pet_cat");
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_pet_cat");
                 }
             })

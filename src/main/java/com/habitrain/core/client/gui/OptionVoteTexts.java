@@ -65,8 +65,43 @@ public final class OptionVoteTexts {
         return Component.translatable("vote.habitrain_core.ui.hint");
     }
 
+    public static Component mapControlHint() {
+        return Component.translatable("vote.habitrain_core.ui.map_hint");
+    }
+
+    /** 加载页等仅支持 ESC 隐藏时的提示。 */
+    public static Component hideHint() {
+        return Component.translatable("vote.habitrain_core.ui.hide_hint");
+    }
+
+    /**
+     * 投票倒计时页提示：ESC + 已注册的 open_vote 键均可隐藏。
+     * 键名来自 {@link com.habitrain.core.client.BlackoutKeyHandler}，随玩家改键变化。
+     */
+    public static Component hideHintWithBoundKey() {
+        return Component.translatable(
+                "vote.habitrain_core.ui.hide_hint_key",
+                com.habitrain.core.client.BlackoutKeyHandler.getBoundKeyDisplay());
+    }
+
     public static Component noCandidates() {
         return Component.translatable("vote.habitrain_core.ui.no_candidates");
+    }
+
+    public static Component recommendedPlayersLabel() {
+        return Component.translatable("vote.habitrain_core.ui.recommended_players");
+    }
+
+    public static Component mapNumber(String id) {
+        return Component.translatable("vote.habitrain_core.ui.map_number", id == null ? "" : id);
+    }
+
+    public static Component unlimited() {
+        return Component.translatable("vote.habitrain_core.ui.unlimited");
+    }
+
+    public static Component votedTo(Component mapName) {
+        return Component.translatable("vote.habitrain_core.ui.voted_to", mapName);
     }
 
     public static Component winnerStatus() {

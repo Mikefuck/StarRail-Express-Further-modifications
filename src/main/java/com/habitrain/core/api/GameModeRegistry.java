@@ -20,8 +20,13 @@ public class GameModeRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("GameModeRegistry");
     private static final Map<String, GameMode> REGISTRY = new LinkedHashMap<>();
     private static final Map<ResourceKey<Level>, GameMode> ACTIVE_MODES = new HashMap<>();
-    /** Cache for passive isActive() fallback results. Invalidated on start/stop. */
-    private static final Map<ResourceKey<Level>, GameMode> PASSIVE_CACHE = new ConcurrentHashMap<>();
+    /**
+     * Passive fallback cache, including a negative result. It is valid for one level tick so
+     * dozens of task instances cannot each rescan every registered mode, while an externally
+     * activated passive mode is still discovered on the next tick.
+     */
+    private static final Map<ResourceKey<Level>, PassiveLookup> PASSIVE_CACHE = new ConcurrentHashMap<>();
+    private record PassiveLookup(long gameTime, GameMode mode) {}
     private static boolean frozen = false;
 
     public static void register(String modId, String modeId, GameMode mode) {
@@ -142,21 +147,17 @@ public class GameModeRegistry {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode explicit = ACTIVE_MODES.get(levelKey);
         if (explicit != null) return Optional.of(explicit);
-        // fallback: passive check (cached only while still isActive)
-        GameMode cached = PASSIVE_CACHE.get(levelKey);
-        if (cached != null) {
-            if (cached.isActive(level)) {
-                return Optional.of(cached);
-            }
-            PASSIVE_CACHE.remove(levelKey);
+        long gameTime = level.getGameTime();
+        PassiveLookup cached = PASSIVE_CACHE.get(levelKey);
+        if (cached != null && cached.gameTime == gameTime) {
+            return Optional.ofNullable(cached.mode);
         }
-        return REGISTRY.values().stream()
+        GameMode passive = REGISTRY.values().stream()
                 .filter(m -> m.isActive(level))
                 .findFirst()
-                .map(m -> {
-                    PASSIVE_CACHE.put(levelKey, m);
-                    return m;
-                });
+                .orElse(null);
+        PASSIVE_CACHE.put(levelKey, new PassiveLookup(gameTime, passive));
+        return Optional.ofNullable(passive);
     }
 
     public static boolean isActiveInLevel(ServerLevel level) {

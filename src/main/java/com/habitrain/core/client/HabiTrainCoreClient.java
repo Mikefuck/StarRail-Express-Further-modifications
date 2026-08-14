@@ -38,6 +38,10 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         // 投稿职业客户端钩子（替罪羊本能伪装等）
         HabiRoleClientHooks.init();
+        com.habitrain.core.client.role.RoleClientExtensionHooks.init();
+
+        // 角色动作客户端结果 API：注册超时 tick
+        com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.registerTick();
 
         // 生命周期事件处理（JOIN / DISCONNECT / 游戏结束 / 配置保存回调）
         new ClientLifecycleHandler(shaderMonitor);

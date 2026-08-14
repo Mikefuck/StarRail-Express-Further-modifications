@@ -12,15 +12,20 @@ import com.habitrain.core.game.sre.role.sins.component.LustComponent;
 import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
+import com.habitrain.core.role.state.HabiRolePlayerStateComponent;
+import com.habitrain.core.role.state.HabiRoleWorldStateComponent;
 import net.minecraft.world.entity.player.Player;
 import org.ladysnake.cca.api.v3.entity.EntityComponentFactoryRegistry;
 import org.ladysnake.cca.api.v3.entity.EntityComponentInitializer;
 import org.ladysnake.cca.api.v3.entity.RespawnCopyStrategy;
+import org.ladysnake.cca.api.v3.world.WorldComponentFactoryRegistry;
+import org.ladysnake.cca.api.v3.world.WorldComponentInitializer;
 
 /**
- * Cardinal Components 入口：注册投稿职业 + 七宗罪玩家组件。
+ * Cardinal Components 入口：注册投稿职业 + 七宗罪玩家组件，以及 v2 角色状态
+ * 固定容器（player/world）。
  */
-public final class HabiComponents implements EntityComponentInitializer {
+public final class HabiComponents implements EntityComponentInitializer, WorldComponentInitializer {
     @Override
     public void registerEntityComponentFactories(EntityComponentFactoryRegistry registry) {
         registry.registerForPlayers(
@@ -68,7 +73,19 @@ public final class HabiComponents implements EntityComponentInitializer {
                 SlothComponent.KEY,
                 SlothComponent::new,
                 RespawnCopyStrategy.NEVER_COPY);
-        HabiTrainCore.LOGGER.info("[HabiComponents] registered 11 player CCA keys (4 roles + 7 sins)");
+        // v2 角色状态固定容器（PLAYER scope 持久槽）
+        registry.registerForPlayers(
+                HabiRolePlayerStateComponent.KEY,
+                HabiRolePlayerStateComponent::new,
+                RespawnCopyStrategy.NEVER_COPY);
+        HabiTrainCore.LOGGER.info("[HabiComponents] registered 12 player CCA keys (4 roles + 7 sins + role state)");
+    }
+
+    @Override
+    public void registerWorldComponentFactories(WorldComponentFactoryRegistry registry) {
+        // v2 角色状态固定容器（WORLD scope 持久槽，每维度独立）
+        registry.register(HabiRoleWorldStateComponent.KEY, HabiRoleWorldStateComponent::new);
+        HabiTrainCore.LOGGER.info("[HabiComponents] registered world CCA key role_state_world");
     }
 
     public static void clearAll(Player player) {

@@ -4,7 +4,7 @@
 > **平台:** Minecraft 1.21.1 · Fabric · Java 21  
 > **公开包:** `com.habitrain.core.api`  
 > **配置:** `config/habitrain_core.json`  
-> **文档日期:** 2026-07-22  
+> **文档日期:** 2026-08-09
 
 本手册描述 **DLC / 附属模组可依赖的公开 API**。`task/`、`game/`、`network/`、`config/` 等包为内部实现，**不保证**跨版本稳定，请勿直接依赖。
 

@@ -56,7 +56,7 @@ public class TaskSaveController {
     }
 
     public void resetDefault() {
-        if (!remoteEditable) return;
+        if (!canEditNow()) return;
         cfg.enabled = true;
         cfg.enabledMaps.clear();
         cfg.mapFilterMode = 0;
@@ -74,8 +74,14 @@ public class TaskSaveController {
     }
 
     public void saveCurrent() {
-        if (!remoteEditable) return;
+        if (!canEditNow()) return;
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), cfg);
+    }
+
+    private boolean canEditNow() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) return true;
+        MenuPermissions.showDeniedMessage();
+        return false;
     }
 
     public static void showMessage(String msg) {

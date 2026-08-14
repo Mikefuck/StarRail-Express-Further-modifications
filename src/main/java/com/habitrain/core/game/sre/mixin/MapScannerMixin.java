@@ -117,10 +117,11 @@ public class MapScannerMixin {
                     .add(BlackoutOverlayTypes.ROTARY_PHONE_RED);
         }
 
-        // 如果 blockToTypeIds 仍然为空（只有常量方块但停电模式未激活），提前返回
+        // 如果 blockToTypeIds 仍然为空：清空并广播空快照，避免客户端残留旧坐标
         if (blockToTypeIds.isEmpty()) {
             CustomTaskBlockCache.clear();
-            LOGGER.info("[MapScannerMixin] 没有可扫描的方块（常量透视方块不在停电模式中）");
+            CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
+            LOGGER.info("[MapScannerMixin] 没有可扫描的方块，已广播空快照");
             return;
         }
 
@@ -173,11 +174,12 @@ for (int x = areaBox.minX(); x <= areaBox.maxX(); x++) {
             }
         }
 
+        // Always broadcast snapshot (including empty) so clients drop stale positions after a rescan.
         if (totalAddedCount > 0) {
             MapScannerManager.saveArea(serverLevel);
-            CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
-            LOGGER.info("[MapScannerMixin] updated custom task block cache with {} entries (multi-typeId)",
-                    totalAddedCount);
         }
+        CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
+        LOGGER.info("[MapScannerMixin] updated custom task block cache with {} entries (multi-typeId)",
+                totalAddedCount);
     }
 }

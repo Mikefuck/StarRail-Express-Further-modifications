@@ -1,6 +1,9 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.TaskDefinition;
+import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import net.fabricmc.api.EnvType;
@@ -31,10 +34,17 @@ public final class PhoneOverlayRenderer {
         if (!GameRunningCache.isGameRunning()) return;
         if (!com.habitrain.core.client.gui.ClientBlackoutState.isBlackoutModeActive()) return;
 
+        int activeType = taskType(ActiveTaskCache.getActiveTaskFullId());
+        int fakeType = taskType(ActiveTaskCache.getFakeTaskFullId());
+
         int rendered = 0;
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {
             Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
             if (typeIds == null) continue;
+            if ((activeType > 12 && typeIds.contains(activeType))
+                    || (fakeType > 12 && typeIds.contains(fakeType))) {
+                continue;
+            }
             // 常驻透视：street_phone（警察聘请）+ rotary_phone_red（任务商店）
             if (typeIds.contains(BlackoutOverlayTypes.STREET_PHONE)
                     || typeIds.contains(BlackoutOverlayTypes.ROTARY_PHONE_RED)) {
@@ -46,5 +56,10 @@ public final class PhoneOverlayRenderer {
         if (rendered > 0) {
             HabiTrainCore.LOGGER.debug("[PhoneOverlayRenderer] rendered {} constant overlay blocks", rendered);
         }
+    }
+
+    private static int taskType(String taskId) {
+        TaskDefinition def = taskId == null ? null : TaskRegistry.get(taskId);
+        return def != null ? def.getBlockTypeId() : -1;
     }
 }

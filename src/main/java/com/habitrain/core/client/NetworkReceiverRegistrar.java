@@ -12,6 +12,7 @@ import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.client.gui.GameEndOverlayState;
 import com.habitrain.core.client.gui.OptionVoteScreen;
 import com.habitrain.core.client.gui.OptionVoteState;
+import com.habitrain.core.client.gui.VoteLaunchSession;
 import com.habitrain.core.client.gui.VoteLaunchTransitionScreen;
 import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.InstinctColorHelper;
@@ -32,10 +33,14 @@ import com.habitrain.core.network.MenuGatePayload;
 import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
 import com.habitrain.core.network.MapVoteProgressPayload;
+import com.habitrain.core.network.MapVoteProfilePayload;
+import com.habitrain.core.network.MapVoteStartConfirmedPayload;
 import com.habitrain.core.network.OptionVotePayload;
 import com.habitrain.core.network.RepairModeSyncPayload;
+import com.habitrain.core.network.RoleActionS2CPayload;
 import com.habitrain.core.network.ShaderConfigPayload;
 import com.habitrain.core.network.TaskConfigPayload;
+import com.habitrain.core.client.role.RoleActionClientState;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -226,6 +231,7 @@ public class NetworkReceiverRegistrar {
                 if (RepairModeClientState.isLocalRepairer()) {
                     if (result.shouldStartMapTransition()
                             && ctx.client().screen instanceof VoteLaunchTransitionScreen) {
+                        VoteLaunchSession.clear();
                         ctx.client().setScreen(null); // 进入维修模式时残留的转场屏立即交还
                     }
                     return;
@@ -233,6 +239,7 @@ public class NetworkReceiverRegistrar {
                 // Auto-open once per phase (inactive→active or voteId change).
                 // 1Hz rebroadcasts must not re-force the screen if the player closed it.
                 if (result.shouldStartMapTransition()) {
+                    VoteLaunchSession.begin(result.resolvedOptionId());
                     Screen destination = ctx.client().screen;
                     ctx.client().setScreen(new VoteLaunchTransitionScreen(
                             destination, result.resolvedOptionId()));
@@ -251,33 +258,102 @@ public class NetworkReceiverRegistrar {
             });
         });
 
-        // 15) 开局加载进度 — 更新转场屏的加载面板（人数/地图/模式/杀手/进度条）
+        // 14b) 地图投票档案 S2C 接收器（一次性推送，仅存状态，解码在渲染线程懒做）
+        ClientPlayNetworking.registerGlobalReceiver(MapVoteProfilePayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> OptionVoteState.applyProfiles(payload)));
+
+        // 15) 开局加载进度 — 始终写入 Session（hide 后进度不断档），屏打开时同步 UI
         ClientPlayNetworking.registerGlobalReceiver(MapVoteProgressPayload.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员不看加载转场
                     }
+                    VoteLaunchSession.updateProgress(payload.progress(), payload.playerCount(),
+                            payload.killerCount(), payload.mapId(), payload.modeId());
                     if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
                         transition.updateProgress(payload.progress(), payload.playerCount(),
                                 payload.killerCount(), payload.mapId(), payload.modeId());
                     }
                 }));
 
-        // 16) 开局环境就绪 — SRE 自带地图天气与 API 对局环境均应用完成后广播，触发扫场亮标题。
-        //     仅当当前已是转场屏（刷新）或仍是投票屏（从投票结果直接确认）时才创建/更新转场屏；
-        //     用户已手动关闭投票屏、或转场已交还/中止时不得强制重开，避免覆盖用户关闭的界面。
+        // 15b) 判定点 A：地图重置完成 / trueStartGame 进入 STARTING。
+        //      sticky 隐藏意图 → 左→右补盖 + 「对局开始」；可见 → 锁定 hide，必要时保险开屏。
+        //      recover 路径禁止走 openSafetyCover（那是加载模式，会错误显示「开局加载中」）。
+        ClientPlayNetworking.registerGlobalReceiver(MapVoteStartConfirmedPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    if (RepairModeClientState.isLocalRepairer()) {
+                        return;
+                    }
+                    if (!VoteLaunchSession.isActive()) {
+                        // 中途加入等未 begin 的客户端：不强制转场（与现产品一致）
+                        return;
+                    }
+                    VoteLaunchSession.StartConfirmedResult result =
+                            VoteLaunchSession.onStartConfirmed(payload.mapId());
+                    boolean onTransition = ctx.client().screen instanceof VoteLaunchTransitionScreen;
+                    if (result.recover()) {
+                        // 始终重建补盖屏，保证左→右入场从零开始；内容直接是「对局开始」
+                        Screen parent = ctx.client().screen;
+                        if (parent instanceof VoteLaunchTransitionScreen open) {
+                            parent = open.getDestinationOrNull();
+                        }
+                        ctx.client().setScreen(VoteLaunchTransitionScreen.openRecover(parent));
+                        return;
+                    }
+                    // 可见路径：锁定 hide；若屏意外不在转场上，保险全屏盖住防 TP 露馅（仍是加载内容）
+                    if (!onTransition) {
+                        ctx.client().setScreen(VoteLaunchTransitionScreen.openSafetyCover(
+                                ctx.client().screen));
+                    } else {
+                        ((VoteLaunchTransitionScreen) ctx.client().screen).pullFromSession();
+                    }
+                }));
+
+        // 16) 判定点 B：开局环境就绪 — 可见路径原地切「对局开始」；补盖路径仅同步 mapId。
+        //     若 A 漏处理但玩家曾 sticky 隐藏，先 promote 再开 recover，避免静默丢包。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchTransitionPayload.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员不看开局转场
                     }
+                    // A 漏了但仍有 sticky hide：迟到 promote 为 recover，遮住后续 TP/世界
+                    VoteLaunchSession.promoteStickyHideToRecoverIfNeeded();
+                    VoteLaunchSession.onLaunchConfirmed(payload.winningMapId());
                     if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
+                        // 若 sticky 已 promote 但当前仍是加载屏：重建 recover，避免继续显示加载中
+                        if (VoteLaunchSession.isRecoverPath() && !transition.isRecoverPresentation()) {
+                            Screen parent = transition.getDestinationOrNull();
+                            VoteLaunchTransitionScreen recover =
+                                    VoteLaunchTransitionScreen.openRecover(parent);
+                            recover.confirmLaunch(payload.winningMapId());
+                            ctx.client().setScreen(recover);
+                            return;
+                        }
                         transition.confirmLaunch(payload.winningMapId());
                         return;
                     }
+                    // 补盖路径：强制开「对局开始」（世界 HUD / null 屏均可）
+                    if (VoteLaunchSession.isActive() && VoteLaunchSession.isRecoverPath()) {
+                        VoteLaunchTransitionScreen transition =
+                                VoteLaunchTransitionScreen.openRecover(ctx.client().screen);
+                        transition.confirmLaunch(payload.winningMapId());
+                        ctx.client().setScreen(transition);
+                        return;
+                    }
+                    // 可见路径：session 仍 active 但屏丢了 → 保险开屏并切标题
+                    if (VoteLaunchSession.isActive()) {
+                        VoteLaunchTransitionScreen transition =
+                                VoteLaunchTransitionScreen.openSafetyCover(ctx.client().screen);
+                        transition.confirmLaunch(payload.winningMapId());
+                        ctx.client().setScreen(transition);
+                        return;
+                    }
+                    // 遗留兜底：仍停在投票屏且无 session（极端时序）
                     if (!(ctx.client().screen instanceof OptionVoteScreen)) {
                         return;
                     }
+                    VoteLaunchSession.begin(payload.winningMapId());
+                    VoteLaunchSession.onLaunchConfirmed(payload.winningMapId());
                     Screen destination = ctx.client().screen;
                     VoteLaunchTransitionScreen transition = new VoteLaunchTransitionScreen(
                             destination, payload.winningMapId());
@@ -293,6 +369,7 @@ public class NetworkReceiverRegistrar {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员无转场屏可交还
                     }
+                    VoteLaunchSession.onAbort();
                     if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
                         transition.markGameAborted();
                     }
@@ -329,6 +406,7 @@ public class NetworkReceiverRegistrar {
                 ctx.client().execute(() -> {
                     RepairModeClientState.setRepairing(payload.isRepairing());
                     if (payload.isRepairing()) {
+                        VoteLaunchSession.clear();
                         VoteLaunchOverlayState.scheduleGrace(0L);
                         GameEndOverlayState.scheduleGrace(0L);
                         if (ctx.client().screen instanceof OptionVoteScreen
@@ -338,5 +416,43 @@ public class NetworkReceiverRegistrar {
                         }
                     }
                 }));
+
+        // 20) 角色动作结果：push 走独立推送监听，否则按 (actionId, sequence) 解析挂起请求。
+        ClientPlayNetworking.registerGlobalReceiver(RoleActionS2CPayload.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> {
+                    if (payload.push()) {
+                        com.habitrain.core.client.role.RoleActionClientSession.INSTANCE
+                                .onPush(payload.actionId(), payload.payload());
+                    } else {
+                        com.habitrain.core.client.role.RoleActionClientSession.INSTANCE
+                                .onResult(payload.actionId(), payload.sequence(), payload.ok(),
+                                        payload.reasonKey(), payload.payload());
+                    }
+                    RoleActionClientState.accept(
+                            payload.actionId(),
+                            payload.sequence(),
+                            payload.ok(),
+                            payload.reasonKey(),
+                            payload.payload());
+                }));
+
+        // 20) 角色状态同步（per-slot SyncPolicy）→ 客户端镜像缓存（opaque 保存）
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.RoleStateSyncPayload.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.client.role.RoleStateClientCache.accept(payload)));
+
+        // 21) 角色扩展 manifest 握手（§14.2）→ 客户端握手状态（Mod Menu 页读取）
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.RoleManifestPayload.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.client.role.RoleHandshakeState.INSTANCE
+                                        .accept(payload.toManifest())));
+
+        // 22) 角色扩展编译条目快照（§13.2）→ 客户端页面数据源
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.RoleSnapshotPayload.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.accept(payload)));
     }
 }

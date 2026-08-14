@@ -60,6 +60,11 @@ public class BlackoutRoleManager {
         final Map<UUID, Faction> factionHistory = new HashMap<>();
         final Set<UUID> sheriffs = new HashSet<>();
         final Map<UUID, ResourceLocation> roleHistory = new HashMap<>();
+        /**
+         * 断线但仍在存活表内的玩家（宽限期内计存活，不可互动/不可被雇警抽中）。
+         * 真正死亡/超时淘汰走 {@link #eliminate}，不走此集合。
+         */
+        final Set<UUID> offlinePlayers = ConcurrentHashMap.newKeySet();
         int initialGoodCount = 0;
     }
 
@@ -95,6 +100,39 @@ public class BlackoutRoleManager {
         return getOrCreate(level).roles.containsKey(playerId);
     }
 
+    /**
+     * 断线标记：仍计存活（胜负人数），但不可互动、不作为雇警/放逐目标。
+     * 与 {@link #eliminate}（真正淘汰）分离，避免瞬断被当死亡。
+     */
+    public static void markDisconnected(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return;
+        RoleState state = getOrCreate(level);
+        if (!state.roles.containsKey(playerId)) return;
+        state.offlinePlayers.add(playerId);
+        // 进行中的投票/确认窗去掉断线者，但不改阵营存活表
+        BlackoutExileVoteManager.onPlayerRemoved(level, playerId);
+        BlackoutHornVoteHandler.onPlayerRemoved(playerId);
+        LOGGER.info("markDisconnected: {} still alive offline in {}", playerId, level.dimension().location());
+    }
+
+    /** 重连：清除断线标记，恢复互动资格（前提仍 isAlive）。 */
+    public static void clearDisconnected(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return;
+        if (getOrCreate(level).offlinePlayers.remove(playerId)) {
+            LOGGER.info("clearDisconnected: {} reconnected in {}", playerId, level.dimension().location());
+        }
+    }
+
+    public static boolean isDisconnected(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return false;
+        return getOrCreate(level).offlinePlayers.contains(playerId);
+    }
+
+    /** 在线且存活：电话/商店/放逐发起等互动门控。 */
+    public static boolean isInteractable(ServerLevel level, UUID playerId) {
+        return isAlive(level, playerId) && !isDisconnected(level, playerId);
+    }
+
     public static void eliminate(ServerLevel level, UUID playerId) {
         RoleState state = getOrCreate(level);
         Faction faction = state.factions.get(playerId);
@@ -104,6 +142,7 @@ public class BlackoutRoleManager {
         state.roles.remove(playerId);
         state.factions.remove(playerId);
         state.sheriffs.remove(playerId);
+        state.offlinePlayers.remove(playerId);
         BlackoutExileVoteManager.onPlayerRemoved(level, playerId);
         BlackoutHornVoteHandler.onPlayerRemoved(playerId);
     }
@@ -161,6 +200,101 @@ public class BlackoutRoleManager {
             return Faction.SIN_KILLER_SHARE;
         }
         return sreRole.canUseKiller() ? Faction.BAD : Faction.GOOD;
+    }
+
+    /**
+     * Reversible data-only half of a role reassignment. It updates the SRE map
+     * and Blackout's live role/faction tables but deliberately does not fire
+     * compatibility events, update replay, or increment statistics. Those
+     * effects belong to {@link #finishReassignRole} and must run only after the
+     * caller has committed its full role-change transaction.
+     */
+    public static void prepareReassignRole(ServerLevel level, UUID playerId, SRERole sreRole,
+                                           Faction factionOverride) {
+        if (level == null || playerId == null || sreRole == null) {
+            return;
+        }
+        Faction faction = factionOverride != null ? factionOverride : resolveFactionFromSreRole(sreRole);
+        ResourceLocation roleId = sreRole.getIdentifier();
+        if (roleId == null) {
+            throw new IllegalArgumentException("reassigned role has no identifier");
+        }
+        RoleState state = getOrCreate(level);
+        state.roles.put(playerId, roleId);
+        state.factions.put(playerId, faction);
+        state.factionHistory.put(playerId, faction);
+        state.roleHistory.put(playerId, roleId);
+
+        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(level);
+        if (gameWorld != null) {
+            gameWorld.addRole(playerId, sreRole, false);
+        }
+    }
+
+    /**
+     * Final, externally visible half of a reassignment. Call only after all
+     * failure-prone internal state initialization has succeeded.
+     */
+    public static void finishReassignRole(ServerLevel level, UUID playerId, SRERole oldRole,
+                                          SRERole newRole, boolean record, boolean addStats) {
+        if (level == null || playerId == null || newRole == null) {
+            return;
+        }
+        ServerPlayer player = level.getServer() == null ? null
+                : level.getServer().getPlayerList().getPlayer(playerId);
+        if (player != null && oldRole != null) {
+            try {
+                org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
+                        .removeModdedRole(player, oldRole);
+            } catch (Throwable t) {
+                LOGGER.warn("finishReassignRole: ModdedRoleRemoved failed for {}", playerId, t);
+            }
+            if (record) {
+                try {
+                    io.wifi.starrailexpress.SRE.REPLAY_MANAGER
+                            .recordPlayerRoleChange(playerId, oldRole, newRole);
+                } catch (Throwable t) {
+                    LOGGER.warn("finishReassignRole: recordPlayerRoleChange failed for {}", playerId, t);
+                }
+            }
+        }
+        if (addStats && player != null) {
+            addReassignStats(player, newRole);
+        }
+        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(level);
+        if (gameWorld != null) {
+            gameWorld.syncRoles();
+            try {
+                io.wifi.starrailexpress.SRE.REPLAY_MANAGER.updateRolesFromComponent(gameWorld);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (player != null) {
+            try {
+                org.agmas.harpymodloader.events.ModdedRoleAssigned.EVENT.invoker()
+                        .assignModdedRole(player, newRole);
+            } catch (Throwable t) {
+                LOGGER.error("finishReassignRole: failed to fire ModdedRoleAssigned for {}", playerId, t);
+            }
+        }
+    }
+
+    private static void addReassignStats(ServerPlayer player, SRERole role) {
+        try {
+            var stats = io.wifi.starrailexpress.stats.PlayerStatsManager.get(player);
+            stats.getOrCreateRoleStats(role.getIdentifier()).incrementTimesPlayed();
+            if (role.isVigilanteTeam()) {
+                stats.incrementTotalSheriffGames();
+            } else if (role.canUseKiller()) {
+                stats.incrementTotalKillerGames();
+            } else if (role.isNeutrals()) {
+                stats.incrementTotalNeutralGames();
+            } else if (role.isInnocent() && !role.isVigilanteTeam()) {
+                stats.incrementTotalCivilianGames();
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("finishReassignRole: stats update failed for {}", player.getUUID(), t);
+        }
     }
 
     /**
@@ -375,11 +509,21 @@ public class BlackoutRoleManager {
     @org.jetbrains.annotations.Nullable
     public static UUID getRandomHireTarget(ServerLevel level, java.util.Random random,
                                            @org.jetbrains.annotations.Nullable UUID excludeId) {
+        return getRandomHireTarget(level, random, excludeId, false);
+    }
+
+    /** @param killersOnly 警长位已满时只抽杀手；杀手雇佣不占新的警长职业位。 */
+    @org.jetbrains.annotations.Nullable
+    public static UUID getRandomHireTarget(ServerLevel level, java.util.Random random,
+                                           @org.jetbrains.annotations.Nullable UUID excludeId,
+                                           boolean killersOnly) {
         RoleState state = INSTANCES.get(level.dimension());
         if (state == null) return null;
         List<UUID> candidates = new ArrayList<>();
         for (UUID id : state.roles.keySet()) {
             if (excludeId != null && excludeId.equals(id)) continue;
+            if (state.offlinePlayers.contains(id)) continue; // 断线宽限内不可被抽中
+            if (killersOnly && state.factions.get(id) != Faction.BAD) continue;
             if (!state.sheriffs.contains(id)) {
                 candidates.add(id);
             }
@@ -387,8 +531,8 @@ public class BlackoutRoleManager {
         return candidates.isEmpty() ? null : candidates.get(random.nextInt(candidates.size()));
     }
 
-    // ===== 警长角色禁用/恢复（修复 1：开局不分配警长阵营角色）=====
-    private static final Set<ResourceLocation> disabledVigilanteRoles = new HashSet<>();
+    // ROLE_MAX 是上游全局表；只允许在角色分配临界区内临时修改。
+    private static final Object VIGILANTE_ASSIGN_LOCK = new Object();
 
     /**
      * 禁用所有警长阵营角色（isVigilanteTeam()=true）。
@@ -396,31 +540,32 @@ public class BlackoutRoleManager {
      * 使 SRE 的角色分配系统不分配任何警察/警卫角色。
      * 投票选出警长后由 setSheriff 手动分配。
      */
-    public static void disableAllVigilanteRoles() {
-        disabledVigilanteRoles.clear();
-        for (SRERole role :
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
-            if (role.isVigilanteTeam()) {
+    public static void assignWithVigilantesDisabled(Runnable assignment) {
+        if (assignment == null) return;
+        synchronized (VIGILANTE_ASSIGN_LOCK) {
+            Map<ResourceLocation, Integer> previous = new HashMap<>();
+            Set<ResourceLocation> previouslyAbsent = new HashSet<>();
+            for (SRERole role :
+                    SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
+                if (!role.isVigilanteTeam()) continue;
                 ResourceLocation id = role.getIdentifier();
-                disabledVigilanteRoles.add(id);
+                if (Harpymodloader.ROLE_MAX.containsKey(id)) {
+                    previous.put(id, Harpymodloader.ROLE_MAX.get(id));
+                } else {
+                    previouslyAbsent.add(id);
+                }
                 Harpymodloader.setRoleMaximum(id, 0);
             }
-        }
-        LOGGER.info("Disabled {} vigilante roles for blackout mode", disabledVigilanteRoles.size());
-    }
-
-    /**
-     * 恢复之前禁用的警长角色配置。
-     * 在 BlackoutMode.onCleanup 中调用，移除 ROLE_MAX 限制让后续对局恢复正常。
-     */
-    public static void restoreVigilanteRoleMaxes() {
-        for (ResourceLocation id : disabledVigilanteRoles) {
-            Harpymodloader.ROLE_MAX.remove(id);
-        }
-        int count = disabledVigilanteRoles.size();
-        disabledVigilanteRoles.clear();
-        if (count > 0) {
-            LOGGER.info("Restored role max for {} vigilante roles", count);
+            try {
+                assignment.run();
+            } finally {
+                for (ResourceLocation id : previouslyAbsent) {
+                    Harpymodloader.ROLE_MAX.remove(id);
+                }
+                for (Map.Entry<ResourceLocation, Integer> entry : previous.entrySet()) {
+                    Harpymodloader.setRoleMaximum(entry.getKey(), entry.getValue());
+                }
+            }
         }
     }
 

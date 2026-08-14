@@ -40,13 +40,13 @@ public class ConfigMenuScreen extends Screen {
     private static final String[][] SUB_LABELS = {
         {"小游戏", "数值平衡", "环境"},
         {"投票", "大厅环境", "光影白名单"},
-        {"任务配置", "角色覆盖"},
+        {"任务配置", "角色覆盖", "角色扩展"},
         {}
     };
     private static final String[][] PAGE_HINTS = {
         {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气"},
         {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包"},
-        {"按模式管理任务并编辑奖励与地图", "管理角色替换、调整和冲突状态"},
+        {"按模式管理任务并编辑奖励与地图", "管理角色替换、调整和冲突状态", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
         {"兼容、耐久与服务端自动行为"}
     };
 
@@ -77,6 +77,7 @@ public class ConfigMenuScreen extends Screen {
         this.parent = parent;
         this.taskSettingsOnly = taskSettingsOnly;
         this.remoteEditable = MenuPermissions.canEditRemoteConfigs();
+        this.saveBar = new SaveBar(remoteEditable);
         for (int i = 0; i < SUB_LABELS.length; i++) {
             if (SUB_LABELS[i].length > 0) subBars[i] = new SubTabBar(SUB_LABELS[i], TOP_ACCENTS[i]);
         }
@@ -113,7 +114,8 @@ public class ConfigMenuScreen extends Screen {
         };
         pages[TOP_MODE] = new ConfigPage[]{
             new ModeTasksPage(this, font, remoteEditable),
-            new ModeRolesPage(this, font, remoteEditable)
+            new ModeRolesPage(this, font, remoteEditable),
+            new com.habitrain.core.client.gui.menu.page.RoleExtensionsPage(this, font, remoteEditable)
         };
         pages[TOP_OTHER] = new ConfigPage[]{new OtherPage(this, font, remoteEditable)};
         return pages;
@@ -182,10 +184,7 @@ public class ConfigMenuScreen extends Screen {
         g.disableScissor();
 
         if (showSaveBar) {
-            saveBar = new SaveBar(remoteEditable);
             saveBar.render(g, font, contentX, contentW, height, accent, mx, my);
-        } else {
-            saveBar = null;
         }
     }
 
@@ -327,9 +326,9 @@ public class ConfigMenuScreen extends Screen {
             return true;
         }
 
-        if (saveBar != null && saveBar.mouseClicked(mx, my, contentX(), contentW(), height)) {
+        if (currentPage().canSave() && saveBar.mouseClicked(mx, my, contentX(), contentW(), height)) {
             MenuSounds.playClick();
-            if (!remoteEditable) {
+            if (!remoteEditable || !MenuPermissions.canEditRemoteConfigs()) {
                 MenuPermissions.showDeniedMessage();
                 return true;
             }

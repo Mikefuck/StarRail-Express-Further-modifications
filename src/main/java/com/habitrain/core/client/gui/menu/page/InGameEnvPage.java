@@ -206,6 +206,19 @@ public class InGameEnvPage implements ConfigPage {
     /** 提交聚焦的 profile tick/fog 文本框到当前 profile（保存/切页/关闭前调用）。 */
     @Override public void flushPending() {
         EnvEditorShared.flushFocusedFields(profileTickField, profileFogEndField, currentProfile(), editable);
+        if (!editable) return;
+        flushRuleTick(goodTickField, settings().goodWin);
+        flushRuleTick(otherTickField, settings().otherWin);
+    }
+
+    private void flushRuleTick(EditBox field, PostMatchTimeRule rule) {
+        if (field == null || rule == null || !field.isFocused()) return;
+        if (rule.time == null) rule.time = EnvTimeSpec.createDefault();
+        try {
+            rule.time.tick = EnvTimeSpec.clampTick(Integer.parseInt(field.getValue().trim()));
+            rule.time.mode = EnvTimeSpec.Mode.TICK;
+            ConfigManager.getInstance().markEnvironmentDirty();
+        } catch (NumberFormatException ignored) {}
     }
 
     // ---------------- 渲染 ----------------

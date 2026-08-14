@@ -52,7 +52,7 @@ public class ConfigRepository {
     }
 
     public Map<String, GameModeConfigScope> getAllGameModeConfigs() {
-        return gameModeConfigs;
+        return Collections.unmodifiableMap(gameModeConfigs);
     }
 
     Map<String, GameModeConfigScope> getMutableGameModeConfigs() {
@@ -102,7 +102,14 @@ public class ConfigRepository {
         this.shaderWhitelistEnabled = enabled;
     }
 
-    public List<String> getShaderWhitelist() { return shaderWhitelist; }
+    public List<String> getShaderWhitelist() {
+        return Collections.unmodifiableList(shaderWhitelist);
+    }
+
+    /** Package-private mutable view for ConfigStore / ConfigSync loaders. */
+    List<String> getMutableShaderWhitelist() {
+        return shaderWhitelist;
+    }
 
     public void setShaderWhitelist(List<String> list) {
         shaderWhitelist.clear();
@@ -132,7 +139,7 @@ public class ConfigRepository {
     }
 
     public Map<String, MinigameConfigEntry> getAllMinigameConfigs() {
-        return minigameConfigs;
+        return Collections.unmodifiableMap(minigameConfigs);
     }
 
     Map<String, MinigameConfigEntry> getMutableMinigameConfigs() {

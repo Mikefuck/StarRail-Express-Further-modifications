@@ -14,5 +14,17 @@
   "mike_code_edit": {
     "subtitle": "代码修改",
     "sounds": ["habitrain_core:mike_code_edit"]
+  },
+  "betel_nut_eat": {
+    "subtitle": "吃槟榔",
+    "sounds": ["minecraft:entity.generic.eat"]
+  },
+  "betel_nut_get": {
+    "subtitle": "获得槟榔",
+    "sounds": ["minecraft:entity.item.pickup"]
+  },
+  "look_my_eyes": {
+    "subtitle": "对视",
+    "sounds": ["minecraft:entity.player.levelup"]
   }
 }

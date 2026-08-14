@@ -4,6 +4,7 @@
     "compatibilityLevel": "JAVA_21",
     "client": [
         "CustomTaskBlockRendererMixin",
+        "TaskBlockOverlayThroughWallMixin",
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
         "StarRailExpressTitleScreenMixin",

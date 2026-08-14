@@ -37,6 +37,14 @@ public final class VoteLaunchOverlayState {
         active = value;
     }
 
+    /**
+     * 玩家在加载期主动隐藏：立即关掉覆盖层，不进入相机/黑场宽限期
+     * （对局尚未开始，无需继续屏蔽 SRE intro）。
+     */
+    public static void deactivateForUserHide() {
+        active = false;
+    }
+
     /** 覆盖层关闭时调用：开启宽限期，期间仍屏蔽原版开局动画。 */
     public static void scheduleGrace(long graceMillis) {
         blockUntilMillis = Util.getMillis() + Math.max(0, graceMillis);

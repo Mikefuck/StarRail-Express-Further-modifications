@@ -8,6 +8,8 @@ import com.habitrain.core.game.blackout.shop.BlackoutTaskShopService;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
 import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
 import com.habitrain.core.network.ActiveTaskPayload;
+import com.habitrain.core.role.behavior.RoleEventDispatcher;
+import com.habitrain.core.role.behavior.WinFoldResult;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -35,7 +37,7 @@ public class BlackoutVictoryChecker {
     }
 
     private void checkSanityDeaths(ServerLevel level) {
-        if (mode.getCurrentLevel() == null || mode.isGameEnded()) return;
+        if (!mode.hasRound(level) || mode.isGameEnded(level)) return;
         var server = level.getServer();
         if (server == null) return;
 
@@ -60,8 +62,8 @@ public class BlackoutVictoryChecker {
     }
 
     void checkVictory(ServerLevel level) {
-        if (mode.getCurrentLevel() == null) return;
-        if (mode.isGameEnded()) return;
+        if (!mode.hasRound(level)) return;
+        if (mode.isGameEnded(level)) return;
 
         // 1) Pride last survivor among assigned alive → custom pride win.
         if (SinVictoryHooks.isOnlyPrideAlive(level)) {
@@ -78,10 +80,24 @@ public class BlackoutVictoryChecker {
         // 3) MODIFY win-condition hooks from role override API.
         WinResult hookResult = RoleOverrideWinHook.check(level);
         if (hookResult != null) {
-            mode.setLastWinningFaction(null);
+            mode.setLastWinningFaction(level, null);
             endGame(level, hookResult, hookResult.getReason());
             return;
         }
+
+        // 3b) v2 win hooks. One unified fold for gate + winner patch (shared with
+        // the standard SRE murder chain). evaluateWin can still declare a custom
+        // winner; allowGameEnd DENY is pride-style and may only block "killers
+        // wiped → GOOD win". BAD wipe / timer must still resolve, otherwise pride
+        // coexisting with killers freezes the match.
+        WinFoldResult v2Fold = RoleEventDispatcher.INSTANCE.foldWin(level, "BLACKOUT", false);
+        WinResult v2Win = v2Fold.toWinResult();
+        if (v2Win != null) {
+            mode.setLastWinningFaction(level, null);
+            endGame(level, v2Win, v2Win.getReason());
+            return;
+        }
+        boolean v2BlocksGoodWin = v2Fold.denied();
 
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
@@ -99,57 +115,56 @@ public class BlackoutVictoryChecker {
                 endGameSlothCustom(level);
                 return;
             }
-            mode.setLastWinningFaction(null);
+            mode.setLastWinningFaction(level, null);
             endGame(level, WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
             return;
         }
-        // Timer can still end even if pride is alive (spec §6.2 step 3).
-        // Sloth hijacks timer GOOD end when alive (design §5.7) — same as wipe paths.
+        // 阵营全灭优先于计时器。尤其 GOOD 已全灭且傲慢仍与 BAD 共存时，
+        // prideBlocking 只能阻止“杀手全灭”的 GOOD 结算，不能把已经成立的 BAD 胜拖到
+        // timer 分支反判为 GOOD 胜。
+        if (goodRemaining <= 0 && badRemaining > 0) {
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
+                return;
+            }
+            mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.BAD);
+            endGame(level, WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
+            return;
+        }
+        if (badRemaining <= 0 && goodRemaining > 0) {
+            if (prideBlocking || v2BlocksGoodWin) {
+                return;
+            }
+            if (SinVictoryHooks.isSlothAlive(level)) {
+                endGameSlothCustom(level);
+                return;
+            }
+            mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.GOOD);
+            endGame(level, WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
+            return;
+        }
+        // Timer can still end if pride is alive, but only after wipe outcomes above.
         if (BlackoutTimerSystem.isTimeUp(level)) {
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
                 return;
             }
-            mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
+            mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
-            return;
-        }
-        if (badRemaining <= 0 && goodRemaining > 0) {
-            if (prideBlocking) {
-                return;
-            }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
-                return;
-            }
-            mode.setLastWinningFaction(BlackoutRoleManager.Faction.GOOD);
-            endGame(level, WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
-            return;
-        }
-        if (goodRemaining <= 0 && badRemaining > 0) {
-            if (prideBlocking) {
-                return;
-            }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
-                return;
-            }
-            mode.setLastWinningFaction(BlackoutRoleManager.Faction.BAD);
-            endGame(level, WinResult.noWinner("好人全灭"), "§c杀手阵营获胜！所有好人都被淘汰了");
         }
     }
 
     private void endGamePrideCustom(ServerLevel level) {
-        if (mode.isGameEnded()) return;
-        mode.setLastWinningFaction(null);
-        mode.setGameEnded(true);
+        if (mode.isGameEnded(level)) return;
+        mode.setLastWinningFaction(level, null);
+        mode.setGameEnded(level, true);
         String message = "§6傲慢·路西法获胜！成为最后的幸存者。";
-        mode.setPendingEndMessage(message);
-        mode.setPendingWinResult(WinResult.noWinner("傲慢独立胜"));
+        mode.setPendingEndMessage(level, message);
+        mode.setPendingWinResult(level, WinResult.noWinner("傲慢独立胜"));
         if (level == null) return;
         try {
             populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.PRIDE_ID);
-            mode.setPendingEndMessage(null);
+            mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
             var sreGame = SREGameWorldComponent.KEY.get(level);
             if (sreGame != null) {
@@ -162,16 +177,16 @@ public class BlackoutVictoryChecker {
     }
 
     private void endGameSlothCustom(ServerLevel level) {
-        if (mode.isGameEnded()) return;
-        mode.setLastWinningFaction(null);
-        mode.setGameEnded(true);
+        if (mode.isGameEnded(level)) return;
+        mode.setLastWinningFaction(level, null);
+        mode.setGameEnded(level, true);
         String message = "§9懒惰·贝露菲格露获胜！在阵营胜负中窃取了胜利。";
-        mode.setPendingEndMessage(message);
-        mode.setPendingWinResult(WinResult.noWinner("懒惰独立胜"));
+        mode.setPendingEndMessage(level, message);
+        mode.setPendingWinResult(level, WinResult.noWinner("懒惰独立胜"));
         if (level == null) return;
         try {
             populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID);
-            mode.setPendingEndMessage(null);
+            mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
             var sreGame = SREGameWorldComponent.KEY.get(level);
             if (sreGame != null) {
@@ -184,16 +199,16 @@ public class BlackoutVictoryChecker {
     }
 
     private void endGameGreedCustomInstance(ServerLevel level, ServerPlayer winner) {
-        if (mode.isGameEnded()) return;
-        mode.setLastWinningFaction(null);
-        mode.setGameEnded(true);
+        if (mode.isGameEnded(level)) return;
+        mode.setLastWinningFaction(level, null);
+        mode.setGameEnded(level, true);
         String message = "§6贪婪·玛门获胜！收纳袋收集完成。";
-        mode.setPendingEndMessage(message);
-        mode.setPendingWinResult(WinResult.noWinner("贪婪独立胜"));
+        mode.setPendingEndMessage(level, message);
+        mode.setPendingWinResult(level, WinResult.noWinner("贪婪独立胜"));
         if (level == null) return;
         try {
             populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.GREED_ID);
-            mode.setPendingEndMessage(null);
+            mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {} winner={}",
                     message, winner != null ? winner.getUUID() : null);
             var sreGame = SREGameWorldComponent.KEY.get(level);
@@ -215,8 +230,10 @@ public class BlackoutVictoryChecker {
         try {
             var activeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level);
             if (activeOpt.isEmpty() || !(activeOpt.get() instanceof BlackoutMode blackout)) return;
-            if (blackout.isGameEnded()) return;
-            blackout.getVictoryChecker().endGameGreedCustomInstance(level, winner);
+            if (blackout.isGameEnded(level)) return;
+            var vc = blackout.getVictoryChecker(level);
+            if (vc == null) return;
+            vc.endGameGreedCustomInstance(level, winner);
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.debug("[Blackout] endGameGreedCustom skipped: {}", t.toString());
         }
@@ -274,20 +291,20 @@ public class BlackoutVictoryChecker {
     }
 
     void endGame(ServerLevel level, WinResult result, String message) {
-        if (mode.isGameEnded()) return;
-        mode.setGameEnded(true);
-        mode.setPendingEndMessage(message);
-        mode.setPendingWinResult(result);
+        if (mode.isGameEnded(level)) return;
+        mode.setGameEnded(level, true);
+        mode.setPendingEndMessage(level, message);
+        mode.setPendingWinResult(level, result);
         if (level != null) {
             try {
                 // 对齐 SRE 原版：先写 roundEnd，再进入 STOPPING。
                 // 不要 clearRoleMap：客户端 lastRole 依赖 AnnounceEnding 时角色表仍在。
                 // 不要立刻 GameModeRegistry.stop：finalize 仍需 lastWinningFaction。
-                populateRoundEndData(level, mode.getLastWinningFaction());
+                populateRoundEndData(level, mode.getLastWinningFaction(level));
 
                 // 不发 habitrain 胜利 TOP 补充弹窗；SRE 结算 UI 由 populateRoundEndData + STOPPING 驱动。
                 if (message != null && !message.isEmpty()) {
-                    mode.setPendingEndMessage(null);
+                    mode.setPendingEndMessage(level, null);
                     HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
                 }
 
@@ -367,7 +384,7 @@ public class BlackoutVictoryChecker {
     }
 
     void endGame(ServerLevel level, String message) {
-        mode.setLastWinningFaction(null);
+        mode.setLastWinningFaction(level, null);
         endGame(level, WinResult.forceEnd("游戏结束"), message);
     }
 
@@ -409,30 +426,18 @@ public class BlackoutVictoryChecker {
             if (BlackoutRoleManager.getFaction(level, uuid) != BlackoutRoleManager.Faction.GOOD) continue;
 
             ServerPlayer sp = level.getServer().getPlayerList().getPlayer(uuid);
+            // 断线宽限玩家重连后会由正常同步/派发路径处理；不能创建未执行 onAssign 的任务实例。
+            if (sp == null || !BlackoutRoleManager.isInteractable(level, uuid)) continue;
 
             // 无奖励取消当前任务（停电专属 onRemove + 回收；原版 SRE clear）
-            if (sp != null) {
-                BlackoutTaskShopService.cancelWithoutReward(level, sp);
-            } else {
-                // 玩家离线：仍清追踪
-                TaskInstance existing = mgr.getActiveTask(uuid);
-                if (existing != null) {
-                    mgr.removeActiveTask(uuid);
-                }
-                mgr.removeFakeTask(uuid);
-                mgr.clearBlackoutRotationFlag(uuid);
-            }
+            BlackoutTaskShopService.cancelWithoutReward(level, sp);
 
             TaskInstance instance = new TaskInstance(restoreDef);
-            if (sp != null) {
-                restoreDef.onAssign(sp, instance);
-            }
+            restoreDef.onAssign(sp, instance);
             mgr.setActiveTask(uuid, instance);
 
-            if (sp != null) {
-                ActiveTaskPayload.sendToPlayer(sp, restoreDef.getFullId());
-                ExclusiveTaskHudSync.insert(sp, instance);
-            }
+            ActiveTaskPayload.sendToPlayer(sp, restoreDef.getFullId());
+            ExclusiveTaskHudSync.insert(sp, instance);
             assigned++;
         }
         if (assigned > 0) {

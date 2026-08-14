@@ -17,4 +17,9 @@ public final class RepairModeClientState {
     public static boolean isLocalRepairer() {
         return repairing;
     }
+
+    /** 换服/断线时清除上一连接的权限状态。 */
+    public static void reset() {
+        repairing = false;
+    }
 }

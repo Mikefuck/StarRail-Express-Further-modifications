@@ -193,9 +193,8 @@ public class FurnaceExplosionHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
-        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
-                new SlownessReapplyManager.EffectSpec(2, ticks + 10,
-                        ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION)));
+        SlownessReapplyManager.register(sp.serverLevel(), uuid, 2, ticks + 10,
+                ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;

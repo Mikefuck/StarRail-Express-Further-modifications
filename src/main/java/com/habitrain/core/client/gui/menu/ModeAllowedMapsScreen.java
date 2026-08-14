@@ -210,7 +210,7 @@ public class ModeAllowedMapsScreen extends Screen {
             int contentBot = height - 34;
             int contentH = contentBot - contentTop;
             int maxScroll = Math.max(0, contentHeight - contentH);
-            scrollOffset = Mth.clamp(dragStartOff + (dragStartY - my), 0, maxScroll);
+            scrollOffset = Mth.clamp(dragStartOff + (my - dragStartY), 0, maxScroll);
             return true;
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
@@ -234,6 +234,9 @@ public class ModeAllowedMapsScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            commitSave();
+        }
         Minecraft.getInstance().setScreen(parent);
     }
 }

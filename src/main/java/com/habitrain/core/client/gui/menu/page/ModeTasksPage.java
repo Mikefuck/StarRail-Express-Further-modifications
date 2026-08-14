@@ -63,6 +63,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private boolean draggingContent = false;
     private double dragStartY = 0;
     private double dragStartScroll = 0;
+    private double maxSidebarScroll = 0;
+    private double maxContentScroll = 0;
 
     /** 每帧快照的 ConfigQueryService 代理 (S10-007)，避免 render 内反复 getInstance */
     private ConfigQueryService configSnapshot;
@@ -212,7 +214,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         }
         // 滚动条
         int sidebarContentH = rowY + (int) sidebarScroll - sidebarListY;
-        int maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
+        maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
+        sidebarScroll = Mth.clamp(sidebarScroll, 0, maxSidebarScroll);
         MenuTheme.drawScrollbar(g, sidebarX + SIDEBAR_W - 4, sidebarListY, sidebarListH, sidebarScroll, maxSidebarScroll, 3);
         g.disableScissor();
 
@@ -248,7 +251,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         }
         // 内容滚动条
         int contentContentH = cy + (int) contentScroll - y;
-        int maxContentScroll = Math.max(0, contentContentH - h);
+        maxContentScroll = Math.max(0, contentContentH - h);
+        contentScroll = Mth.clamp(contentScroll, 0, maxContentScroll);
         MenuTheme.drawScrollbar(g, contentX + contentW - 4, y, h, contentScroll, maxContentScroll, 3);
         g.disableScissor();
     }
@@ -365,11 +369,11 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
         if (draggingSidebar) {
-            sidebarScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, 10000);
+            sidebarScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxSidebarScroll);
             return true;
         }
         if (draggingContent) {
-            contentScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, 10000);
+            contentScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxContentScroll);
             return true;
         }
         return false;
@@ -388,9 +392,9 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) {
         if (mx < x + SIDEBAR_W) {
-            sidebarScroll = Mth.clamp(sidebarScroll - sy * 18, 0, 10000);
+            sidebarScroll = Mth.clamp(sidebarScroll - sy * 18, 0, maxSidebarScroll);
         } else {
-            contentScroll = Mth.clamp(contentScroll - sy * 18, 0, 10000);
+            contentScroll = Mth.clamp(contentScroll - sy * 18, 0, maxContentScroll);
         }
         return true;
     }

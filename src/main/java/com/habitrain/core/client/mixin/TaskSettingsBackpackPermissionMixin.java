@@ -76,8 +76,8 @@ public abstract class TaskSettingsBackpackPermissionMixin {
     }
 
     private static void habitrain$applyPermissionLock(Button button, boolean allowed) {
-        if (button != null && TaskSettingsBackpackPermissionMixin.habitrain$isTaskSettingsButton(button) && !allowed) {
-            button.active = false;
+        if (button != null && TaskSettingsBackpackPermissionMixin.habitrain$isTaskSettingsButton(button)) {
+            button.active = allowed;
         }
     }
 

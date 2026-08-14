@@ -6,8 +6,11 @@ import com.habitrain.core.client.gui.BlackoutTaskShopState;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
+import com.habitrain.core.client.gui.MapVotePreviewCache;
 import com.habitrain.core.client.gui.OptionVoteState;
+import com.habitrain.core.client.gui.VoteLaunchSession;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
@@ -102,6 +105,7 @@ public class ClientLifecycleHandler {
         OnGameStartedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
                 GameRunningCache.invalidate();
+                VoteLaunchSession.onGameActive();
                 if (Minecraft.getInstance().screen
                         instanceof com.habitrain.core.client.gui.VoteLaunchTransitionScreen transition) {
                     transition.markGameActive();
@@ -112,17 +116,27 @@ public class ClientLifecycleHandler {
 
     private static void resetState() {
         GameRunningCache.invalidate();
+        RepairModeClientState.reset();
+        MenuAccessGuard.reset();
         BlackoutHudOverlay.reset();
         BlackoutWelcomeRenderer.reset();
         BlackoutVoteState.clear();
         OptionVoteState.clear();
+        VoteLaunchSession.clear();
+        MapVotePreviewCache.clearAll();
         ClientBlackoutState.setBlackoutModeActive(false);
         // 清活动任务/扫描方块缓存与商店状态，避免换世界后陈旧 ESP 轮廓与商店状态残留（P1-22/P1-23）
-        ActiveTaskCache.clear();
+        ActiveTaskCache.clearAll();
         CustomTaskBlockCache.clear();
         BlackoutTaskShopState.clear();
         // 开局转场覆盖层在换世界/断线时释放，避免阻塞残留到下一局。
         com.habitrain.core.client.gui.VoteLaunchOverlayState.setActive(false);
         com.habitrain.core.client.gui.VoteLaunchOverlayState.scheduleGrace(0L);
+        // 角色状态同步镜像与角色动作回调在断线/换世界时清空，防止陈旧数据泄漏到下一服务器。
+        com.habitrain.core.client.role.RoleStateClientCache.clear();
+        com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.clear();
+        // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
+        com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
+        com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
     }
 }
