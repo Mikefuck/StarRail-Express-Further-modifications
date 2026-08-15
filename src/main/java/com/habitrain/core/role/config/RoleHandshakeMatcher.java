@@ -20,6 +20,15 @@ import java.util.List;
  * concrete remediation), then gameplay hash, then presentation degradation. A
  * nullable client hash means "trust the server" so a client that cannot compute
  * an independent fingerprint never false-positives.
+ *
+ * <p><b>Hash branch caveat (review 2026-08-14 P1):</b> the definition-hash
+ * branch only fires when the client reports a non-blank
+ * {@code expectedDefinitionHash}. The core client cannot independently compute
+ * the server's definition hash (it folds the server-side compiled entry view +
+ * the applied {@code roleExtensionsV2} config), so it reports {@code null} and
+ * the HASH_MISMATCH branch never triggers for it; the gate instead relies on
+ * report completeness, API compatibility and required-provider checks. Do not
+ * advertise definition-hash gating as closed for the stock client.
  */
 public final class RoleHandshakeMatcher {
 

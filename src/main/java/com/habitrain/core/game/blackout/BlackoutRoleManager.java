@@ -430,7 +430,7 @@ public class BlackoutRoleManager {
     public static SRERole getRandomPoliceRole(Random random) {
         Set<SRERole> occupationCompanions = new HashSet<>();
         List<SRERole> visibleRoles =
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool();
         for (SRERole role : visibleRoles) {
             List<SRERole> companions = role.getoccupationRoles();
             if (companions != null && !companions.isEmpty()) {
@@ -546,7 +546,7 @@ public class BlackoutRoleManager {
             Map<ResourceLocation, Integer> previous = new HashMap<>();
             Set<ResourceLocation> previouslyAbsent = new HashSet<>();
             for (SRERole role :
-                    SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
+                    com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
                 if (!role.isVigilanteTeam()) continue;
                 ResourceLocation id = role.getIdentifier();
                 if (Harpymodloader.ROLE_MAX.containsKey(id)) {

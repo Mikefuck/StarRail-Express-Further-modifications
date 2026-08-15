@@ -125,6 +125,34 @@ public final class CcaRoleStateStore implements RoleStateStore {
     }
 
     @Override
+    public java.util.Collection<StateSlotKey> keys() {
+        java.util.LinkedHashSet<StateSlotKey> out = new java.util.LinkedHashSet<>();
+        for (ServerPlayer p : resolver.allPlayers()) {
+            for (String encoded : HabiRolePlayerStateComponent.KEY.get(p).slots().keySet()) {
+                StateSlotKey key = StateSlotKey.parse(encoded);
+                if (key != null) {
+                    out.add(key);
+                }
+            }
+        }
+        for (ServerLevel w : resolver.allWorlds()) {
+            for (String encoded : HabiRoleWorldStateComponent.KEY.get(w).slots().keySet()) {
+                StateSlotKey key = StateSlotKey.parse(encoded);
+                if (key != null) {
+                    out.add(key);
+                }
+            }
+        }
+        for (String encoded : HabiRoleRoundStateStore.INSTANCE.slots().keySet()) {
+            StateSlotKey key = StateSlotKey.parse(encoded);
+            if (key != null) {
+                out.add(key);
+            }
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    @Override
     public void clearAll() {
         for (ServerPlayer p : resolver.allPlayers()) {
             HabiRolePlayerStateComponent.KEY.get(p).clear();

@@ -13,6 +13,7 @@ import java.util.Objects;
 public final class RoleInstinctRule {
 
     private final ResourceLocation id;
+    private final String entryKey;
     private final RoleKey viewerRole;
     private final @Nullable RoleKey targetRole;
     private final InstinctPhase phase;
@@ -21,6 +22,7 @@ public final class RoleInstinctRule {
 
     private RoleInstinctRule(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
+        this.entryKey = b.entryKey;
         this.viewerRole = Objects.requireNonNull(b.viewerRole, "viewerRole");
         this.targetRole = b.targetRole;
         this.phase = b.phase;
@@ -37,6 +39,7 @@ public final class RoleInstinctRule {
     }
 
     public ResourceLocation id() { return id; }
+    public String entryKey() { return entryKey; }
     public RoleKey viewerRole() { return viewerRole; }
     public @Nullable RoleKey targetRole() { return targetRole; }
     public InstinctPhase phase() { return phase; }
@@ -45,6 +48,7 @@ public final class RoleInstinctRule {
 
     public static final class Builder {
         private ResourceLocation id;
+        private String entryKey;
         private RoleKey viewerRole;
         private @Nullable RoleKey targetRole;
         private InstinctPhase phase = InstinctPhase.ALIVE_AFTER;
@@ -55,6 +59,11 @@ public final class RoleInstinctRule {
 
         public Builder id(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
+            return this;
+        }
+
+        public Builder entryKey(String entryKey) {
+            this.entryKey = entryKey;
             return this;
         }
 

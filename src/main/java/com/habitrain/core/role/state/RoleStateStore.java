@@ -28,6 +28,15 @@ public interface RoleStateStore {
 
     void clearAll();
 
+    /**
+     * Every slot currently materialized in this store. Used by the late-join /
+     * reconnect full sync (audit P0-2) and by removal sweeps that must report
+     * exactly which slots were deleted (audit P0-1). Memory stores list all
+     * keys; CCA stores list the slots of online players / loaded worlds plus
+     * the round bucket.
+     */
+    java.util.Collection<StateSlotKey> keys();
+
     /** Snapshot of every persistent slot, for restart simulation / diagnostics. */
     java.util.Map<StateSlotKey, StoredState> exportAll();
 

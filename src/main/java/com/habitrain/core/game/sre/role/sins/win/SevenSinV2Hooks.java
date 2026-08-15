@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.win;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.api.role.v2.RoleExtensionApi;
+import com.habitrain.core.api.role.v2.RoleExtensionRegistrar;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.behavior.Decision;
 import com.habitrain.core.api.role.v2.behavior.RoleHookContext;
@@ -18,7 +18,10 @@ import java.util.List;
 /**
  * v2 {@link RoleWinHooks} for the seven sins. Replaces the
  * {@code AllowGameEnd} first-wins listener in {@link SinVictoryHooks} so
- * pride/sloth/lust participate in the central dispatcher fold.
+ * pride/sloth/lust participate in the central dispatcher fold. Registered
+ * through the provider-scoped {@link RoleExtensionRegistrar} of
+ * {@link com.habitrain.core.role.extension.CoreRoleExtensionProvider} (audit
+ * P1-1: no process-global write path).
  *
  * <p>Helpers stay on {@link SinVictoryHooks}. {@code CustomWinnerRole.checkWin}
  * remains as the SRE framework fallback. Blackout still has its explicit
@@ -28,8 +31,10 @@ public final class SevenSinV2Hooks {
 
     private SevenSinV2Hooks() {}
 
-    public static void register() {
-        var registrar = RoleExtensionApi.instance().registrar();
+    public static void registerWith(RoleExtensionRegistrar registrar) {
+        if (registrar == null) {
+            throw new IllegalArgumentException("registrar must not be null");
+        }
         registrar.hooks(RoleKey.of(SevenSins.SLOTH_ID), RoleHooks.builder().win(SLOTH).build());
         registrar.hooks(RoleKey.of(SevenSins.LUST_ID), RoleHooks.builder().win(LUST).build());
         registrar.hooks(RoleKey.of(SevenSins.GREED_ID), RoleHooks.builder().win(GREED).build());

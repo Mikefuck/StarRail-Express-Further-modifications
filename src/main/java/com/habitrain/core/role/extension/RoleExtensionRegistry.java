@@ -57,6 +57,10 @@ public final class RoleExtensionRegistry {
     private final List<ManagedPatch> patches = new ArrayList<>();
     private final List<ManagedReplacement> replacements = new ArrayList<>();
     private final List<ManagedAlias> aliases = new ArrayList<>();
+    /** First-registered entryId per alias source (audit P0-3 conflict key). */
+    private final Map<ResourceLocation, String> aliasSourceOwners = new LinkedHashMap<>();
+    /** Every registered entryId per alias source, in registration order. */
+    private final Map<ResourceLocation, List<String>> aliasSourcesByFrom = new LinkedHashMap<>();
     private final Map<ResourceLocation, String> replacementByTarget = new LinkedHashMap<>();
     private final Set<String> registeredEntryIds = new HashSet<>();
     private volatile List<ManagedRoleEntry<?>> compiledEntries = List.of();
@@ -143,11 +147,20 @@ public final class RoleExtensionRegistry {
      * definition is exposed to the next provider.
      */
     synchronized RegistrationSnapshot snapshotForTransaction() {
-        // Only capture the upstream TMMRoles tables once they have actually been
-        // touched (tmmAccessible).  A hooks/state/action-only transaction must not
-        // initialize TMMRoles (which requires the Minecraft bootstrap), and it
-        // never mutates TMMRoles anyway, so there is nothing to restore.
-        boolean captureTmm = tmmAccessible;
+        return snapshotForTransaction(tmmAccessible);
+    }
+
+    /**
+     * Captures the mutable registration tables before a provider transaction
+     * commits. {@code captureTmm} must be true whenever the transaction can
+     * physically write to {@code TMMRoles} (ADD or NEW_ID_WITH_ALIAS REPLACE),
+     * even if this is the first time the upstream table is touched. A
+     * hooks/state/action-only transaction must not initialize TMMRoles (which
+     * requires the Minecraft bootstrap), and it never mutates TMMRoles anyway,
+     * so there is nothing to restore.
+     */
+    synchronized RegistrationSnapshot snapshotForTransaction(boolean captureTmm) {
+        boolean capture = captureTmm || tmmAccessible;
         return new RegistrationSnapshot(
                 new LinkedHashMap<>(managedRoles),
                 new LinkedHashMap<>(compiledReplacements),
@@ -157,11 +170,13 @@ public final class RoleExtensionRegistry {
                 new LinkedHashMap<>(replacementByTarget),
                 new HashSet<>(registeredEntryIds),
                 new ArrayList<>(compiledEntries),
+                new LinkedHashMap<>(aliasSourceOwners),
+                new LinkedHashMap<>(aliasSourcesByFrom),
                 frozen,
                 tmmAccessible,
-                captureTmm ? new LinkedHashMap<>(TMMRoles.ROLES) : null,
-                captureTmm ? new ArrayList<>(TMMRoles.CACHE.MAFIA_ROLES) : null,
-                captureTmm ? new ArrayList<>(TMMRoles.COMPONENT_KEYS) : null);
+                capture ? new LinkedHashMap<>(TMMRoles.ROLES) : null,
+                capture ? new ArrayList<>(TMMRoles.CACHE.MAFIA_ROLES) : null,
+                capture ? new ArrayList<>(TMMRoles.COMPONENT_KEYS) : null);
     }
 
     /** Restores a snapshot captured by {@link #snapshotForTransaction()}. */
@@ -193,6 +208,10 @@ public final class RoleExtensionRegistry {
         this.replacements.addAll(snapshot.replacements());
         this.aliases.clear();
         this.aliases.addAll(snapshot.aliases());
+        this.aliasSourceOwners.clear();
+        this.aliasSourceOwners.putAll(snapshot.aliasSourceOwners());
+        this.aliasSourcesByFrom.clear();
+        this.aliasSourcesByFrom.putAll(snapshot.aliasSourcesByFrom());
         this.replacementByTarget.clear();
         this.replacementByTarget.putAll(snapshot.replacementByTarget());
         this.registeredEntryIds.clear();
@@ -277,6 +296,17 @@ public final class RoleExtensionRegistry {
         if (!registeredEntryIds.add(entryId)) {
             throw new IllegalArgumentException("Duplicate ALIAS entryId: " + entryId);
         }
+        // The alias SOURCE (from) is the exclusive conflict key (audit P0-3): two
+        // declarations redirecting the same old id to different canonical ids would
+        // otherwise resolve by registration order. Both are kept registered so the
+        // diagnostic view can mark them CONFLICT; resolution uses the effective
+        // (winner or non-conflicted) mapping below.
+        String previousOwner = aliasSourceOwners.putIfAbsent(alias.from().location(), entryId);
+        aliasSourcesByFrom.computeIfAbsent(alias.from().location(), k -> new ArrayList<>()).add(entryId);
+        if (previousOwner != null) {
+            LOGGER.warn("ALIAS source {} is claimed by both {} and {}; marked CONFLICT until a winner is configured",
+                    alias.from().location(), previousOwner, entryId);
+        }
         aliases.add(new ManagedAlias(provider, alias));
         LOGGER.info("Registered ALIAS {} -> {} by {}", alias.from(), alias.to(), provider);
     }
@@ -295,7 +325,9 @@ public final class RoleExtensionRegistry {
         }
         validateAliasCycles();
         compileReplacements();
-        linkStoredRelations();
+        // Relations are intentionally NOT linked here. Snapshot activation owns
+        // all relation writes so ADD/REPLACE/MODIFY relations follow the current
+        // effective snapshot and are restored/reapplied in a fixed order.
         registerDeclaredSkills();
         // Unified v1+v2 diagnostic view; failures here must not break server start.
         recomputeCompiledEntries();
@@ -392,10 +424,9 @@ public final class RoleExtensionRegistry {
     }
 
     private void validateAliasCycles() {
-        Map<ResourceLocation, ResourceLocation> map = new HashMap<>();
-        for (ManagedAlias ma : aliases) {
-            map.put(ma.alias().from().location(), ma.alias().to().location());
-        }
+        // Only the EFFECTIVE mapping is validated: conflicted duplicate-source
+        // aliases are inert (audit P0-3), so they cannot mask or create cycles.
+        Map<ResourceLocation, ResourceLocation> map = effectiveAliasMap();
         for (ResourceLocation start : map.keySet()) {
             Set<ResourceLocation> seen = new HashSet<>();
             ResourceLocation cur = start;
@@ -466,11 +497,13 @@ public final class RoleExtensionRegistry {
     private void linkStoredRelations() {
         for (ManagedSRERole managed : managedRoles.values()) {
             if (managed.relationProfile() != null) {
+                RoleBaselineStore.captureRelationGraph(managed, managed.relationProfile(), this::resolveForLink);
                 RoleExtensionCompiler.linkRelations(managed, managed.relationProfile(), this::resolveForLink);
             }
         }
         for (ManagedSRERole replacement : compiledReplacements.values()) {
             if (replacement.relationProfile() != null) {
+                RoleBaselineStore.captureRelationGraph(replacement, replacement.relationProfile(), this::resolveForLink);
                 RoleExtensionCompiler.linkRelations(replacement, replacement.relationProfile(), this::resolveForLink);
             }
         }
@@ -531,6 +564,74 @@ public final class RoleExtensionRegistry {
             return;
         }
         io.wifi.starrailexpress.api.RoleSkill.register(roleId, defs);
+    }
+
+    // ------------------------------------------------------------------
+    // ALIAS conflict detection (audit P0-3)
+    // ------------------------------------------------------------------
+
+    /**
+     * The ALIAS entry ids participating in an unresolved duplicate-source
+     * conflict. Only config-ENABLED entries compete for a source; a configured
+     * winner ({@code RoleExtensionConfigService.winnerFor(from, "alias")})
+     * resolves the conflict and only the non-winner entries stay conflicted.
+     * Disabling one side removes it from the set, so the other recovers without
+     * a restart. Resolution ({@link #resolveAlias}) and snapshot aliasing
+     * ({@link #activeAliases}) never see conflicted entries.
+     */
+    public Set<String> conflictingAliasEntryIds() {
+        Map<ResourceLocation, List<ManagedAlias>> byFrom = new LinkedHashMap<>();
+        for (ManagedAlias ma : aliases) {
+            String entryId = entryId(ma.provider(), ma.alias());
+            if (RoleExtensionConfigService.INSTANCE.gateFor(ma.provider(), entryId)
+                    != RoleExtensionConfigService.EntryGate.ENABLED) {
+                continue;
+            }
+            byFrom.computeIfAbsent(ma.alias().from().location(), k -> new ArrayList<>()).add(ma);
+        }
+        Set<String> conflicting = new HashSet<>();
+        for (var e : byFrom.entrySet()) {
+            List<ManagedAlias> list = e.getValue();
+            if (list.size() < 2) {
+                continue;
+            }
+            String winner = RoleExtensionConfigService.INSTANCE.winnerFor(e.getKey(), "alias");
+            if (winner != null && list.stream()
+                    .anyMatch(ma -> winner.equals(entryId(ma.provider(), ma.alias())))) {
+                for (ManagedAlias ma : list) {
+                    if (!winner.equals(entryId(ma.provider(), ma.alias()))) {
+                        conflicting.add(entryId(ma.provider(), ma.alias()));
+                    }
+                }
+            } else {
+                for (ManagedAlias ma : list) {
+                    conflicting.add(entryId(ma.provider(), ma.alias()));
+                }
+            }
+        }
+        return Set.copyOf(conflicting);
+    }
+
+    /**
+     * The deterministic redirect map used by {@link #resolveAlias} and
+     * {@link #validateAliasCycles}: enabled, non-conflicted (winner-resolved)
+     * aliases only, so a duplicate source can never depend on registration order.
+     */
+    private Map<ResourceLocation, ResourceLocation> effectiveAliasMap() {
+        Set<String> conflicted = conflictingAliasEntryIds();
+        Map<ResourceLocation, ResourceLocation> map = new LinkedHashMap<>();
+        for (ManagedAlias ma : aliases) {
+            String entryId = entryId(ma.provider(), ma.alias());
+            if (conflicted.contains(entryId)) {
+                continue;
+            }
+            if (RoleExtensionConfigService.INSTANCE.gateFor(ma.provider(), entryId)
+                    != RoleExtensionConfigService.EntryGate.ENABLED) {
+                continue;
+            }
+            map.put(ma.alias().from().location(), ma.alias().to().location());
+        }
+        return map;
     }
 
     // ------------------------------------------------------------------
@@ -710,6 +811,26 @@ public final class RoleExtensionRegistry {
                 == RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
+    /**
+     * The active ADD/REPLACE relation links that snapshot activation must write.
+     * MODIFY relations are handled separately from each effective role's overlay.
+     */
+    public List<RoleRelationLink> activeRelationLinks() {
+        List<RoleRelationLink> out = new ArrayList<>();
+        for (ManagedSRERole managed : managedRoles.values()) {
+            if (managed.relationProfile() != null && isAddedActive(managed.identifier())) {
+                out.add(new RoleRelationLink(managed, managed.relationProfile()));
+            }
+        }
+        for (RoleReplacement repl : activeReplacements()) {
+            ManagedSRERole compiled = compiledReplacement(repl);
+            if (compiled != null && compiled.relationProfile() != null) {
+                out.add(new RoleRelationLink(compiled, compiled.relationProfile()));
+            }
+        }
+        return out;
+    }
+
     /** The config-enabled v2 {@code REPLACE} operations (surface in snapshots). */
     public List<RoleReplacement> activeReplacements() {
         List<RoleReplacement> out = new ArrayList<>();
@@ -722,11 +843,20 @@ public final class RoleExtensionRegistry {
         return out;
     }
 
-    /** The config-enabled v2 {@code ALIAS} entries. */
+    /**
+     * The effective v2 {@code ALIAS} entries: config-enabled and not part of an
+     * unresolved duplicate-source conflict (audit P0-3). Snapshot compilation
+     * and diagnostics must only ever see this deterministic set.
+     */
     public List<RoleAlias> activeAliases() {
+        Set<String> conflicted = conflictingAliasEntryIds();
         List<RoleAlias> out = new ArrayList<>();
         for (ManagedAlias ma : aliases) {
-            if (RoleExtensionConfigService.INSTANCE.gateFor(ma.provider(), entryId(ma.provider(), ma.alias()))
+            String entryId = entryId(ma.provider(), ma.alias());
+            if (conflicted.contains(entryId)) {
+                continue;
+            }
+            if (RoleExtensionConfigService.INSTANCE.gateFor(ma.provider(), entryId)
                     == RoleExtensionConfigService.EntryGate.ENABLED) {
                 out.add(ma.alias());
             }
@@ -748,10 +878,9 @@ public final class RoleExtensionRegistry {
      * {@code null} if the id is not an alias source.
      */
     public @Nullable ResourceLocation resolveAlias(ResourceLocation id) {
-        Map<ResourceLocation, ResourceLocation> map = new HashMap<>();
-        for (ManagedAlias ma : aliases) {
-            map.put(ma.alias().from().location(), ma.alias().to().location());
-        }
+        // Deterministic resolution (audit P0-3): only enabled, non-conflicted
+        // (winner-resolved) sources contribute; registration order is irrelevant.
+        Map<ResourceLocation, ResourceLocation> map = effectiveAliasMap();
         ResourceLocation cur = id;
         Set<ResourceLocation> seen = new HashSet<>();
         while (cur != null && map.containsKey(cur)) {
@@ -857,17 +986,25 @@ public final class RoleExtensionRegistry {
                     replacement,
                     "v2 REPLACE"));
         }
+        Set<String> aliasConflicts = conflictingAliasEntryIds();
         for (ManagedAlias ma : aliases) {
             RoleAlias alias = ma.alias();
-            out.add(configured(
-                    entryId(ma.provider(), alias),
+            String entryId = entryId(ma.provider(), alias);
+            ManagedRoleEntry<RoleAlias> entry = configured(
+                    entryId,
                     ma.provider(),
                     alias.from().toString(),
                     RoleOperation.ALIAS,
                     alias.to(),
                     PatchPriority.NORMAL,
                     alias,
-                    "v2 ALIAS"));
+                    "v2 ALIAS");
+            if (aliasConflicts.contains(entryId)) {
+                entry = entry.withStatus(EntryStatus.CONFLICT,
+                        "v2 ALIAS source " + alias.from().location()
+                                + " is claimed by multiple declarations; configure a conflict winner");
+            }
+            out.add(entry);
         }
         return out;
     }
@@ -901,10 +1038,10 @@ public final class RoleExtensionRegistry {
         ResourceLocation target = replacement.target().location();
         ResourceLocation replacementId = replacement.replacement().key().location();
         switch (replacement.identity()) {
-            case PRESERVE_TARGET_ID -> {
+            case KEEP_CANONICAL_ID, PRESERVE_TARGET_ID -> {
                 if (!target.equals(replacementId)) {
                     throw new IllegalArgumentException(
-                            "PRESERVE_TARGET_ID replacement must use the target id " + target
+                            "KEEP_CANONICAL_ID replacement must use the target id " + target
                                     + " but got " + replacementId);
                 }
             }
@@ -962,6 +1099,7 @@ public final class RoleExtensionRegistry {
     private record ManagedPatch(String provider, RolePatch patch) {}
     private record ManagedReplacement(String provider, RoleReplacement replacement) {}
     private record ManagedAlias(String provider, RoleAlias alias) {}
+    public record RoleRelationLink(SRERole role, com.habitrain.core.api.role.v2.definition.RoleRelationProfile profile) {}
 
     record RegistrationSnapshot(
             Map<ResourceLocation, ManagedSRERole> managedRoles,
@@ -972,6 +1110,8 @@ public final class RoleExtensionRegistry {
             Map<ResourceLocation, String> replacementByTarget,
             Set<String> registeredEntryIds,
             List<ManagedRoleEntry<?>> compiledEntries,
+            Map<ResourceLocation, String> aliasSourceOwners,
+            Map<ResourceLocation, List<String>> aliasSourcesByFrom,
             boolean frozen,
             boolean tmmAccessible,
             @Nullable Map<ResourceLocation, SRERole> tmmRoles,

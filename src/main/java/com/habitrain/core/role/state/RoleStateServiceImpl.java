@@ -259,6 +259,47 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         migrationRequired.clear();
     }
 
+    /**
+     * Full state sync for a joining / reconnecting player (audit P0-2) and for
+     * permission changes (review P2): pushes every existing slot (transient +
+     * persistent) the player is entitled to under its {@code SyncPolicy}, as a
+     * {@code snapshot=true} batch so the client drops stale mirrors for slots
+     * it no longer has receive rights to (e.g. after re-tracking a target or
+     * re-entering a world). Called after the manifest/snapshot handshake on
+     * JOIN. {@code NONE}/{@code SERVER_ONLY} slots are filtered by the sync
+     * service and never leak.
+     */
+    public synchronized void sendCurrentStateTo(java.util.UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        long snapshotId = syncService.nextRevision();
+        syncService.beginSnapshot(playerId, snapshotId);
+        // Transient (ROUND/NONE persistence) slots.
+        for (StateSlotKey slot : java.util.Set.copyOf(transientValues.keySet())) {
+            RoleStateSpec<?> spec = specForSlot(slot);
+            if (spec == null || !syncService.isRecipient(spec, slot, playerId)) {
+                continue;
+            }
+            Object v = transientValues.get(slot);
+            byte[] enc = (v == null || v == NULL) ? null : encodeRaw(spec, v);
+            syncService.sendTo(playerId, spec, slot, enc, true, snapshotId);
+        }
+        // Persistent (WORLD/PERMANENT) slots materialized in the store.
+        for (StateSlotKey slot : store.keys()) {
+            RoleStateSpec<?> spec = specForSlot(slot);
+            if (spec == null || !syncService.isRecipient(spec, slot, playerId)) {
+                continue;
+            }
+            StoredState st = store.read(slot);
+            if (st == null) {
+                continue;
+            }
+            syncService.sendTo(playerId, spec, slot, st.encoded(), true, snapshotId);
+        }
+        syncService.endSnapshot(playerId, snapshotId);
+    }
+
     /** Snapshot of every persistent slot — used to simulate a restart round-trip. */
     public Map<StateSlotKey, StoredState> exportPersistent() {
         return store.exportAll();
@@ -338,8 +379,14 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         return p == Persistence.NONE || p == Persistence.ROUND;
     }
 
-    /** Removes slots matching a spec, optionally narrowed to one world/player. */
+    /**
+     * Removes slots matching a spec, optionally narrowed to one world/player.
+     * Every slot actually deleted is reported to the sync service as a
+     * {@code removed} payload (audit P0-1), so reset / round-end / world-unload
+     * delete the mirror on clients instead of leaving a stale value behind.
+     */
     private void removeSlotsFor(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
+        List<StateSlotKey> removed = collectSlotsFor(spec, worldOrPlayer);
         String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
         Predicate<StateSlotKey> match = key -> key.scope() == spec.scope()
                 && key.id().equals(spec.id())
@@ -351,6 +398,61 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         transientValues.keySet().removeIf(match);
         store.removeWhere(match);
         migrationRequired.removeIf(match);
+        for (StateSlotKey key : removed) {
+            notifyRemoved(spec, key);
+        }
+    }
+
+    /** The slots that {@code removeSlotsFor} would delete for a spec + filter. */
+    private List<StateSlotKey> collectSlotsFor(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
+        String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
+        Predicate<StateSlotKey> match = key -> key.scope() == spec.scope()
+                && key.id().equals(spec.id())
+                && key.role().equals(spec.role())
+                && (filter == null || filter.equals(
+                        spec.scope() == StateScope.PLAYER
+                                ? String.valueOf(key.playerId())
+                                : key.worldKey()));
+        List<StateSlotKey> out = new ArrayList<>();
+        for (StateSlotKey key : transientValues.keySet()) {
+            if (match.test(key)) {
+                out.add(key);
+            }
+        }
+        for (StateSlotKey key : store.keys()) {
+            if (match.test(key)) {
+                out.add(key);
+            }
+        }
+        return out;
+    }
+
+    private void notifyRemoved(RoleStateSpec<?> spec, StateSlotKey slot) {
+        var sync = spec.sync();
+        if (sync == com.habitrain.core.api.role.v2.state.SyncPolicy.NONE
+                || sync == com.habitrain.core.api.role.v2.state.SyncPolicy.SERVER_ONLY) {
+            return;
+        }
+        syncService.onRemoved(spec, slot);
+    }
+
+    /** The registered spec owning a slot, or {@code null} for unknown/ghost slots. */
+    private @Nullable RoleStateSpec<?> specForSlot(StateSlotKey slot) {
+        if (slot == null) {
+            return null;
+        }
+        for (RoleStateSpec<?> s : specs.values()) {
+            if (s.id().equals(slot.id()) && s.role().equals(slot.role())
+                    && s.scope() == slot.scope()) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static byte[] encodeRaw(RoleStateSpec spec, Object value) {
+        return encode(spec, value);
     }
 
     private <T> T tryDecode(RoleStateSpec<T> spec, StateSlotKey slot, StoredState stored) {

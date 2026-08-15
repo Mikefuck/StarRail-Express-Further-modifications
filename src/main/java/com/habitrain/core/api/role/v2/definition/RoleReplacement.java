@@ -12,7 +12,7 @@ import java.util.Objects;
  *
  * <p>The replacement is a full {@link RoleDefinition} compiled by core. The
  * {@link ReplacementIdentity} strategy decides whether the replacement keeps the
- * target's canonical id ({@code PRESERVE_TARGET_ID}) or takes a new id while the
+ * target's canonical id ({@code KEEP_CANONICAL_ID}) or takes a new id while the
  * target becomes an alias ({@code NEW_ID_WITH_ALIAS}). Only one replacement may
  * own a given target in a snapshot.
  */
@@ -46,7 +46,7 @@ public final class RoleReplacement {
 
     public static final class Builder {
         private RoleKey target;
-        private ReplacementIdentity identity = ReplacementIdentity.PRESERVE_TARGET_ID;
+        private ReplacementIdentity identity = ReplacementIdentity.KEEP_CANONICAL_ID;
         private RoleDefinition replacement;
         private String entryKey;
 

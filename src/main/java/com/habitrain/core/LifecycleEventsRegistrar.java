@@ -25,6 +25,7 @@ import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.vote.ModeMapVoteOrchestrator;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -38,6 +39,18 @@ import org.slf4j.LoggerFactory;
  */
 public final class LifecycleEventsRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|LifecycleEventsRegistrar");
+
+    /**
+     * Last observed camera/dimension per player, used to detect tracking-target
+     * switches and dimension changes (review P2) so the role-state full snapshot
+     * is re-pushed and the client drops mirrors it no longer has receive rights
+     * to. Purely server-side bookkeeping; cleared on disconnect.
+     */
+    private static final java.util.Map<java.util.UUID, TrackedView> LAST_VIEW =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A player's observation identity: camera entity + dimension. */
+    private record TrackedView(java.util.UUID camera, String dimension) {}
 
     private LifecycleEventsRegistrar() {}
 
@@ -181,11 +194,44 @@ public final class LifecycleEventsRegistrar {
             try {
                 com.habitrain.core.network.RoleManifestPayload.sendTo(player);
                 com.habitrain.core.network.RoleSnapshotPayload.sendTo(player);
+                // 角色状态 v2 全量同步（audit P0-2）：在 manifest/snapshot 之后推送
+                // 该玩家有权接收的所有当前 slot（OWNER/OWNER_AND_TRACKING/ALL，
+                // NONE/SERVER_ONLY 由 syncService 过滤），否则迟加入/重连玩家只能
+                // 等到下一次状态变化才看到正确值。
+                ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                        com.habitrain.core.api.role.v2.state.RoleStateApi.instance())
+                        .sendCurrentStateTo(player.getUUID());
             } catch (Exception e) {
-                LOGGER.debug("Role manifest/snapshot send on JOIN skipped", e);
+                LOGGER.debug("Role manifest/snapshot/state send on JOIN skipped", e);
             }
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
             ModeMapVoteOrchestrator.onPlayerJoin(player);
+        });
+        // 角色状态 v2：观战/维度变化重同步（复审 P2）。观战者切换跟踪目标或玩家切换
+        // 维度后，该玩家对 OWNER_AND_TRACKING / WORLD 槽位的接收权发生变化；客户端可能
+        // 残留旧镜像（尤其槽位已被服务端删除时）。这里在变化发生的下一 tick 重新推送
+        // 该玩家按权限过滤的全量快照（snapshot 语义会让客户端清空旧镜像后应用新全集）。
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            try {
+                for (net.minecraft.server.level.ServerPlayer p : server.getPlayerList().getPlayers()) {
+                    java.util.UUID id = p.getUUID();
+                    net.minecraft.world.entity.Entity camera = p.getCamera();
+                    java.util.UUID cam = camera == null ? id : camera.getUUID();
+                    String dim = (p.level() == null || p.level().dimension() == null)
+                            ? "" : p.level().dimension().location().toString();
+                    TrackedView prev = LAST_VIEW.put(id, new TrackedView(cam, dim));
+                    if (prev == null) {
+                        continue; // first observation: baseline only
+                    }
+                    if (!prev.camera().equals(cam) || !prev.dimension().equals(dim)) {
+                        ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                                com.habitrain.core.api.role.v2.state.RoleStateApi.instance())
+                                .sendCurrentStateTo(id);
+                    }
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("role-state view resync tick skipped", t);
+            }
         });
         // 玩家断线：通知激活的 GameMode 处理。
         // 停电模式据此把断线玩家移出存活阵营，避免其继续被计为放逐候选人或卡住胜负判定（Q8）。
@@ -214,6 +260,13 @@ public final class LifecycleEventsRegistrar {
                 ((com.habitrain.core.role.action.RoleActionServiceImpl)
                         com.habitrain.core.api.role.v2.action.RoleActionApi.instance())
                         .onPlayerDisconnect(player.getUUID());
+                // 角色扩展握手（audit P1-4）：断线清除该玩家的上报，避免把上一连接的
+                // manifest 带入下一次连接。
+                com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
+                        .clear(player.getUUID());
+                // 角色状态 v2（复审 P2）：断线清除观战/维度基线，避免下次上线用旧基线
+                // 误触发重同步。
+                LAST_VIEW.remove(player.getUUID());
             } catch (Exception e) {
                 LOGGER.error("[GameMode] 处理玩家断线失败", e);
             }

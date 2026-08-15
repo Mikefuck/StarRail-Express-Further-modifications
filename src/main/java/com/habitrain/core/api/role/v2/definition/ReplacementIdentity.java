@@ -13,7 +13,19 @@ public enum ReplacementIdentity {
     /**
      * The replacement continues to use the target's canonical id. The compiled
      * replacement definition's key must equal the target key.
+     *
+     * <p>This preserves the canonical id, not the original Java object identity.
+     * Upstream code that compares roles with {@code ==} may still behave
+     * differently; use MODIFY on the original object when object identity must
+     * survive.
      */
+    KEEP_CANONICAL_ID,
+
+    /**
+     * Deprecated alias for {@link #KEEP_CANONICAL_ID}. Kept for source
+     * compatibility with early v2 callers.
+     */
+    @Deprecated
     PRESERVE_TARGET_ID,
 
     /**

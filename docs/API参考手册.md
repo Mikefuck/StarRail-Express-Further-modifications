@@ -856,4 +856,39 @@ GameMode 侧额外钩子（`onTaskTick` / `overrideCompletionCheck` 等）由内
 
 ---
 
+
+---
+
+## 附录 C — 角色扩展 v2：审核 2026-08-14 修复记录
+
+本附录记录《哈比列车角色扩展 API 审核报告-2026-08-14》落地情况（分支 restore/merged-20260809）。
+
+### P0（必须优先，已修复）
+
+- **P0-1 状态删除/重置同步**：RoleStateSyncPayload 新增 removed 标志与单调 revision。reset / clearRoundState / clearWorldState 对每个实际删除的 slot 按原 SyncPolicy 广播删除；客户端 RoleStateClientCache 按完整 slot key 删除镜像。业务上的 null 值仍以「存在但为 null」的 value payload 传输，与删除严格区分。
+- **P0-2 迟加入/重连全量同步**：RoleStateServiceImpl.sendCurrentStateTo(player) 在 JOIN 的 manifest/snapshot 之后推送该玩家有权接收的全部当前 slot（OWNER / OWNER_AND_TRACKING / ALL；NONE / SERVER_ONLY 永不下发）。
+- **P0-3 ALIAS 同源冲突**：alias from 为独占冲突键。重复源在诊断视图标 CONFLICT 并从 activeAliases() / resolveAlias() 中排除；可通过 RoleExtensionConfigService 的 winnerFor(from, "alias") 配置胜者；禁用其中一条后另一条自动恢复。解析与快照不再依赖注册顺序。
+
+### P1（高优先，已修复或降级标注）
+
+- **P1-1 收紧注册入口**：RoleExtensionApi.registrar() 改为只读 facade，任何注册方法一律抛错。hooks/state/action/voice/chat 与 ADD/MODIFY/REPLACE/ALIAS 一样只能来自 habitrain:role_extensions 入口点的 provider-scoped 事务；core 自身的 HabiRoleHooks / SevenSinV2Hooks 已迁入 CoreRoleExtensionProvider。
+- **P1-2 客户端扩展兑现/标注**：RoleManifestService 将笼统的 client_ext 拆分为 client_hud / client_instinct / client_skin，并把尚未有运行时消费点的 client_name_render / client_screen 列入 experimentalCapabilities（manifest 与 payload 均已携带）。RoleNameRenderRule / RoleScreenSpec 标注 experimental，注册时打警告。
+- **P1-3 语音/聊天能力**：语音 adapter 现在填充真实语音群组 id（VoicechatConnection.getGroup().getId()）与说话者→接收者距离，isolateGroup + hearWorld(false) 与 maxDistance 真正生效。聊天 muteReceive 因 Fabric 1.21.1 无按接收者过滤事件，明确标注 experimental 并警告，muteSend 继续生效。
+- **P1-4 握手门控**：新增 C2S RoleHandshakeReportPayload（客户端收到 manifest 后回传本地 manifest）与服务端 RoleHandshakeGate。未上报 / API 不兼容 / 缺少 required provider → 角色动作被拒绝（新原因键 roleapi.action.handshake，附明确提示）；presentation 不匹配仅降级不阻断。
+  - **定义哈希边界（复审 2026-08-14 P1）**：客户端无法独立复现服务端定义哈希（该哈希折叠服务端编译条目视图 + 已应用的 roleExtensionsV2 配置），因此 core 客户端上报 expectedDefinitionHash=null 表示信任服务端，HASH_MISMATCH 分支对 stock 客户端不会触发；RoleHandshakeMatcher 的哈希分支仅为会上报独立指纹的客户端保留。请勿宣称定义哈希门禁已闭环。
+- **P1-5 客户端状态 slot 身份**：RoleStateClientCache 的 slot key 纳入 worldKey 与 owner；「最新值」按服务端单调 revision 选择，不再使用 schema dataVersion。
+
+### P2（中优先，core 内可完成项）
+
+- **P2-1 消费者迁移**：BlackoutRoleManager（雇佣警/警长禁用）、SevenSinsMutex.fallbackNonSin、MikeCodeEditSkill.buildPool、WrathComponent.buildNonSinPool、CrimeScapegoatComponent.randomKillerPool 改为通过 RoleCatalogApi（新增 RoleCatalogConsumer.visiblePool() / resolveOrOriginal()）解析，快照未编译时回退 v1 路径，使 v2 ADD/REPLACE 角色进入原有消费者路径。
+- **P2-3 动作目标模型**：仍为 NONE / PLAYER_UUID；slot/slotgroup/card 等扩展目标列为后续设计，不在本版承诺。
+- **P2-5 文档**：本节即为此项；完整验收（专服、网络、可选依赖、多局冒烟）仍待游戏内验证。
+
+### 复审 2026-08-14 追加修复
+
+- **P2 状态快照撤销**：RoleStateSyncPayload 新增 snapshot 标志；sendCurrentStateTo 以 snapshot=true 批量推送按权限过滤的全量快照，客户端在批次首个 payload 时清空镜像再应用。观战者切换跟踪目标或玩家切换维度（LifecycleEventsRegistrar 每 tick 检测 camera/维度变化）都会触发重同步，修复"停止跟踪后重新跟踪仍残留旧镜像"的边界缺口。
+- **P2 聊天 muteReceive**：维持降级标注（Fabric 1.21.1 无按接收者过滤事件）；注册时警告 + 文档明示不受支持，muteSend 继续生效。
+- **P2 registrar Javadoc**：RoleExtensionApi 类说明与 registrar() 方法注释改为"仅兼容保留、只读、任何写操作抛错"，不再暗示可用 registrar() 声明角色。
+- **工作区清洁**：恢复项目根目录 .gitignore（构建/缓存/运行/日志/备份均忽略），清理根目录临时构建日志。
+
 *文档生成自 `src/main/java/com/habitrain/core/api` 源码；若 API 变更请同步更新本文件。*

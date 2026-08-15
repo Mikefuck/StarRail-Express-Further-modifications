@@ -34,6 +34,16 @@ public final class RoleChatCapabilityHooks {
         registered = true;
         RoleCapabilityApi.instance().bindAdapter(
                 RoleCapabilityKey.CHAT, RoleCapabilityStatus.AVAILABLE);
+        // Audit P1-3: muteReceive cannot be enforced through ServerMessageEvents
+        // (sender-only context); warn loudly so providers do not rely on it.
+        for (com.habitrain.core.api.role.v2.capability.RoleChatPolicy policy :
+                RoleCapabilityApi.instance().chats()) {
+            if (policy.muteReceive()) {
+                LOGGER.warn("[Experimental] chat policy {} declares muteReceive() which has "
+                        + "no runtime receiver filter yet (audit P1-3); only muteSend is enforced",
+                        policy.id());
+            }
+        }
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
             if (sender == null) {
                 return true;

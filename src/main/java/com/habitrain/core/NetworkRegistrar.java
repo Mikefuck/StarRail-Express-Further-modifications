@@ -50,6 +50,7 @@ public final class NetworkRegistrar {
         RoleManifestPayload.register(); count++;
         RoleConfigUpdatePayload.register(); count++;
         RoleSnapshotPayload.register(); count++;
+        RoleHandshakeReportPayload.register(); count++;
         LOGGER.info("Registered {} HabiTrain network payload types", count);
     }
 }

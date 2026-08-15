@@ -107,7 +107,7 @@ public final class RoleExtensionCompiler {
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
                 s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
                 s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), s.skills(), s.skillsSpecified());
+                s.occupation(), s.opposing(), s.related(), true, s.skills(), s.skillsSpecified());
     }
 
     /** Internal fold used by the plain overload (no conflict-winner masking). */
@@ -125,7 +125,7 @@ public final class RoleExtensionCompiler {
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
                 s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
                 s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), s.skills(), s.skillsSpecified());
+                s.occupation(), s.opposing(), s.related(), true, s.skills(), s.skillsSpecified());
     }
 
     /**

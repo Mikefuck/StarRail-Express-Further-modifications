@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -79,6 +80,70 @@ class RoleClientExtensionTest {
         store.freeze();
         assertThrows(IllegalStateException.class,
                 () -> store.hud(RoleHudSpec.of("habitrain_core", "b").role(VIEWER).build()));
+    }
+
+    @Test
+    void activeProviderFilterHidesDisabledProviderExtensions() {
+        store.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build());
+        store.setActiveProviders(java.util.Set.of("othermod"), java.util.Set.of());
+        assertTrue(store.hudsFor(VIEWER).isEmpty(), "disabled provider HUD must not be consumed");
+        store.setActiveProviders(java.util.Set.of("habitrain_core"),
+                java.util.Set.of("habitrain_core:" + VIEWER.location()));
+        assertEquals(1, store.hudsFor(VIEWER).size(), "active provider HUD must be consumed");
+    }
+
+    @Test
+    void activeEntryFilterDisablesOnlyOneRoleEntry() {
+        RoleKey other = RoleKey.of("habitrain_core", "other_role");
+        store.hud(RoleHudSpec.of("habitrain_core", "a")
+                .entryKey("a")
+                .role(VIEWER).build());
+        store.hud(RoleHudSpec.of("habitrain_core", "b")
+                .entryKey("b")
+                .role(other).build());
+        store.setActiveProviders(java.util.Set.of("habitrain_core"),
+                java.util.Set.of("habitrain_core$b@habitrain_core:other_role"));
+        assertTrue(store.hudsFor(VIEWER).isEmpty(), "disabled entry HUD must not be consumed");
+        assertEquals(1, store.hudsFor(other).size(), "active entry HUD must be consumed");
+    }
+
+    @Test
+    void sameProviderSameTargetDifferentEntryKeysResolveIndependently() {
+        RoleKey civilian = RoleKey.of("sre", "civilian");
+        store.hud(RoleHudSpec.of("habitrain_core", "armed")
+                .entryKey("armed_civilian")
+                .role(civilian).build());
+        store.hud(RoleHudSpec.of("habitrain_core", "pacifist")
+                .entryKey("pacifist_civilian")
+                .role(civilian).build());
+
+        store.setActiveProviders(java.util.Set.of("habitrain_core"),
+                java.util.Set.of("habitrain_core$armed_civilian@sre:civilian"));
+        assertEquals(1, store.hudsFor(civilian).size(),
+                "only the HUD bound to the active server entry must be consumed");
+        assertEquals("habitrain_core:armed", store.hudsFor(civilian).getFirst().id().toString());
+
+        store.setActiveProviders(java.util.Set.of("habitrain_core"),
+                java.util.Set.of("habitrain_core$pacifist_civilian@sre:civilian"));
+        assertEquals(1, store.hudsFor(civilian).size());
+        assertEquals("habitrain_core:pacifist", store.hudsFor(civilian).getFirst().id().toString());
+    }
+
+    @Test
+    void newIdWithAliasReplacementUsesRealServerEntryId() {
+        RoleKey replacement = RoleKey.of("habitrain_core", "shadow_killer");
+        store.hud(RoleHudSpec.of("habitrain_core", "shadow_hud")
+                .entryKey("shadow_killer")
+                .role(replacement).build());
+
+        store.setActiveProviders(java.util.Set.of("habitrain_core"),
+                java.util.Set.of("habitrain_core$shadow_killer@sre:killer"));
+        assertEquals(1, store.hudsFor(replacement).size(),
+                "REPLACE NEW_ID_WITH_ALIAS must activate extensions bound to the replacement role");
+
+        store.setActiveProviders(java.util.Set.of("habitrain_core"), java.util.Set.of());
+        assertTrue(store.hudsFor(replacement).isEmpty(),
+                "disabled replacement entry must hide its client extensions");
     }
 
     @Test
@@ -149,7 +214,8 @@ class RoleClientExtensionTest {
                 .hide()
                 .build());
         java.util.concurrent.atomic.AtomicInteger draws = new java.util.concurrent.atomic.AtomicInteger();
-        store.hudWidget(VIEWER, (w, h, t) -> draws.incrementAndGet());
+        store.hudWidget(net.minecraft.resources.ResourceLocation.parse("habitrain_core:lust_widget"),
+                "lust", VIEWER, (w, h, t) -> draws.incrementAndGet());
         assertEquals(1, store.skinsFor(VIEWER).size());
         assertEquals(RoleSkinKind.NORMAL, store.skinFor(VIEWER, RoleSkinKind.NORMAL).kind());
         assertEquals(1, store.screensFor(VIEWER).size());

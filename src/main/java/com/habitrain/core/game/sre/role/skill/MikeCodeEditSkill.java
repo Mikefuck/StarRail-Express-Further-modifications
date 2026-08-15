@@ -226,7 +226,7 @@ public final class MikeCodeEditSkill {
     private static List<SRERole> buildPool(SRERole current) {
         List<SRERole> pool = new ArrayList<>();
         for (SRERole role :
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
             if (role == null) continue;
             if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
             if (current != null && role.equals(current)) continue;

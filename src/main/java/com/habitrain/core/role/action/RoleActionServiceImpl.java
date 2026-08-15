@@ -45,10 +45,10 @@ public final class RoleActionServiceImpl implements RoleActionApi {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleActionApi");
 
-    /** How many recently-accepted sequences per player/action to remember for replay. */
-    private static final int REPLAY_WINDOW = 32;
     /** Sequences more than this many behind the window max are rejected as stale. */
     private static final int STALE_BEHIND = 64;
+    /** How many recently-accepted sequences per player/action to remember for replay. */
+    private static final int REPLAY_WINDOW = STALE_BEHIND + 1;
 
     private final Map<ResourceLocation, RoleActionSpec> specs = new LinkedHashMap<>();
     private final Map<GateKey, Deque<Long>> rateWindows = new ConcurrentHashMap<>();
@@ -57,6 +57,13 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     private volatile boolean frozen;
     private volatile Function<ServerPlayer, RoleKey> currentRoleLookup = RoleActionServiceImpl::lookupCurrentRole;
     private volatile Function<ServerPlayer, Boolean> aliveLookup = RoleActionServiceImpl::lookupAlive;
+    /**
+     * Server-authoritative handshake gate (audit P1-4): a player whose client
+     * is missing required providers / incompatible API / stale definition hash
+     * is refused role actions with a clear reason. Defaults to allow-all so the
+     * service stays testable; core binds {@code RoleHandshakeGate} at startup.
+     */
+    private volatile Function<ServerPlayer, String> handshakeGate = p -> null;
     private volatile S2CSender s2cSender = (player, id, payload) -> {};
     private volatile ResultSender resultSender = (player, id, seq, ok, reason, payload) -> {};
     private volatile Clock clock = System::currentTimeMillis;
@@ -69,6 +76,15 @@ public final class RoleActionServiceImpl implements RoleActionApi {
 
     public void setAliveLookup(Function<ServerPlayer, Boolean> lookup) {
         this.aliveLookup = lookup == null ? p -> Boolean.TRUE : lookup;
+    }
+
+    /**
+     * Binds the handshake gate (audit P1-4). The function returns a
+     * {@code null} reason when the player may act, or a human-readable reason
+     * (sent back to the client) when actions must be refused.
+     */
+    public void setHandshakeGate(Function<ServerPlayer, String> gate) {
+        this.handshakeGate = gate == null ? p -> null : gate;
     }
 
     public void setS2cSender(S2CSender sender) {
@@ -143,6 +159,24 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                                        byte[] payload, int sequence) {
         if (player == null) {
             return RoleActionResult.reject(RoleActionResult.UNKNOWN);
+        }
+        // Handshake gate (audit P1-4): refuse role actions for clients that have
+        // not passed the §14.2 handshake (missing provider / API mismatch /
+        // definition-hash mismatch). The reason is echoed to the client.
+        try {
+            String handshakeReason = handshakeGate.apply(player);
+            if (handshakeReason != null) {
+                RoleActionResult blocked = RoleActionResult.reject(
+                        RoleActionResult.HANDSHAKE, handshakeReason);
+                echoResult(player, actionId, sequence, blocked);
+                return blocked;
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("handshake gate check failed for {}; blocking action", player.getUUID(), t);
+            RoleActionResult blocked = RoleActionResult.reject(RoleActionResult.HANDSHAKE,
+                    "握手门控检查失败，禁止角色动作");
+            echoResult(player, actionId, sequence, blocked);
+            return blocked;
         }
         UUID playerId = player.getUUID();
         RoleKey current = currentRoleLookup.apply(player);
@@ -252,8 +286,8 @@ public final class RoleActionServiceImpl implements RoleActionApi {
             return RoleActionResult.reject(RoleActionResult.TOO_LARGE);
         }
         // 5. sequence / replay / stale (integer wraparound handled by signed int delta)
+        GateKey gate = new GateKey(spec.id(), playerId);
         if (playerId != null) {
-            GateKey gate = new GateKey(spec.id(), playerId);
             SeqVerdict verdict = checkSequence(gate, sequence);
             if (verdict == SeqVerdict.REPLAY) {
                 return RoleActionResult.reject(RoleActionResult.REPLAY);
@@ -305,7 +339,6 @@ public final class RoleActionServiceImpl implements RoleActionApi {
             }
         }
         long now = clock.now();
-        GateKey gate = new GateKey(spec.id(), playerId);
         // 10. cooldown
         if (spec.cooldownTicks() > 0) {
             Long last = lastUseMs.get(gate);
@@ -331,6 +364,9 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                     spec.role(), playerId, body, sequence, targetId));
             if (result != null && result.ok()) {
                 lastUseMs.put(gate, now);
+                if (playerId != null) {
+                    recordSequence(gate, sequence);
+                }
             }
             return result == null ? RoleActionResult.reject(RoleActionResult.HANDLER) : result;
         } catch (Throwable t) {
@@ -387,11 +423,17 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                     return SeqVerdict.STALE;
                 }
             }
+            return SeqVerdict.NEW;
+        }
+    }
+
+    private void recordSequence(GateKey gate, int seq) {
+        Deque<Integer> window = seqWindows.computeIfAbsent(gate, k -> new ArrayDeque<>());
+        synchronized (window) {
             window.addLast(seq);
             while (window.size() > REPLAY_WINDOW) {
                 window.pollFirst();
             }
-            return SeqVerdict.NEW;
         }
     }
 

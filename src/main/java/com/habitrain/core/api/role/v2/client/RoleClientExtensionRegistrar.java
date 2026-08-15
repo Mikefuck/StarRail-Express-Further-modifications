@@ -1,6 +1,7 @@
 package com.habitrain.core.api.role.v2.client;
 
 import com.habitrain.core.api.role.v2.RoleKey;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.Collection;
 import java.util.List;
@@ -19,7 +20,11 @@ public interface RoleClientExtensionRegistrar {
 
     void nameRender(RoleNameRenderRule rule);
 
-    void hudWidget(RoleKey role, RoleHudWidget widget);
+    void hudWidget(ResourceLocation id, String entryKey, RoleKey role, RoleHudWidget widget);
+
+    default void hudWidget(RoleKey role, RoleHudWidget widget) {
+        hudWidget(null, null, role, widget);
+    }
 
     void screen(RoleScreenSpec spec);
 

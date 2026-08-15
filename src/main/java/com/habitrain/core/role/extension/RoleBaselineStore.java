@@ -1,5 +1,7 @@
 package com.habitrain.core.role.extension;
 
+import com.habitrain.core.api.role.v2.RoleKey;
+import com.habitrain.core.api.role.v2.definition.RoleRelationProfile;
 import io.wifi.starrailexpress.api.SRERole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +11,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Captures and restores the pristine {@link RoleBaseline} per role object
@@ -20,8 +23,71 @@ public final class RoleBaselineStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleBaselineStore");
     private static final IdentityHashMap<SRERole, RoleBaseline> BASELINES = new IdentityHashMap<>();
+    private static final IdentityHashMap<SRERole, RelationSnapshot> RELATION_SNAPSHOTS = new IdentityHashMap<>();
 
     private RoleBaselineStore() {}
+
+    /**
+     * Captures the relation graph before a v2 relation write. Upstream relation
+     * setters mutate both ends (occupationed, opposing, related), so restoring
+     * only the target role would leave reverse references behind. This captures
+     * the target plus every resolved counterpart that the relation profile can
+     * touch, once per object, and {@link #restoreAll} restores all of them.
+     */
+    public static void captureRelationGraph(SRERole self, RoleRelationProfile profile,
+                                            Function<RoleKey, SRERole> resolve) {
+        if (self == null || profile == null) {
+            return;
+        }
+        captureRelation(self);
+        if (resolve == null) {
+            return;
+        }
+        for (RoleKey key : profile.occupation()) {
+            SRERole other = resolve.apply(key);
+            if (other != null) {
+                captureRelation(other);
+            }
+        }
+        for (RoleKey key : profile.opposing()) {
+            SRERole other = resolve.apply(key);
+            if (other != null) {
+                captureRelation(other);
+            }
+        }
+        for (RoleKey key : profile.related()) {
+            SRERole other = resolve.apply(key);
+            if (other != null) {
+                captureRelation(other);
+            }
+        }
+    }
+
+    private static void captureRelation(SRERole role) {
+        if (role == null || RELATION_SNAPSHOTS.containsKey(role)) {
+            return;
+        }
+        RELATION_SNAPSHOTS.put(role, new RelationSnapshot(
+                new ArrayList<>(role.occupationRoles),
+                new HashSet<>(role.occupationedRoles),
+                new HashSet<>(role.opposingRoles),
+                new HashSet<>(role.relatedRoles)));
+    }
+
+    private static void restoreRelations() {
+        for (var e : RELATION_SNAPSHOTS.entrySet()) {
+            SRERole role = e.getKey();
+            RelationSnapshot snap = e.getValue();
+            role.occupationRoles.clear();
+            role.occupationRoles.addAll(snap.occupationRoles());
+            role.occupationedRoles.clear();
+            role.occupationedRoles.addAll(snap.occupationedRoles());
+            role.opposingRoles.clear();
+            role.opposingRoles.addAll(snap.opposingRoles());
+            role.relatedRoles.clear();
+            role.relatedRoles.addAll(snap.relatedRoles());
+        }
+    }
 
     /**
      * The captured baseline for {@code role}, capturing it now on first use.
@@ -138,11 +204,13 @@ public final class RoleBaselineStore {
         for (SRERole role : new ArrayList<>(BASELINES.keySet())) {
             restore(role, skillBackend);
         }
+        restoreRelations();
     }
 
     /** Drops every captured baseline (server stop, test isolation). */
     public static void clear() {
         BASELINES.clear();
+        RELATION_SNAPSHOTS.clear();
     }
 
     private static void resetRelations(SRERole role) {
@@ -159,4 +227,10 @@ public final class RoleBaselineStore {
             }
         }
     }
+
+    private record RelationSnapshot(
+            List<SRERole> occupationRoles,
+            Set<SRERole> occupationedRoles,
+            Set<SRERole> opposingRoles,
+            Set<SRERole> relatedRoles) {}
 }

@@ -238,7 +238,9 @@ public final class ProviderRegistrationTransaction {
                 }
             }
         }
-        RoleExtensionRegistry.RegistrationSnapshot roleSnapshot = registry.snapshotForTransaction();
+        boolean touchesTmm = !stagedAddRoles.isEmpty()
+                || stagedReplacements.stream().anyMatch(r -> r.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS);
+        RoleExtensionRegistry.RegistrationSnapshot roleSnapshot = registry.snapshotForTransaction(touchesTmm);
         RoleHookRegistry.RegistrationSnapshot hookSnapshot = RoleHookRegistry.INSTANCE.snapshotForTransaction();
         RoleStateServiceImpl stateService = stateService();
         RoleActionServiceImpl actionService = actionService();

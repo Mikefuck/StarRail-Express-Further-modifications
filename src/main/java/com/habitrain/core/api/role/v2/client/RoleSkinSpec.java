@@ -13,6 +13,7 @@ import java.util.Objects;
 public final class RoleSkinSpec {
 
     private final ResourceLocation id;
+    private final String entryKey;
     private final RoleKey role;
     private final RoleSkinKind kind;
     private final @Nullable ResourceLocation wideTexture;
@@ -20,6 +21,7 @@ public final class RoleSkinSpec {
 
     private RoleSkinSpec(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
+        this.entryKey = b.entryKey;
         this.role = Objects.requireNonNull(b.role, "role");
         this.kind = b.kind;
         this.wideTexture = b.wideTexture;
@@ -35,6 +37,7 @@ public final class RoleSkinSpec {
     }
 
     public ResourceLocation id() { return id; }
+    public String entryKey() { return entryKey; }
     public RoleKey role() { return role; }
     public RoleSkinKind kind() { return kind; }
     public @Nullable ResourceLocation wideTexture() { return wideTexture; }
@@ -49,6 +52,7 @@ public final class RoleSkinSpec {
 
     public static final class Builder {
         private ResourceLocation id;
+        private String entryKey;
         private RoleKey role;
         private RoleSkinKind kind = RoleSkinKind.NORMAL;
         private @Nullable ResourceLocation wideTexture;
@@ -58,6 +62,11 @@ public final class RoleSkinSpec {
 
         public Builder id(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
+            return this;
+        }
+
+        public Builder entryKey(String entryKey) {
+            this.entryKey = entryKey;
             return this;
         }
 

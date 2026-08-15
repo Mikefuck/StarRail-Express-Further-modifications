@@ -259,8 +259,9 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
 
     private static List<SRERole> buildNonSinPool() {
         Set<SRERole> occupationCompanions = new HashSet<>();
+        // 池来自 v2 目录（v1 回退），使 v2 ADD 角色能进入愤怒转职池（audit P2-1）。
         List<SRERole> visibleRoles =
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool();
         for (SRERole role : visibleRoles) {
             if (role == null) continue;
             try {

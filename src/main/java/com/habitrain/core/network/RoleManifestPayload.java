@@ -30,7 +30,8 @@ public record RoleManifestPayload(
         String lobbySnapshotId,
         @Nullable String roundSnapshotId,
         String presentationHash,
-        String configJson) implements CustomPacketPayload {
+        String configJson,
+        List<String> experimentalCapabilities) implements CustomPacketPayload {
 
     /** One provider row over the wire. */
     public record ProviderRow(String providerId, String version, boolean requiredClient) {
@@ -54,7 +55,8 @@ public record RoleManifestPayload(
                 manifest.lobbySnapshotId(),
                 manifest.roundSnapshotId(),
                 manifest.presentationHash(),
-                manifest.configJson());
+                manifest.configJson(),
+                new ArrayList<>(manifest.experimentalCapabilities()));
     }
 
     /** Decodes back into the pure manifest data. */
@@ -64,7 +66,8 @@ public record RoleManifestPayload(
             rows.add(new RoleProviderManifest(row.providerId(), row.version(), row.requiredClient()));
         }
         return new RoleManifest(coreApiVersion, rows, Set.copyOf(capabilities),
-                definitionHash, lobbySnapshotId, roundSnapshotId, presentationHash, configJson);
+                definitionHash, lobbySnapshotId, roundSnapshotId, presentationHash, configJson,
+                Set.copyOf(experimentalCapabilities));
     }
 
     private RoleManifestPayload(FriendlyByteBuf buf) {
@@ -75,7 +78,8 @@ public record RoleManifestPayload(
                 buf.readUtf(128),
                 buf.readBoolean() ? buf.readUtf(128) : null,
                 buf.readUtf(128),
-                buf.readUtf(1 << 20));
+                buf.readUtf(1 << 20),
+                readStrings(buf));
     }
 
     private void write(FriendlyByteBuf buf) {
@@ -97,6 +101,12 @@ public record RoleManifestPayload(
         }
         buf.writeUtf(presentationHash == null ? "" : presentationHash, 128);
         buf.writeUtf(configJson == null ? "" : configJson, 1 << 20);
+        buf.writeVarInt(experimentalCapabilities == null ? 0 : experimentalCapabilities.size());
+        if (experimentalCapabilities != null) {
+            for (String cap : experimentalCapabilities) {
+                buf.writeUtf(cap == null ? "" : cap, 128);
+            }
+        }
     }
 
     private static List<ProviderRow> readProviders(FriendlyByteBuf buf) {

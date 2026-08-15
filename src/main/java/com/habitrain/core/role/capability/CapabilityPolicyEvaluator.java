@@ -62,6 +62,12 @@ public final class CapabilityPolicyEvaluator {
         if (listenerMatch && policy.muteReceive()) {
             return VoiceDecision.BLOCK;
         }
+        // Audit P1-3: maxDistance is enforced when the adapter supplies the
+        // speaker→listener distance (unknown distance passes).
+        if ((speakerMatch || listenerMatch) && policy.maxDistance() > 0
+                && !ctx.withinDistance(policy.maxDistance())) {
+            return VoiceDecision.BLOCK;
+        }
         if (listenerMatch && policy.isolateGroup() && !policy.hearWorld()) {
             if (ctx.sameGroup() || ctx.samePlayer()) {
                 return VoiceDecision.PASS;

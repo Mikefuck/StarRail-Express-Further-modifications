@@ -26,6 +26,8 @@ public record RoleActionResult(boolean ok, String reasonKey, @Nullable String de
     public static final String TARGET = "roleapi.action.target";
     public static final String TIMEOUT = "roleapi.action.timeout";
     public static final String DISCONNECTED = "roleapi.action.disconnected";
+    /** Handshake gate refused the action (audit P1-4): missing provider / API mismatch / hash mismatch. */
+    public static final String HANDSHAKE = "roleapi.action.handshake";
 
     public RoleActionResult {
         Objects.requireNonNull(reasonKey, "reasonKey");

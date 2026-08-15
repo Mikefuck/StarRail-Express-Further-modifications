@@ -166,10 +166,14 @@ public final class SevenSinsMutex {
      * (亡命徒) for neutral sins — that was turning forced Lust into 亡命徒.
      */
     public static SRERole fallbackNonSin(SRERole removed) {
-        SRERole civilian = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
-        SRERole killer = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.KILLER);
-        SRERole vigilante = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.VIGILANTE);
-        SRERole looseEnd = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.LOOSE_END);
+        SRERole civilian = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.CIVILIAN);
+        SRERole killer = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.KILLER);
+        SRERole vigilante = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.VIGILANTE);
+        SRERole looseEnd = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.LOOSE_END);
         if (removed == null) return civilian;
         int type = removed.getRoleType();
         if (type == killer.getRoleType()) return killer;
@@ -177,8 +181,9 @@ public final class SevenSinsMutex {
         if (type == civilian.getRoleType()) return civilian;
 
         // Neutrals / other: prefer a non-sin same-type role that is not loose-end / other-mode.
+        // Pool comes from the v2 catalog (v1 fallback) so v2-added roles join the pool (audit P2-1).
         SRERole candidate =
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values()).stream()
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool().stream()
                 .filter(role -> role != null && !SevenSins.isSin(role))
                 .filter(role -> role.getRoleType() == type)
                 .filter(role -> role != looseEnd)

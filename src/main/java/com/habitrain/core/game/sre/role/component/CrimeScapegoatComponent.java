@@ -254,8 +254,9 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
     /** 转职用杀手池（上游杀手逻辑：canUseKiller && !isInnocent；排除其他模式/禁用/不可随机/七宗罪角色）。 */
     public static List<SRERole> randomKillerPool() {
         List<SRERole> killers = new ArrayList<>();
+        // 池来自 v2 目录（v1 回退），使 v2 ADD 角色能进入转职杀手池（audit P2-1）。
         for (SRERole role :
-                SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values())) {
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
             if (role == null) continue;
             if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
             if (!role.canUseKiller()) continue;
@@ -267,7 +268,8 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
         }
         // 空池回退：只接收通过过滤的替换杀手，否则留空（调用方已 warn+return）
         if (killers.isEmpty() && TMMRoles.KILLER != null) {
-            SRERole fallback = SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.KILLER);
+            SRERole fallback = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                    .resolveOrOriginal(TMMRoles.KILLER);
             if (fallback != null && SreRolePoolFilter.isCurrentModeRandomizable(fallback)) {
                 killers.add(fallback);
             }

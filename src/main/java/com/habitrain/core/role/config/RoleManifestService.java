@@ -23,9 +23,23 @@ public final class RoleManifestService {
 
     private RoleManifestService() {}
 
-    /** The capability set the v2 platform supports in this release. */
+    /**
+     * The capability set the v2 platform fully supports in this release
+     * (audit P1-2: granular client capabilities replace the coarse
+     * {@code client_ext}, so a provider can tell what is actually consumed).
+     */
     public static final Set<String> CAPABILITIES = Set.of(
-            "add", "modify", "replace", "alias", "state", "action", "hooks", "client_ext");
+            "add", "modify", "replace", "alias", "state", "action", "hooks",
+            "client_hud", "client_instinct", "client_skin");
+
+    /**
+     * Capabilities that are registered and diagnosable but NOT yet backed by a
+     * runtime consumer (audit P1-2: name-render rules are only stored; screen
+     * specs are only stored). Advertised separately so no provider mistakes a
+     * stored declaration for a delivered feature.
+     */
+    public static final Set<String> EXPERIMENTAL_CAPABILITIES = Set.of(
+            "client_name_render", "client_screen");
 
     public static RoleManifest build() {
         String coreApi = RoleExtensionApi.instance().apiVersion();
@@ -39,7 +53,8 @@ public final class RoleManifestService {
         String presentationHash = RoleManifestHashes.presentationHash(snapshot);
         String configJson = RoleExtensionConfigService.INSTANCE.toJsonString();
         return new RoleManifest(coreApi, providers, CAPABILITIES,
-                definitionHash, lobby, roundId, presentationHash, configJson);
+                definitionHash, lobby, roundId, presentationHash, configJson,
+                EXPERIMENTAL_CAPABILITIES);
     }
 
     private static List<RoleProviderManifest> providers() {

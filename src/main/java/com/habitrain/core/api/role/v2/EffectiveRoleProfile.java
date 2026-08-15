@@ -105,7 +105,7 @@ public record EffectiveRoleProfile(
                 neutralForKiller, neutralForInnocent, mafiaTeam, canUseInstinct,
                 instinctNightVision, canSeeTeammateKiller, otherModeRole, hiddenForRotation,
                 occupiedRoleCount, specialMapRole, occupationKeys, opposingKeys, relatedKeys,
-                skills, skillsSpecified);
+                true, skills, skillsSpecified);
     }
 
     private static List<RoleKey> relationKeys(java.util.Collection<SRERole> roles) {

@@ -47,6 +47,11 @@ public final class MemoryRoleStateStore implements RoleStateStore {
     }
 
     @Override
+    public java.util.Collection<StateSlotKey> keys() {
+        return java.util.List.copyOf(slots.keySet());
+    }
+
+    @Override
     public void clearAll() {
         slots.clear();
     }

@@ -27,7 +27,8 @@ public final class HabiRoleEvents {
         if (registered) return;
         registered = true;
 
-        HabiRoleHooks.register();
+        // Role-scoped hooks moved into CoreRoleExtensionProvider.registerWith
+        // (audit P1-1): no process-global registrar writes.
 
         UseItemCallback.EVENT.register((player, world, hand) -> {
             ItemStack stack = player.getItemInHand(hand);

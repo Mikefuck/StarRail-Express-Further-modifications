@@ -148,6 +148,40 @@ class ModifyObjectModelTest {
         RoleRuntimeOverlayApplier.restoreAll();
         assertEquals(1, base.defaultMaxCount, "scalar restored to baseline");
         assertTrue(base.occupationRoles.isEmpty(), "relation restored to baseline");
+        assertTrue(civilian.occupationedRoles.isEmpty(),
+                "reverse occupation reference on the counterpart must also be restored");
+    }
+
+    @Test
+    void restoreRemovesTwoWayOpposingAndRelatedCounterparts() {
+        SRERole civilian = new NormalRole(ResourceLocation.parse("sre:civilian"), COLOR,
+                false, true, SRERole.MoodType.FAKE, 20, true);
+        SRERole related = new NormalRole(ResourceLocation.parse("sre:related"), COLOR,
+                false, true, SRERole.MoodType.FAKE, 20, true);
+        Map<RoleKey, SRERole> resolver = new LinkedHashMap<>();
+        resolver.put(RoleKey.of(civilian.identifier()), civilian);
+        resolver.put(RoleKey.of(related.identifier()), related);
+        RoleRuntimeOverlayApplier.setRelationResolver(resolver::get);
+
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(TARGET)
+                        .opposing(RolePatch.RoleKeyListPatch.append(RoleKey.of(civilian.identifier())))
+                        .related(RolePatch.RoleKeyListPatch.append(RoleKey.of(related.identifier())))
+                        .build());
+        RoleExtensionRegistry.INSTANCE.freeze();
+
+        SRERole base = role(TARGET);
+        RoleRuntimeOverlayApplier.applyModifiesAndReturn(base);
+        assertTrue(base.opposingRoles.contains(civilian), "two-way opposing linked onto the original");
+        assertTrue(civilian.opposingRoles.contains(base), "two-way opposing linked onto the counterpart");
+        assertTrue(base.relatedRoles.contains(related), "related linked onto the original");
+        assertTrue(related.relatedRoles.contains(base), "related linked onto the counterpart");
+
+        RoleRuntimeOverlayApplier.restoreAll();
+        assertTrue(base.opposingRoles.isEmpty(), "opposing restored on the original");
+        assertTrue(civilian.opposingRoles.isEmpty(), "opposing restored on the counterpart");
+        assertTrue(base.relatedRoles.isEmpty(), "related restored on the original");
+        assertTrue(related.relatedRoles.isEmpty(), "related restored on the counterpart");
     }
 
     @Test

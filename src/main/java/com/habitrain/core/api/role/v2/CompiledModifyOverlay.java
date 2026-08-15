@@ -49,6 +49,7 @@ public final class CompiledModifyOverlay {
     private final List<RoleKey> occupationKeys;
     private final List<RoleKey> opposingKeys;
     private final List<RoleKey> relatedKeys;
+    private final boolean opposingTwoWay;
     private final List<RoleSkillSpec> skills;
     /** True when at least one patch explicitly supplied a skill operation. */
     private final boolean skillsSpecified;
@@ -69,7 +70,7 @@ public final class CompiledModifyOverlay {
                 neutralForKiller, neutralForInnocent, mafiaTeam,
                 canUseInstinct, instinctNightVision, canSeeTeammateKiller,
                 otherModeRole, hiddenForRotation, occupiedRoleCount, specialMapRole,
-                occupationKeys, opposingKeys, relatedKeys, skills, false);
+                occupationKeys, opposingKeys, relatedKeys, true, skills, false);
     }
 
     public CompiledModifyOverlay(
@@ -81,7 +82,7 @@ public final class CompiledModifyOverlay {
             boolean canSeeTeammateKiller, boolean otherModeRole, boolean hiddenForRotation,
             int occupiedRoleCount, SpecialMapRoleMap specialMapRole,
             List<RoleKey> occupationKeys, List<RoleKey> opposingKeys, List<RoleKey> relatedKeys,
-            List<RoleSkillSpec> skills, boolean skillsSpecified) {
+            boolean opposingTwoWay, List<RoleSkillSpec> skills, boolean skillsSpecified) {
         this.color = color;
         this.mood = mood;
         this.innocent = innocent;
@@ -110,6 +111,7 @@ public final class CompiledModifyOverlay {
         this.occupationKeys = List.copyOf(Objects.requireNonNullElse(occupationKeys, List.of()));
         this.opposingKeys = List.copyOf(Objects.requireNonNullElse(opposingKeys, List.of()));
         this.relatedKeys = List.copyOf(Objects.requireNonNullElse(relatedKeys, List.of()));
+        this.opposingTwoWay = opposingTwoWay;
         this.skills = List.copyOf(Objects.requireNonNullElse(skills, List.of()));
         this.skillsSpecified = skillsSpecified;
     }
@@ -142,6 +144,7 @@ public final class CompiledModifyOverlay {
     public List<RoleKey> occupationKeys() { return occupationKeys; }
     public List<RoleKey> opposingKeys() { return opposingKeys; }
     public List<RoleKey> relatedKeys() { return relatedKeys; }
+    public boolean opposingTwoWay() { return opposingTwoWay; }
     public List<RoleSkillSpec> skills() { return skills; }
     public boolean skillsSpecified() { return skillsSpecified; }
 

@@ -12,10 +12,13 @@ import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
+import com.habitrain.core.role.extension.ManagedRoleEntry;
 import com.habitrain.core.role.extension.ManagedSRERole;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
+import com.habitrain.core.role.extension.RoleOperation;
+import com.habitrain.core.role.extension.EntryStatus;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
@@ -63,6 +66,9 @@ class RoleExtensionModifyReplaceAliasTest {
         setField("registeredEntryIds", new LinkedHashSet<>());
         setField("frozen", false);
         setField("tmmAccessible", false);
+        setField("aliasSourceOwners", new LinkedHashMap<>());
+        setField("aliasSourcesByFrom", new LinkedHashMap<>());
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.resetForTests();
         RoleSnapshotManager.INSTANCE.clear();
         RoleRuntimeOverlayApplier.clear();
     }
@@ -253,6 +259,107 @@ class RoleExtensionModifyReplaceAliasTest {
                 RoleAlias.of("habitrain_core", "b", "habitrain_core", "a"));
         assertThrows(IllegalStateException.class, RoleExtensionRegistry.INSTANCE::freeze,
                 "alias ring must be rejected at freeze");
+    }
+
+
+    // ------------------------------------------------------------------
+    // ALIAS duplicate-source conflicts (audit P0-3)
+    // ------------------------------------------------------------------
+
+    @Test
+    void duplicateAliasSourceIsConflictedRegardlessOfOrder() {
+        // Same provider, same from -> different to. Registration order must not decide.
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "shadow_doctor"));
+
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.getAliases().size(),
+                "both declarations stay registered for the diagnostic view");
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().size(),
+                "both sides of a duplicate source must be CONFLICT");
+        assertNull(RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:doctor")),
+                "a conflicted source must not resolve by registration order");
+        assertTrue(RoleExtensionRegistry.INSTANCE.activeAliases().isEmpty(),
+                "conflicted aliases must never reach snapshot compilation");
+    }
+
+    @Test
+    void duplicateAliasSourceAcrossProvidersIsConflicted() {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("othermod",
+                RoleAlias.of("oldmod", "doctor", "othermod", "real_doctor"));
+
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().size(),
+                "cross-provider duplicate source is a conflict too");
+        assertNull(RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:doctor")));
+    }
+
+    @Test
+    void v2EntriesMarkDuplicateAliasAsConflict() {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "shadow_doctor"));
+
+        long conflicts = RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == RoleOperation.ALIAS)
+                .filter(e -> e.status() == EntryStatus.CONFLICT)
+                .count();
+        assertEquals(2, conflicts, "both ALIAS entries must surface as CONFLICT in diagnostics");
+    }
+
+    @Test
+    void configuredWinnerResolvesDuplicateAlias() {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("othermod",
+                RoleAlias.of("oldmod", "doctor", "othermod", "real_doctor"));
+
+        String winnerEntry = "habitrain_core$oldmod:doctor->habitrain_core:plague_doctor";
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE
+                .setConflictWinner("oldmod:doctor#alias", winnerEntry);
+
+        assertEquals(1, RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().size(),
+                "only the non-winner stays conflicted");
+        assertEquals(RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:doctor")),
+                ResourceLocation.parse("habitrain_core:plague_doctor"),
+                "resolution must follow the configured winner deterministically");
+        assertEquals(1, RoleExtensionRegistry.INSTANCE.activeAliases().size(),
+                "only the winning alias is active");
+    }
+
+    @Test
+    void disablingOneSideRecoversTheOther() {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("othermod",
+                RoleAlias.of("oldmod", "doctor", "othermod", "real_doctor"));
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().size());
+
+        // Disable the second provider's entry -> the first is no longer conflicted.
+        String secondEntry = "othermod$oldmod:doctor->othermod:real_doctor";
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE
+                .setEntryEnabled(secondEntry, false);
+
+        assertTrue(RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().isEmpty(),
+                "disabling one side must restore the other without a restart");
+        assertEquals(ResourceLocation.parse("habitrain_core:plague_doctor"),
+                RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:doctor")));
+    }
+
+    @Test
+    void distinctSourcesAreNeverConflicted() {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "doctor", "habitrain_core", "plague_doctor"));
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "nurse", "habitrain_core", "shadow_doctor"));
+        assertTrue(RoleExtensionRegistry.INSTANCE.conflictingAliasEntryIds().isEmpty());
+        assertEquals(ResourceLocation.parse("habitrain_core:plague_doctor"),
+                RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:doctor")));
+        assertEquals(ResourceLocation.parse("habitrain_core:shadow_doctor"),
+                RoleExtensionRegistry.INSTANCE.resolveAlias(ResourceLocation.parse("oldmod:nurse")));
     }
 
     // ------------------------------------------------------------------

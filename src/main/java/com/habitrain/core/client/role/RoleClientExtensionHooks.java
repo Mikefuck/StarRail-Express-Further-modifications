@@ -64,9 +64,11 @@ public final class RoleClientExtensionHooks {
         }
         RoleKey viewerRole = currentRole(viewer);
         RoleKey targetRole = currentRole(target);
+        java.util.List<com.habitrain.core.api.role.v2.client.RoleInstinctRule> rules =
+                viewerRole == null ? java.util.List.of()
+                        : RoleClientExtensionApi.instance().instinctsFor(viewerRole);
         InstinctDecision decision = InstinctRuleResolver.resolve(
-                RoleClientExtensionApi.instance().instincts().stream().toList(),
-                phase, viewerRole, targetRole);
+                rules, phase, viewerRole, targetRole);
         return switch (decision.kind()) {
             case PASS -> TrueFalseAndCustomResult.pass();
             case HIDE -> TrueFalseAndCustomResult.no();

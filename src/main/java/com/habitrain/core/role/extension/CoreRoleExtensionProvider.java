@@ -157,5 +157,11 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 ).cooldownSeconds(120).showOnHud(true).announceToSelf(true).build()))
                 .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
                 .build());
+
+        // Managed behavior hooks for core's own roles (audit P1-1): they must
+        // register through this provider-scoped registrar, not a process-global
+        // write path, so identity/rollback/config gating stay uniform.
+        com.habitrain.core.game.sre.role.HabiRoleHooks.registerWith(registrar);
+        com.habitrain.core.game.sre.role.sins.win.SevenSinV2Hooks.registerWith(registrar);
     }
 }

@@ -2,6 +2,7 @@
 
 .gradle/
 .gradle-codex/
+.gradle-home/
 build/
 out/
 classes/

@@ -7,6 +7,13 @@ import java.util.Objects;
 
 /**
  * Declarative chat policy for one role (design §16.4).
+ *
+ * <p><b>{@code muteReceive} is experimental (audit P1-3):</b> the current chat
+ * gate uses Fabric {@code ServerMessageEvents.ALLOW_CHAT_MESSAGE}, which only
+ * sees the sender, so {@code muteSend} is enforced but {@code muteReceive}
+ * (per-receiver filtering) cannot take effect yet. A policy declaring it is
+ * registered and diagnosable but must not be relied on in-game until a
+ * receiver-filtering adapter lands.
  */
 public final class RoleChatPolicy {
 
@@ -58,6 +65,7 @@ public final class RoleChatPolicy {
             return this;
         }
 
+        /** @see RoleChatPolicy muteReceive experimental note (audit P1-3) */
         public Builder muteReceive() {
             this.muteReceive = true;
             return this;

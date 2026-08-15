@@ -13,6 +13,7 @@ import java.util.Objects;
 public final class RoleHudSpec {
 
     private final ResourceLocation id;
+    private final String entryKey;
     private final RoleKey role;
     private final RoleHudKind kind;
     private final String textKey;
@@ -23,6 +24,7 @@ public final class RoleHudSpec {
 
     private RoleHudSpec(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
+        this.entryKey = b.entryKey;
         this.role = Objects.requireNonNull(b.role, "role");
         this.kind = b.kind;
         this.textKey = b.textKey;
@@ -41,6 +43,7 @@ public final class RoleHudSpec {
     }
 
     public ResourceLocation id() { return id; }
+    public String entryKey() { return entryKey; }
     public RoleKey role() { return role; }
     public RoleHudKind kind() { return kind; }
     public String textKey() { return textKey; }
@@ -51,6 +54,7 @@ public final class RoleHudSpec {
 
     public static final class Builder {
         private ResourceLocation id;
+        private String entryKey;
         private RoleKey role;
         private RoleHudKind kind = RoleHudKind.TEXT;
         private String textKey = "";
@@ -63,6 +67,11 @@ public final class RoleHudSpec {
 
         public Builder id(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
+            return this;
+        }
+
+        public Builder entryKey(String entryKey) {
+            this.entryKey = entryKey;
             return this;
         }
 

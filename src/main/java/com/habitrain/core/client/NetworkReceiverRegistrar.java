@@ -442,12 +442,24 @@ public class NetworkReceiverRegistrar {
                         ctx.client().execute(() ->
                                 com.habitrain.core.client.role.RoleStateClientCache.accept(payload)));
 
-        // 21) 角色扩展 manifest 握手（§14.2）→ 客户端握手状态（Mod Menu 页读取）
+        // 21) 角色扩展 manifest 握手（§14.2）→ 客户端握手状态（Mod Menu 页读取）。
+        // 收到服务端 manifest 后回传本地 manifest（audit P1-4），让服务端权威门控
+        // 角色动作（缺少 required provider / API 不兼容 / 定义 hash 不一致时拒绝）。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.RoleManifestPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
-                                com.habitrain.core.client.role.RoleHandshakeState.INSTANCE
-                                        .accept(payload.toManifest())));
+                        ctx.client().execute(() -> {
+                            com.habitrain.core.client.role.RoleHandshakeState.INSTANCE
+                                    .accept(payload.toManifest());
+                            try {
+                                net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
+                                        com.habitrain.core.network.RoleHandshakeReportPayload.fromClientManifest(
+                                                com.habitrain.core.client.role.RoleHandshakeState
+                                                        .buildLocalManifest()));
+                            } catch (Throwable t) {
+                                com.habitrain.core.HabiTrainCore.LOGGER.debug(
+                                        "Handshake report send skipped", t);
+                            }
+                        }));
 
         // 22) 角色扩展编译条目快照（§13.2）→ 客户端页面数据源
         ClientPlayNetworking.registerGlobalReceiver(

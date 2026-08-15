@@ -80,6 +80,29 @@ class RoleActionSequenceTest {
     }
 
     @Test
+    void invalidRequestDoesNotPushSequenceWindow() {
+        store.register(ok(RoleActionSpec.of(PICK).role(ROLE)));
+        RoleActionResult invalid = store.dispatch(PICK, PLAYER, RoleKey.of("habitrain_core", "other"),
+                new byte[0], 1);
+        assertEquals(RoleActionResult.WRONG_ROLE, invalid.reasonKey());
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1).ok(),
+                "a rejected request must not consume the sequence number");
+    }
+
+    @Test
+    void replayWindowCoversFullStaleRange() {
+        store.register(ok(RoleActionSpec.of(PICK).role(ROLE).ratePerSecond(100)));
+        for (int i = 1; i <= 65; i++) {
+            assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], i).ok());
+        }
+        RoleActionResult replay = store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1);
+        assertEquals(RoleActionResult.REPLAY, replay.reasonKey(),
+                "the retained window must cover the full stale range");
+        RoleActionResult stale = store.dispatch(PICK, PLAYER, ROLE, new byte[0], 0);
+        assertEquals(RoleActionResult.STALE, stale.reasonKey());
+    }
+
+    @Test
     void sequenceTrackedPerPlayerAndPerAction() {
         store.register(ok(RoleActionSpec.of(PICK).role(ROLE)));
         store.register(ok(RoleActionSpec.of(SECOND).role(ROLE)));

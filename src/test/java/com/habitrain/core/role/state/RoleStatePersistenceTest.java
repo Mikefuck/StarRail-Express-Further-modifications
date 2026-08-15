@@ -7,6 +7,7 @@ import com.habitrain.core.api.role.v2.state.RoleStateKey;
 import com.habitrain.core.api.role.v2.state.RoleStateSpec;
 import com.habitrain.core.api.role.v2.state.StateScope;
 import com.habitrain.core.api.role.v2.state.SyncPolicy;
+import com.habitrain.core.network.RoleStateSyncPayload;
 import com.google.gson.JsonElement;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.JsonOps;
@@ -20,6 +21,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -260,6 +263,206 @@ class RoleStatePersistenceTest {
         store.set(none, PLAYER, WORLD_A, 1);
         store.set(serverOnly, PLAYER, WORLD_A, 2);
         assertTrue(delivered.isEmpty(), "NONE and SERVER_ONLY must never hit the wire");
+    }
+
+    // ------------------------------------------------------------------
+    // Removal sync (audit P0-1) + late-join full sync (audit P0-2)
+    // ------------------------------------------------------------------
+
+    private record Delivery(java.util.UUID to, RoleStateSyncPayload payload) {}
+
+    private void capture(java.util.List<Delivery> out) {
+        store.syncService().setSender((uuid, payload) -> out.add(new Delivery(uuid, payload)));
+    }
+
+    private void onlineAll(java.util.List<UUID> all) {
+        store.syncService().setRecipients(new RoleStateSyncService.RecipientProvider() {
+            @Override
+            public java.util.Collection<UUID> allOnline() {
+                return all;
+            }
+
+            @Override
+            public java.util.Collection<UUID> inWorld(String worldKey) {
+                return all;
+            }
+        });
+    }
+
+    @Test
+    void resetBroadcastsRemovalToOwner() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER, PLAYER_B));
+
+        RoleStateKey<Integer> owner = store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
+                .role(ROLE).sync(SyncPolicy.OWNER).resetOn(ResetCause.ROLE_LOST)
+                .codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(owner, PLAYER, WORLD_A, 7);
+        out.clear();
+
+        store.reset(PLAYER, ROLE, ResetCause.ROLE_LOST);
+
+        assertEquals(1, out.size(), "exactly one removal must be broadcast");
+        Delivery d = out.getFirst();
+        assertEquals(PLAYER, d.to(), "OWNER removal must reach the owning player");
+        assertTrue(d.payload().removed(), "payload must be a removal, not a null value");
+        assertFalse(d.payload().isNull(),
+                "a removal is not a null value: isNull() is only true for value payloads with null data");
+        // The slot is gone; get() now falls back to the spec default (0), not null.
+        assertEquals(0, store.get(owner, PLAYER, WORLD_A), "slot must be gone on the server");
+    }
+
+    @Test
+    void roundEndBroadcastsRemovalPerWorld() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER, PLAYER_B));
+
+        RoleStateKey<Integer> round = store.register(RoleStateSpec.of("habitrain_core", "round", Integer.class)
+                .role(ROLE).scope(StateScope.WORLD).persistence(Persistence.ROUND)
+                .sync(SyncPolicy.ALL).codec(Codec.INT).defaultValue(() -> -1).build());
+        store.set(round, (UUID) null, WORLD_A, 3);
+        store.set(round, (UUID) null, WORLD_B, 4);
+        out.clear();
+
+        store.clearRoundState(WORLD_A.toString());
+
+        assertEquals(2, out.size(), "ALL-policy removal must reach every online player");
+        assertTrue(out.stream().allMatch(d -> d.payload().removed()), "all payloads must be removals");
+        assertEquals(-1, store.get(round, (UUID) null, WORLD_A));
+        assertEquals(4, store.get(round, (UUID) null, WORLD_B), "other world must survive");
+    }
+
+    @Test
+    void worldUnloadBroadcastsRemoval() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER));
+
+        RoleStateKey<Integer> pool = store.register(RoleStateSpec.of("habitrain_core", "pool", Integer.class)
+                .role(ROLE).scope(StateScope.WORLD).persistence(Persistence.WORLD)
+                .sync(SyncPolicy.ALL).codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(pool, (UUID) null, WORLD_A, 4);
+        out.clear();
+
+        store.clearWorldState(WORLD_A.toString());
+
+        assertEquals(1, out.size());
+        assertTrue(out.getFirst().payload().removed());
+    }
+
+    @Test
+    void removalNeverSentForNoneOrServerOnly() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER));
+
+        RoleStateKey<Integer> none = store.register(RoleStateSpec.of("habitrain_core", "none", Integer.class)
+                .role(ROLE).sync(SyncPolicy.NONE).resetOn(ResetCause.ROLE_LOST).defaultValue(() -> 0).build());
+        RoleStateKey<Integer> srv = store.register(RoleStateSpec.of("habitrain_core", "srv", Integer.class)
+                .role(ROLE).sync(SyncPolicy.SERVER_ONLY).resetOn(ResetCause.ROLE_LOST)
+                .codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(none, PLAYER, WORLD_A, 1);
+        store.set(srv, PLAYER, WORLD_A, 2);
+        out.clear();
+
+        store.reset(PLAYER, ROLE, ResetCause.ROLE_LOST);
+
+        assertTrue(out.isEmpty(), "NONE/SERVER_ONLY removals must never hit the wire");
+    }
+
+    @Test
+    void removalDoesNotFireWhenNothingWasDeleted() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER));
+
+        RoleStateKey<Integer> owner = store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
+                .role(ROLE).sync(SyncPolicy.OWNER).resetOn(ResetCause.ROLE_LOST)
+                .codec(Codec.INT).defaultValue(() -> 0).build());
+        store.reset(PLAYER, ROLE, ResetCause.ROLE_LOST);
+
+        assertTrue(out.isEmpty(), "no slot existed, so no removal should be broadcast");
+    }
+
+    @Test
+    void sendCurrentStateToReachesEntitledSlotsOnly() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER, PLAYER_B));
+
+        RoleStateKey<Integer> owner = store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
+                .role(ROLE).sync(SyncPolicy.OWNER).codec(Codec.INT).defaultValue(() -> 0).build());
+        RoleStateKey<Integer> all = store.register(RoleStateSpec.of("habitrain_core", "all", Integer.class)
+                .role(ROLE).sync(SyncPolicy.ALL).codec(Codec.INT).defaultValue(() -> 0).build());
+        RoleStateKey<Integer> srv = store.register(RoleStateSpec.of("habitrain_core", "srv", Integer.class)
+                .role(ROLE).sync(SyncPolicy.SERVER_ONLY).codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(owner, PLAYER, WORLD_A, 1);
+        store.set(all, PLAYER, WORLD_A, 2);
+        store.set(srv, PLAYER, WORLD_A, 3);
+        out.clear();
+
+        store.sendCurrentStateTo(PLAYER);
+
+        assertEquals(1, out.stream().filter(d -> d.payload().snapshotBegin()).count(),
+                "full sync must send exactly one begin");
+        assertEquals(1, out.stream().filter(d -> d.payload().snapshotEnd()).count(),
+                "full sync must send exactly one end");
+        java.util.List<Delivery> values = out.stream()
+                .filter(d -> !d.payload().snapshotBegin() && !d.payload().snapshotEnd()).toList();
+        assertEquals(2, values.size(), "joiner must get OWNER + ALL, never SERVER_ONLY");
+        assertTrue(values.stream().allMatch(d -> d.to().equals(PLAYER)));
+        assertTrue(values.stream().noneMatch(d -> d.payload().removed()), "full sync carries values, not removals");
+        java.util.Set<ResourceLocation> ids = values.stream()
+                .map(d -> d.payload().id()).collect(java.util.stream.Collectors.toSet());
+        assertTrue(ids.contains(ResourceLocation.parse("habitrain_core:owner")));
+        assertTrue(ids.contains(ResourceLocation.parse("habitrain_core:all")));
+        assertFalse(ids.contains(ResourceLocation.parse("habitrain_core:srv")));
+    }
+
+    @Test
+    void sendCurrentStateToSkipsOtherOwnersSlot() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER, PLAYER_B));
+
+        RoleStateKey<Integer> owner = store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
+                .role(ROLE).sync(SyncPolicy.OWNER).codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(owner, PLAYER_B, WORLD_A, 1);
+        out.clear();
+
+        store.sendCurrentStateTo(PLAYER);
+
+        assertEquals(1, out.stream().filter(d -> d.payload().snapshotBegin()).count(),
+                "empty full sync must still send begin");
+        assertEquals(1, out.stream().filter(d -> d.payload().snapshotEnd()).count(),
+                "empty full sync must still send end");
+        assertTrue(out.stream().noneMatch(d -> d.payload().snapshot() || d.payload().removed()),
+                "PLAYER must not receive another owner's OWNER slot");
+        assertEquals(1, out.stream().map(d -> d.payload().snapshotId()).distinct().count(),
+                "begin and end must share the same snapshot id");
+    }
+
+    @Test
+    void fullSyncCarriesMonotonicRevision() {
+        List<Delivery> out = new ArrayList<>();
+        capture(out);
+        onlineAll(List.of(PLAYER));
+
+        RoleStateKey<Integer> all = store.register(RoleStateSpec.of("habitrain_core", "all", Integer.class)
+                .role(ROLE).sync(SyncPolicy.ALL).codec(Codec.INT).defaultValue(() -> 0).build());
+        store.set(all, PLAYER, WORLD_A, 1);
+        store.sendCurrentStateTo(PLAYER);
+        store.set(all, PLAYER, WORLD_A, 2);
+        store.sendCurrentStateTo(PLAYER);
+
+        assertTrue(out.size() >= 4, "two changes + two full syncs");
+        long last = -1;
+        for (Delivery d : out) {
+            assertTrue(d.payload().revision() > last, "revisions must be strictly increasing");
+            last = d.payload().revision();
+        }
     }
 
     // ------------------------------------------------------------------

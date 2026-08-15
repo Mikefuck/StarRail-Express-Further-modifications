@@ -8,10 +8,17 @@ import java.util.Objects;
 
 /**
  * Declarative name-render override for one role at one {@link RoleRenderPhase}.
+ *
+ * <p><b>Experimental (audit P1-2):</b> rules are stored, queryable and shown in
+ * diagnostics, but no runtime name-tag renderer consumes them yet (Fabric 1.21.1
+ * exposes no name-tag render event). Advertised under the experimental
+ * capability {@code client_name_render}; do not rely on in-game effect until the
+ * adapter lands.
  */
 public final class RoleNameRenderRule {
 
     private final ResourceLocation id;
+    private final String entryKey;
     private final RoleKey role;
     private final RoleRenderPhase phase;
     private final boolean hide;
@@ -19,6 +26,7 @@ public final class RoleNameRenderRule {
 
     private RoleNameRenderRule(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
+        this.entryKey = b.entryKey;
         this.role = Objects.requireNonNull(b.role, "role");
         this.phase = b.phase;
         this.hide = b.hide;
@@ -30,6 +38,7 @@ public final class RoleNameRenderRule {
     }
 
     public ResourceLocation id() { return id; }
+    public String entryKey() { return entryKey; }
     public RoleKey role() { return role; }
     public RoleRenderPhase phase() { return phase; }
     public boolean hide() { return hide; }
@@ -37,6 +46,7 @@ public final class RoleNameRenderRule {
 
     public static final class Builder {
         private ResourceLocation id;
+        private String entryKey;
         private RoleKey role;
         private RoleRenderPhase phase = RoleRenderPhase.NAMEPLATE;
         private boolean hide;
@@ -46,6 +56,11 @@ public final class RoleNameRenderRule {
 
         public Builder id(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
+            return this;
+        }
+
+        public Builder entryKey(String entryKey) {
+            this.entryKey = entryKey;
             return this;
         }
 

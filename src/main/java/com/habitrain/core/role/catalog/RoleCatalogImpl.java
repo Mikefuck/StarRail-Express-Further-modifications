@@ -172,7 +172,8 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         // v2 REPLACE redirect (config-enabled replacements only).
         RoleReplacement repl = RoleExtensionRegistry.INSTANCE.replacementFor(id);
         if (repl != null && RoleExtensionRegistry.INSTANCE.isReplacementActive(id)) {
-            if (repl.identity() == ReplacementIdentity.PRESERVE_TARGET_ID) {
+            if (repl.identity() == ReplacementIdentity.KEEP_CANONICAL_ID
+                    || repl.identity() == ReplacementIdentity.PRESERVE_TARGET_ID) {
                 return RoleKey.of(id);
             }
             return RoleKey.of(repl.replacement().key().location());

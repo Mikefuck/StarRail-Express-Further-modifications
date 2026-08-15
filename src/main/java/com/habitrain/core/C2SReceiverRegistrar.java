@@ -233,6 +233,20 @@ public final class C2SReceiverRegistrar {
                 LOGGER.info("玩家 {} 更新了角色扩展 v2 配置", player.getName().getString());
             });
         });
+        // C2S 角色扩展握手本地 manifest 上报（audit P1-4）：服务端据此权威计算
+        // §14.2 握手结果并门控角色动作；断线时在 LifecycleEventsRegistrar 清除。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.RoleHandshakeReportPayload.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) {
+                                return;
+                            }
+                            com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
+                                    .record(player.getUUID(), payload.toClientManifest());
+                            LOGGER.debug("玩家 {} 上报角色扩展握手 manifest",
+                                    player.getName().getString());
+                        }));
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

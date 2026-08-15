@@ -155,6 +155,8 @@ public final class RoleRuntimeOverlayApplier {
             return;
         }
         restoreAll();
+        captureRelationGraphForSnapshot(snapshot);
+        linkActiveRelations();
         for (var er : snapshot.effectiveRoles()) {
             SRERole role = er.role();
             if (role == null || role.identifier() == null) {
@@ -164,6 +166,41 @@ public final class RoleRuntimeOverlayApplier {
             if (overlay != null) {
                 RoleBaseline baseline = RoleBaselineStore.getOrCapture(role, skillBackend);
                 materialize(role, baseline, overlay);
+            }
+        }
+    }
+
+    private static void captureRelationGraphForSnapshot(RoleSnapshot snapshot) {
+        Function<RoleKey, SRERole> resolver = relationResolver;
+        if (resolver == null) {
+            return;
+        }
+        for (var link : RoleExtensionRegistry.INSTANCE.activeRelationLinks()) {
+            RoleBaselineStore.captureRelationGraph(link.role(), link.profile(), resolver);
+        }
+        for (var er : snapshot.effectiveRoles()) {
+            CompiledModifyOverlay overlay = er.modifyOverlay();
+            if (overlay == null || !overlay.hasRelationKeys()) {
+                continue;
+            }
+            RoleRelationProfile profile = new RoleRelationProfile(
+                    overlay.occupationKeys(), overlay.opposingKeys(), overlay.relatedKeys(),
+                    overlay.opposingTwoWay());
+            RoleBaselineStore.captureRelationGraph(er.role(), profile, resolver);
+        }
+    }
+
+    private static void linkActiveRelations() {
+        Function<RoleKey, SRERole> resolver = relationResolver;
+        if (resolver == null) {
+            return;
+        }
+        for (var link : RoleExtensionRegistry.INSTANCE.activeRelationLinks()) {
+            try {
+                RoleExtensionCompiler.linkRelations(link.role(), link.profile(), resolver);
+            } catch (RuntimeException e) {
+                LOGGER.warn("Failed to link ADD/REPLACE relations for {}: {}",
+                        link.role().identifier(), e.toString());
             }
         }
     }
@@ -232,7 +269,9 @@ public final class RoleRuntimeOverlayApplier {
             return;
         }
         RoleRelationProfile profile = new RoleRelationProfile(
-                overlay.occupationKeys(), overlay.opposingKeys(), overlay.relatedKeys(), false);
+                overlay.occupationKeys(), overlay.opposingKeys(), overlay.relatedKeys(),
+                overlay.opposingTwoWay());
+        RoleBaselineStore.captureRelationGraph(role, profile, resolver);
         try {
             RoleExtensionCompiler.linkRelations(role, profile, resolver);
         } catch (RuntimeException e) {

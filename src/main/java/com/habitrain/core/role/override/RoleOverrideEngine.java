@@ -93,8 +93,8 @@ public final class RoleOverrideEngine {
         for (ResourceLocation target : targets) {
             List<ReplaceRoleDefinition> replaces = replaceByTarget.getOrDefault(target, List.of());
             List<ModifyRoleDefinition> modifies = modifyByTarget.getOrDefault(target, List.of());
-            boolean v2Owns = com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isReplaced(target)
-                    || com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isModified(target);
+            boolean v2Owns = com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isActiveReplaced(target)
+                    || com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isActiveModified(target);
             if (v2Owns && (!replaces.isEmpty() || !modifies.isEmpty())) {
                 String message = "v1 override conflicts with a v2 REPLACE/MODIFY on " + target;
                 replaces.forEach(def -> statuses.put(def,

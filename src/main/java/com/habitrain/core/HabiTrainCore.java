@@ -202,6 +202,13 @@ public class HabiTrainCore implements ModInitializer {
                         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,
                                 new com.habitrain.core.network.RoleActionS2CPayload(id, sequence, ok, reason,
                                         payload, false)));
+        // 角色动作握手门控（audit P1-4）：服务端权威决定该玩家能否执行角色动作；
+        // 未完成 §14.2 握手（缺 provider / API 不兼容 / 定义 hash 不一致）一律拒绝。
+        ((com.habitrain.core.role.action.RoleActionServiceImpl)
+                com.habitrain.core.api.role.v2.action.RoleActionApi.instance())
+                .setHandshakeGate(player -> player == null ? null
+                        : com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
+                                .blockReason(player.getUUID()));
         com.habitrain.core.game.sre.role.HabiRoles.init();
         // 角色覆盖注册系统初始化
         com.habitrain.core.role.override.RoleOverrideRegistry.init();

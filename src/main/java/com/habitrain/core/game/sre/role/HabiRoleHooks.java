@@ -4,7 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.role.v2.RoleChangeApi;
 import com.habitrain.core.api.role.v2.RoleChangeCause;
 import com.habitrain.core.api.role.v2.RoleChangeResult;
-import com.habitrain.core.api.role.v2.RoleExtensionApi;
+import com.habitrain.core.api.role.v2.RoleExtensionRegistrar;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.behavior.Decision;
 import com.habitrain.core.api.role.v2.behavior.RoleCombatHooks;
@@ -31,23 +31,22 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * v2 managed hooks for habitrain_core's own roles. Registered through
- * {@link RoleExtensionApi} so the central dispatcher owns the global
- * listeners; {@link HabiRoleEvents} only keeps world-level leftovers
- * (pepper spray, hidden-body tick) that are not role-scoped.
+ * v2 managed hooks for habitrain_core's own roles. Registered through the
+ * provider-scoped {@link RoleExtensionRegistrar} handed to
+ * {@link com.habitrain.core.role.extension.CoreRoleExtensionProvider} (audit
+ * P1-1: no process-global write path), so the central dispatcher owns the
+ * global listeners and the provider transaction owns identity/rollback;
+ * {@link HabiRoleEvents} only keeps world-level leftovers (pepper spray,
+ * hidden-body tick) that are not role-scoped.
  */
 public final class HabiRoleHooks {
 
     private HabiRoleHooks() {}
 
-    private static boolean registered;
-
-    public static void register() {
-        if (registered) {
-            return;
+    public static void registerWith(RoleExtensionRegistrar registrar) {
+        if (registrar == null) {
+            throw new IllegalArgumentException("registrar must not be null");
         }
-        registered = true;
-        var registrar = RoleExtensionApi.instance().registrar();
         registrar.hooks(RoleKey.of(HabiRoles.CRIME_SCAPEGOAT_ID), crimeScapegoat());
         registrar.hooks(RoleKey.of(HabiRoles.FLOWER_GIRL_ID), flowerGirl());
         registrar.hooks(RoleKey.of(HabiRoles.SWIFT_WIND_ID), swiftWind());

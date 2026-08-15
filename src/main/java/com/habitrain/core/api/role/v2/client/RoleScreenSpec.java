@@ -10,16 +10,23 @@ import java.util.Objects;
  * adapter opens a stock picker / confirm / list; providers that need a
  * fully custom layout still write their own screen and only use this
  * spec as the catalog entry.
+ *
+ * <p><b>Experimental (audit P1-2):</b> specs are stored, queryable and shown in
+ * diagnostics, but no screen open/close dispatcher consumes them yet.
+ * Advertised under the experimental capability {@code client_screen}; do not
+ * rely on in-game effect until the adapter lands.
  */
 public final class RoleScreenSpec {
 
     private final ResourceLocation id;
+    private final String entryKey;
     private final RoleKey role;
     private final RoleScreenKind kind;
     private final String titleKey;
 
     private RoleScreenSpec(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
+        this.entryKey = b.entryKey;
         this.role = Objects.requireNonNull(b.role, "role");
         this.kind = b.kind;
         this.titleKey = b.titleKey;
@@ -30,12 +37,14 @@ public final class RoleScreenSpec {
     }
 
     public ResourceLocation id() { return id; }
+    public String entryKey() { return entryKey; }
     public RoleKey role() { return role; }
     public RoleScreenKind kind() { return kind; }
     public String titleKey() { return titleKey; }
 
     public static final class Builder {
         private ResourceLocation id;
+        private String entryKey;
         private RoleKey role;
         private RoleScreenKind kind = RoleScreenKind.PLAYER_PICK;
         private String titleKey = "";
@@ -44,6 +53,11 @@ public final class RoleScreenSpec {
 
         public Builder id(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
+            return this;
+        }
+
+        public Builder entryKey(String entryKey) {
+            this.entryKey = entryKey;
             return this;
         }
 

@@ -41,7 +41,21 @@ public final class RoleHandshakeState {
                 : RoleHandshakeMatcher.match(manifest, buildLocalManifest());
     }
 
-    /** Builds the client's local manifest from the loaded mod set. */
+    /**
+     * Builds the client's local manifest from the loaded mod set.
+     *
+     * <p>The hash fields are deliberately {@code null}: the client cannot
+     * independently reproduce the server's definition hash, because that hash
+     * folds the server-side compiled entry view (v1 baseline rows + the applied
+     * {@code roleExtensionsV2} config), which the client never sees. Reporting a
+     * hash would either mismatch permanently or force the client to replicate
+     * server config state. So the client trusts the server for hashes (review
+     * 2026-08-14 P1): the handshake gate checks report completeness, API
+     * version compatibility and required-provider presence; the definition-hash
+     * branch of {@link RoleHandshakeMatcher} remains for clients that DO report
+     * an independent fingerprint (e.g. a future pack-aware client), it just
+     * never fires for this client.
+     */
     public static ClientManifest buildLocalManifest() {
         Map<String, String> versions = new LinkedHashMap<>();
         try {

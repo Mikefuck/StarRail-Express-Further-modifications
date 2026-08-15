@@ -93,12 +93,38 @@ public final class RoleVoiceCapabilityPlugin implements VoicechatPlugin {
             if (from == null || to == null) {
                 return false;
             }
+            // Audit P1-3: fill the real group ids and speaker→listener distance so
+            // isolateGroup + hearWorld(false) can recognise true group members and
+            // maxDistance is actually enforced.
             RoleCapabilityContext ctx = RoleCapabilityContext.of(
-                    from.getUUID(), currentRole(from), to.getUUID(), currentRole(to));
+                    from.getUUID(), currentRole(from), to.getUUID(), currentRole(to),
+                    groupIdOf(sender), groupIdOf(receiver), distanceBlocks(from, to));
             VoiceDecision decision = RoleCapabilityApi.instance().evaluateVoice(ctx);
             return decision == VoiceDecision.BLOCK;
         } catch (Throwable t) {
             return false;
+        }
+    }
+
+    /** The voicechat group id of a connection, or {@code null} for the world channel. */
+    private static @org.jetbrains.annotations.Nullable java.util.UUID groupIdOf(VoicechatConnection connection) {
+        try {
+            de.maxhenkel.voicechat.api.Group group = connection.getGroup();
+            return group == null ? null : group.getId();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Euclidean distance in blocks between two players, or {@code null} if unknown. */
+    private static @org.jetbrains.annotations.Nullable Double distanceBlocks(ServerPlayer from, ServerPlayer to) {
+        try {
+            if (from == null || to == null || from.level() != to.level()) {
+                return null;
+            }
+            return Math.sqrt(from.distanceToSqr(to));
+        } catch (Throwable t) {
+            return null;
         }
     }
 
