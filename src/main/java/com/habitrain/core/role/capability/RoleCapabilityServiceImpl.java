@@ -9,6 +9,8 @@ import com.habitrain.core.api.role.v2.capability.RoleCapabilityStatus;
 import com.habitrain.core.api.role.v2.capability.RoleChatPolicy;
 import com.habitrain.core.api.role.v2.capability.RoleVoicePolicy;
 import com.habitrain.core.api.role.v2.capability.VoiceDecision;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
+import com.habitrain.core.role.extension.ManagedDeclaration;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -32,54 +34,99 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleCapabilityApi");
 
-    private final Map<ResourceLocation, RoleVoicePolicy> voices = new LinkedHashMap<>();
-    private final Map<ResourceLocation, RoleChatPolicy> chats = new LinkedHashMap<>();
+    /**
+     * Registered voice/chat policies wrapped in their provider ownership (audit
+     * P1-2). Disabled policies stay visible to diagnostics and the manifest but
+     * never participate in runtime evaluation.
+     */
+    private final Map<ResourceLocation, ManagedDeclaration<RoleVoicePolicy>> voices = new LinkedHashMap<>();
+    private final Map<ResourceLocation, ManagedDeclaration<RoleChatPolicy>> chats = new LinkedHashMap<>();
     private final Map<RoleCapabilityKey, RoleCapabilityStatus> adapters = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> groups = new ConcurrentHashMap<>();
     private volatile boolean frozen;
 
     public RoleCapabilityServiceImpl() {}
 
-    @Override
+    /**
+     * Convenience registration seam for unit tests and legacy internal callers:
+     * owns the policy under its own id (provider = id namespace, entry id = the
+     * id itself). Production providers MUST register through
+     * {@code ProviderRegistrationTransaction} so provider-scoped gating and
+     * rollback apply; this path is not part of the public {@link RoleCapabilityApi}.
+     */
     public synchronized RoleVoicePolicy voice(RoleVoicePolicy policy) {
         Objects.requireNonNull(policy, "policy");
+        return registerVoice(policy.id().getNamespace(), policy.id().toString(), policy);
+    }
+
+    /**
+     * Convenience registration seam for unit tests and legacy internal callers:
+     * owns the policy under its own id (provider = id namespace, entry id = the
+     * id itself). Production providers MUST register through
+     * {@code ProviderRegistrationTransaction} so provider-scoped gating and
+     * rollback apply; this path is not part of the public {@link RoleCapabilityApi}.
+     */
+    public synchronized RoleChatPolicy chat(RoleChatPolicy policy) {
+        Objects.requireNonNull(policy, "policy");
+        return registerChat(policy.id().getNamespace(), policy.id().toString(), policy);
+    }
+
+    /**
+     * Registers a voice policy under its provider ownership. Called by
+     * {@code ProviderRegistrationTransaction.commit}; unit tests use it as the
+     * direct registration seam. Not part of the public {@link RoleCapabilityApi}
+     * surface — downstream providers register through the entrypoint registrar.
+     */
+    public synchronized RoleVoicePolicy registerVoice(String providerId, String entryId,
+                                                      RoleVoicePolicy policy) {
+        Objects.requireNonNull(policy, "policy");
         rejectIfFrozen();
-        if (voices.putIfAbsent(policy.id(), policy) != null) {
+        if (voices.putIfAbsent(policy.id(), new ManagedDeclaration<>(providerId, entryId, policy.role(), policy)) != null) {
             throw new IllegalArgumentException("Duplicate voice policy: " + policy.id());
         }
-        LOGGER.info("Registered voice policy {} for {}", policy.id(), policy.role());
+        LOGGER.info("Registered voice policy {} for {} (provider {}, entry {})",
+                policy.id(), policy.role(), providerId, entryId);
         return policy;
     }
 
-    @Override
-    public synchronized RoleChatPolicy chat(RoleChatPolicy policy) {
+    /**
+     * Registers a chat policy under its provider ownership. Called by
+     * {@code ProviderRegistrationTransaction.commit}; unit tests use it as the
+     * direct registration seam. Not part of the public {@link RoleCapabilityApi}
+     * surface — downstream providers register through the entrypoint registrar.
+     */
+    public synchronized RoleChatPolicy registerChat(String providerId, String entryId,
+                                                    RoleChatPolicy policy) {
         Objects.requireNonNull(policy, "policy");
         rejectIfFrozen();
-        if (chats.putIfAbsent(policy.id(), policy) != null) {
+        if (chats.putIfAbsent(policy.id(), new ManagedDeclaration<>(providerId, entryId, policy.role(), policy)) != null) {
             throw new IllegalArgumentException("Duplicate chat policy: " + policy.id());
         }
-        LOGGER.info("Registered chat policy {} for {}", policy.id(), policy.role());
+        LOGGER.info("Registered chat policy {} for {} (provider {}, entry {})",
+                policy.id(), policy.role(), providerId, entryId);
         return policy;
     }
 
     @Override
     public Collection<RoleVoicePolicy> voices() {
-        return Collections.unmodifiableCollection(voices.values());
+        return voices.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
     public List<RoleVoicePolicy> voicesFor(RoleKey role) {
-        return filterByRole(voices.values(), role, RoleVoicePolicy::role);
+        return filterByRole(voices.values(), role, d -> d.declaration().role())
+                .stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
     public Collection<RoleChatPolicy> chats() {
-        return Collections.unmodifiableCollection(chats.values());
+        return chats.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
     public List<RoleChatPolicy> chatsFor(RoleKey role) {
-        return filterByRole(chats.values(), role, RoleChatPolicy::role);
+        return filterByRole(chats.values(), role, d -> d.declaration().role())
+                .stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
@@ -100,12 +147,39 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
 
     @Override
     public VoiceDecision evaluateVoice(RoleCapabilityContext ctx) {
-        return CapabilityPolicyEvaluator.voice(voices.values(), withStoredGroups(ctx));
+        return CapabilityPolicyEvaluator.voice(enabledVoicePolicies(), withStoredGroups(ctx));
     }
 
     @Override
     public ChatDecision evaluateChat(RoleCapabilityContext ctx) {
-        return CapabilityPolicyEvaluator.chat(chats.values(), withStoredGroups(ctx));
+        return CapabilityPolicyEvaluator.chat(enabledChatPolicies(), withStoredGroups(ctx));
+    }
+
+    /** Voice policies whose provider/entry gate is ENABLED (audit P1-2). */
+    private List<RoleVoicePolicy> enabledVoicePolicies() {
+        List<RoleVoicePolicy> enabled = new ArrayList<>();
+        for (ManagedDeclaration<RoleVoicePolicy> decl : voices.values()) {
+            if (gateEnabled(decl.providerId(), decl.entryId())) {
+                enabled.add(decl.declaration());
+            }
+        }
+        return enabled;
+    }
+
+    /** Chat policies whose provider/entry gate is ENABLED (audit P1-2). */
+    private List<RoleChatPolicy> enabledChatPolicies() {
+        List<RoleChatPolicy> enabled = new ArrayList<>();
+        for (ManagedDeclaration<RoleChatPolicy> decl : chats.values()) {
+            if (gateEnabled(decl.providerId(), decl.entryId())) {
+                enabled.add(decl.declaration());
+            }
+        }
+        return enabled;
+    }
+
+    private static boolean gateEnabled(String providerId, String entryId) {
+        return RoleExtensionConfigService.INSTANCE.gateFor(providerId, entryId)
+                == RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
     @Override
@@ -169,14 +243,24 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
                 + " policies=" + voices.size());
         lines.add("chat=" + status(RoleCapabilityKey.CHAT)
                 + " policies=" + chats.size());
-        for (RoleVoicePolicy policy : voices.values()) {
+        for (ManagedDeclaration<RoleVoicePolicy> decl : voices.values()) {
+            RoleVoicePolicy policy = decl.declaration();
             lines.add("  voice " + policy.id() + " role=" + policy.role()
+                    + " provider=" + decl.providerId()
+                    + " entry=" + decl.entryId()
+                    + " gate=" + RoleExtensionConfigService.INSTANCE
+                            .gateFor(decl.providerId(), decl.entryId())
                     + (policy.muteSend() ? " muteSend" : "")
                     + (policy.muteReceive() ? " muteReceive" : "")
                     + (policy.isolateGroup() ? " isolate" : ""));
         }
-        for (RoleChatPolicy policy : chats.values()) {
+        for (ManagedDeclaration<RoleChatPolicy> decl : chats.values()) {
+            RoleChatPolicy policy = decl.declaration();
             lines.add("  chat " + policy.id() + " role=" + policy.role()
+                    + " provider=" + decl.providerId()
+                    + " entry=" + decl.entryId()
+                    + " gate=" + RoleExtensionConfigService.INSTANCE
+                            .gateFor(decl.providerId(), decl.entryId())
                     + (policy.muteSend() ? " muteSend" : "")
                     + (policy.muteReceive() ? " muteReceive" : ""));
         }
@@ -217,7 +301,7 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
 
     /** Public rollback token used only while provider declarations are loading. */
     public record RegistrationSnapshot(
-            Map<ResourceLocation, RoleVoicePolicy> voices,
-            Map<ResourceLocation, RoleChatPolicy> chats,
+            Map<ResourceLocation, ManagedDeclaration<RoleVoicePolicy>> voices,
+            Map<ResourceLocation, ManagedDeclaration<RoleChatPolicy>> chats,
             boolean frozen) {}
 }

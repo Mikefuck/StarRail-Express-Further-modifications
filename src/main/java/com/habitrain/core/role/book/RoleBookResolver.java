@@ -8,6 +8,7 @@ import com.habitrain.core.api.role.v2.definition.ListOp;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.role.extension.ManagedSRERole;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
+import io.wifi.starrailexpress.api.SRERole;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -33,7 +34,7 @@ public final class RoleBookResolver {
         List<RoleBookPage> pages = List.of();
         boolean replaceAll = false;
 
-        ManagedSRERole managed = registry.getManagedRole(roleId);
+        SRERole managed = registry.getManagedRole(roleId);
         if (managed == null) {
             var replacement = registry.replacementFor(roleId);
             if (replacement != null) {
@@ -47,8 +48,9 @@ public final class RoleBookResolver {
                 }
             }
         }
-        if (managed != null && managed.book() != null && isManagedRoleEnabled(managed, roleId)) {
-            pages = managed.book().pages();
+        if (managed instanceof ManagedSRERole mm && mm.book() != null
+                && isManagedRoleEnabled(mm, roleId)) {
+            pages = mm.book().pages();
             replaceAll = true;
         }
 

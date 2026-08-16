@@ -2,6 +2,7 @@ package com.habitrain.core.role.config;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Pure comparison of the server manifest against the client's local manifest
@@ -19,7 +20,10 @@ import java.util.List;
  * <p>Priority is by severity: required-provider rejection first (needs the most
  * concrete remediation), then gameplay hash, then presentation degradation. A
  * nullable client hash means "trust the server" so a client that cannot compute
- * an independent fingerprint never false-positives.
+ * an independent fingerprint never false-positives. Since audit P1-4 a
+ * required provider must be present in BOTH the version map and the client's
+ * loaded client-extension set (its {@code requiresClient()} declaration is
+ * explicit, not guessed from entrypoint presence).
  *
  * <p><b>Hash branch caveat (review 2026-08-14 P1):</b> the definition-hash
  * branch only fires when the client reports a non-blank
@@ -90,6 +94,7 @@ public final class RoleHandshakeMatcher {
 
     private static List<String> missingRequiredProviders(RoleManifest server, ClientManifest local) {
         List<String> missing = new ArrayList<>();
+        Set<String> loadedExtensions = local.localClientExtensionProviders();
         for (RoleProviderManifest provider : server.providers()) {
             if (!provider.requiredClient()) {
                 continue;
@@ -100,6 +105,11 @@ public final class RoleHandshakeMatcher {
             } else if (provider.version() != null && !provider.version().isBlank()
                     && !provider.version().equals(localVersion)) {
                 missing.add(provider.providerId() + "（版本 " + localVersion + " ≠ 服务端 " + provider.version() + "）");
+            } else if (!loadedExtensions.contains(provider.providerId())) {
+                // Audit P1-4: requiredClient is an explicit declaration, so the
+                // provider's client extensions must actually be loaded, not just
+                // the mod present. Fail closed.
+                missing.add(provider.providerId() + "（已安装，但客户端扩展未加载）");
             }
         }
         return missing;

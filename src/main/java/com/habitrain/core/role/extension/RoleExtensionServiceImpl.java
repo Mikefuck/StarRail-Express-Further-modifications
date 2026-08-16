@@ -70,7 +70,9 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
             ProviderRegistrationTransaction tx = RoleExtensionRegistry.INSTANCE.begin(providerId);
             RoleExtensionRegistrar registrar = new ScopedRoleExtensionRegistrar(tx);
             try {
-                container.getEntrypoint().register(registrar);
+                RoleExtensionEntrypoint entrypoint = container.getEntrypoint();
+                entrypoint.register(registrar);
+                tx.setRequiresClient(entrypoint.requiresClient());
                 tx.commit();
             } catch (RuntimeException e) {
                 tx.rollback();

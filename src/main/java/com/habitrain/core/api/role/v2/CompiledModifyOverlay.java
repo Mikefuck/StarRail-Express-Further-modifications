@@ -1,8 +1,17 @@
 package com.habitrain.core.api.role.v2;
 
+import com.habitrain.core.api.role.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.patch.FlagsPatch;
+import com.habitrain.core.api.role.patch.NamePatch;
+import com.habitrain.core.api.role.patch.RoleTextPatch;
+import com.habitrain.core.api.role.patch.ShopPatch;
+import com.habitrain.core.api.role.patch.ShopTransform;
+import com.habitrain.core.api.role.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.api.SRERole.SpecialMapRoleMap;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -22,7 +31,17 @@ import java.util.Objects;
 public final class CompiledModifyOverlay {
 
     private final int color;
+    private final @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+    private final @Nullable FlagsPatch flagsPatch;
+    private final @Nullable SpawnInfoPatch spawnInfoPatch;
     private final MoodType mood;
+    private final @Nullable NamePatch namePatch;
+    private final @Nullable RoleTextPatch descriptionPatch;
+    private final @Nullable RoleTextPatch simpleDescriptionPatch;
+    private final @Nullable DefaultItemsPatch defaultItemsPatch;
+    private final @Nullable ShopPatch shopPatch;
+    private final @Nullable ShopTransform shopTransform;
+    private final @Nullable WinConditionHook winConditionHook;
     private final boolean innocent;
     private final boolean canUseKiller;
     private final boolean neutral;
@@ -64,7 +83,10 @@ public final class CompiledModifyOverlay {
             int occupiedRoleCount, SpecialMapRoleMap specialMapRole,
             List<RoleKey> occupationKeys, List<RoleKey> opposingKeys, List<RoleKey> relatedKeys,
             List<RoleSkillSpec> skills) {
-        this(color, mood, innocent, canUseKiller, neutral, vigilanteTeam,
+        this(color, mood,
+                null, null, null,
+                null, null, null, null, null, null, null,
+                innocent, canUseKiller, neutral, vigilanteTeam,
                 defaultMax, enableChance, needPlayerCount, maxPlayerCount,
                 canSeeCoin, canPickUpRevolver, canBeRandomed, maxSprintTime, canSeeTime,
                 neutralForKiller, neutralForInnocent, mafiaTeam,
@@ -74,7 +96,14 @@ public final class CompiledModifyOverlay {
     }
 
     public CompiledModifyOverlay(
-            int color, MoodType mood, boolean innocent, boolean canUseKiller, boolean neutral,
+            int color, MoodType mood,
+            @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+            @Nullable FlagsPatch flagsPatch, @Nullable SpawnInfoPatch spawnInfoPatch,
+            @Nullable NamePatch namePatch, @Nullable RoleTextPatch descriptionPatch,
+            @Nullable RoleTextPatch simpleDescriptionPatch, @Nullable DefaultItemsPatch defaultItemsPatch,
+            @Nullable ShopPatch shopPatch, @Nullable ShopTransform shopTransform,
+            @Nullable WinConditionHook winConditionHook,
+            boolean innocent, boolean canUseKiller, boolean neutral,
             boolean vigilanteTeam, int defaultMax, int enableChance, int needPlayerCount,
             int maxPlayerCount, boolean canSeeCoin, boolean canPickUpRevolver, boolean canBeRandomed,
             int maxSprintTime, boolean canSeeTime, boolean neutralForKiller, boolean neutralForInnocent,
@@ -84,7 +113,17 @@ public final class CompiledModifyOverlay {
             List<RoleKey> occupationKeys, List<RoleKey> opposingKeys, List<RoleKey> relatedKeys,
             boolean opposingTwoWay, List<RoleSkillSpec> skills, boolean skillsSpecified) {
         this.color = color;
+        this.colorProvider = colorProvider;
+        this.flagsPatch = flagsPatch;
+        this.spawnInfoPatch = spawnInfoPatch;
         this.mood = mood;
+        this.namePatch = namePatch;
+        this.descriptionPatch = descriptionPatch;
+        this.simpleDescriptionPatch = simpleDescriptionPatch;
+        this.defaultItemsPatch = defaultItemsPatch;
+        this.shopPatch = shopPatch;
+        this.shopTransform = shopTransform;
+        this.winConditionHook = winConditionHook;
         this.innocent = innocent;
         this.canUseKiller = canUseKiller;
         this.neutral = neutral;
@@ -117,7 +156,17 @@ public final class CompiledModifyOverlay {
     }
 
     public int color() { return color; }
+    public @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider() { return colorProvider; }
+    public @Nullable FlagsPatch flagsPatch() { return flagsPatch; }
+    public @Nullable SpawnInfoPatch spawnInfoPatch() { return spawnInfoPatch; }
     public MoodType mood() { return mood; }
+    public @Nullable NamePatch namePatch() { return namePatch; }
+    public @Nullable RoleTextPatch descriptionPatch() { return descriptionPatch; }
+    public @Nullable RoleTextPatch simpleDescriptionPatch() { return simpleDescriptionPatch; }
+    public @Nullable DefaultItemsPatch defaultItemsPatch() { return defaultItemsPatch; }
+    public @Nullable ShopPatch shopPatch() { return shopPatch; }
+    public @Nullable ShopTransform shopTransform() { return shopTransform; }
+    public @Nullable WinConditionHook winConditionHook() { return winConditionHook; }
     public boolean innocent() { return innocent; }
     public boolean canUseKiller() { return canUseKiller; }
     public boolean neutral() { return neutral; }

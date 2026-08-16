@@ -9,7 +9,6 @@ import net.minecraft.world.entity.player.Player;
 import org.agmas.harpymodloader.Harpymodloader;
 import org.agmas.harpymodloader.SREDisableManager;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
-import org.agmas.harpymodloader.events.OnGamePlayerRolesConfirm;
 import pro.fazeclan.river.stupid_express.constants.SEModifiers;
 
 import java.util.ArrayList;
@@ -24,20 +23,10 @@ import java.util.UUID;
  * Forced roles ({@code FORCED_MODDED_ROLE_FLIP}) are never demoted by spawn gates.
  */
 public final class SevenSinsMutex {
-    private static boolean registered;
-
     /** Greed only appears naturally when participant count is greater than this. */
     public static final int GREED_MIN_PLAYERS_EXCLUSIVE = 12;
 
     private SevenSinsMutex() {}
-
-    public static void init() {
-        if (registered) return;
-        registered = true;
-        OnGamePlayerRolesConfirm.EVENT.register(SevenSinsMutex::beforeAssign);
-        HabiTrainCore.LOGGER.info(
-                "[SevenSins] mutex + lust/envy/greed natural gates registered (forced protected)");
-    }
 
     static void beforeAssign(ServerLevel level, Map<Player, SRERole> map) {
         if (map == null || map.isEmpty()) return;

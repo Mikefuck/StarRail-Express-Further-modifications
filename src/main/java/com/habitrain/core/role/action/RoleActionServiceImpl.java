@@ -8,10 +8,15 @@ import com.habitrain.core.api.role.v2.action.RoleActionDirection;
 import com.habitrain.core.api.role.v2.action.RoleActionHandler;
 import com.habitrain.core.api.role.v2.action.RoleActionResult;
 import com.habitrain.core.api.role.v2.action.RoleActionSpec;
+import com.habitrain.core.api.role.v2.action.RoleActionTarget;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
+import com.habitrain.core.role.extension.ManagedDeclaration;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,7 +55,13 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     /** How many recently-accepted sequences per player/action to remember for replay. */
     private static final int REPLAY_WINDOW = STALE_BEHIND + 1;
 
-    private final Map<ResourceLocation, RoleActionSpec> specs = new LinkedHashMap<>();
+    /**
+     * Registered action schemas wrapped in their provider ownership (audit
+     * P1-2): every declaration is registered through a provider transaction
+     * with a config-scoped entry id, and runtime dispatch is gated by
+     * {@link RoleExtensionConfigService#gateFor}.
+     */
+    private final Map<ResourceLocation, ManagedDeclaration<RoleActionSpec>> specs = new LinkedHashMap<>();
     private final Map<GateKey, Deque<Long>> rateWindows = new ConcurrentHashMap<>();
     private final Map<GateKey, Long> lastUseMs = new ConcurrentHashMap<>();
     private final Map<GateKey, Deque<Integer>> seqWindows = new ConcurrentHashMap<>();
@@ -110,8 +121,29 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         lastUseMs.keySet().removeIf(k -> playerId.equals(k.playerId()));
     }
 
-    @Override
+    /**
+     * Convenience registration seam for unit tests and legacy internal callers:
+     * owns the declaration under its own id (provider = id namespace, entry id
+     * = the id itself). Production providers MUST register through
+     * {@code ProviderRegistrationTransaction} so provider-scoped gating and
+     * rollback apply; this path is not part of the public {@link RoleActionApi}.
+     */
     public synchronized RoleActionSpec register(RoleActionSpec spec) {
+        Objects.requireNonNull(spec, "spec");
+        return registerManaged(spec.id().getNamespace(), spec.id().toString(), spec);
+    }
+
+    /**
+     * Registers an action schema under its provider ownership. Called by
+     * {@code ProviderRegistrationTransaction.commit}; unit tests use it as the
+     * direct registration seam. Not part of the public {@link RoleActionApi}
+     * surface — downstream providers register through the entrypoint registrar.
+     *
+     * @return the registered spec
+     * @throws IllegalStateException if the registry is frozen
+     * @throws IllegalArgumentException on duplicate id or missing fields
+     */
+    public synchronized RoleActionSpec registerManaged(String providerId, String entryId, RoleActionSpec spec) {
         Objects.requireNonNull(spec, "spec");
         if (frozen) {
             throw new IllegalStateException("Role action registry is frozen");
@@ -119,19 +151,21 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         if (specs.containsKey(spec.id())) {
             throw new IllegalArgumentException("Duplicate role action: " + spec.id());
         }
-        specs.put(spec.id(), spec);
-        LOGGER.info("Registered role action {} for {}", spec.id(), spec.role());
+        specs.put(spec.id(), new ManagedDeclaration<>(providerId, entryId, spec.role(), spec));
+        LOGGER.info("Registered role action {} for {} (provider {}, entry {})",
+                spec.id(), spec.role(), providerId, entryId);
         return spec;
     }
 
     @Override
     public @Nullable RoleActionSpec spec(ResourceLocation id) {
-        return id == null ? null : specs.get(id);
+        ManagedDeclaration<RoleActionSpec> decl = id == null ? null : specs.get(id);
+        return decl == null ? null : decl.declaration();
     }
 
     @Override
     public Collection<RoleActionSpec> specs() {
-        return Collections.unmodifiableCollection(specs.values());
+        return specs.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
@@ -140,9 +174,9 @@ public final class RoleActionServiceImpl implements RoleActionApi {
             return List.of();
         }
         List<RoleActionSpec> out = new ArrayList<>();
-        for (RoleActionSpec spec : specs.values()) {
-            if (role.equals(spec.role())) {
-                out.add(spec);
+        for (ManagedDeclaration<RoleActionSpec> decl : specs.values()) {
+            if (role.equals(decl.role())) {
+                out.add(decl.declaration());
             }
         }
         return List.copyOf(out);
@@ -188,9 +222,14 @@ public final class RoleActionServiceImpl implements RoleActionApi {
 
     @Override
     public void sendTo(@Nullable ServerPlayer player, ResourceLocation actionId, byte[] payload) {
-        RoleActionSpec spec = spec(actionId);
+        ManagedDeclaration<RoleActionSpec> decl = actionId == null ? null : specs.get(actionId);
+        RoleActionSpec spec = decl == null ? null : decl.declaration();
         if (player == null || spec == null) {
             return;
+        }
+        if (RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
+                != RoleExtensionConfigService.EntryGate.ENABLED) {
+            return; // disabled provider/entry: drop the push (audit P1-2)
         }
         if (spec.direction() == RoleActionDirection.C2S) {
             return;
@@ -244,7 +283,8 @@ public final class RoleActionServiceImpl implements RoleActionApi {
 
     public List<String> describe(@Nullable RoleKey role) {
         List<String> lines = new ArrayList<>();
-        for (RoleActionSpec spec : specs.values()) {
+        for (ManagedDeclaration<RoleActionSpec> decl : specs.values()) {
+            RoleActionSpec spec = decl.declaration();
             if (role != null && !role.equals(spec.role())) {
                 continue;
             }
@@ -254,7 +294,10 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                     + " max=" + spec.maxBytes()
                     + " rate=" + spec.ratePerSecond() + "/s"
                     + " cd=" + spec.cooldownTicks() + "t"
-                    + " target=" + spec.targetDecoder());
+                    + " target=" + spec.targetDecoder()
+                    + " provider=" + decl.providerId()
+                    + " entry=" + decl.entryId()
+                    + " gate=" + RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId()));
         }
         return lines;
     }
@@ -276,7 +319,15 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         if (spec == null) {
             return RoleActionResult.reject(RoleActionResult.UNKNOWN);
         }
-        // 2. direction
+        // 2. provider/entry config gate (audit P1-2): a disabled action is
+        // refused before any sequence / cooldown / rate / handler side effect.
+        ManagedDeclaration<RoleActionSpec> decl = specs.get(actionId);
+        if (decl == null
+                || RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
+                != RoleExtensionConfigService.EntryGate.ENABLED) {
+            return RoleActionResult.reject(RoleActionResult.CONFIG_DISABLED);
+        }
+        // 3. direction
         if (spec.direction() == RoleActionDirection.S2C) {
             return RoleActionResult.reject(RoleActionResult.WRONG_DIRECTION);
         }
@@ -306,36 +357,62 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         }
         // 8. structured target: decode + online + same world (decoder-driven)
         UUID targetId = null;
-        if (spec.targetDecoder() == ActionTargetCodec.PLAYER_UUID) {
-            if (player == null) {
-                // Pure dispatch path without a live player: decode for the context only.
-                targetId = decodePlayerUuid(body);
-            } else {
-                UUID decoded = decodePlayerUuid(body);
-                if (decoded == null) {
-                    return RoleActionResult.reject(RoleActionResult.TARGET, "target uuid required");
+        RoleActionTarget target = null;
+        switch (spec.targetDecoder()) {
+            case NONE -> {
+                // no structured target
+            }
+            case PLAYER_UUID -> {
+                if (player == null) {
+                    // Pure dispatch path without a live player: decode for the context only.
+                    targetId = decodePlayerUuid(body);
+                    target = RoleActionTarget.ofPlayer(targetId);
+                } else {
+                    UUID decoded = decodePlayerUuid(body);
+                    if (decoded == null) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "target uuid required");
+                    }
+                    ServerPlayer targetPlayer = player.getServer() == null
+                            ? null
+                            : player.getServer().getPlayerList().getPlayer(decoded);
+                    if (targetPlayer == null) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "target offline");
+                    }
+                    if (player.level() != targetPlayer.level()) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "target in another world");
+                    }
+                    targetId = decoded;
+                    target = new RoleActionTarget.Player(decoded);
+                    // 8b. target alive (only for PLAYER_UUID targets when required)
+                    if (spec.requireTargetAlive()
+                            && !Boolean.TRUE.equals(aliveLookup.apply(targetPlayer))) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "target dead");
+                    }
+                    // 9. distance / line of sight (only for PLAYER_UUID targets)
+                    if (spec.maxDistance() > 0 && player.distanceTo(targetPlayer) > spec.maxDistance()) {
+                        return RoleActionResult.reject(RoleActionResult.RANGE);
+                    }
+                    if (spec.requireLineOfSight() && !player.hasLineOfSight(targetPlayer)) {
+                        return RoleActionResult.reject(RoleActionResult.LINE_OF_SIGHT);
+                    }
                 }
-                ServerPlayer target = player.getServer() == null
-                        ? null
-                        : player.getServer().getPlayerList().getPlayer(decoded);
-                if (target == null) {
-                    return RoleActionResult.reject(RoleActionResult.TARGET, "target offline");
+            }
+            case BLOCK_POS -> {
+                BlockPos pos = decodeBlockPos(body);
+                if (pos == null) {
+                    return RoleActionResult.reject(RoleActionResult.TARGET, "block pos required");
                 }
-                if (player.level() != target.level()) {
-                    return RoleActionResult.reject(RoleActionResult.TARGET, "target in another world");
+                target = new RoleActionTarget.Block(pos);
+            }
+            case ENTITY_ID -> {
+                Integer entityId = decodeEntityId(body);
+                if (entityId == null) {
+                    return RoleActionResult.reject(RoleActionResult.TARGET, "entity id required");
                 }
-                targetId = decoded;
-                // 8b. target alive (only for PLAYER_UUID targets when required)
-                if (spec.requireTargetAlive() && !Boolean.TRUE.equals(aliveLookup.apply(target))) {
-                    return RoleActionResult.reject(RoleActionResult.TARGET, "target dead");
+                if (player != null && player.level().getEntity(entityId) == null) {
+                    return RoleActionResult.reject(RoleActionResult.TARGET, "entity not found");
                 }
-                // 9. distance / line of sight (only for PLAYER_UUID targets)
-                if (spec.maxDistance() > 0 && player.distanceTo(target) > spec.maxDistance()) {
-                    return RoleActionResult.reject(RoleActionResult.RANGE);
-                }
-                if (spec.requireLineOfSight() && !player.hasLineOfSight(target)) {
-                    return RoleActionResult.reject(RoleActionResult.LINE_OF_SIGHT);
-                }
+                target = new RoleActionTarget.Entity(entityId);
             }
         }
         long now = clock.now();
@@ -361,7 +438,7 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         recordRate(gate, now);
         try {
             RoleActionResult result = handler.handle(new RoleActionContext(
-                    spec.role(), playerId, body, sequence, targetId));
+                    spec.role(), playerId, body, sequence, targetId, target));
             if (result != null && result.ok()) {
                 lastUseMs.put(gate, now);
                 if (playerId != null) {
@@ -387,6 +464,29 @@ public final class RoleActionServiceImpl implements RoleActionApi {
             lsb = (lsb << 8) | (body[8 + i] & 0xFFL);
         }
         return new UUID(msb, lsb);
+    }
+
+    /** Big-endian 12-byte block X/Y/Z, or {@code null} when too short. */
+    private static @Nullable BlockPos decodeBlockPos(byte[] body) {
+        if (body == null || body.length < 12) {
+            return null;
+        }
+        return new BlockPos(readInt(body, 0), readInt(body, 4), readInt(body, 8));
+    }
+
+    /** Big-endian 4-byte entity id, or {@code null} when too short. */
+    private static @Nullable Integer decodeEntityId(byte[] body) {
+        if (body == null || body.length < 4) {
+            return null;
+        }
+        return readInt(body, 0);
+    }
+
+    private static int readInt(byte[] body, int offset) {
+        return ((body[offset] & 0xFF) << 24)
+                | ((body[offset + 1] & 0xFF) << 16)
+                | ((body[offset + 2] & 0xFF) << 8)
+                | (body[offset + 3] & 0xFF);
     }
 
     private void echoResult(@Nullable ServerPlayer player, ResourceLocation actionId,
@@ -499,5 +599,6 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     private record GateKey(ResourceLocation actionId, @Nullable UUID playerId) {}
 
     /** Public rollback token used only during the startup registration phase. */
-    public record RegistrationSnapshot(Map<ResourceLocation, RoleActionSpec> specs, boolean frozen) {}
+    public record RegistrationSnapshot(
+            Map<ResourceLocation, ManagedDeclaration<RoleActionSpec>> specs, boolean frozen) {}
 }

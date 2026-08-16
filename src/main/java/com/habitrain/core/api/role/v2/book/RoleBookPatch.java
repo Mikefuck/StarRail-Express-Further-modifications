@@ -55,6 +55,7 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
                         .toList();
             }
             case REPLACE_ALL -> List.copyOf(pages);
+            case REPLACE_MATCHING_IDS -> List.copyOf(pages);
         };
     }
 

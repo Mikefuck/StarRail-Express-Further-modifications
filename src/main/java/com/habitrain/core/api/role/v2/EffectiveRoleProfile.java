@@ -1,5 +1,13 @@
 package com.habitrain.core.api.role.v2;
 
+import com.habitrain.core.api.role.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.patch.FlagsPatch;
+import com.habitrain.core.api.role.patch.NamePatch;
+import com.habitrain.core.api.role.patch.RoleTextPatch;
+import com.habitrain.core.api.role.patch.ShopPatch;
+import com.habitrain.core.api.role.patch.ShopTransform;
+import com.habitrain.core.api.role.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
@@ -48,7 +56,17 @@ public record EffectiveRoleProfile(
         List<RoleKey> opposingKeys,
         List<RoleKey> relatedKeys,
         List<RoleSkillSpec> skills,
-        boolean skillsSpecified) {
+        boolean skillsSpecified,
+        NamePatch namePatch,
+        RoleTextPatch descriptionPatch,
+        RoleTextPatch simpleDescriptionPatch,
+        DefaultItemsPatch defaultItemsPatch,
+        ShopPatch shopPatch,
+        ShopTransform shopTransform,
+        WinConditionHook winConditionHook,
+        com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+        FlagsPatch flagsPatch,
+        SpawnInfoPatch spawnInfoPatch) {
 
     public EffectiveRoleProfile {
         Objects.requireNonNull(key, "key");
@@ -76,7 +94,9 @@ public record EffectiveRoleProfile(
                 role.isOtherModeRole(), role.getFlags().contains("inner.role_rotation.hidden"),
                 role.getOccupiedRoleCount(), role.getSpecialMapRole(),
                 relationKeys(role.occupationRoles), relationKeys(role.opposingRoles),
-                relationKeys(role.relatedRoles), List.of(), false);
+                relationKeys(role.relatedRoles), List.of(), false,
+                null, null, null, null, null, null, null,
+                null, null, null);
     }
 
     /** Replaces all mutable gameplay fields with a compiled MODIFY result. */
@@ -94,12 +114,20 @@ public record EffectiveRoleProfile(
                 overlay.instinctNightVision(), overlay.canSeeTeammateKiller(),
                 overlay.otherModeRole(), overlay.hiddenForRotation(), overlay.occupiedRoleCount(),
                 overlay.specialMapRole(), overlay.occupationKeys(), overlay.opposingKeys(),
-                overlay.relatedKeys(), overlay.skills(), overlay.skillsSpecified());
+                overlay.relatedKeys(), overlay.skills(), overlay.skillsSpecified(),
+                overlay.namePatch(), overlay.descriptionPatch(), overlay.simpleDescriptionPatch(),
+                overlay.defaultItemsPatch(), overlay.shopPatch(), overlay.shopTransform(),
+                overlay.winConditionHook(),
+                overlay.colorProvider(), overlay.flagsPatch(), overlay.spawnInfoPatch());
     }
 
     /** Rebuilds a runtime overlay without consulting a live registry or config. */
     public CompiledModifyOverlay toOverlay() {
-        return new CompiledModifyOverlay(color, mood, innocent, canUseKiller, neutral,
+        return new CompiledModifyOverlay(color, mood,
+                colorProvider, flagsPatch, spawnInfoPatch,
+                namePatch, descriptionPatch, simpleDescriptionPatch,
+                defaultItemsPatch, shopPatch, shopTransform, winConditionHook,
+                innocent, canUseKiller, neutral,
                 vigilanteTeam, defaultMax, enableChance, needPlayerCount, maxPlayerCount,
                 canSeeCoin, canPickUpRevolver, canBeRandomed, maxSprintTime, canSeeTime,
                 neutralForKiller, neutralForInnocent, mafiaTeam, canUseInstinct,

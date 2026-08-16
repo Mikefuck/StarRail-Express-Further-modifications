@@ -102,7 +102,8 @@ public class FurnaceExplosionHandler {
 
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
-        pendingExplosions.remove(uuid);
+        // 不在此移除 pendingExplosions：TNT 已点燃、任务已判完成后，玩家掉线/淘汰
+        // 不应取消 2 秒后必然发生的爆炸。clearAll() 仍会在整局清理时清空队列。
         SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 

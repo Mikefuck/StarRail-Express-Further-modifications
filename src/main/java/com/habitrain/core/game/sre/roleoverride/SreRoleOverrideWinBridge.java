@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.api.role.BlackoutWinCheckContext;
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.role.extension.RoleV2WinHookSupport;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -59,6 +60,11 @@ public final class SreRoleOverrideWinBridge {
                         "[RoleOverride] standard SRE win hook failed for {}",
                         entry.getKey(), throwable);
             }
+        }
+        RoleV2WinHookSupport.V2WinCheck v2 = RoleV2WinHookSupport.checkWithRole(level);
+        if (v2 != null) {
+            applyCustomWinner(level, v2.role(), v2.result());
+            return GameUtils.WinStatus.CUSTOM;
         }
         return GameUtils.WinStatus.NOT_MODIFY;
     }

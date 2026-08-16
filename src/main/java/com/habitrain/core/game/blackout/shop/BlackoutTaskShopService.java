@@ -6,6 +6,7 @@ import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
@@ -228,6 +229,7 @@ public final class BlackoutTaskShopService {
         }
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance instance = new TaskInstance(def);
+        instance.setDimension(level.dimension());
         def.onAssign(player, instance);
         mgr.setActiveTask(player.getUUID(), instance);
 
@@ -327,7 +329,9 @@ public final class BlackoutTaskShopService {
 
     private static boolean isBlackoutRunning(ServerLevel level) {
         var gm = GameModeRegistry.getActiveForLevel(level);
-        return gm.isPresent() && "habitrain:blackout".equals(gm.get().getId());
+        if (gm.isEmpty() || !"habitrain:blackout".equals(gm.get().getId())) return false;
+        if (gm.get() instanceof BlackoutMode blackout && blackout.isGameEnded(level)) return false;
+        return true;
     }
 
     /**

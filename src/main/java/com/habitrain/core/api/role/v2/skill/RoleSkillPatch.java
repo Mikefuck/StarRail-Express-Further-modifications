@@ -30,6 +30,11 @@ public record RoleSkillPatch(ListOp op, List<RoleSkillSpec> skills) {
         return new RoleSkillPatch(ListOp.REPLACE_ALL, List.of(skills));
     }
 
+    /** Replaces baseline specs whose ids match the supplied specs, preserving other baseline skills. */
+    public static RoleSkillPatch replaceMatchingIds(RoleSkillSpec... skills) {
+        return new RoleSkillPatch(ListOp.REPLACE_MATCHING_IDS, List.of(skills));
+    }
+
     /**
      * Folds this patch onto {@code current}. {@link ListOp#REMOVE} drops current
      * specs whose ids occur in {@link #skills}; {@link ListOp#APPEND} concatenates
@@ -44,6 +49,13 @@ public record RoleSkillPatch(ListOp op, List<RoleSkillSpec> skills) {
                 yield baseline.stream().filter(s -> !remove.contains(s.id())).toList();
             }
             case REPLACE_ALL -> List.copyOf(skills);
+            case REPLACE_MATCHING_IDS -> {
+                var replace = ids(skills);
+                List<RoleSkillSpec> kept = baseline.stream()
+                        .filter(s -> !replace.contains(s.id()))
+                        .toList();
+                yield concatUnique(kept, skills);
+            }
         };
     }
 

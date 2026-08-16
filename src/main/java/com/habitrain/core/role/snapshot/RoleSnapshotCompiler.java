@@ -10,6 +10,7 @@ import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import com.habitrain.core.role.catalog.MapRoleLookup;
 import com.habitrain.core.role.catalog.RawRoleLookup;
+import com.habitrain.core.role.extension.RoleBaselineStore;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
@@ -57,6 +58,7 @@ public final class RoleSnapshotCompiler {
      * @param lookup the raw upstream role source
      */
     public static RoleSnapshot compile(RoleSnapshotId id, RawRoleLookup lookup) {
+        captureBaselines(lookup);
         Map<ResourceLocation, EffectiveRole> roles = compileEffectiveRoles(lookup);
         Map<ResourceLocation, ResourceLocation> aliases = compileAliases(roles);
         Set<ResourceLocation> replacedTargets = compileReplacedTargets(roles);
@@ -133,7 +135,7 @@ public final class RoleSnapshotCompiler {
             }
             patches.addAll(RoleExtensionRegistry.INSTANCE.configuredPatchesFor(cid));
             CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlayConfigured(
-                    surfaced, patches, null);
+                    surfaced, patches, RoleBaselineStore.getOrCapture(surfaced));
             EffectiveRoleProfile profile = EffectiveRoleProfile
                     .from(RoleKey.of(cid), surfaced, EffectiveRole.Source.REPLACEMENT)
                     .withOverlay(overlay);
@@ -154,7 +156,32 @@ public final class RoleSnapshotCompiler {
         return roles;
     }
 
-    /** Canonical-id redirects: v2 {@code ALIAS} entries and NEW_ID_WITH_ALIAS replaces. */
+    /**
+     * Captures pristine baselines for every role the snapshot may modify before
+     * ANY fold/activation: all raw upstream roles (MODIFY/ALIAS/REPLACE targets)
+     * plus every compiled replacement surface role. {@link RoleBaselineStore}
+     * is identity-keyed, so this runs exactly once per object; a later overlay
+     * activation mutating the live role can no longer pollute the next compile
+     * (fix for the audit's compile → activate → compile accumulation).
+     */
+    private static void captureBaselines(RawRoleLookup lookup) {
+        java.util.List<SRERole> roles = new java.util.ArrayList<>();
+        for (SRERole role : lookup.all()) {
+            if (role != null && role.identifier() != null) {
+                roles.add(role);
+            }
+        }
+        for (var compiled : RoleExtensionRegistry.INSTANCE.getCompiledReplacements().values()) {
+            if (compiled != null && compiled.identifier() != null) {
+                roles.add(compiled);
+            }
+        }
+        RoleBaselineStore.captureAll(roles);
+    }
+
+    /**
+     * Canonical-id redirects: v2 {@code ALIAS} entries and NEW_ID_WITH_ALIAS replaces.
+     */
     public static Map<ResourceLocation, ResourceLocation> compileAliases(
             Map<ResourceLocation, EffectiveRole> roles) {
         Map<ResourceLocation, ResourceLocation> aliases = new LinkedHashMap<>();
@@ -200,7 +227,10 @@ public final class RoleSnapshotCompiler {
             patches.addAll(extra);
         }
         patches.addAll(RoleExtensionRegistry.INSTANCE.configuredPatchesFor(id));
-        return RoleExtensionCompiler.compileModifyOverlayConfigured(role, patches, null);
+        // Always fold from the captured pristine baseline, never from the live
+        // (possibly overlay-mutated) role object.
+        return RoleExtensionCompiler.compileModifyOverlayConfigured(
+                role, patches, RoleBaselineStore.getOrCapture(role));
     }
 
     /**

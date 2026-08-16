@@ -261,6 +261,7 @@ public class BlackoutVictoryChecker {
             }
 
             roundEnd.setRoundEndData(participants, GameUtils.WinStatus.CUSTOM);
+            addOfflineRoundEndParticipants(level, roundEnd, history);
             try {
                 // Public fields on SREGameRoundEndComponent (SRE 4.3).
                 roundEnd.CustomWinnerID = sinRoleId.getPath();
@@ -282,11 +283,42 @@ public class BlackoutVictoryChecker {
                 boolean didWin = sinRoleId.equals(roleId);
                 roundEnd.setPlayerWin(p.getUUID(), didWin);
             }
+            for (UUID offlineId : BlackoutRoleManager.getAllAlive(level)) {
+                if (level.getServer() == null || level.getServer().getPlayerList().getPlayer(offlineId) != null) continue;
+                ResourceLocation roleId = history.get(offlineId);
+                roundEnd.setPlayerWin(offlineId, sinRoleId.equals(roleId));
+            }
             roundEnd.sync();
             HabiTrainCore.LOGGER.info("[Blackout] custom sin round-end: path={}, participants={}",
                     sinRoleId.getPath(), participants.size());
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("populateRoundEndDataCustomSin failed", t);
+        }
+    }
+
+    /**
+     * Adds offline-but-still-alive (disconnect grace) players to the SRE round-end
+     * component so they are not dropped from personal win/round-end data.
+     */
+    private static void addOfflineRoundEndParticipants(
+            ServerLevel level,
+            SREGameRoundEndComponent roundEnd,
+            Map<UUID, ResourceLocation> history) {
+        if (level == null || roundEnd == null || history == null) return;
+        for (UUID id : BlackoutRoleManager.getAllAlive(level)) {
+            if (level.getServer() == null || level.getServer().getPlayerList().getPlayer(id) != null) continue;
+            if (!history.containsKey(id)) continue;
+            boolean already = false;
+            for (var data : roundEnd.players) {
+                if (data.player.getId().equals(id)) {
+                    already = true;
+                    break;
+                }
+            }
+            if (!already) {
+                roundEnd.players.add(roundEnd.new RoundEndData(
+                        new com.mojang.authlib.GameProfile(id, ""), false, false));
+            }
         }
     }
 
@@ -354,6 +386,7 @@ public class BlackoutVictoryChecker {
             }
 
             roundEnd.setRoundEndData(participants, winStatus);
+            addOfflineRoundEndParticipants(level, roundEnd, history);
 
             // Personal wins: matching faction wins; SIN_KILLER_SHARE (wrath) also
             // wins when killers (BAD) win. SIN_INDEPENDENT only wins on custom
@@ -374,6 +407,20 @@ public class BlackoutVictoryChecker {
                     }
                 }
                 roundEnd.setPlayerWin(p.getUUID(), didWin);
+            }
+            for (UUID offlineId : BlackoutRoleManager.getAllAlive(level)) {
+                if (level.getServer() == null || level.getServer().getPlayerList().getPlayer(offlineId) != null) continue;
+                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFactionForEnd(level, offlineId);
+                boolean didWin = false;
+                if (winner != null) {
+                    if (f == winner) {
+                        didWin = true;
+                    } else if (winner == BlackoutRoleManager.Faction.BAD
+                            && f == BlackoutRoleManager.Faction.SIN_KILLER_SHARE) {
+                        didWin = true;
+                    }
+                }
+                roundEnd.setPlayerWin(offlineId, didWin);
             }
             roundEnd.sync();
             HabiTrainCore.LOGGER.info("[Blackout] round-end populated: winStatus={}, winner={}, participants={}",
@@ -433,6 +480,7 @@ public class BlackoutVictoryChecker {
             BlackoutTaskShopService.cancelWithoutReward(level, sp);
 
             TaskInstance instance = new TaskInstance(restoreDef);
+            instance.setDimension(level.dimension());
             restoreDef.onAssign(sp, instance);
             mgr.setActiveTask(uuid, instance);
 

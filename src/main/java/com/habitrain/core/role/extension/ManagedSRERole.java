@@ -13,8 +13,10 @@ import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.api.role.v2.definition.RoleVisibilityProfile;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.NormalRole;
+import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.util.ShopEntry;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
@@ -45,6 +47,11 @@ public class ManagedSRERole extends NormalRole {
     private final @Nullable RoleRelationProfile relationProfile;
     private final List<RoleSkillSpec> skills;
     private final @Nullable RoleBookContent book;
+    private final @Nullable String nameKey;
+    private final @Nullable String descriptionKey;
+    private final @Nullable String simpleDescriptionKey;
+    private final @Nullable String objectivesKey;
+    private final @Nullable String icon;
 
     private ManagedSRERole(ResourceLocation identifier, int color, boolean isInnocent,
                            boolean canUseKiller, MoodType moodType, int maxSprintTime,
@@ -54,7 +61,12 @@ public class ManagedSRERole extends NormalRole {
                            @Nullable java.util.function.Supplier<List<ShopEntry>> shopLive,
                            @Nullable RoleRelationProfile relationProfile,
                            List<RoleSkillSpec> skills,
-                           @Nullable RoleBookContent book) {
+                           @Nullable RoleBookContent book,
+                           @Nullable String nameKey,
+                           @Nullable String descriptionKey,
+                           @Nullable String simpleDescriptionKey,
+                           @Nullable String objectivesKey,
+                           @Nullable String icon) {
         super(identifier, color, isInnocent, canUseKiller, moodType, maxSprintTime, canSeeTime);
         this.defaultItems = defaultItems;
         this.shopEntries = shopEntries;
@@ -62,6 +74,74 @@ public class ManagedSRERole extends NormalRole {
         this.relationProfile = relationProfile;
         this.skills = List.copyOf(skills);
         this.book = book;
+        this.nameKey = nameKey;
+        this.descriptionKey = descriptionKey;
+        this.simpleDescriptionKey = simpleDescriptionKey;
+        this.objectivesKey = objectivesKey;
+        this.icon = icon;
+    }
+
+    @Override
+    public Component getName() {
+        if (nameKey != null && !nameKey.isBlank()) {
+            return Component.translatable(nameKey);
+        }
+        return super.getName();
+    }
+
+    @Override
+    public Component getDescription() {
+        if (descriptionKey != null && !descriptionKey.isBlank()) {
+            return Component.translatable(descriptionKey);
+        }
+        return super.getDescription();
+    }
+
+    @Override
+    public boolean hasSimpleDescription() {
+        return (simpleDescriptionKey != null && !simpleDescriptionKey.isBlank())
+                || super.hasSimpleDescription();
+    }
+
+    @Override
+    public Component getSimpleDescription() {
+        if (simpleDescriptionKey != null && !simpleDescriptionKey.isBlank()) {
+            return Component.translatable(simpleDescriptionKey);
+        }
+        return super.getSimpleDescription();
+    }
+
+    /** Optional objectives translation key from {@link RolePresentation}. */
+    public @Nullable String objectivesKey() {
+        return objectivesKey;
+    }
+
+    /** Optional icon path from {@link RolePresentation}. */
+    public @Nullable String icon() {
+        return icon;
+    }
+
+    /**
+     * Compiles a {@link RoleDefinition} into an {@link SRERole}. When the
+     * definition carries a {@link RoleDefinition.RoleFactory}, the factory's
+     * custom role is validated against the canonical id and then profiled by
+     * {@link #applyCommonProfiles}; otherwise a {@link ManagedSRERole} is
+     * constructed. Never touches {@code TMMRoles}.
+     */
+    public static SRERole compile(RoleDefinition def) {
+        if (def.roleFactory() != null) {
+            SRERole role = def.roleFactory().create(def);
+            if (role == null) {
+                throw new IllegalStateException("RoleFactory returned null for " + def.key());
+            }
+            if (role.identifier() == null || !def.key().location().equals(role.identifier())) {
+                throw new IllegalStateException("RoleFactory returned id " + role.identifier()
+                        + " but definition requires " + def.key());
+            }
+            applyCommonProfiles(role, def);
+            return role;
+        }
+        return from(def);
     }
 
     /**
@@ -91,8 +171,25 @@ public class ManagedSRERole extends NormalRole {
                 economy == null ? null : economy.live(),
                 def.relations(),
                 def.skills(),
-                def.book()
+                def.book(),
+                presentation.nameKey(),
+                presentation.descriptionKey(),
+                presentation.simpleDescriptionKey(),
+                presentation.objectivesKey(),
+                presentation.icon()
         );
+
+        applyCommonProfiles(role, def);
+        return role;
+    }
+
+    /** Applies the non-inventory, non-shop profiles to any {@code SRERole}. */
+    private static void applyCommonProfiles(SRERole role, RoleDefinition def) {
+        RolePresentation presentation = def.presentation();
+        RoleFactionProfile faction = def.faction();
+        RoleSpawnProfile spawn = def.spawn();
+        RoleCompatibilityProfile compatibility = def.compatibility();
+        RoleVisibilityProfile visibility = def.visibility();
 
         if (compatibility.componentKey() != null) {
             role.setComponentKey(compatibility.componentKey());
@@ -146,8 +243,6 @@ public class ManagedSRERole extends NormalRole {
         role.setDefaultEnableChance(spawn.defaultEnableChance());
         role.setDefaultEnableNeededPlayerCount(spawn.defaultEnableNeedPlayerCount());
         role.setDefaultEnableMaxPlayerCount(spawn.defaultEnableMaxPlayerCount());
-
-        return role;
     }
 
     /** Unresolved relation keys captured from the definition, or {@code null}. */

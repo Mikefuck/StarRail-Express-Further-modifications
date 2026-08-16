@@ -76,6 +76,18 @@ public class BlackoutRoleManager {
         state.roleHistory.put(playerId, roleId);
     }
 
+    /** Sets or clears only the Blackout faction/sheriff state, without touching the SRE role. */
+    public static void setFaction(ServerLevel level, UUID playerId, @org.jetbrains.annotations.Nullable Faction faction) {
+        RoleState state = getOrCreate(level);
+        if (faction == null) {
+            state.factions.remove(playerId);
+            state.sheriffs.remove(playerId);
+        } else {
+            state.factions.put(playerId, faction);
+            state.factionHistory.put(playerId, faction);
+        }
+    }
+
     /**
      * 存活表阵营；未知/未入局 UUID 返回 {@code null}（不再默认 GOOD，避免局外玩家被当好人）。
      * 结算请用 {@link #getFactionForEnd}。

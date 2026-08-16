@@ -24,6 +24,16 @@ public interface RoleClientExtensionApi extends RoleClientExtensionRegistrar {
      */
     void loadProviders();
 
+    /**
+     * The provider mod ids whose client-extension registration committed
+     * (audit P1-4). Reported in the handshake so the server can fail closed
+     * when a required provider's client extensions are missing or failed to
+     * load.
+     */
+    default java.util.Set<String> loadedProviderIds() {
+        return java.util.Set.of();
+    }
+
     void freeze();
 
     boolean isFrozen();

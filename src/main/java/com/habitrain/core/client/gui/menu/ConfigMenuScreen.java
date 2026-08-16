@@ -375,7 +375,8 @@ public class ConfigMenuScreen extends Screen {
     public boolean keyPressed(int key, int scan, int mod) {
         if (!MenuAccessGuard.isScreenAllowed()) {
             if (key == 256) {
-                onClose();
+                // 未授权时 ESC 只关闭菜单，不能触发 flushPending/saveConfigNow
+                Minecraft.getInstance().setScreen(parent);
                 return true;
             }
             return false;

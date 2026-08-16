@@ -34,12 +34,19 @@ import io.wifi.starrailexpress.event.MeetingVoteOutEvent;
 import io.wifi.starrailexpress.event.OnDeathWithBody;
 import io.wifi.starrailexpress.event.OnGameEnd;
 import io.wifi.starrailexpress.event.OnGameStarted;
+import io.wifi.starrailexpress.event.OnGameTrueStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeath;
 import io.wifi.starrailexpress.event.OnPlayerDeathWithKiller;
 import io.wifi.starrailexpress.game.GameUtils;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -48,9 +55,12 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
 import org.agmas.harpymodloader.events.ModdedRoleAssigned;
+import org.agmas.harpymodloader.events.OnGamePlayerRolesConfirm;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,7 +163,8 @@ public final class RoleEventDispatcher {
             if (!isEnabled(e)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), killer != null ? killer : victim);
+            RoleHookContext ctx = ctxCombat(e.role(), killer != null ? killer : victim,
+                    killer, victim, null);
             invoke(e, "onKill", () -> ((RoleCombatHooks) e.callback())
                     .onKill(victim, killer, deathReason, ctx));
         }
@@ -172,10 +183,33 @@ public final class RoleEventDispatcher {
             if (!isEnabled(e)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), victim);
+            RoleHookContext ctx = ctxCombat(e.role(), victim, killer, victim, null);
             acc = Decision.merge(acc, invokeDecision(e, "allowDeathByKiller",
                     () -> ((RoleCombatHooks) e.callback())
                             .allowDeathByKiller(victim, killer, deathReason, ctx)));
+        }
+        return acc;
+    }
+
+    /**
+     * Dispatches a killer-side death gate. Runs for the <em>killer</em>'s role
+     * after the victim-side {@code allowDeathByKiller} gate; {@code DENY}
+     * prevents the death.
+     */
+    public Decision dispatchAllowKillByKiller(RoleKey role, @Nullable ServerPlayer victim,
+                                              @Nullable ServerPlayer killer,
+                                              ResourceLocation deathReason) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.COMBAT_ALLOW_KILL_BY_KILLER);
+        Decision acc = Decision.PASS;
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctxCombat(e.role(), killer != null ? killer : victim,
+                    killer, victim, null);
+            acc = Decision.merge(acc, invokeDecision(e, "allowKillByKiller",
+                    () -> ((RoleCombatHooks) e.callback())
+                            .allowKillByKiller(victim, killer, deathReason, ctx)));
         }
         return acc;
     }
@@ -209,7 +243,8 @@ public final class RoleEventDispatcher {
             if (!isEnabled(e)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), killer != null ? killer : victim);
+            RoleHookContext ctx = ctxCombat(e.role(), killer != null ? killer : victim,
+                    killer, victim, null);
             invoke(e, "onDeathWithBody", () -> ((RoleCombatHooks) e.callback())
                     .onDeathWithBody(victim, killer, deathReason, body, ctx));
         }
@@ -236,6 +271,104 @@ public final class RoleEventDispatcher {
             }
         }
         return acc;
+    }
+
+    /**
+     * Dispatches an entity-use interaction (audit P1-5). A non-{@code PASS}
+     * result consumes the use; the first consume wins.
+     */
+    public InteractionResult dispatchUseEntity(RoleKey role, @Nullable ServerPlayer player,
+                                               Entity target, InteractionHand hand) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.INTERACTION_USE_ENTITY);
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), player);
+            InteractionResult next = invokeResult(e, "useEntity",
+                    () -> ((RoleInteractionHooks) e.callback()).useEntity(player, target, hand, ctx),
+                    InteractionResult.PASS);
+            if (next != InteractionResult.PASS) {
+                return next;
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    /**
+     * Dispatches a block-use interaction (audit P1-5). A non-{@code PASS}
+     * result consumes the use; the first consume wins.
+     */
+    public InteractionResult dispatchUseBlock(RoleKey role, @Nullable ServerPlayer player,
+                                              BlockHitResult hit, InteractionHand hand) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.INTERACTION_USE_BLOCK);
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), player);
+            InteractionResult next = invokeResult(e, "useBlock",
+                    () -> ((RoleInteractionHooks) e.callback()).useBlock(player, hit, hand, ctx),
+                    InteractionResult.PASS);
+            if (next != InteractionResult.PASS) {
+                return next;
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    /**
+     * Dispatches an entity-attack interaction (audit P0-3). A non-{@code PASS}
+     * result consumes the attack; the first consume wins.
+     */
+    public InteractionResult dispatchAttackEntity(RoleKey role, @Nullable ServerPlayer player,
+                                                  Entity target, InteractionHand hand) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.INTERACTION_ATTACK_ENTITY);
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), player);
+            InteractionResult next = invokeResult(e, "attackEntity",
+                    () -> ((RoleInteractionHooks) e.callback()).attackEntity(player, target, hand, ctx),
+                    InteractionResult.PASS);
+            if (next != InteractionResult.PASS) {
+                return next;
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    /** Dispatches a block-attack interaction (audit P0-3). */
+    public InteractionResult dispatchAttackBlock(RoleKey role, @Nullable ServerPlayer player,
+                                                 BlockPos pos, InteractionHand hand) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.INTERACTION_ATTACK_BLOCK);
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), player);
+            InteractionResult next = invokeResult(e, "attackBlock",
+                    () -> ((RoleInteractionHooks) e.callback()).attackBlock(player, pos, hand, ctx),
+                    InteractionResult.PASS);
+            if (next != InteractionResult.PASS) {
+                return next;
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    /** Dispatches a block-break notification for the breaker's role (audit P0-3). */
+    public void dispatchBreakBlock(RoleKey role, @Nullable ServerPlayer player, BlockPos pos) {
+        List<ManagedHookEntry> entries = registry.entries(role, HookType.INTERACTION_BLOCK_BREAK);
+        for (ManagedHookEntry e : entries) {
+            if (!isEnabled(e)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), player);
+            invoke(e, "breakBlock",
+                    () -> ((RoleInteractionHooks) e.callback()).breakBlock(player, pos, ctx));
+        }
     }
 
     /**
@@ -392,7 +525,7 @@ public final class RoleEventDispatcher {
             if (!inScope(e, level)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
+            RoleHookContext ctx = ctxWin(e.role(), level, proposed, loose, null);
             Decision next = invokeDecision(e, "allowGameEnd",
                     () -> ((RoleWinHooks) e.callback()).allowGameEnd(level, proposed, loose, ctx));
             acc = Decision.merge(acc, next);
@@ -411,7 +544,7 @@ public final class RoleEventDispatcher {
             if (!inScope(e, level)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
+            RoleHookContext ctx = ctxWin(e.role(), level, proposed, loose, null);
             WinPatch next = invokeResult(e, "evaluateWin",
                     () -> ((RoleWinHooks) e.callback()).evaluateWin(level, proposed, loose, ctx),
                     WinPatch.noChange());
@@ -427,7 +560,7 @@ public final class RoleEventDispatcher {
             if (!inScope(e, level)) {
                 continue;
             }
-            RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
+            RoleHookContext ctx = ctxWin(e.role(), level, null, false, locked);
             invoke(e, "afterWinnersFinalized",
                     () -> ((RoleWinHooks) e.callback()).afterWinnersFinalized(level, locked, ctx));
         }
@@ -505,6 +638,34 @@ public final class RoleEventDispatcher {
             RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
             invoke(e, "onGameStart",
                     () -> ((RoleLifecycleHooks) e.callback()).onGameStart(level, ctx));
+        }
+    }
+
+    /** Broadcasts game-true-start to every in-scope lifecycle entry. */
+    public void dispatchOnGameTrueStartAll(@Nullable ServerLevel level) {
+        for (ManagedHookEntry e : registry.allEntries(HookType.LIFECYCLE_ON_GAME_TRUE_START)) {
+            if (!inScope(e, level)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
+            invoke(e, "onGameTrueStart",
+                    () -> ((RoleLifecycleHooks) e.callback()).onGameTrueStart(level, ctx));
+        }
+    }
+
+    /**
+     * Broadcasts the mutable role-confirm map to every in-scope lifecycle entry.
+     * Hooks may mutate the map before the final assignment is locked.
+     */
+    public void dispatchOnRolesConfirmAll(@Nullable ServerLevel level,
+                                          Map<Player, SRERole> roles) {
+        for (ManagedHookEntry e : registry.allEntries(HookType.LIFECYCLE_ON_ROLES_CONFIRM)) {
+            if (!inScope(e, level)) {
+                continue;
+            }
+            RoleHookContext ctx = ctx(e.role(), level == null ? null : level.getServer());
+            invoke(e, "onRolesConfirm", () -> ((RoleLifecycleHooks) e.callback())
+                    .onRolesConfirm(level, roles, ctx));
         }
     }
 
@@ -593,12 +754,19 @@ public final class RoleEventDispatcher {
         });
 
         AllowPlayerDeathWithKiller.EVENT.register((player, killer, deathReason) -> {
-            RoleKey role = currentRole(player);
-            if (role == null) {
-                return true;
+            RoleKey victimRole = currentRole(player);
+            if (victimRole != null
+                    && dispatchAllowDeathByKiller(victimRole, asServer(player), asServer(killer), deathReason)
+                    == Decision.DENY) {
+                return false;
             }
-            return dispatchAllowDeathByKiller(role, asServer(player), asServer(killer), deathReason)
-                    != Decision.DENY;
+            RoleKey killerRole = currentRole(killer);
+            if (killerRole != null
+                    && dispatchAllowKillByKiller(killerRole, asServer(player), asServer(killer), deathReason)
+                    == Decision.DENY) {
+                return false;
+            }
+            return true;
         });
 
         OnPlayerDeath.EVENT.register((player, deathReason) -> {
@@ -646,12 +814,91 @@ public final class RoleEventDispatcher {
             return new InteractionResultHolder<>(result, player.getItemInHand(hand));
         });
 
+        // Audit P1-5: entity/block use wired through the same role dispatch.
+        // Client worlds pass through so vanilla and other mods keep full control.
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (world.isClientSide) {
+                return InteractionResult.PASS;
+            }
+            RoleKey role = currentRole(player);
+            if (role == null) {
+                return InteractionResult.PASS;
+            }
+            return dispatchUseEntity(role, asServer(player), entity, hand);
+        });
+
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (world.isClientSide) {
+                return InteractionResult.PASS;
+            }
+            RoleKey role = currentRole(player);
+            if (role == null) {
+                return InteractionResult.PASS;
+            }
+            return dispatchUseBlock(role, asServer(player), hitResult, hand);
+        });
+
+        // Audit P0-3: attack/break interactions routed through managed hooks.
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (world.isClientSide) {
+                return InteractionResult.PASS;
+            }
+            ServerPlayer attacker = asServer(player);
+            RoleKey attackerRole = currentRole(player);
+            if (attackerRole != null) {
+                InteractionResult result = dispatchAttackEntity(attackerRole, attacker, entity, hand);
+                if (result != InteractionResult.PASS) {
+                    return result;
+                }
+            }
+            // Also let the target's role observe/reject being attacked (e.g. Wrath's
+            // melee hit gate and Sloth's sleeping shield) when the target is a player.
+            if (entity instanceof ServerPlayer target) {
+                RoleKey targetRole = currentRole(target);
+                if (targetRole != null && !targetRole.equals(attackerRole)) {
+                    InteractionResult result = dispatchAttackEntity(targetRole, attacker, entity, hand);
+                    if (result != InteractionResult.PASS) {
+                        return result;
+                    }
+                }
+            }
+            return InteractionResult.PASS;
+        });
+
+        AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+            if (world.isClientSide) {
+                return InteractionResult.PASS;
+            }
+            RoleKey role = currentRole(player);
+            if (role == null) {
+                return InteractionResult.PASS;
+            }
+            return dispatchAttackBlock(role, asServer(player), pos, hand);
+        });
+
+        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            if (world.isClientSide || !(player instanceof ServerPlayer sp)) {
+                return;
+            }
+            RoleKey role = currentRole(player);
+            if (role != null) {
+                dispatchBreakBlock(role, sp, pos);
+            }
+        });
+
         OnGameStarted.EVENT.register(level -> {
             resetCircuits();
             com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.beginRound();
             resetState(null, null, ResetCause.ROUND_START);
             dispatchOnGameStartAll(level);
         });
+
+        OnGameTrueStarted.EVENT.register(this::dispatchOnGameTrueStartAll);
+
+        // Audit P0-3: role-confirm mutator runs before upstream finalizes roles;
+        // managed lifecycle hooks can mutate the map (e.g. seven-sins mutex).
+        OnGamePlayerRolesConfirm.EVENT.register((level, roleAssignments) ->
+                dispatchOnRolesConfirmAll(level, roleAssignments));
 
         OnGameEnd.EVENT.register((level, gameWorldComponent) -> {
             dispatchOnGameEndAll(level);
@@ -753,11 +1000,39 @@ public final class RoleEventDispatcher {
     }
 
     private RoleHookContext ctx(RoleKey role, @Nullable ServerPlayer player) {
-        return ctx(role, player == null ? null : player.getServer());
+        if (player == null) {
+            return ctx(role, (MinecraftServer) null);
+        }
+        ServerLevel level = player.serverLevel();
+        return new RoleHookContext(role, snapshotProvider.get(), player.getServer(),
+                level, player, null, null, null);
     }
 
     private RoleHookContext ctx(RoleKey role, @Nullable MinecraftServer server) {
         return new RoleHookContext(role, snapshotProvider.get(), server);
+    }
+
+    private RoleHookContext ctxCombat(RoleKey role, @Nullable ServerPlayer holder,
+                                      @Nullable ServerPlayer killer, @Nullable ServerPlayer victim,
+                                      @Nullable ServerPlayer target) {
+        ServerLevel level = null;
+        if (holder != null) {
+            level = holder.serverLevel();
+        } else if (victim != null) {
+            level = victim.serverLevel();
+        } else if (killer != null) {
+            level = killer.serverLevel();
+        }
+        return new RoleHookContext(role, snapshotProvider.get(),
+                level == null ? null : level.getServer(), level, holder, killer, victim, target);
+    }
+
+    private RoleHookContext ctxWin(RoleKey role, @Nullable ServerLevel level,
+                                   @Nullable String proposed, boolean loose,
+                                   @Nullable WinOutcome outcome) {
+        return new RoleHookContext(role, snapshotProvider.get(),
+                level == null ? null : level.getServer(), level,
+                null, null, null, null, Map.of(), proposed, loose, outcome);
     }
 
     /**

@@ -62,6 +62,9 @@ public final class BlackoutHornVoteHandler {
             if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
                 return InteractionResult.PASS;
             }
+            if (gameMode.get() instanceof BlackoutMode blackout && blackout.isGameEnded(serverLevel)) {
+                return InteractionResult.PASS;
+            }
 
             // 发起者必须在线且存活（断线宽限内不可拉杆）
             if (!BlackoutRoleManager.isInteractable(serverLevel, serverPlayer.getUUID())) {

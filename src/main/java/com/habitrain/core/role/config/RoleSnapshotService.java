@@ -41,7 +41,7 @@ public final class RoleSnapshotService {
                 rows,
                 snap == null ? "none" : snap.id().toString(),
                 round == null ? null : round.id().toString(),
-                RoleManifestHashes.definitionHash(RoleExtensionRegistry.INSTANCE.getCompiledEntries()),
+                RoleManifestHashes.definitionHash(),
                 RoleExtensionConfigService.INSTANCE.toJsonString());
     }
 

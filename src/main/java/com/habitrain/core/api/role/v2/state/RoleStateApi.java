@@ -17,10 +17,17 @@ import java.util.UUID;
  * and are reset by the platform on {@link ResetCause} events. {@link StateScope#WORLD}/
  * {@link StateScope#ROUND} slots are isolated by world key; {@link StateScope#PLAYER}
  * slots follow the player across worlds.
+ *
+ * <p>Registration is NOT a public write surface (audit P1-2): schemas are
+ * registered through the provider-scoped {@code RoleExtensionRegistrar}
+ * transaction, which records provider/entry ownership so the v2 config's
+ * provider/entry gates apply at runtime. While a schema's provider or entry is
+ * disabled its stored values are {@code retained but inaccessible}: reads
+ * return the default, writes and syncs are no-ops, and the retained values
+ * resume under their normal lifecycle once re-enabled.
  */
 public interface RoleStateApi {
 
-    /** The process-wide role-state service. */
     static RoleStateApi instance() {
         return DefaultHolder.INSTANCE;
     }
@@ -32,15 +39,6 @@ public interface RoleStateApi {
         static final RoleStateApi INSTANCE =
                 new com.habitrain.core.role.state.RoleStateServiceImpl();
     }
-
-    /**
-     * Registers a state schema. Must be called during the registration phase
-     * (before freeze). The returned key is the handle for later get/set.
-     *
-     * @throws IllegalStateException if the registry is frozen
-     * @throws IllegalArgumentException on duplicate id+role or missing fields
-     */
-    <T> RoleStateKey<T> register(RoleStateSpec<T> spec);
 
     /** The spec bound to {@code key}, or {@code null} if it was never registered. */
     @Nullable <T> RoleStateSpec<T> spec(RoleStateKey<T> key);

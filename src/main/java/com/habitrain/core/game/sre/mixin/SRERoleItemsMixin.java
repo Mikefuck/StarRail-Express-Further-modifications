@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
+import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.server.MinecraftServer;
@@ -21,6 +23,12 @@ public class SRERoleItemsMixin {
     @Inject(method = "getDefaultItems", at = @At("HEAD"), cancellable = true)
     private void patchedItems(CallbackInfoReturnable<List<ItemStack>> cir) {
         SRERole self = (SRERole) (Object) this;
+        CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(self);
+        if (overlay != null && overlay.defaultItemsPatch() != null) {
+            MinecraftServer server = getServer();
+            cir.setReturnValue(overlay.defaultItemsPatch().getDefaultItems(self, server));
+            return;
+        }
         ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());
         if (def != null && def.defaultItemsPatch().isPresent()) {
             MinecraftServer server = getServer();

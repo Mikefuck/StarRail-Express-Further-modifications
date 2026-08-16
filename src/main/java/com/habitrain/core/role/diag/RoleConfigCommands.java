@@ -28,8 +28,10 @@ public final class RoleConfigCommands {
     public static List<String> status() {
         RoleExtensionConfigService cfg = RoleExtensionConfigService.INSTANCE;
         List<String> lines = new ArrayList<>();
+        String persistErr = cfg.lastSaveError();
         lines.add("roleExtensionsV2 enabled=" + cfg.isEnabled()
-                + " allowGlobalHooks=" + cfg.isAllowGlobalHooks());
+                + " allowGlobalHooks=" + cfg.isAllowGlobalHooks()
+                + " persistence=" + (persistErr == null ? "ok" : "error: " + persistErr));
 
         lines.add("providers (" + RoleExtensionRegistry.INSTANCE.getProviders().size() + ")");
         for (String provider : new TreeSet<>(RoleExtensionRegistry.INSTANCE.getProviders())) {

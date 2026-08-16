@@ -172,6 +172,8 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
         com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
         com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+        com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        com.habitrain.core.role.override.RoleOverrideLifecycleHandler.rebuildAfterConfigLoad();
     }
 
     /**
@@ -183,6 +185,8 @@ public class ConfigManager implements ConfigQueryService {
         store.markDirty();
         com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToServer(currentServer);
         com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+        com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        com.habitrain.core.role.override.RoleOverrideLifecycleHandler.rebuildAfterConfigLoad();
         return true;
     }
 

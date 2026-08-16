@@ -1,6 +1,7 @@
 package com.habitrain.core.client.role;
 
 import com.habitrain.core.api.role.v2.RoleExtensionApi;
+import com.habitrain.core.api.role.v2.client.RoleClientExtensionApi;
 import com.habitrain.core.role.config.ClientManifest;
 import com.habitrain.core.role.config.RoleHandshakeMatcher;
 import com.habitrain.core.role.config.RoleHandshakeResult;
@@ -44,17 +45,14 @@ public final class RoleHandshakeState {
     /**
      * Builds the client's local manifest from the loaded mod set.
      *
-     * <p>The hash fields are deliberately {@code null}: the client cannot
-     * independently reproduce the server's definition hash, because that hash
-     * folds the server-side compiled entry view (v1 baseline rows + the applied
-     * {@code roleExtensionsV2} config), which the client never sees. Reporting a
-     * hash would either mismatch permanently or force the client to replicate
-     * server config state. So the client trusts the server for hashes (review
-     * 2026-08-14 P1): the handshake gate checks report completeness, API
-     * version compatibility and required-provider presence; the definition-hash
-     * branch of {@link RoleHandshakeMatcher} remains for clients that DO report
-     * an independent fingerprint (e.g. a future pack-aware client), it just
-     * never fires for this client.
+     * <p>The definition hash is taken from the server-sent
+     * {@link RoleSnapshotPayload} when one has already arrived. This is not an
+     * independent client-side computation of the server's compiled entry view —
+     * the stock client cannot reproduce that without the server's full registry
+     * and config — but it makes the client report a non-null fingerprint, so a
+     * manifest/snapshot hash inconsistency is caught by the matcher instead of
+     * being silently skipped. Presentation hash remains {@code null} (no
+     * snapshot equivalent exists yet), matching the existing trust path.
      */
     public static ClientManifest buildLocalManifest() {
         Map<String, String> versions = new LinkedHashMap<>();
@@ -70,7 +68,12 @@ public final class RoleHandshakeState {
         boolean hasPresentationResources = !versions.isEmpty()
                 && RoleClientExtensionHooks.isLoaded();
         String api = RoleExtensionApi.instance().apiVersion();
-        return new ClientManifest(api, versions, hasPresentationResources, null, null);
+        java.util.Set<String> loadedClientExtensions = RoleClientExtensionApi.instance()
+                .loadedProviderIds();
+        com.habitrain.core.network.RoleSnapshotPayload snapshot = RoleSnapshotState.INSTANCE.get();
+        String expectedDefinitionHash = snapshot == null ? null : snapshot.definitionHash();
+        return new ClientManifest(api, versions, hasPresentationResources,
+                expectedDefinitionHash, null, loadedClientExtensions);
     }
 
     public @Nullable RoleManifest serverManifest() {

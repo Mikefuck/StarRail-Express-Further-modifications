@@ -3,10 +3,12 @@ package com.habitrain.core.role.extension;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.definition.RoleRelationProfile;
 import io.wifi.starrailexpress.api.SRERole;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -25,7 +27,25 @@ public final class RoleBaselineStore {
     private static final IdentityHashMap<SRERole, RoleBaseline> BASELINES = new IdentityHashMap<>();
     private static final IdentityHashMap<SRERole, RelationSnapshot> RELATION_SNAPSHOTS = new IdentityHashMap<>();
 
+    /**
+     * The process-wide unified-skill backend, shared by the snapshot compiler
+     * (baseline capture during compile) and the runtime applier (materialization
+     * and restore). {@code null} means the runtime {@code RoleSkill} table.
+     */
+    private static volatile @Nullable RoleRuntimeOverlayApplier.SkillBackend skillBackendOverride;
+
     private RoleBaselineStore() {}
+
+    /** The effective skill backend: the test override when bound, else the runtime default. */
+    public static RoleRuntimeOverlayApplier.SkillBackend skillBackend() {
+        RoleRuntimeOverlayApplier.SkillBackend bound = skillBackendOverride;
+        return bound != null ? bound : RoleRuntimeOverlayApplier.RUNTIME_SKILL_BACKEND;
+    }
+
+    /** Binds a different skill backend (unit tests inject a Map-backed one); {@code null} restores the runtime default. */
+    public static void setSkillBackend(@Nullable RoleRuntimeOverlayApplier.SkillBackend backend) {
+        skillBackendOverride = backend;
+    }
 
     /**
      * Captures the relation graph before a v2 relation write. Upstream relation
@@ -86,6 +106,34 @@ public final class RoleBaselineStore {
             role.opposingRoles.addAll(snap.opposingRoles());
             role.relatedRoles.clear();
             role.relatedRoles.addAll(snap.relatedRoles());
+        }
+    }
+
+    /**
+     * The captured baseline for {@code role} using the shared
+     * {@link #skillBackend()}, capturing it now on first use. Identity-keyed:
+     * the first capture of an object is its pristine baseline; later captures
+     * (even after an overlay mutated the live role) return the same pristine
+     * values, which is what makes compile → activate → compile free of
+     * patch accumulation.
+     */
+    public static RoleBaseline getOrCapture(SRERole role) {
+        return getOrCapture(role, skillBackend());
+    }
+
+    /**
+     * Captures a pristine baseline now for every non-null role with an id.
+     * Called before the first v2 overlay activation (snapshot compile entry),
+     * so a role that is mutated later always has an immutable baseline.
+     */
+    public static void captureAll(Collection<? extends SRERole> roles) {
+        if (roles == null) {
+            return;
+        }
+        for (SRERole role : roles) {
+            if (role != null && role.identifier() != null) {
+                getOrCapture(role);
+            }
         }
     }
 
@@ -207,10 +255,11 @@ public final class RoleBaselineStore {
         restoreRelations();
     }
 
-    /** Drops every captured baseline (server stop, test isolation). */
+    /** Drops every captured baseline and restores the runtime skill backend (server stop, test isolation). */
     public static void clear() {
         BASELINES.clear();
         RELATION_SNAPSHOTS.clear();
+        skillBackendOverride = null;
     }
 
     private static void resetRelations(SRERole role) {

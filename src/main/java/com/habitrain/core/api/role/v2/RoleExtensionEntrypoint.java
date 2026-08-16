@@ -27,4 +27,18 @@ public interface RoleExtensionEntrypoint {
      * validated and frozen by core.
      */
     void register(RoleExtensionRegistrar registrar);
+
+    /**
+     * Whether this provider ships client-side role content (HUD / instinct /
+     * skins / screens) and therefore must be present AND loaded on the client
+     * (audit P1-4). An explicit declaration replaces the old heuristic of
+     * guessing from entrypoint presence, so the handshake can fail closed for
+     * clients that lack the provider's client extensions.
+     *
+     * <p>Default {@code false}: server-only providers do not constrain the
+     * client.
+     */
+    default boolean requiresClient() {
+        return false;
+    }
 }

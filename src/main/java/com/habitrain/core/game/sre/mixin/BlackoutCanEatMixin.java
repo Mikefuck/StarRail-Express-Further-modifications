@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.api.GameModeRegistry;
 import io.wifi.starrailexpress.SRE;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,8 +25,15 @@ public class BlackoutCanEatMixin {
     )
     private void habitrain$allowEatingRegardlessOfHunger(boolean ignoreHunger,
                                                          CallbackInfoReturnable<Boolean> cir) {
-        // 与 SRE 原版一致：在 lobby（主城大厅）不强制，游戏中强制 canEat=true
+        // 与 SRE 原版一致：在 lobby（主城大厅）不强制；
+        // 仅当本 mod 的停电模式对局进行中才强制 canEat=true，避免影响普通世界。
         if (SRE.isLobby) return;
+        Player self = (Player) (Object) this;
+        if (!(self.level() instanceof ServerLevel serverLevel)) return;
+        var active = GameModeRegistry.getActiveForLevel(serverLevel);
+        if (active.isEmpty() || !"habitrain:blackout".equals(active.get().getId())) return;
+        if (active.get() instanceof com.habitrain.core.game.blackout.BlackoutMode bm
+                && bm.isGameEnded(serverLevel)) return;
         cir.setReturnValue(true);
     }
 }

@@ -57,8 +57,17 @@ public class GreedPouchDropMixin {
         if (!GreedPouchItem.playerHasOwnPouch(self) && !stack.isEmpty()) {
             if (self.getInventory().add(stack.copy())) {
                 stack.setCount(0);
+            } else {
+                // Inventory full: force the pouch back into slot 0 and preserve
+                // the displaced item by dropping it, rather than letting the
+                // pouch disappear.
+                ItemStack displaced = self.getInventory().getItem(0);
+                if (!displaced.isEmpty()) {
+                    self.drop(displaced, false, false);
+                }
+                self.getInventory().setItem(0, stack.copy());
+                stack.setCount(0);
             }
-            // inv full: leave stack as-is for caller; still no ItemEntity
         }
         notifyNoDrop(self);
     }

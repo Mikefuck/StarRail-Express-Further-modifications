@@ -51,7 +51,7 @@ public final class RoleExtensionRegistry {
 
     // Not final so unit tests can seed the managed/compiled sets via reflection
     // (mirroring how tests seed RoleOverrideEngine.snapshot).
-    private Map<ResourceLocation, ManagedSRERole> managedRoles = new LinkedHashMap<>();
+    private Map<ResourceLocation, SRERole> managedRoles = new LinkedHashMap<>();
     private Map<ResourceLocation, ManagedSRERole> compiledReplacements = new LinkedHashMap<>();
 
     private final List<ManagedPatch> patches = new ArrayList<>();
@@ -61,7 +61,25 @@ public final class RoleExtensionRegistry {
     private final Map<ResourceLocation, String> aliasSourceOwners = new LinkedHashMap<>();
     /** Every registered entryId per alias source, in registration order. */
     private final Map<ResourceLocation, List<String>> aliasSourcesByFrom = new LinkedHashMap<>();
-    private final Map<ResourceLocation, String> replacementByTarget = new LinkedHashMap<>();
+    /**
+     * REPLACE candidates per target (audit P2-1): all declarations are kept —
+     * no registration-order throw — and the effective winner is resolved by
+     * config gate + the {@code <target>#replace} conflict winner. An unresolved
+     * multi-candidate target activates none of them and reports CONFLICT.
+     */
+    private final Map<ResourceLocation, List<String>> replacementByTarget = new LinkedHashMap<>();
+
+    /**
+     * The authoritative provider set (audit P1-4): every provider whose
+     * registration transaction committed — covering ALL declaration types
+     * (ADD/MODIFY/REPLACE/ALIAS, hooks, state, action, voice, chat). The
+     * manifest provider list comes from here, never from reverse-inferring
+     * static role entries.
+     */
+    private final Set<String> providers = new LinkedHashSet<>();
+
+    /** Providers that explicitly declared a client-side requirement (audit P1-4). */
+    private final Set<String> requiredClientProviders = new LinkedHashSet<>();
     private final Set<String> registeredEntryIds = new HashSet<>();
     private volatile List<ManagedRoleEntry<?>> compiledEntries = List.of();
     private boolean frozen;
@@ -109,7 +127,7 @@ public final class RoleExtensionRegistry {
         if (TMMRoles.getRole(id) != null) {
             throw new IllegalArgumentException("Role id already exists in TMMRoles: " + id);
         }
-        ManagedSRERole role = ManagedSRERole.from(def);
+        SRERole role = ManagedSRERole.compile(def);
         // Record before TMMRoles so the legacy-scan mixin skips this ADD.
         managedRoles.put(id, role);
         TMMRoles.registerRole(role);
@@ -119,13 +137,13 @@ public final class RoleExtensionRegistry {
     }
 
     /**
-     * Registers an already-compiled {@code ManagedSRERole} produced by a
-     * provider transaction. The transaction pre-validates ownership, duplicates
-     * and {@code TMMRoles} collisions, so this is the single physical write.
+     * Registers an already-compiled {@link SRERole} produced by a provider
+     * transaction. The transaction pre-validates ownership, duplicates and
+     * {@code TMMRoles} collisions, so this is the single physical write.
      * The same instance is stored and registered so object identity
      * ({@code HabiRoles.X == TMMRoles.getRole(id)}) is preserved.
      */
-    synchronized SRERole registerAdd(ManagedSRERole role) {
+    synchronized SRERole registerAdd(SRERole role) {
         ResourceLocation id = role.identifier();
         if (frozen) {
             throw new IllegalStateException("Role extension registry is frozen");
@@ -172,6 +190,8 @@ public final class RoleExtensionRegistry {
                 new ArrayList<>(compiledEntries),
                 new LinkedHashMap<>(aliasSourceOwners),
                 new LinkedHashMap<>(aliasSourcesByFrom),
+                new LinkedHashSet<>(providers),
+                new LinkedHashSet<>(requiredClientProviders),
                 frozen,
                 tmmAccessible,
                 capture ? new LinkedHashMap<>(TMMRoles.ROLES) : null,
@@ -216,6 +236,10 @@ public final class RoleExtensionRegistry {
         this.replacementByTarget.putAll(snapshot.replacementByTarget());
         this.registeredEntryIds.clear();
         this.registeredEntryIds.addAll(snapshot.registeredEntryIds());
+        this.providers.clear();
+        this.providers.addAll(snapshot.providers());
+        this.requiredClientProviders.clear();
+        this.requiredClientProviders.addAll(snapshot.requiredClientProviders());
         this.compiledEntries = List.copyOf(snapshot.compiledEntries());
         this.frozen = snapshot.frozen();
         this.tmmAccessible = snapshot.tmmAccessible();
@@ -249,8 +273,11 @@ public final class RoleExtensionRegistry {
     // ------------------------------------------------------------------
 
     /**
-     * Registers a {@code REPLACE} operation. Only one replacement may own a given
-     * target.
+     * Registers a {@code REPLACE} operation. Multiple providers may claim the
+     * same target (audit P2-1): every declaration is kept for the diagnostic
+     * view, the target enters {@code CONFLICT} until exactly one candidate is
+     * enabled or an administrator picks a {@code <target>#replace} winner, and
+     * no unrelated declaration from the provider transaction is rolled back.
      */
     public synchronized void replace(String provider, RoleReplacement replacement) {
         if (frozen) {
@@ -265,12 +292,12 @@ public final class RoleExtensionRegistry {
                     + "; set a distinct entryKey for each declaration");
         }
         ResourceLocation target = replacement.target().location();
-        String previousOwner = replacementByTarget.putIfAbsent(target, entryId);
-        if (previousOwner != null) {
-            registeredEntryIds.remove(entryId);
-            throw new IllegalArgumentException("Replacement target " + target
-                    + " is already owned by " + previousOwner);
+        List<String> owners = replacementByTarget.computeIfAbsent(target, ignored -> new ArrayList<>());
+        if (!owners.isEmpty()) {
+            LOGGER.warn("REPLACE target {} is claimed by both {} and {}; marked CONFLICT until a winner is configured",
+                    target, owners, entryId);
         }
+        owners.add(entryId);
         replacements.add(new ManagedReplacement(provider, replacement));
         LOGGER.info("Registered REPLACE {} by {}", target, provider);
     }
@@ -339,11 +366,13 @@ public final class RoleExtensionRegistry {
     }
 
     /**
-     * Recomputes the unified v1+v2 entry view. Called at freeze and again after
-     * any {@code roleExtensionsV2} config change so DISABLED/CONFLICT statuses
-     * reflect the live toggles without requiring a server restart.
+     * Recomputes the unified v1+v2 entry view and the compiled replacement
+     * surfaces. Called at freeze and again after any {@code roleExtensionsV2}
+     * config change so DISABLED/CONFLICT statuses and the REPLACE winner
+     * (audit P2-1) reflect the live toggles without a server restart.
      */
     public void recomputeCompiledEntries() {
+        compileReplacements();
         try {
             this.compiledEntries = RoleConflictAnalyzer.analyze();
         } catch (RuntimeException e) {
@@ -408,16 +437,8 @@ public final class RoleExtensionRegistry {
 
     /** Logs (does not throw) any MODIFY/REPLACE target that resolves to no known role. */
     private void warnDanglingTargets() {
-        Set<ResourceLocation> preExisting = new HashSet<>(managedRoles.keySet());
-        Set<ResourceLocation> live = new HashSet<>(preExisting);
-        live.addAll(compiledReplacements.keySet());
-        try {
-            Set<ResourceLocation> upstream = TMMRoles.ROLES.keySet();
-            preExisting.addAll(upstream);
-            live.addAll(upstream);
-        } catch (Throwable ignored) {
-            // TMMRoles not bootstrapped (bare unit test): skip upstream ids.
-        }
+        Set<ResourceLocation> preExisting = preExistingRoleIds();
+        Set<ResourceLocation> live = knownRoleIds();
         for (String message : danglingModifyReplaceTargets(preExisting, live)) {
             LOGGER.warn(message);
         }
@@ -443,6 +464,12 @@ public final class RoleExtensionRegistry {
         Map<ResourceLocation, ManagedSRERole> compiled = new LinkedHashMap<>();
         Set<ResourceLocation> claimed = new HashSet<>(managedRoles.keySet());
         for (ManagedReplacement mr : replacements) {
+            // Audit P2-1: only the effective winner per target compiles a surface
+            // role. Conflicted/disabled candidates keep their diagnostics but
+            // never surface (and never register into TMMRoles).
+            if (effectiveReplacementFor(mr.replacement().target().location()) != mr) {
+                continue;
+            }
             RoleReplacement replacement = mr.replacement();
             ManagedSRERole role = RoleExtensionCompiler.compileReplacement(replacement);
             ResourceLocation rid = role.identifier();
@@ -459,7 +486,7 @@ public final class RoleExtensionRegistry {
             compiled.put(rid, role);
             this.compiledReplacements = compiled;
             if (replacement.identity() == com.habitrain.core.api.role.v2.definition.ReplacementIdentity.NEW_ID_WITH_ALIAS
-                    && tmmAccessible) {
+                    && tmmAccessible && TMMRoles.getRole(rid) == null) {
                 TMMRoles.registerRole(role);
             }
         }
@@ -495,10 +522,10 @@ public final class RoleExtensionRegistry {
      * calling {@link #add} stay bootstrap-safe.
      */
     private void linkStoredRelations() {
-        for (ManagedSRERole managed : managedRoles.values()) {
-            if (managed.relationProfile() != null) {
-                RoleBaselineStore.captureRelationGraph(managed, managed.relationProfile(), this::resolveForLink);
-                RoleExtensionCompiler.linkRelations(managed, managed.relationProfile(), this::resolveForLink);
+        for (SRERole managed : managedRoles.values()) {
+            if (managed instanceof ManagedSRERole mm && mm.relationProfile() != null) {
+                RoleBaselineStore.captureRelationGraph(managed, mm.relationProfile(), this::resolveForLink);
+                RoleExtensionCompiler.linkRelations(managed, mm.relationProfile(), this::resolveForLink);
             }
         }
         for (ManagedSRERole replacement : compiledReplacements.values()) {
@@ -520,7 +547,7 @@ public final class RoleExtensionRegistry {
 
     private @Nullable SRERole resolveForLink(com.habitrain.core.api.role.v2.RoleKey key) {
         ResourceLocation id = key.location();
-        ManagedSRERole managed = managedRoles.get(id);
+        SRERole managed = managedRoles.get(id);
         if (managed != null) {
             return managed;
         }
@@ -543,8 +570,10 @@ public final class RoleExtensionRegistry {
         if (!tmmAccessible) {
             return;
         }
-        for (ManagedSRERole managed : managedRoles.values()) {
-            registerSkills(managed.identifier(), managed.skills());
+        for (SRERole managed : managedRoles.values()) {
+            if (managed instanceof ManagedSRERole mm) {
+                registerSkills(managed.identifier(), mm.skills());
+            }
         }
         for (ManagedSRERole replacement : compiledReplacements.values()) {
             registerSkills(replacement.identifier(), replacement.skills());
@@ -644,7 +673,7 @@ public final class RoleExtensionRegistry {
     }
 
     /** The compiled managed role for an added id, or {@code null} if not added. */
-    public @Nullable ManagedSRERole getManagedRole(ResourceLocation id) {
+    public @Nullable SRERole getManagedRole(ResourceLocation id) {
         return managedRoles.get(id);
     }
 
@@ -692,14 +721,45 @@ public final class RoleExtensionRegistry {
         return tmmAccessible;
     }
 
-    /** The v2 {@code REPLACE} owning the given target, or {@code null}. */
-    public @Nullable RoleReplacement replacementFor(ResourceLocation target) {
-        for (ManagedReplacement mr : replacements) {
-            if (mr.replacement().target().location().equals(target)) {
-                return mr.replacement();
+    /**
+     * The effective v2 {@code REPLACE} for a target under the audit P2-1
+     * conflict model, or {@code null} when none may activate:
+     * <ul>
+     *   <li>exactly one config-enabled candidate → that candidate;</li>
+     *   <li>a configured {@code <target>#replace} winner that is enabled → the winner;</li>
+     *   <li>multiple enabled candidates without a valid winner → {@code null}
+     *       (all stay CONFLICT; the original target remains visible);</li>
+     *   <li>no enabled candidate → {@code null} (target stays visible).</li>
+     * </ul>
+     */
+    public @Nullable ManagedReplacement effectiveReplacementFor(ResourceLocation target) {
+        List<ManagedReplacement> enabled = replacements.stream()
+                .filter(mr -> mr.replacement().target().location().equals(target))
+                .filter(mr -> RoleExtensionConfigService.INSTANCE.gateFor(
+                        mr.provider(), entryId(mr.provider(), mr.replacement()))
+                        == RoleExtensionConfigService.EntryGate.ENABLED)
+                .toList();
+        if (enabled.isEmpty()) {
+            return null;
+        }
+        if (enabled.size() == 1) {
+            return enabled.get(0);
+        }
+        String winner = RoleExtensionConfigService.INSTANCE.winnerFor(target, "replace");
+        if (winner != null) {
+            for (ManagedReplacement mr : enabled) {
+                if (entryId(mr.provider(), mr.replacement()).equals(winner)) {
+                    return mr;
+                }
             }
         }
-        return null;
+        return null; // unresolved multi-candidate conflict: nothing activates
+    }
+
+    /** The effective v2 {@code REPLACE} declaration owning the target, or {@code null}. */
+    public @Nullable RoleReplacement replacementFor(ResourceLocation target) {
+        ManagedReplacement effective = effectiveReplacementFor(target);
+        return effective == null ? null : effective.replacement();
     }
 
     /** The compiled replacement role for a replacement definition, or {@code null}. */
@@ -776,22 +836,15 @@ public final class RoleExtensionRegistry {
         return replacementFor(id) != null && isReplacementActive(id);
     }
 
-    /** Whether the v2 {@code REPLACE} owning {@code target} is config-enabled. */
+    /** Whether the effective v2 {@code REPLACE} for {@code target} is active (audit P2-1). */
     public boolean isReplacementActive(ResourceLocation target) {
-        for (ManagedReplacement mr : replacements) {
-            if (!mr.replacement().target().location().equals(target)) {
-                continue;
-            }
-            return RoleExtensionConfigService.INSTANCE.gateFor(mr.provider(), entryId(mr.provider(), mr.replacement()))
-                    == RoleExtensionConfigService.EntryGate.ENABLED;
-        }
-        return false;
+        return effectiveReplacementFor(target) != null;
     }
 
     /**
-     * Whether {@code id} is the surfaced role of a config-enabled compiled v2
-     * {@code REPLACE}. A disabled replacement leaves its raw id (and the hidden
-     * target) visible in the effective view.
+     * Whether {@code id} is the surfaced role of the effective compiled v2
+     * {@code REPLACE}. A disabled or conflicted replacement leaves its raw id
+     * (and the hidden target) visible in the effective view.
      */
     public boolean isActiveReplacementRoleId(ResourceLocation id) {
         for (RoleReplacement repl : activeReplacements()) {
@@ -817,9 +870,10 @@ public final class RoleExtensionRegistry {
      */
     public List<RoleRelationLink> activeRelationLinks() {
         List<RoleRelationLink> out = new ArrayList<>();
-        for (ManagedSRERole managed : managedRoles.values()) {
-            if (managed.relationProfile() != null && isAddedActive(managed.identifier())) {
-                out.add(new RoleRelationLink(managed, managed.relationProfile()));
+        for (SRERole managed : managedRoles.values()) {
+            if (managed instanceof ManagedSRERole mm
+                    && mm.relationProfile() != null && isAddedActive(managed.identifier())) {
+                out.add(new RoleRelationLink(managed, mm.relationProfile()));
             }
         }
         for (RoleReplacement repl : activeReplacements()) {
@@ -831,12 +885,15 @@ public final class RoleExtensionRegistry {
         return out;
     }
 
-    /** The config-enabled v2 {@code REPLACE} operations (surface in snapshots). */
+    /**
+     * The effective v2 {@code REPLACE} operations (audit P2-1): only the winner
+     * (or the single enabled candidate) per target surfaces in snapshots; an
+     * unresolved multi-candidate conflict surfaces nothing.
+     */
     public List<RoleReplacement> activeReplacements() {
         List<RoleReplacement> out = new ArrayList<>();
         for (ManagedReplacement mr : replacements) {
-            if (RoleExtensionConfigService.INSTANCE.gateFor(mr.provider(), entryId(mr.provider(), mr.replacement()))
-                    == RoleExtensionConfigService.EntryGate.ENABLED) {
+            if (effectiveReplacementFor(mr.replacement().target().location()) == mr) {
                 out.add(mr.replacement());
             }
         }
@@ -897,7 +954,7 @@ public final class RoleExtensionRegistry {
     // ------------------------------------------------------------------
 
     /** Unmodifiable view of the added roles for diagnostics. */
-    public Map<ResourceLocation, ManagedSRERole> getManagedRoles() {
+    public Map<ResourceLocation, SRERole> getManagedRoles() {
         return Collections.unmodifiableMap(managedRoles);
     }
 
@@ -942,14 +999,45 @@ public final class RoleExtensionRegistry {
     }
 
     /**
+     * The authoritative provider set (audit P1-4): every provider whose
+     * registration transaction committed, covering all declaration types.
+     */
+    public Set<String> providerIds() {
+        return Set.copyOf(providers);
+    }
+
+    /** Providers that explicitly declared a client-side requirement (audit P1-4). */
+    public Set<String> requiredClientProviderIds() {
+        return Set.copyOf(requiredClientProviders);
+    }
+
+    /**
+     * Publishes a provider after its transaction committed. Called by
+     * {@code ProviderRegistrationTransaction.commit} for every declaration
+     * type, so a hooks/state/action-only provider shows up in the manifest.
+     */
+    synchronized void noteProvider(String providerId, boolean requiresClient) {
+        if (providerId == null || providerId.isBlank()) {
+            return;
+        }
+        providers.add(providerId);
+        if (requiresClient) {
+            requiredClientProviders.add(providerId);
+        }
+    }
+
+    /**
      * Shells every registered v2 declaration into the unified
      * {@link ManagedRoleEntry} shape (fix-doc §4.2), including the provider mod
      * id captured at registration. Status reflects the live v2 config
-     * (fix-doc §13.1): {@code ACTIVE} when enabled, {@code DISABLED} (with the
-     * gating level in the message) when the global/provider/entry toggle is off.
+     * (fix-doc §13.1): structural invalidity (dangling MODIFY/REPLACE target,
+     * missing ALIAS destination) reports {@code INVALID} first, then the
+     * global/provider/entry gate reports {@code ACTIVE}/{@code DISABLED}.
      */
     public List<ManagedRoleEntry<?>> v2Entries() {
         List<ManagedRoleEntry<?>> out = new ArrayList<>();
+        Set<ResourceLocation> known = knownRoleIds();
+        Set<ResourceLocation> preExisting = preExistingRoleIds();
         for (ResourceLocation id : managedRoles.keySet()) {
             out.add(configured(
                     id.toString(),
@@ -963,7 +1051,7 @@ public final class RoleExtensionRegistry {
         }
         for (ManagedPatch mp : patches) {
             RolePatch patch = mp.patch();
-            out.add(configured(
+            ManagedRoleEntry<RolePatch> entry = configured(
                     entryId(mp.provider(), patch),
                     mp.provider(),
                     patch.entryKey() == null ? patch.target().path() : patch.entryKey(),
@@ -971,20 +1059,47 @@ public final class RoleExtensionRegistry {
                     patch.target(),
                     patch.priority(),
                     patch,
-                    "v2 MODIFY"));
+                    "v2 MODIFY");
+            ResourceLocation target = patch.target().location();
+            if (!known.contains(target)) {
+                entry = entry.withStatus(EntryStatus.INVALID,
+                        "v2 MODIFY target " + target + " does not exist (provider " + mp.provider() + ")");
+            }
+            out.add(entry);
         }
         for (ManagedReplacement mr : replacements) {
             RoleReplacement replacement = mr.replacement();
-            out.add(configured(
+            ResourceLocation target = replacement.target().location();
+            ManagedRoleEntry<RoleReplacement> entry = configured(
                     entryId(mr.provider(), replacement),
                     mr.provider(),
                     replacement.entryKey() == null
-                            ? replacement.target().path() : replacement.entryKey(),
+                            ? target.getPath() : replacement.entryKey(),
                     RoleOperation.REPLACE,
                     replacement.target(),
                     PatchPriority.NORMAL,
                     replacement,
-                    "v2 REPLACE"));
+                    "v2 REPLACE");
+            if (!preExisting.contains(target)) {
+                entry = entry.withStatus(EntryStatus.INVALID,
+                        "v2 REPLACE target " + target + " does not exist (provider " + mr.provider() + ")");
+            } else {
+                long enabled = replacements.stream()
+                        .filter(m -> m.replacement().target().location().equals(target))
+                        .filter(m -> RoleExtensionConfigService.INSTANCE.gateFor(
+                                m.provider(), entryId(m.provider(), m.replacement()))
+                                == RoleExtensionConfigService.EntryGate.ENABLED)
+                        .count();
+                if (enabled >= 2) {
+                    String winner = RoleExtensionConfigService.INSTANCE.winnerFor(target, "replace");
+                    if (winner == null || !winner.equals(entry.entryId())) {
+                        entry = entry.withStatus(EntryStatus.CONFLICT,
+                                "v2 REPLACE target " + target + " is claimed by multiple declarations; "
+                                        + "configure a <target>#replace winner");
+                    }
+                }
+            }
+            out.add(entry);
         }
         Set<String> aliasConflicts = conflictingAliasEntryIds();
         for (ManagedAlias ma : aliases) {
@@ -1003,10 +1118,43 @@ public final class RoleExtensionRegistry {
                 entry = entry.withStatus(EntryStatus.CONFLICT,
                         "v2 ALIAS source " + alias.from().location()
                                 + " is claimed by multiple declarations; configure a conflict winner");
+            } else if (!known.contains(alias.to().location())) {
+                // A missing `from` is legal (migrating a retired id); a missing
+                // destination can never resolve, so it is structurally invalid.
+                entry = entry.withStatus(EntryStatus.INVALID,
+                        "v2 ALIAS destination " + alias.to().location()
+                                + " does not exist (provider " + ma.provider() + ")");
             }
             out.add(entry);
         }
         return out;
+    }
+
+    /**
+     * Every role id the current process knows: v2 ADD roles, compiled v2
+     * REPLACE surfaces, and the upstream {@code TMMRoles} registry (bootstrap-
+     * safe for bare unit-test JVMs). Drives the INVALID diagnostics.
+     */
+    public Set<ResourceLocation> knownRoleIds() {
+        Set<ResourceLocation> known = new HashSet<>(managedRoles.keySet());
+        known.addAll(compiledReplacements.keySet());
+        try {
+            known.addAll(TMMRoles.ROLES.keySet());
+        } catch (Throwable ignored) {
+            // TMMRoles not bootstrapped (bare unit test): upstream ids unknown.
+        }
+        return known;
+    }
+
+    /** Ids that must pre-exist for REPLACE: upstream roles + v2 ADD. */
+    public Set<ResourceLocation> preExistingRoleIds() {
+        Set<ResourceLocation> preExisting = new HashSet<>(managedRoles.keySet());
+        try {
+            preExisting.addAll(TMMRoles.ROLES.keySet());
+        } catch (Throwable ignored) {
+            // TMMRoles not bootstrapped (bare unit test): upstream ids unknown.
+        }
+        return preExisting;
     }
 
     /** Applies the live config gate to a v2 entry shell. */
@@ -1102,16 +1250,18 @@ public final class RoleExtensionRegistry {
     public record RoleRelationLink(SRERole role, com.habitrain.core.api.role.v2.definition.RoleRelationProfile profile) {}
 
     record RegistrationSnapshot(
-            Map<ResourceLocation, ManagedSRERole> managedRoles,
+            Map<ResourceLocation, SRERole> managedRoles,
             Map<ResourceLocation, ManagedSRERole> compiledReplacements,
             List<ManagedPatch> patches,
             List<ManagedReplacement> replacements,
             List<ManagedAlias> aliases,
-            Map<ResourceLocation, String> replacementByTarget,
+            Map<ResourceLocation, List<String>> replacementByTarget,
             Set<String> registeredEntryIds,
             List<ManagedRoleEntry<?>> compiledEntries,
             Map<ResourceLocation, String> aliasSourceOwners,
             Map<ResourceLocation, List<String>> aliasSourcesByFrom,
+            Set<String> providers,
+            Set<String> requiredClientProviders,
             boolean frozen,
             boolean tmmAccessible,
             @Nullable Map<ResourceLocation, SRERole> tmmRoles,

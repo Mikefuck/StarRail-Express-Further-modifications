@@ -82,8 +82,12 @@ public class ModTickHandler {
         }
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            BetelTickEngine.tickPlayer(player);
-            ExtraSlotComponent.KEY.get(player).serverTick();
+            try {
+                BetelTickEngine.tickPlayer(player);
+                ExtraSlotComponent.KEY.get(player).serverTick();
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[ModTick] per-player tick failed for {}", player.getName().getString(), t);
+            }
         }
     }
 }

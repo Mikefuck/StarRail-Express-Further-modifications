@@ -10,6 +10,7 @@ import com.habitrain.core.api.role.v2.definition.RoleFactionProfile;
 import com.habitrain.core.api.role.v2.definition.RoleInventoryProfile;
 import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
+import com.habitrain.core.api.role.v2.definition.RoleVisibilityProfile;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import com.habitrain.core.game.sre.role.HabiRoleItems;
 import com.habitrain.core.game.sre.role.HabiRoleShops;
@@ -19,9 +20,27 @@ import com.habitrain.core.game.sre.role.component.FlowerGirlComponent;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
 import com.habitrain.core.game.sre.role.component.SwiftWindComponent;
 import com.habitrain.core.game.sre.role.skill.MikeCodeEditSkill;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.component.EnvyComponent;
+import com.habitrain.core.game.sre.role.sins.component.GluttonyComponent;
+import com.habitrain.core.game.sre.role.sins.component.GreedComponent;
+import com.habitrain.core.game.sre.role.sins.component.LustComponent;
+import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
+import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
+import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
+import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
+import com.habitrain.core.game.sre.role.sins.win.GreedRole;
+import com.habitrain.core.game.sre.role.sins.win.LustRole;
+import com.habitrain.core.game.sre.role.sins.win.PrideRole;
+import com.habitrain.core.game.sre.role.sins.win.SlothRole;
+import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
+import io.wifi.starrailexpress.util.ShopEntry;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.List;
 
 import java.awt.Color;
 
@@ -158,10 +177,167 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
                 .build());
 
+        registerSins(registrar);
+
         // Managed behavior hooks for core's own roles (audit P1-1): they must
         // register through this provider-scoped registrar, not a process-global
         // write path, so identity/rollback/config gating stay uniform.
         com.habitrain.core.game.sre.role.HabiRoleHooks.registerWith(registrar);
         com.habitrain.core.game.sre.role.sins.win.SevenSinV2Hooks.registerWith(registrar);
+        com.habitrain.core.game.sre.role.sins.SevenSinV2BehaviorHooks.registerWith(registrar);
+    }
+
+    /**
+     * Registers the seven sins through v2 ADD + {@link RoleDefinition.RoleFactory}.
+     * The factory keeps each custom {@code CustomWinnerRole} / anonymous shop
+     * override while profiles carry the shared faction/spawn/visibility flags.
+     */
+    private static void registerSins(RoleExtensionRegistrar registrar) {
+        SevenSins.PRIDE = registrar.add(RoleDefinition.builder(SevenSins.PRIDE_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(180, 40, 40).getRGB())
+                        .build())
+                .faction(RoleFactionProfile.builder().neutral().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(PrideComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .roleFactory(d -> new PrideRole(d.key().location(),
+                        d.presentation().color(), false, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .build());
+
+        SevenSins.ENVY = registrar.add(RoleDefinition.builder(SevenSins.ENVY_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(40, 160, 60).getRGB())
+                        .moodType(SRERole.MoodType.FAKE)
+                        .build())
+                .faction(RoleFactionProfile.builder().killer().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(EnvyComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .roleFactory(d -> new NormalRole(d.key().location(),
+                        d.presentation().color(), false, true,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
+                    @Override
+                    public List<ShopEntry> getShopEntries() {
+                        return SevenSinShops.envyShop();
+                    }
+                })
+                .maxSprintTime(Integer.MAX_VALUE)
+                .build());
+
+        SevenSins.WRATH = registrar.add(RoleDefinition.builder(SevenSins.WRATH_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(200, 30, 30).getRGB())
+                        .moodType(SRERole.MoodType.FAKE)
+                        .build())
+                .faction(RoleFactionProfile.builder()
+                        .neutral()
+                        .neutralForKiller()
+                        .build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(WrathComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .roleFactory(d -> new NormalRole(d.key().location(),
+                        d.presentation().color(), false, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
+                    @Override
+                    public List<ItemStack> getDefaultItems() {
+                        return List.of();
+                    }
+
+                    @Override
+                    public List<ShopEntry> getShopEntries() {
+                        return SevenSinShops.empty();
+                    }
+                })
+                .maxSprintTime(Integer.MAX_VALUE)
+                .canSeeTime(true)
+                .build());
+
+        SevenSins.GREED = registrar.add(RoleDefinition.builder(SevenSins.GREED_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(200, 160, 20).getRGB())
+                        .build())
+                .faction(RoleFactionProfile.builder().neutral().build())
+                .spawn(RoleSpawnProfile.builder()
+                        .defaultMax(1)
+                        .needPlayerCount(13)
+                        .build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(GreedComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .roleFactory(d -> new GreedRole(d.key().location(),
+                        d.presentation().color(), false, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .canSeeTime(true)
+                .build());
+
+        SevenSins.GLUTTONY = registrar.add(RoleDefinition.builder(SevenSins.GLUTTONY_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(140, 90, 50).getRGB())
+                        .build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(GluttonyComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .roleFactory(d -> new NormalRole(d.key().location(),
+                        d.presentation().color(), true, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
+                    @Override
+                    public List<ShopEntry> getShopEntries() {
+                        return SevenSinShops.gluttonyShop();
+                    }
+                })
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .build());
+
+        SevenSins.LUST = registrar.add(RoleDefinition.builder(SevenSins.LUST_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(200, 50, 150).getRGB())
+                        .build())
+                .faction(RoleFactionProfile.builder().neutral().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(LustComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .roleFactory(d -> new LustRole(d.key().location(),
+                        d.presentation().color(), false, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .canSeeTime(true)
+                .build());
+
+        SevenSins.SLOTH = registrar.add(RoleDefinition.builder(SevenSins.SLOTH_ID)
+                .presentation(RolePresentation.builder()
+                        .color(new Color(100, 100, 140).getRGB())
+                        .build())
+                .faction(RoleFactionProfile.builder().neutral().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder()
+                        .componentKey(SlothComponent.KEY)
+                        .canSeeCoin()
+                        .build())
+                .roleFactory(d -> new SlothRole(d.key().location(),
+                        d.presentation().color(), false, false,
+                        d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .build());
     }
 }

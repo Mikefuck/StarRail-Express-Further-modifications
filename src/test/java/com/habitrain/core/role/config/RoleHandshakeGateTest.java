@@ -43,7 +43,8 @@ class RoleHandshakeGateTest {
     private static ClientManifest client(boolean hasPresentation, String definitionHash) {
         Map<String, String> versions = new LinkedHashMap<>();
         versions.put("habitrain_dlc", "1.2.0");
-        return new ClientManifest(API, versions, hasPresentation, definitionHash, null);
+        return new ClientManifest(API, versions, hasPresentation, definitionHash, null,
+                Set.of("habitrain_dlc"));
     }
 
     @Test
@@ -92,7 +93,8 @@ class RoleHandshakeGateTest {
     @Test
     void presentationDegradeStillAllowsActions() {
         RoleHandshakeGate.INSTANCE.record(PLAYER,
-                new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), false, null, "stalePres"));
+                new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), false, null, "stalePres",
+                        Set.of("habitrain_dlc")));
         assertEquals(RoleHandshakeStatus.DEGRADED_CLIENT_EXTENSION,
                 RoleHandshakeGate.INSTANCE.resultFor(PLAYER).status());
         assertTrue(RoleHandshakeGate.INSTANCE.isActionAllowed(PLAYER),

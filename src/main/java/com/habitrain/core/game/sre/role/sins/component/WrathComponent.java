@@ -217,6 +217,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         }
 
         SRERole next = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+        List<ItemStack> backup = snapshotInventory(self);
         try {
             clearInventory(self);
             // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
@@ -226,6 +227,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Wrath] changeRole failed for {}",
                     self.getGameProfile().getName(), t);
+            restoreInventory(self, backup);
             transformRetryCooldown = 40;
             return;
         }
@@ -298,6 +300,26 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         if (player == null) return;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             player.getInventory().setItem(i, ItemStack.EMPTY);
+        }
+        player.getInventory().setChanged();
+    }
+
+    private static List<ItemStack> snapshotInventory(ServerPlayer player) {
+        List<ItemStack> backup = new ArrayList<>();
+        if (player == null) return backup;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            backup.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+        }
+        return backup;
+    }
+
+    private static void restoreInventory(ServerPlayer player, List<ItemStack> backup) {
+        if (player == null || backup == null) return;
+        clearInventory(player);
+        int size = Math.min(player.getInventory().getContainerSize(), backup.size());
+        for (int i = 0; i < size; i++) {
+            player.getInventory().setItem(i, backup.get(i));
         }
         player.getInventory().setChanged();
     }

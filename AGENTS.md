@@ -6,15 +6,24 @@ Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API�
 
 ## 构建 & 运行
 
-```powershell
-./gradlew build          # 完整构建（assemble 会触发 copyReleaseJar）
-./gradlew runClient      # 启动开发客户端
+Linux / bash（当前沙箱环境；`./gradlew` 可能没有执行位，统一用 `bash gradlew`）：
+
+```bash
+bash gradlew build          # 完整构建（assemble 会触发 copyReleaseJar）
+bash gradlew runClient      # 启动开发客户端
+```
+
+交付构建（上级 AGENTS 要求）：
+
+```bash
+bash gradlew clean build
+# 将 build/libs/*.jar 复制到 /home/Mike/mcmod/临时/
 ```
 
 - Java 21（`options.release = 21`），Fabric Loom 1.17.13；字节码目标为 21
 - `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat、betel-nut-mod 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
-- `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `../临时/`
-- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证仍以 `./gradlew build` 和必要的游戏内运行共同完成
+- `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
+- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证仍以 `bash gradlew build` 和必要的游戏内运行共同完成
 - README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口
 
 ## 重要架构
@@ -64,6 +73,6 @@ Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API�
 
 ## 相关项目路径
 
-- 哈比列车附属mod（本项目，可修改）: `D:\Backup\mc mod\哈比列车api`
-- 哈比列车槟榔任务mod（可修改）: `D:\Backup\mc mod\槟榔`
-- 哈比列车 DLC（仅参照，不可修改）: `D:\Backup\mc mod\哈比列车dlc\StarRailExpress-master`
+- 哈比列车附属mod（本项目，可修改）: `/home/Mike/mcmod/哈比列车api`
+- 哈比列车槟榔任务mod（可修改）: `/home/Mike/mcmod/槟榔`
+- 哈比列车 DLC（仅参照，不可修改）: `/home/Mike/mcmod/哈比列车dlc/StarRailExpress-master`

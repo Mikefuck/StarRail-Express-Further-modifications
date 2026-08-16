@@ -60,6 +60,7 @@ class RoleDiagnosticsTest {
 
     @Test
     void entriesReportModifyAsActive() {
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
                 RolePatch.builder(TARGET).defaultMax(RolePatch.IntPatch.set(2)).build());
 
@@ -86,6 +87,7 @@ class RoleDiagnosticsTest {
 
     @Test
     void entriesReportReplaceActiveWhenCompiled() {
+        seedTarget();
         RoleDefinition def = definition("habitrain_core", "shadow_killer");
         RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
                 RoleReplacement.builder(RoleKey.of(TARGET), def)
@@ -150,6 +152,7 @@ class RoleDiagnosticsTest {
 
     @Test
     void commandListShowsActiveModify() {
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
                 RolePatch.builder(TARGET).defaultMax(RolePatch.IntPatch.set(2)).build());
         List<String> lines = RoleDiagnosticsCommands.list("effective");
@@ -184,6 +187,17 @@ class RoleDiagnosticsTest {
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    /** Seeds a managed ADD role for {@link #TARGET} so it counts as a known role id. */
+    private static void seedTarget() {
+        try {
+            setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles",
+                    new LinkedHashMap<>(Map.of(TARGET,
+                            com.habitrain.core.role.extension.ManagedSRERole.from(definition("sre", "vigilante")))));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static SRERole role(ResourceLocation id) {
         return new NormalRole(id, COLOR, false, true, SRERole.MoodType.FAKE, 20, true);

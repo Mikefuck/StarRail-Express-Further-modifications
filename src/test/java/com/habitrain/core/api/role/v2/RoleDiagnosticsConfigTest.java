@@ -1,7 +1,12 @@
 package com.habitrain.core.api.role.v2;
 
 import com.habitrain.core.api.role.v2.definition.PatchPriority;
+import com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile;
+import com.habitrain.core.api.role.v2.definition.RoleDefinition;
+import com.habitrain.core.api.role.v2.definition.RoleFactionProfile;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
+import com.habitrain.core.api.role.v2.definition.RolePresentation;
+import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.diag.RoleConfigCommands;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
@@ -60,6 +65,7 @@ class RoleDiagnosticsConfigTest {
 
     @Test
     void entriesReportDisabledFromConfigNotGuessedActive() {
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("example",
                 RolePatch.builder(TARGET).entryKey("buff").defaultMax(RolePatch.IntPatch.set(2)).build());
         RoleExtensionRegistry.INSTANCE.freeze();
@@ -78,6 +84,7 @@ class RoleDiagnosticsConfigTest {
 
     @Test
     void entriesReportActiveWithRichFields() {
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("example",
                 RolePatch.builder(TARGET).entryKey("buff").defaultMax(RolePatch.IntPatch.set(2)).build());
         DiagnosticEntry modify = new RoleDiagnosticsImpl().entries().stream()
@@ -101,6 +108,7 @@ class RoleDiagnosticsConfigTest {
 
     @Test
     void traceRendersBaselinePatchesFinalStatusSnapshot() {
+        seedTarget();
         RolePatch early = RolePatch.builder(TARGET).entryKey("buff")
                 .priority(PatchPriority.EARLY).defaultMax(RolePatch.IntPatch.set(2)).build();
         RolePatch normal = RolePatch.builder(TARGET).entryKey("nerf")
@@ -146,12 +154,22 @@ class RoleDiagnosticsConfigTest {
     }
 
     @Test
-    void traceStatusShowsDisabledWhenEntryDisabled() {
+    void traceShowsDisabledModifyOnActiveAddRole() {
+        // The seeded ADD makes the ROLE active; the MODIFY entry itself is
+        // disabled by config, so its patches must not fold into the trace.
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("example",
                 RolePatch.builder(TARGET).entryKey("buff").defaultMax(RolePatch.IntPatch.set(2)).build());
         RoleExtensionRegistry.INSTANCE.freeze();
         RoleExtensionConfigService.INSTANCE.setEntryEnabled("example$buff@sre:vigilante", false);
         RoleExtensionRegistry.INSTANCE.recomputeCompiledEntries();
+
+        // The MODIFY entry reports DISABLED with its config source.
+        DiagnosticEntry modify = new RoleDiagnosticsImpl().entries().stream()
+                .filter(e -> e.kind().equals("MODIFY")).findFirst().orElseThrow();
+        assertEquals(DiagnosticStatus.DISABLED, modify.status(),
+                "the disabled MODIFY entry must report DISABLED, never ACTIVE/INVALID");
+        assertEquals("entry", modify.enabledSource());
 
         RoleKey key = RoleKey.of(TARGET);
         RoleSnapshotManager.INSTANCE.setLobby(new RoleSnapshot(new RoleSnapshotId(1),
@@ -159,13 +177,17 @@ class RoleDiagnosticsConfigTest {
                 Map.of(), Set.of()));
 
         List<String> lines = RoleFieldTrace.trace(key, "spawn.defaultMax");
-        assertTrue(lines.stream().anyMatch(l -> l.equals("status: DISABLED")), lines::toString);
-        // Disabled entry's patches are not folded into the final value.
-        assertTrue(lines.stream().anyMatch(l -> l.equals("  (no enabled patches set spawn.defaultMax)")), lines::toString);
+        // The role is active (via its ADD entry); the field trace shows no
+        // enabled patches and the pristine final value.
+        assertTrue(lines.stream().anyMatch(l -> l.equals("status: ACTIVE")), lines::toString);
+        assertTrue(lines.stream().anyMatch(l -> l.equals("  (no enabled patches set spawn.defaultMax)")),
+                lines::toString);
+        assertTrue(lines.stream().anyMatch(l -> l.equals("final: 1")), lines::toString);
     }
 
     @Test
     void configStatusFormatsProvidersEntriesAndWinners() {
+        seedTarget();
         RoleExtensionRegistry.INSTANCE.modify("example",
                 RolePatch.builder(TARGET).entryKey("buff").defaultMax(RolePatch.IntPatch.set(2)).build());
         RoleExtensionConfigService.INSTANCE.setEntryEnabled("example$buff@sre:vigilante", false);
@@ -184,6 +206,24 @@ class RoleDiagnosticsConfigTest {
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
+
+    /** Seeds a managed ADD role for {@link #TARGET} so it counts as a known role id. */
+    private static void seedTarget() {
+        try {
+            setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles",
+                    new LinkedHashMap<>(Map.of(TARGET,
+                            com.habitrain.core.role.extension.ManagedSRERole.from(
+                                    RoleDefinition.builder("sre", "vigilante")
+                                            .presentation(RolePresentation.builder().color(COLOR).build())
+                                            .faction(RoleFactionProfile.builder().innocent().build())
+                                            .spawn(RoleSpawnProfile.builder().build())
+                                            .compatibility(RoleCompatibilityProfile.builder().build())
+                                            .maxSprintTime(20)
+                                            .build()))));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static SRERole role(ResourceLocation id) {
         return new NormalRole(id, COLOR, false, true, SRERole.MoodType.FAKE, 20, true);

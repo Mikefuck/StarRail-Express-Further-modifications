@@ -38,6 +38,19 @@ public final class RoleClientExtensionHooks {
         return registered;
     }
 
+    /**
+     * Opens the stock v2 role screen for the local player's current role, if
+     * any {@code RoleScreenSpec} is declared. Provider-specific trigger code
+     * (commands, action callbacks, meeting UI) can call this entry point.
+     */
+    public static void openRoleScreen() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        RoleScreenDispatcher.openForRole(currentRole(mc.player));
+    }
+
     public static void init() {
         if (registered) {
             return;
@@ -53,7 +66,8 @@ public final class RoleClientExtensionHooks {
                 (self, target, enabled) -> apply(InstinctPhase.ALIVE_AFTER, self, target));
         CommonInstinctEvents.SPECTATOR_COMMON_EVENT.register(
                 (self, target, enabled) -> apply(InstinctPhase.SPECTATOR, self, target));
-        HudRenderCallback.EVENT.register((graphics, tickDelta) -> renderHud(graphics));
+        HudRenderCallback.EVENT.register((graphics, deltaTracker) ->
+                renderHud(graphics, deltaTracker.getGameTimeDeltaPartialTick(false)));
         HabiTrainCore.LOGGER.info("[RoleClientExtensionHooks] HUD/instinct adapters registered");
     }
 
@@ -76,7 +90,7 @@ public final class RoleClientExtensionHooks {
         };
     }
 
-    private static void renderHud(GuiGraphics graphics) {
+    private static void renderHud(GuiGraphics graphics, float tickDelta) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null || mc.options.hideGui) {
@@ -91,26 +105,38 @@ public final class RoleClientExtensionHooks {
             if (spectator && !spec.showWhenSpectator()) {
                 continue;
             }
-            if (spec.kind() == com.habitrain.core.api.role.v2.client.RoleHudKind.TEXT
-                    || spec.kind() == com.habitrain.core.api.role.v2.client.RoleHudKind.BADGE) {
-                if (spec.textKey().isEmpty()) {
-                    continue;
-                }
-                graphics.drawString(mc.font, Component.translatable(spec.textKey()),
-                        spec.x(), spec.y(), spec.color(), true);
+            // Stock visual model: TEXT/BADGE render the translated string;
+            // ICON/PROGRESS/COOLDOWN/CHARGE render a small kind marker plus the
+            // translated string so experimental declarations are never silently
+            // dropped. Providers that need real textures/values can use a
+            // custom RoleHudWidget.
+            if (spec.textKey().isEmpty()) {
+                continue;
             }
+            String prefix = switch (spec.kind()) {
+                case ICON -> "[图标] ";
+                case PROGRESS -> "[进度] ";
+                case COOLDOWN -> "[冷却] ";
+                case CHARGE -> "[充能] ";
+                case TEXT, BADGE -> "";
+            };
+            graphics.drawString(mc.font,
+                    Component.literal(prefix).append(Component.translatable(spec.textKey())),
+                    spec.x(), spec.y(), spec.color(), true);
         }
         int width = mc.getWindow().getGuiScaledWidth();
         int height = mc.getWindow().getGuiScaledHeight();
         for (var widget : RoleClientExtensionApi.instance().hudWidgetsFor(role)) {
             try {
-                widget.render(width, height, 0f);
+                // The real render-frame tick delta (audit P1-5): animations and
+                // interpolation must see the actual frame time, never a flat 0f.
+                widget.render(width, height, tickDelta);
             } catch (Throwable ignored) {
             }
         }
     }
 
-    private static RoleKey currentRole(Player player) {
+    public static RoleKey currentRole(Player player) {
         if (player == null || player.level() == null) {
             return null;
         }

@@ -135,6 +135,7 @@ public class ClientLifecycleHandler {
         // 角色状态同步镜像与角色动作回调在断线/换世界时清空，防止陈旧数据泄漏到下一服务器。
         com.habitrain.core.client.role.RoleStateClientCache.clear();
         com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.clear();
+        com.habitrain.core.client.role.RoleActionClientState.clear();
         // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
         com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
         com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();

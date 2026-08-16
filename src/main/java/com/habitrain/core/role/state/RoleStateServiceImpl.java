@@ -7,6 +7,8 @@ import com.habitrain.core.api.role.v2.state.RoleStateApi;
 import com.habitrain.core.api.role.v2.state.RoleStateKey;
 import com.habitrain.core.api.role.v2.state.RoleStateSpec;
 import com.habitrain.core.api.role.v2.state.StateScope;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
+import com.habitrain.core.role.extension.ManagedDeclaration;
 import com.google.gson.JsonElement;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.resources.ResourceLocation;
@@ -47,7 +49,13 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleStateApi");
 
-    private final Map<StorageKey, RoleStateSpec<?>> specs = new LinkedHashMap<>();
+    /**
+     * Registered state schemas wrapped in their provider ownership (audit
+     * P1-2). A provider-disabled or entry-disabled schema is "retained but
+     * inaccessible": stored values survive and resume on re-enable, but
+     * get/set/reset/sync are gated while disabled.
+     */
+    private final Map<StorageKey, ManagedDeclaration<RoleStateSpec<?>>> specs = new LinkedHashMap<>();
     private final Map<StateSlotKey, Object> transientValues = new ConcurrentHashMap<>();
     private final Set<StateSlotKey> migrationRequired = new CopyOnWriteArraySet<>();
     private final RoleStateSyncService syncService = new RoleStateSyncService();
@@ -66,8 +74,30 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         return syncService;
     }
 
-    @Override
+    /**
+     * Convenience registration seam for unit tests and legacy internal callers:
+     * owns the declaration under its own id (provider = id namespace, entry id
+     * = the id itself). Production providers MUST register through
+     * {@code ProviderRegistrationTransaction} so provider-scoped gating and
+     * rollback apply; this path is not part of the public {@link RoleStateApi}.
+     */
     public synchronized <T> RoleStateKey<T> register(RoleStateSpec<T> spec) {
+        Objects.requireNonNull(spec, "spec");
+        return registerManaged(spec.id().getNamespace(), spec.id().toString(), spec);
+    }
+
+    /**
+     * Registers a state schema under its provider ownership. Called by
+     * {@code ProviderRegistrationTransaction.commit}; unit tests use it as the
+     * direct registration seam. Not part of the public {@link RoleStateApi}
+     * surface — downstream providers register through the entrypoint registrar.
+     *
+     * @return the key handle for later get/set
+     * @throws IllegalStateException if the registry is frozen
+     * @throws IllegalArgumentException on duplicate id+role or missing fields
+     */
+    public synchronized <T> RoleStateKey<T> registerManaged(String providerId, String entryId,
+                                                            RoleStateSpec<T> spec) {
         Objects.requireNonNull(spec, "spec");
         if (frozen) {
             throw new IllegalStateException("Role state registry is frozen");
@@ -76,8 +106,8 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (specs.containsKey(storage)) {
             throw new IllegalArgumentException("Duplicate role state: " + storage);
         }
-        specs.put(storage, spec);
-        LOGGER.info("Registered role state {}", storage);
+        specs.put(storage, new ManagedDeclaration<>(providerId, entryId, spec.role(), spec));
+        LOGGER.info("Registered role state {} (provider {}, entry {})", storage, providerId, entryId);
         return new RoleStateKey<>(spec.id(), spec.role(), spec.type());
     }
 
@@ -92,8 +122,8 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             return;
         }
         specs.clear();
-        for (RoleStateSpec<?> spec : snapshot.specs()) {
-            specs.put(StorageKey.of(spec), spec);
+        for (ManagedDeclaration<RoleStateSpec<?>> decl : snapshot.specs()) {
+            specs.put(StorageKey.of(decl.declaration()), decl);
         }
         frozen = snapshot.frozen();
     }
@@ -104,12 +134,13 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (key == null) {
             return null;
         }
-        return (RoleStateSpec<T>) specs.get(StorageKey.of(key));
+        ManagedDeclaration<RoleStateSpec<?>> decl = specs.get(StorageKey.of(key));
+        return decl == null ? null : (RoleStateSpec<T>) decl.declaration();
     }
 
     @Override
     public Collection<RoleStateSpec<?>> specs() {
-        return Collections.unmodifiableCollection(specs.values());
+        return specs.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
@@ -118,9 +149,9 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             return List.of();
         }
         List<RoleStateSpec<?>> out = new ArrayList<>();
-        for (RoleStateSpec<?> spec : specs.values()) {
-            if (role.equals(spec.role())) {
-                out.add(spec);
+        for (ManagedDeclaration<RoleStateSpec<?>> decl : specs.values()) {
+            if (role.equals(decl.role())) {
+                out.add(decl.declaration());
             }
         }
         return List.copyOf(out);
@@ -143,6 +174,11 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         RoleStateSpec<T> spec = spec(key);
         if (spec == null) {
             return null;
+        }
+        if (!gateEnabled(spec)) {
+            // Disabled provider/entry (audit P1-2): the slot is retained but
+            // inaccessible — reads expose the default, never the stored value.
+            return spec.produceDefault();
         }
         if (spec.scope() == StateScope.PLAYER && playerId == null) {
             return spec.produceDefault();
@@ -185,6 +221,11 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (spec == null) {
             throw new IllegalArgumentException("Unregistered role state: " + key);
         }
+        if (!gateEnabled(spec)) {
+            // Disabled provider/entry (audit P1-2): writes are a no-op — no
+            // persistence, no sync, and the retained value resumes on re-enable.
+            return;
+        }
         if (value != null && !spec.type().isInstance(value)) {
             throw new IllegalArgumentException(
                     "Value " + value.getClass().getName() + " is not a " + spec.type().getName());
@@ -209,9 +250,12 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (playerScoped && playerId == null) {
             return;
         }
-        for (RoleStateSpec<?> spec : specs.values()) {
+        for (RoleStateSpec<?> spec : specs.values().stream().map(ManagedDeclaration::declaration).toList()) {
             if (!spec.resetOn().contains(cause)) {
                 continue;
+            }
+            if (!gateEnabled(spec)) {
+                continue; // disabled declarations keep their retained slots (audit P1-2)
             }
             if (role != null && !role.equals(spec.role())) {
                 continue;
@@ -225,7 +269,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
      * (all worlds when {@code null}). Called at round end.
      */
     public synchronized void clearRoundState(@Nullable String worldKey) {
-        for (RoleStateSpec<?> spec : specs.values()) {
+        for (RoleStateSpec<?> spec : specs.values().stream().map(ManagedDeclaration::declaration).toList()) {
             if (spec.scope() != StateScope.ROUND
                     && spec.persistence() != Persistence.ROUND
                     && spec.persistence() != Persistence.NONE) {
@@ -240,7 +284,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
      * (all worlds when {@code null}). Called on world unload.
      */
     public synchronized void clearWorldState(@Nullable String worldKey) {
-        for (RoleStateSpec<?> spec : specs.values()) {
+        for (RoleStateSpec<?> spec : specs.values().stream().map(ManagedDeclaration::declaration).toList()) {
             if (spec.scope() != StateScope.WORLD && spec.persistence() != Persistence.WORLD) {
                 continue;
             }
@@ -278,7 +322,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         // Transient (ROUND/NONE persistence) slots.
         for (StateSlotKey slot : java.util.Set.copyOf(transientValues.keySet())) {
             RoleStateSpec<?> spec = specForSlot(slot);
-            if (spec == null || !syncService.isRecipient(spec, slot, playerId)) {
+            if (spec == null || !gateEnabled(spec) || !syncService.isRecipient(spec, slot, playerId)) {
                 continue;
             }
             Object v = transientValues.get(slot);
@@ -288,7 +332,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         // Persistent (WORLD/PERMANENT) slots materialized in the store.
         for (StateSlotKey slot : store.keys()) {
             RoleStateSpec<?> spec = specForSlot(slot);
-            if (spec == null || !syncService.isRecipient(spec, slot, playerId)) {
+            if (spec == null || !gateEnabled(spec) || !syncService.isRecipient(spec, slot, playerId)) {
                 continue;
             }
             StoredState st = store.read(slot);
@@ -342,7 +386,8 @@ public final class RoleStateServiceImpl implements RoleStateApi {
      */
     public List<String> describe(@Nullable UUID playerId, @Nullable RoleKey role) {
         List<String> lines = new ArrayList<>();
-        for (RoleStateSpec<?> spec : specs.values()) {
+        for (var entry : specs.entrySet()) {
+            RoleStateSpec<?> spec = entry.getValue().declaration();
             if (role != null && !role.equals(spec.role())) {
                 continue;
             }
@@ -365,6 +410,10 @@ public final class RoleStateServiceImpl implements RoleStateApi {
                     + " persist=" + spec.persistence()
                     + " reset=" + spec.resetOn()
                     + (migrationRequired.contains(slot) ? " [DATA_MIGRATION_REQUIRED]" : "")
+                    + " provider=" + entry.getValue().providerId()
+                    + " entry=" + entry.getValue().entryId()
+                    + " gate=" + RoleExtensionConfigService.INSTANCE
+                            .gateFor(entry.getValue().providerId(), entry.getValue().entryId())
                     + " = " + shown);
         }
         return lines;
@@ -441,13 +490,22 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (slot == null) {
             return null;
         }
-        for (RoleStateSpec<?> s : specs.values()) {
+        for (ManagedDeclaration<RoleStateSpec<?>> decl : specs.values()) {
+            RoleStateSpec<?> s = decl.declaration();
             if (s.id().equals(slot.id()) && s.role().equals(slot.role())
                     && s.scope() == slot.scope()) {
                 return s;
             }
         }
         return null;
+    }
+
+    /** Whether the spec's owning provider/entry passes the v2 config gate (audit P1-2). */
+    private boolean gateEnabled(RoleStateSpec<?> spec) {
+        ManagedDeclaration<RoleStateSpec<?>> decl = specs.get(StorageKey.of(spec));
+        return decl == null
+                || RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
+                == RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -582,5 +640,6 @@ public final class RoleStateServiceImpl implements RoleStateApi {
      * rollback token.  It deliberately exposes declarations rather than the
      * package-private storage keys that implement the internal index.
      */
-    public record RegistrationSnapshot(List<RoleStateSpec<?>> specs, boolean frozen) {}
+    public record RegistrationSnapshot(
+            List<ManagedDeclaration<RoleStateSpec<?>>> specs, boolean frozen) {}
 }

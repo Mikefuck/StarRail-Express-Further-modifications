@@ -8,6 +8,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
@@ -26,6 +28,8 @@ import java.util.function.Predicate;
  * {@link MemoryRoleStateStore} instead.
  */
 public final class CcaRoleStateStore implements RoleStateStore {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("CcaRoleStateStore");
 
     /** Resolves live entities for slot routing. */
     public interface EntityResolver {
@@ -93,17 +97,23 @@ public final class CcaRoleStateStore implements RoleStateStore {
     @Override
     public void write(StateSlotKey key, StoredState state) {
         StateSlotBag bag = bagFor(key);
-        if (bag != null) {
-            bag.write(key.encode(), state);
+        if (bag == null) {
+            LOGGER.warn("[CcaRoleStateStore] write skipped for unloadable state slot {} (offline player or unloaded world)",
+                    key);
+            return;
         }
+        bag.write(key.encode(), state);
     }
 
     @Override
     public void remove(StateSlotKey key) {
         StateSlotBag bag = bagFor(key);
-        if (bag != null) {
-            bag.remove(key.encode());
+        if (bag == null) {
+            LOGGER.warn("[CcaRoleStateStore] remove skipped for unloadable state slot {} (offline player or unloaded world)",
+                    key);
+            return;
         }
+        bag.remove(key.encode());
     }
 
     @Override

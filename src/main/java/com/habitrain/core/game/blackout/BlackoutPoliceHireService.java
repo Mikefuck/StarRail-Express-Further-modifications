@@ -108,6 +108,9 @@ public final class BlackoutPoliceHireService {
         if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
             return Component.literal("§c当前不在停电对局中");
         }
+        if (gameMode.get() instanceof BlackoutMode blackout && blackout.isGameEnded(level)) {
+            return Component.literal("§c对局已结束");
+        }
 
         HireState state = STATES.get(level.dimension());
         if (state == null) {

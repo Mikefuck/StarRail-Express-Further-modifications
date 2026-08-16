@@ -9,5 +9,6 @@ package com.habitrain.core.api.role.v2.definition;
 public enum ListOp {
     APPEND,
     REMOVE,
-    REPLACE_ALL
+    REPLACE_ALL,
+    REPLACE_MATCHING_IDS
 }

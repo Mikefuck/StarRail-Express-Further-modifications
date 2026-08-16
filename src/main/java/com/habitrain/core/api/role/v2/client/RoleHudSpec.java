@@ -9,6 +9,12 @@ import java.util.Objects;
 /**
  * Declarative HUD widget bound to one role. Complex custom drawing stays
  * provider-side; this spec is the common, dedicated-server-safe declaration.
+ *
+ * <p>Rendering status (audit P1-5): the stock client renders every kind as a
+ * translated string; {@link RoleHudKind#ICON}, {@link RoleHudKind#PROGRESS},
+ * {@link RoleHudKind#COOLDOWN} and {@link RoleHudKind#CHARGE} use a small kind
+ * prefix as the basic visual model. Custom {@link RoleHudWidget}s receive the
+ * real render frame {@code tickDelta}.
  */
 public final class RoleHudSpec {
 

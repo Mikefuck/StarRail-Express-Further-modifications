@@ -128,12 +128,16 @@ public class GameModeRegistry {
             ResourceKey<Level> levelKey = level.dimension();
             GameMode mode = ACTIVE_MODES.get(levelKey);
             if (mode != null) {
-                mode.onTick(level);
-                if (ACTIVE_MODES.get(levelKey) == mode) {
-                    Optional<WinResult> result = mode.checkWinCondition(level);
-                    if (result.isPresent() && ACTIVE_MODES.get(levelKey) == mode) {
-                        stop(level, result.get());
+                try {
+                    mode.onTick(level);
+                    if (ACTIVE_MODES.get(levelKey) == mode) {
+                        Optional<WinResult> result = mode.checkWinCondition(level);
+                        if (result.isPresent() && ACTIVE_MODES.get(levelKey) == mode) {
+                            stop(level, result.get());
+                        }
                     }
+                } catch (Throwable t) {
+                    LOGGER.error("GameMode {} tick failed in {}", mode.getId(), levelKey.location(), t);
                 }
             }
         }

@@ -11,6 +11,7 @@ import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.ManagedRoleEntry;
 import com.habitrain.core.role.extension.ManagedSRERole;
@@ -201,15 +202,38 @@ class RoleExtensionModifyReplaceAliasTest {
     }
 
     @Test
-    void replaceRejectsSecondOwnerForSameTarget() {
+    void secondReplacementForSameTargetIsKeptAndConflicted() throws Exception {
+        // Seed a known ADD role so TARGET is not dangling-INVALID.
+        setField("managedRoles", new LinkedHashMap<>(Map.of(TARGET,
+                ManagedSRERole.from(definition("sre", "vigilante")))));
         RoleDefinition def1 = definition("habitrain_core", "shadow_killer");
         RoleDefinition def2 = definition("habitrain_core", "shadow_killer2");
         RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
-                RoleReplacement.builder(RoleKey.of(TARGET), def1).identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
-                        RoleReplacement.builder(RoleKey.of(TARGET), def2).identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build()),
-                "only one replacement may own a target");
+                RoleReplacement.builder(RoleKey.of(TARGET), def1).entryKey("a")
+                        .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
+        // Audit P2-1: a second candidate is kept (distinct entryKey), not thrown.
+        RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
+                RoleReplacement.builder(RoleKey.of(TARGET), def2).entryKey("b")
+                        .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
+
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.getReplacements().size(),
+                "both replacement candidates stay registered");
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == RoleOperation.REPLACE)
+                .filter(e -> e.status() == EntryStatus.CONFLICT).count(),
+                "an unresolved multi-candidate target reports CONFLICT");
+        assertFalse(RoleExtensionRegistry.INSTANCE.isReplaced(TARGET),
+                "no candidate activates while the conflict is unresolved");
+
+        // An administrator winner activates exactly that candidate.
+        RoleExtensionConfigService.INSTANCE.setConflictWinner(
+                "sre:vigilante#replace", "habitrain_core$b@sre:vigilante");
+        assertEquals(1, RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == RoleOperation.REPLACE)
+                .filter(e -> e.status() == EntryStatus.ACTIVE).count(),
+                "the configured winner activates, the loser stays CONFLICT");
+        assertTrue(RoleExtensionRegistry.INSTANCE.isReplaced(TARGET),
+                "the winner owns the target");
     }
 
     @Test
@@ -232,6 +256,113 @@ class RoleExtensionModifyReplaceAliasTest {
                 .danglingModifyReplaceTargets(java.util.Set.of(TARGET, missingReplaceTarget),
                         java.util.Set.of(TARGET, missingReplaceTarget));
         assertTrue(resolved.isEmpty(), "known targets must not be reported as dangling");
+    }
+
+    @Test
+    void v2EntriesMarkDanglingModifyAndReplaceAsInvalid() {
+        ResourceLocation missingReplaceTarget = ResourceLocation.parse("sre:missing_role");
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(TARGET).defaultMax(RolePatch.IntPatch.set(2)).build());
+        RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
+                RoleReplacement.builder(RoleKey.of(missingReplaceTarget), definition("habitrain_core", "shadow_killer"))
+                        .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
+
+        List<ManagedRoleEntry<?>> entries = RoleExtensionRegistry.INSTANCE.v2Entries();
+        ManagedRoleEntry<?> modify = entries.stream()
+                .filter(e -> e.operation() == RoleOperation.MODIFY).findFirst().orElseThrow();
+        assertEquals(EntryStatus.INVALID, modify.status(),
+                "a MODIFY whose target resolves to no known role must be INVALID");
+        assertTrue(modify.statusMessage().contains("does not exist"));
+
+        ManagedRoleEntry<?> replace = entries.stream()
+                .filter(e -> e.operation() == RoleOperation.REPLACE).findFirst().orElseThrow();
+        assertEquals(EntryStatus.INVALID, replace.status(),
+                "a REPLACE whose target resolves to no known role must be INVALID");
+        assertTrue(replace.statusMessage().contains(missingReplaceTarget.toString()));
+    }
+
+    @Test
+    void knownTargetModifyStaysActive() throws Exception {
+        // The target counts as known once a managed ADD role exists for it.
+        setField("managedRoles", new LinkedHashMap<>(Map.of(TARGET,
+                ManagedSRERole.from(definition("sre", "vigilante")))));
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(TARGET).defaultMax(RolePatch.IntPatch.set(2)).build());
+        ManagedRoleEntry<?> modify = RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == RoleOperation.MODIFY).findFirst().orElseThrow();
+        assertEquals(EntryStatus.ACTIVE, modify.status());
+    }
+
+    @Test
+    void aliasWithMissingDestinationIsInvalidButMissingSourceIsAllowed() throws Exception {
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "retired", "habitrain_core", "ghost_destination"));
+        List<ManagedRoleEntry<?>> entries = RoleExtensionRegistry.INSTANCE.v2Entries();
+        ManagedRoleEntry<?> alias = entries.stream()
+                .filter(e -> e.operation() == RoleOperation.ALIAS).findFirst().orElseThrow();
+        assertEquals(EntryStatus.INVALID, alias.status(),
+                "an ALIAS whose destination resolves to no known role must be INVALID");
+        assertTrue(alias.statusMessage().contains("destination"));
+
+        // A missing source is legal: it migrates a retired id.
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("oldmod", "legacy", "habitrain_core", "plague_doctor"));
+        setField("managedRoles", new LinkedHashMap<>(Map.of(
+                ResourceLocation.parse("habitrain_core:plague_doctor"),
+                ManagedSRERole.from(definition("habitrain_core", "plague_doctor")))));
+        ManagedRoleEntry<?> legal = RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == RoleOperation.ALIAS
+                        && e.status() != EntryStatus.INVALID)
+                .filter(e -> e.declaration() instanceof RoleAlias a
+                        && a.from().location().equals(ResourceLocation.parse("oldmod:legacy")))
+                .findFirst().orElseThrow();
+        assertEquals(EntryStatus.ACTIVE, legal.status(),
+                "a missing alias source is legal for migrations");
+    }
+
+    // ------------------------------------------------------------------
+    // Real upstream SRE ids (audit P1-6): the SRE mod id is `starrailexpress`,
+    // never `sre`; these fixtures prove the real namespace flows through the
+    // same registry/catalog machinery.
+    // ------------------------------------------------------------------
+
+    @Test
+    void realUpstreamIdsFlowThroughModifyAndCatalog() {
+        ResourceLocation killer = ResourceLocation.parse("starrailexpress:killer");
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(killer).defaultMax(RolePatch.IntPatch.set(4)).build());
+
+        Map<ResourceLocation, SRERole> raw = new LinkedHashMap<>();
+        raw.put(killer, role(killer));
+        RoleCatalogImpl api = new RoleCatalogImpl(raw);
+
+        EffectiveRole er = api.find(RoleKey.of(killer)).orElseThrow();
+        assertEquals(EffectiveRole.Source.MODIFIED, er.source());
+        assertEquals(4, er.profile().defaultMax(),
+                "a MODIFY on the real SRE namespace must fold like any other target");
+    }
+
+    @Test
+    void realUpstreamIdsFlowThroughReplaceAndAlias() {
+        ResourceLocation civilian = ResourceLocation.parse("starrailexpress:civilian");
+        ResourceLocation vigilante = ResourceLocation.parse("starrailexpress:vigilante");
+        RoleExtensionRegistry.INSTANCE.replace("habitrain_core",
+                RoleReplacement.builder(RoleKey.of(civilian), definition("habitrain_core", "shadow_civilian"))
+                        .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
+        RoleExtensionRegistry.INSTANCE.alias("habitrain_core",
+                RoleAlias.of("starrailexpress", "vigilante", "habitrain_core", "shadow_civilian"));
+        RoleExtensionRegistry.INSTANCE.freeze();
+
+        Map<ResourceLocation, SRERole> raw = new LinkedHashMap<>();
+        raw.put(civilian, role(civilian));
+        raw.put(vigilante, role(vigilante));
+        RoleCatalogImpl api = new RoleCatalogImpl(raw);
+
+        assertEquals(RoleKey.of("habitrain_core", "shadow_civilian"), api.canonicalize(civilian));
+        assertEquals(RoleKey.of("habitrain_core", "shadow_civilian"),
+                api.canonicalize(vigilante), "alias chains resolve real upstream ids");
+        EffectiveRole er = api.find(RoleKey.of(civilian)).orElseThrow();
+        assertEquals(EffectiveRole.Source.REPLACEMENT, er.source());
     }
 
     // ------------------------------------------------------------------

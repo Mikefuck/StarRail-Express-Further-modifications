@@ -322,8 +322,11 @@ public class BlackoutMode implements GameMode {
             }
             s.offlineSince.clear();
         }
-        // 对齐 SREGameModeBase：清空自定义任务跟踪，避免 UUID 残留到下一局
-        TaskManager.getInstance().clearAllActiveTasks();
+        // 对齐 SREGameModeBase：清空自定义任务跟踪，避免 UUID 残留到下一局。
+        // 只清当前维度，避免多世界并行对局时把别的世界任务一起清掉。
+        if (level != null) {
+            TaskManager.getInstance().clearActiveTasksForLevel(level.dimension());
+        }
         if (level != null) {
             for (ServerPlayer p : level.players()) {
                 ActiveTaskPayload.clearForPlayer(p);

@@ -5,6 +5,7 @@ import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerLevel;
@@ -37,6 +38,15 @@ public class RestorePowerTask {
                 if (!(serverPlayer.level() instanceof ServerLevel level)) return;
 
                 if (RestorePowerHandler.isRestoreCompleted(level)) {
+                    return;
+                }
+
+                // 第二次永久停电（SECOND_BLACKOUT）无法再恢复供电：不允许假完成。
+                if (BlackoutTimerSystem.getPhase(level) != BlackoutTimerSystem.Phase.FIRST_BLACKOUT) {
+                    com.habitrain.core.HabiTrainCore.LOGGER.warn(
+                            "[RestorePower] restore completed outside FIRST_BLACKOUT phase={}, skipping rewards/effects",
+                            BlackoutTimerSystem.getPhase(level));
+                    RestorePowerHandler.clearState(serverPlayer.getUUID());
                     return;
                 }
 

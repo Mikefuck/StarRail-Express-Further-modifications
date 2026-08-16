@@ -1,17 +1,22 @@
 package com.habitrain.core.api.role.v2;
 
+import com.habitrain.core.api.role.v2.action.ActionTargetCodec;
 import com.habitrain.core.api.role.v2.action.RoleActionApi;
 import com.habitrain.core.api.role.v2.action.RoleActionContext;
 import com.habitrain.core.api.role.v2.action.RoleActionDirection;
 import com.habitrain.core.api.role.v2.action.RoleActionResult;
 import com.habitrain.core.api.role.v2.action.RoleActionSpec;
+import com.habitrain.core.api.role.v2.action.RoleActionTarget;
 import com.habitrain.core.role.action.RoleActionServiceImpl;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,6 +52,7 @@ class RoleActionApiTest {
         now = new AtomicLong(1_000_000L);
         store.setClock(now::get);
         ((RoleActionServiceImpl) RoleActionApi.instance()).clear(true);
+        RoleExtensionConfigService.INSTANCE.resetForTests();
     }
 
     @AfterEach
@@ -126,6 +132,36 @@ class RoleActionApiTest {
         assertEquals(RoleActionResult.RATE,
                 store.dispatch(PICK, PLAYER, ROLE, new byte[0], 2).reasonKey(),
                 "failed provider calls must not bypass the action rate limit");
+    }
+
+    @Test
+    void configDisabledActionIsRefusedWithoutSideEffects() {
+        store.registerManaged("gate_provider", "habitrain_core:pick",
+                RoleActionSpec.of(PICK).role(ROLE).ratePerSecond(1).cooldownTicks(100)
+                        .handler(ctx -> RoleActionResult.success()).build());
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1).ok());
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", false);
+        RoleActionResult blocked = store.dispatch(PICK, PLAYER, ROLE, new byte[0], 2);
+        assertFalse(blocked.ok());
+        assertEquals(RoleActionResult.CONFIG_DISABLED, blocked.reasonKey());
+        // Blocked attempts must not consume sequence / cooldown / rate.
+        now.addAndGet(6_000L);
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", true);
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 3).ok(),
+                "re-enabled action must dispatch cleanly after blocked attempts");
+    }
+
+    @Test
+    void configEntryDisableGatesJustThatAction() {
+        store.registerManaged("gate_provider", "habitrain_core:pick",
+                RoleActionSpec.of(PICK).role(ROLE)
+                        .handler(ctx -> RoleActionResult.success()).build());
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1).ok());
+        RoleExtensionConfigService.INSTANCE.setEntryEnabled("habitrain_core:pick", false);
+        assertEquals(RoleActionResult.CONFIG_DISABLED,
+                store.dispatch(PICK, PLAYER, ROLE, new byte[0], 2).reasonKey());
+        RoleExtensionConfigService.INSTANCE.setEntryEnabled("habitrain_core:pick", true);
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 3).ok());
     }
 
     @Test
@@ -253,6 +289,44 @@ class RoleActionApiTest {
         List<String> lines = RoleDiagnosticsCommands.actions(null);
         assertEquals("actions", lines.getFirst());
         assertEquals("  (none)", lines.get(1));
+    }
+
+    @Test
+    void blockPosTargetDecodedInPureDispatch() {
+        AtomicReference<RoleActionTarget> seen = new AtomicReference<>();
+        ResourceLocation id = ResourceLocation.parse("habitrain_core:blockpick");
+        store.register(RoleActionSpec.of(id)
+                .role(ROLE)
+                .targetDecoder(ActionTargetCodec.BLOCK_POS)
+                .handler(ctx -> {
+                    seen.set(ctx.target());
+                    return RoleActionResult.success();
+                })
+                .build());
+        byte[] payload = ByteBuffer.allocate(12)
+                .putInt(1).putInt(2).putInt(3)
+                .array();
+        RoleActionResult result = store.dispatch(id, PLAYER, ROLE, payload, 1);
+        assertTrue(result.ok());
+        assertEquals(new RoleActionTarget.Block(new BlockPos(1, 2, 3)), seen.get());
+    }
+
+    @Test
+    void entityIdTargetDecodedInPureDispatch() {
+        AtomicReference<RoleActionTarget> seen = new AtomicReference<>();
+        ResourceLocation id = ResourceLocation.parse("habitrain_core:entitypick");
+        store.register(RoleActionSpec.of(id)
+                .role(ROLE)
+                .targetDecoder(ActionTargetCodec.ENTITY_ID)
+                .handler(ctx -> {
+                    seen.set(ctx.target());
+                    return RoleActionResult.success();
+                })
+                .build());
+        byte[] payload = ByteBuffer.allocate(4).putInt(42).array();
+        RoleActionResult result = store.dispatch(id, PLAYER, ROLE, payload, 1);
+        assertTrue(result.ok());
+        assertEquals(new RoleActionTarget.Entity(42), seen.get());
     }
 
     private static RoleActionSpec pick(com.habitrain.core.api.role.v2.action.RoleActionHandler handler) {

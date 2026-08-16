@@ -361,13 +361,13 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     @Override
     public void onEnd(ServerLevel level, WinResult result) {
-        // 游戏结束 → 清空所有活跃 DLC 任务
-        TaskManager.getInstance().clearAllActiveTasks();
+        // 游戏结束 → 清空当前维度活跃 DLC 任务
+        TaskManager.getInstance().clearActiveTasksForLevel(level.dimension());
     }
 
     @Override
     public void onCleanup(ServerLevel level) {
-        // 清理现场时也确保活跃任务被清空
-        TaskManager.getInstance().clearAllActiveTasks();
+        // 清理现场时也确保当前维度活跃任务被清空
+        TaskManager.getInstance().clearActiveTasksForLevel(level.dimension());
     }
 }

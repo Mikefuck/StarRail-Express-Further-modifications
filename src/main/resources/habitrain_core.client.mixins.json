@@ -13,6 +13,7 @@
         "InstinctKillerTeamMixin",
         "InstinctSheriffGateMixin",
         "BlackoutTimeRendererMixin",
+        "EntityRendererMixin",
         "PlayerBodyEntityMixin",
         "MimeBodyHideMixin",
         "UnifiedSkillHudReadyShiftMixin",

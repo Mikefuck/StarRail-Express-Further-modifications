@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -40,9 +41,21 @@ class RoleHandshakeMatcherTest {
     @Test
     void identicalManifestsAreOk() {
         RoleManifest server = manifest(List.of(required("habitrain_dlc", "1.2.0")), "hashA", "presA");
-        ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true);
+        ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true,
+                null, null, Set.of("habitrain_dlc"));
         RoleHandshakeResult result = RoleHandshakeMatcher.match(server, local);
         assertEquals(RoleHandshakeStatus.OK, result.status());
+    }
+
+    @Test
+    void requiredProviderWithoutLoadedClientExtensionsIsRejected() {
+        // Audit P1-4: the mod is present and versioned, but its client
+        // extensions never loaded (or the entrypoint is missing) -> fail closed.
+        RoleManifest server = manifest(List.of(required("habitrain_dlc", "1.2.0")), "hashA", "presA");
+        ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true);
+        RoleHandshakeResult result = RoleHandshakeMatcher.match(server, local);
+        assertEquals(RoleHandshakeStatus.REJECTED_MISSING_PROVIDER, result.status());
+        assertTrue(result.message().contains("客户端扩展未加载"));
     }
 
     @Test
@@ -50,7 +63,8 @@ class RoleHandshakeMatcherTest {
         RoleManifest server = manifest(List.of(
                 required("habitrain_dlc", "1.2.0"),
                 required("moretrainjobs", "0.5.0")), "hashA", "presA");
-        ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true);
+        ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true,
+                null, null, Set.of("habitrain_dlc"));
         RoleHandshakeResult result = RoleHandshakeMatcher.match(server, local);
         assertEquals(RoleHandshakeStatus.REJECTED_MISSING_PROVIDER, result.status());
         assertTrue(result.missingModules().stream().anyMatch(m -> m.contains("moretrainjobs")));

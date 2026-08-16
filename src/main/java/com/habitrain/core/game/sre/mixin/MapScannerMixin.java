@@ -81,7 +81,13 @@ public class MapScannerMixin {
             }
             if (def.getScanBlockIds() != null) {
                 for (String blockId : def.getScanBlockIds()) {
-                    Block resolved = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(blockId));
+                    ResourceLocation blockLoc = ResourceLocation.tryParse(blockId);
+                    if (blockLoc == null) {
+                        LOGGER.warn("[MapScannerMixin] 非法方块ID: {} (任务: {})",
+                                blockId, def.getFullId());
+                        continue;
+                    }
+                    Block resolved = BuiltInRegistries.BLOCK.get(blockLoc);
                     if (resolved != null && resolved != Blocks.AIR) {
                         blockToTypeIds.computeIfAbsent(resolved, k -> new HashSet<>()).add(blockTypeId);
                         anyResolved = true;

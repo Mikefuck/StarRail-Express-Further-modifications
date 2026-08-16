@@ -121,10 +121,7 @@ public class BuiltinTaskRegistrar {
                 BackpackQuestState.markCompleted(serverPlayer.getUUID());
                 BackpackSearchHandler.stopSearching(serverPlayer.getUUID());
                 serverPlayer.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                ItemStack granted = LootHelper.giveRandomBackpackItem(serverPlayer);
-                if (granted != null) {
-                    ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:search_backpack");
-                }
+                LootHelper.giveRandomBackpackItem(serverPlayer, "habitrain_core:search_backpack");
             })
             .onReclaim((player, task) -> ItemReclaimHelper.reclaim(player, "habitrain_core:search_backpack"))
         );

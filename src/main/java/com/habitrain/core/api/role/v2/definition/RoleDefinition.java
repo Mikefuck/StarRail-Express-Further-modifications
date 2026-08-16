@@ -3,6 +3,7 @@ package com.habitrain.core.api.role.v2.definition;
 import com.habitrain.core.api.role.book.RoleBookContent;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
+import io.wifi.starrailexpress.api.SRERole;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -21,6 +22,18 @@ import java.util.Objects;
  */
 public final class RoleDefinition {
 
+    /**
+     * Factory hook for {@link RoleDefinition}. When present, core invokes it
+     * exactly once during staging to obtain a fully configured custom
+     * {@link SRERole} subclass (e.g. a {@code CustomWinnerRole}). The returned
+     * role must carry the definition's canonical id; core still validates,
+     * catalogs, snapshots and gates it like any other v2 ADD role.
+     */
+    @FunctionalInterface
+    public interface RoleFactory {
+        SRERole create(RoleDefinition definition);
+    }
+
     private final RoleKey key;
     private final RolePresentation presentation;
     private final RoleFactionProfile faction;
@@ -32,6 +45,7 @@ public final class RoleDefinition {
     private final @Nullable RoleRelationProfile relations;
     private final List<RoleSkillSpec> skills;
     private final @Nullable RoleBookContent book;
+    private final @Nullable RoleFactory roleFactory;
     private final int maxSprintTime;
     private final boolean canSeeTime;
 
@@ -47,6 +61,7 @@ public final class RoleDefinition {
         this.relations = b.relations;
         this.skills = List.copyOf(b.skills);
         this.book = b.book;
+        this.roleFactory = b.roleFactory;
         this.maxSprintTime = b.maxSprintTime;
         this.canSeeTime = b.canSeeTime;
     }
@@ -76,6 +91,7 @@ public final class RoleDefinition {
     public @Nullable RoleRelationProfile relations() { return relations; }
     public List<RoleSkillSpec> skills() { return skills; }
     public @Nullable RoleBookContent book() { return book; }
+    public @Nullable RoleFactory roleFactory() { return roleFactory; }
     public int maxSprintTime() { return maxSprintTime; }
     public boolean canSeeTime() { return canSeeTime; }
 
@@ -91,6 +107,7 @@ public final class RoleDefinition {
         private @Nullable RoleRelationProfile relations;
         private final java.util.ArrayList<RoleSkillSpec> skills = new java.util.ArrayList<>();
         private @Nullable RoleBookContent book;
+        private @Nullable RoleFactory roleFactory;
         private int maxSprintTime = -1;
         private boolean canSeeTime;
 
@@ -150,6 +167,11 @@ public final class RoleDefinition {
 
         public Builder book(@Nullable RoleBookContent book) {
             this.book = book;
+            return this;
+        }
+
+        public Builder roleFactory(RoleFactory roleFactory) {
+            this.roleFactory = Objects.requireNonNull(roleFactory, "roleFactory");
             return this;
         }
 

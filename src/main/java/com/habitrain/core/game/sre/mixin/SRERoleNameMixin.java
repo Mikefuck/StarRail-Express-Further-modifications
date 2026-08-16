@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
+import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.network.chat.Component;
@@ -21,6 +23,12 @@ public class SRERoleNameMixin {
     @Inject(method = "getName()Lnet/minecraft/network/chat/Component;", at = @At("HEAD"), cancellable = true)
     private void patchedName(CallbackInfoReturnable<Component> cir) {
         SRERole self = (SRERole) (Object) this;
+        CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(self);
+        if (overlay != null && overlay.namePatch() != null) {
+            MinecraftServer server = getServer();
+            cir.setReturnValue(overlay.namePatch().getName(self, server));
+            return;
+        }
         ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());
         if (def != null && def.namePatch().isPresent()) {
             MinecraftServer server = getServer();

@@ -9,12 +9,15 @@ import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
+import com.habitrain.core.api.role.v2.skill.RoleSkillPatch;
+import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
 import com.habitrain.core.role.snapshot.RoleSnapshotCompiler;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.NormalRole;
+import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +27,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -41,6 +45,9 @@ class RoleSnapshotTest {
 
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:vigilante");
     private static final int COLOR = 0xFFAA0000;
+
+    private static final RoleSkill.Definition DASH = skillDef(ResourceLocation.parse("mod:dash"));
+    private static final RoleSkill.Definition SMOKE = skillDef(ResourceLocation.parse("mod:smoke"));
 
     @BeforeEach
     void reset() throws Exception {
@@ -78,6 +85,77 @@ class RoleSnapshotTest {
         // profile, materialization onto the live SRERole happens at activation.
         assertEquals(2, er.profile().defaultMax());
         assertEquals(EffectiveRole.Source.MODIFIED, er.source());
+    }
+
+    @Test
+    void repeatedCompileAfterActivationDoesNotAccumulate() {
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(TARGET).defaultMax(RolePatch.IntPatch.add(1)).build());
+
+        Map<ResourceLocation, SRERole> raw = new LinkedHashMap<>();
+        SRERole live = role(TARGET);
+        raw.put(TARGET, live);
+
+        RoleSnapshot first = RoleSnapshotCompiler.compile(new RoleSnapshotId(1), raw);
+        assertEquals(2, first.find(RoleKey.of(TARGET)).orElseThrow().profile().defaultMax(),
+                "1 (pristine) + 1 (ADD) = 2");
+
+        // Activation writes the overlay onto the SAME role object.
+        RoleSnapshotManager.INSTANCE.setLobby(first);
+        assertEquals(2, live.defaultMaxCount, "overlay materialized onto the live role");
+
+        // Re-compiling from the (now mutated) live object must fold from the
+        // captured pristine baseline again: 1 + 1 = 2, never 2 + 1 = 3.
+        RoleSnapshot second = RoleSnapshotCompiler.compile(new RoleSnapshotId(2), raw);
+        assertEquals(2, second.find(RoleKey.of(TARGET)).orElseThrow().profile().defaultMax(),
+                "no patch accumulation across compile -> activate -> compile");
+
+        RoleSnapshot third = RoleSnapshotCompiler.compile(new RoleSnapshotId(3), raw);
+        assertEquals(2, third.find(RoleKey.of(TARGET)).orElseThrow().profile().defaultMax(),
+                "a third compile still folds from the pristine baseline");
+    }
+
+    @Test
+    void repeatedCompilePreservesUpstreamSkillsAndRelations() {
+        Map<ResourceLocation, List<RoleSkill.Definition>> table = new LinkedHashMap<>();
+        table.put(TARGET, List.of(DASH));
+        RoleRuntimeOverlayApplier.setSkillBackend(skillBackend(table));
+
+        SRERole guard = new NormalRole(ResourceLocation.parse("sre:guard"), COLOR, false, true,
+                SRERole.MoodType.FAKE, 20, true);
+        Map<RoleKey, SRERole> resolver = new LinkedHashMap<>();
+        resolver.put(RoleKey.of(guard.identifier()), guard);
+        RoleRuntimeOverlayApplier.setRelationResolver(resolver::get);
+
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
+                RolePatch.builder(TARGET)
+                        .skills(RoleSkillPatch.append(RoleSkillSpec.of(SMOKE)))
+                        .occupation(RolePatch.RoleKeyListPatch.append(RoleKey.of(guard.identifier())))
+                        .build());
+
+        Map<ResourceLocation, SRERole> raw = new LinkedHashMap<>();
+        SRERole live = role(TARGET);
+        raw.put(TARGET, live);
+
+        RoleSnapshot first = RoleSnapshotCompiler.compile(new RoleSnapshotId(1), raw);
+        RoleSnapshotManager.INSTANCE.setLobby(first);
+        assertEquals(List.of(DASH, SMOKE), table.get(TARGET),
+                "APPEND keeps the upstream skill table instead of replacing it");
+        assertTrue(live.occupationRoles.contains(guard),
+                "APPEND keeps the upstream relations instead of dropping them");
+
+        RoleRuntimeOverlayApplier.restoreAll();
+        assertEquals(List.of(DASH), table.get(TARGET), "restore returns the pristine skill table");
+        assertTrue(live.occupationRoles.isEmpty(), "restore returns the pristine relations");
+
+        // Compile again from the same (mutated-then-restored) object: the
+        // pristine baseline must be reused, not re-captured from live state.
+        RoleSnapshot second = RoleSnapshotCompiler.compile(new RoleSnapshotId(2), raw);
+        RoleSnapshotManager.INSTANCE.setLobby(second);
+        assertEquals(List.of(DASH, SMOKE), table.get(TARGET),
+                "recompile still APPENDs onto the pristine table");
+        assertTrue(live.occupationRoles.contains(guard),
+                "recompile still APPENDs onto the pristine relations");
     }
 
     @Test
@@ -231,6 +309,29 @@ class RoleSnapshotTest {
                 .compatibility(RoleCompatibilityProfile.builder().build())
                 .maxSprintTime(20)
                 .build();
+    }
+
+    private static RoleSkill.Definition skillDef(ResourceLocation id) {
+        // Pure record construction — bootstrap-safe (no RoleSkill.skill()).
+        return new RoleSkill.Definition(
+                id, "skill." + id.getNamespace() + "." + id.getPath(), 0, 1, false, 0, true,
+                RoleSkill.AnnounceInfo.none(), false, false, false, true, false,
+                ctx -> true);
+    }
+
+    private static RoleRuntimeOverlayApplier.SkillBackend skillBackend(
+            Map<ResourceLocation, List<RoleSkill.Definition>> table) {
+        return new RoleRuntimeOverlayApplier.SkillBackend() {
+            @Override
+            public List<RoleSkill.Definition> definitions(ResourceLocation roleId) {
+                return table.getOrDefault(roleId, List.of());
+            }
+
+            @Override
+            public void replace(ResourceLocation roleId, List<RoleSkill.Definition> definitions) {
+                table.put(roleId, definitions == null ? List.of() : List.copyOf(definitions));
+            }
+        };
     }
 
     private static void setField(Class<?> clazz, Object target, String name, Object value)

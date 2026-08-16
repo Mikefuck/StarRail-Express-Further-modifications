@@ -239,19 +239,23 @@ public final class RoleHookRegistry {
         if (hooks.lifecycle() != null) {
             out.add(new DecomposedHook(hooks.lifecycle(), types(
                     HookType.LIFECYCLE_ON_ASSIGNED, HookType.LIFECYCLE_ON_LOST,
-                    HookType.LIFECYCLE_ON_GAME_START, HookType.LIFECYCLE_ON_GAME_END)));
+                    HookType.LIFECYCLE_ON_GAME_START, HookType.LIFECYCLE_ON_GAME_TRUE_START,
+                    HookType.LIFECYCLE_ON_GAME_END, HookType.LIFECYCLE_ON_ROLES_CONFIRM)));
         }
         if (hooks.combat() != null) {
             out.add(new DecomposedHook(hooks.combat(), types(
                     HookType.COMBAT_ALLOW_DEATH, HookType.COMBAT_ON_DEATH, HookType.COMBAT_ON_KILL,
-                    HookType.COMBAT_ALLOW_DEATH_BY_KILLER, HookType.COMBAT_ON_ANY_DEATH,
-                    HookType.COMBAT_ON_DEATH_WITH_BODY)));
+                    HookType.COMBAT_ALLOW_DEATH_BY_KILLER, HookType.COMBAT_ALLOW_KILL_BY_KILLER,
+                    HookType.COMBAT_ON_ANY_DEATH, HookType.COMBAT_ON_DEATH_WITH_BODY)));
         }
         if (hooks.tick() != null) {
             out.add(new DecomposedHook(hooks.tick(), types(HookType.TICK_ON_SERVER_TICK)));
         }
         if (hooks.interaction() != null) {
-            out.add(new DecomposedHook(hooks.interaction(), types(HookType.INTERACTION_USE_ITEM)));
+            out.add(new DecomposedHook(hooks.interaction(), types(
+                    HookType.INTERACTION_USE_ITEM, HookType.INTERACTION_USE_ENTITY,
+                    HookType.INTERACTION_USE_BLOCK, HookType.INTERACTION_ATTACK_ENTITY,
+                    HookType.INTERACTION_ATTACK_BLOCK, HookType.INTERACTION_BLOCK_BREAK)));
         }
         if (hooks.shop() != null) {
             out.add(new DecomposedHook(hooks.shop(), types(

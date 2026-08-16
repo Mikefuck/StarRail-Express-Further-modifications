@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
+import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.fabricmc.loader.api.FabricLoader;
@@ -51,6 +53,16 @@ public abstract class RoleInitialItemsMixin {
 
     private static List<ItemStack> patchedItems(SRERole role, MinecraftServer server) {
         if (role == null || role.identifier() == null) return null;
+        CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(role);
+        if (overlay != null && overlay.defaultItemsPatch() != null) {
+            try {
+                return overlay.defaultItemsPatch().getDefaultItems(role, server);
+            } catch (Throwable throwable) {
+                com.habitrain.core.HabiTrainCore.LOGGER.warn(
+                        "[RoleOverride] v2 default-items patch failed for {}", role.identifier(), throwable);
+                return null;
+            }
+        }
         ModifyRoleDefinition def =
                 RoleOverrideEngine.getInstance().getActiveModify(role.identifier());
         if (def == null || def.defaultItemsPatch().isEmpty()) return null;

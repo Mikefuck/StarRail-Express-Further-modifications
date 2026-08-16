@@ -20,7 +20,9 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,16 +93,29 @@ class ProviderRegistrationTransactionTest {
     }
 
     @Test
-    void providerTransactionStagesReplacementSingleOwner() {
+    void providerTransactionStagesMultipleReplacementCandidates() throws Exception {
+        // Seed a known ADD role so TARGET is not dangling-INVALID.
+        setField("managedRoles", new LinkedHashMap<>(Map.of(TARGET,
+                com.habitrain.core.role.extension.ManagedSRERole.from(definition("sre", "vigilante")))));
         ProviderRegistrationTransaction tx = RoleExtensionRegistry.INSTANCE.begin("habitrain_core");
-        tx.replace(RoleReplacement.builder(RoleKey.of(TARGET), definition("habitrain_core", "shadow_killer"))
-                .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> tx.replace(RoleReplacement.builder(RoleKey.of(TARGET), definition("habitrain_core", "other_killer"))
-                        .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS).build()),
-                "only one replacement may claim a target within a provider transaction");
-        tx.rollback();
-        assertFalse(RoleExtensionRegistry.INSTANCE.isReplaced(TARGET));
+        tx.replace(RoleReplacement.builder(RoleKey.of(TARGET), definition("sre", "vigilante"))
+                .entryKey("a").identity(ReplacementIdentity.PRESERVE_TARGET_ID).build());
+        // Audit P2-1: a second candidate for the same target is staged (with a
+        // distinct entryKey), never rejected — both resolve to CONFLICT later.
+        tx.replace(RoleReplacement.builder(RoleKey.of(TARGET), definition("sre", "vigilante"))
+                .entryKey("b").identity(ReplacementIdentity.PRESERVE_TARGET_ID).build());
+        tx.commit();
+
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == com.habitrain.core.role.extension.RoleOperation.REPLACE).count(),
+                "both replacement candidates stay registered");
+        assertEquals(2, RoleExtensionRegistry.INSTANCE.v2Entries().stream()
+                .filter(e -> e.operation() == com.habitrain.core.role.extension.RoleOperation.REPLACE)
+                .filter(e -> e.status() == com.habitrain.core.role.extension.EntryStatus.CONFLICT).count(),
+                "an unresolved multi-candidate target reports CONFLICT on every candidate");
+        assertFalse(RoleExtensionRegistry.INSTANCE.isReplaced(TARGET),
+                "no candidate activates while the conflict is unresolved");
+        tx.rollback(); // closed, no-op
     }
 
     @Test

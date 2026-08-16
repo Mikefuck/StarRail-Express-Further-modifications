@@ -10,6 +10,7 @@ import com.habitrain.core.api.role.v2.capability.RoleVoicePolicy;
 import com.habitrain.core.api.role.v2.capability.VoiceDecision;
 import com.habitrain.core.role.capability.CapabilityPolicyEvaluator;
 import com.habitrain.core.role.capability.RoleCapabilityServiceImpl;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,7 @@ class RoleCapabilityApiTest {
     void setUp() {
         store = new RoleCapabilityServiceImpl();
         ((RoleCapabilityServiceImpl) RoleCapabilityApi.instance()).clear();
+        RoleExtensionConfigService.INSTANCE.resetForTests();
     }
 
     @AfterEach
@@ -75,6 +77,22 @@ class RoleCapabilityApiTest {
                 .role(SLOTH).muteSend().build());
         VoiceDecision d = store.evaluateVoice(RoleCapabilityContext.of(A, SLOTH, B, CIVILIAN));
         assertEquals(VoiceDecision.BLOCK, d);
+    }
+
+    @Test
+    void disabledPolicyDoesNotParticipateInEvaluation() {
+        store.registerVoice("gate_provider", "habitrain_core:sloth_sleep",
+                RoleVoicePolicy.of("habitrain_core", "sloth_sleep").role(SLOTH).muteSend().build());
+        RoleCapabilityContext ctx = RoleCapabilityContext.of(A, SLOTH, B, CIVILIAN);
+        assertEquals(VoiceDecision.BLOCK, store.evaluateVoice(ctx));
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", false);
+        assertEquals(VoiceDecision.PASS, store.evaluateVoice(ctx),
+                "a disabled policy must not participate in runtime evaluation");
+        assertTrue(store.voices().stream().anyMatch(p ->
+                        p.id().equals(net.minecraft.resources.ResourceLocation.parse("habitrain_core:sloth_sleep"))),
+                "a disabled policy stays visible to queries and diagnostics");
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", true);
+        assertEquals(VoiceDecision.BLOCK, store.evaluateVoice(ctx), "re-enabled policy evaluates again");
     }
 
     @Test
@@ -137,7 +155,7 @@ class RoleCapabilityApiTest {
     @Test
     void capabilitiesCommandListsStatus() {
         RoleCapabilityApi.instance().bindAdapter(RoleCapabilityKey.CHAT, RoleCapabilityStatus.AVAILABLE);
-        RoleCapabilityApi.instance().chat(RoleChatPolicy.of("habitrain_core", "silence")
+        ((RoleCapabilityServiceImpl) RoleCapabilityApi.instance()).chat(RoleChatPolicy.of("habitrain_core", "silence")
                 .role(SLOTH).muteSend().build());
         List<String> lines = RoleDiagnosticsCommands.capabilities();
         assertEquals("capabilities", lines.get(0));

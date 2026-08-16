@@ -340,7 +340,12 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
         ItemStack pouch = GreedPouchItem.createBoundPouch(sp);
         if (!sp.getInventory().add(pouch)) {
-            // Prefer keep on player; if full, force into a slot rather than world drop
+            // Prefer keep on player; if full, force into slot 0 and preserve the
+            // displaced item by dropping it instead of silently overwriting it.
+            ItemStack displaced = sp.getInventory().getItem(0);
+            if (!displaced.isEmpty()) {
+                sp.drop(displaced, false, false);
+            }
             sp.getInventory().setItem(0, pouch);
         }
         pouchGiven = true;

@@ -29,6 +29,15 @@ public final class RoleManifestHashes {
         return sha256(String.join("\n", rows));
     }
 
+    /**
+     * The full gameplay definition hash (audit P1-4): covers the compiled
+     * entries WITH their declaration content plus hooks, action schemas, state
+     * schemas and voice/chat policies. See {@link RoleManifestDefinitionCollector}.
+     */
+    public static String definitionHash() {
+        return RoleManifestDefinitionCollector.definitionHash();
+    }
+
     /** The presentation hash: SHA-256 over sorted effective-role presentation rows. */
     public static String presentationHash(RoleSnapshot snapshot) {
         List<String> rows = new ArrayList<>();

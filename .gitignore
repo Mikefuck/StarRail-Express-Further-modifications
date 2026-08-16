@@ -48,3 +48,7 @@ logs/
 # local dependency backups
 
 libs/*.bak
+
+# Loom sidecar target files
+
+libs/*:loom-target

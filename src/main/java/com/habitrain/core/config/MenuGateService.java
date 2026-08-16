@@ -128,7 +128,14 @@ public final class MenuGateService {
     public static boolean isAllowed(UUID uuid, String name) {
         String us = uuid == null ? "" : uuid.toString();
         for (AllowedPlayer ap : ALLOWED) {
-            if (!ap.uuid.isEmpty() && !us.isEmpty() && ap.uuid.equalsIgnoreCase(us)) return true;
+            boolean apHasUuid = !ap.uuid.isEmpty();
+            boolean usHasUuid = !us.isEmpty();
+            if (apHasUuid && usHasUuid) {
+                // 双方都有 UUID 时只认 UUID，避免同名/改名绕过。
+                if (ap.uuid.equalsIgnoreCase(us)) return true;
+                continue;
+            }
+            // 只有一方缺少 UUID 时，才允许按名字回退（离线添加场景）。
             if (!ap.name.isEmpty() && name != null && ap.name.equalsIgnoreCase(name)) return true;
         }
         return false;

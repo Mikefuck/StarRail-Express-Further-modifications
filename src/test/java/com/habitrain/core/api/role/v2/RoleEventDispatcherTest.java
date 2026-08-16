@@ -27,6 +27,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -364,6 +365,113 @@ class RoleEventDispatcherTest {
         assertEquals(InteractionResult.CONSUME,
                 RoleEventDispatcher.INSTANCE.dispatchUseItem(ROLE, null, null, InteractionHand.MAIN_HAND));
         assertEquals(0, secondHits.get(), "handlers after the first terminal result must not run");
+    }
+
+    @Test
+    void useEntityConsumeIsReturned() {
+        java.util.concurrent.atomic.AtomicReference<net.minecraft.world.entity.Entity> seen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
+                .interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useEntity(ServerPlayer player,
+                                                       net.minecraft.world.entity.Entity target,
+                                                       InteractionHand hand, RoleHookContext ctx) {
+                        seen.set(target);
+                        return InteractionResult.SUCCESS;
+                    }
+                }).build());
+        assertEquals(InteractionResult.SUCCESS,
+                RoleEventDispatcher.INSTANCE.dispatchUseEntity(ROLE, null, null, InteractionHand.MAIN_HAND),
+                "a typed Entity parameter must flow through the dispatcher");
+        assertNull(seen.get(), "null entity passes through untouched");
+    }
+
+    @Test
+    void useEntityPassFallsThroughToLaterHandlers() {
+        AtomicInteger secondHits = new AtomicInteger();
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleScope.HOLDER, "first_provider", "first_entry",
+                PatchPriority.NORMAL, RoleHooks.builder().interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useEntity(ServerPlayer player,
+                                                       net.minecraft.world.entity.Entity target,
+                                                       InteractionHand hand, RoleHookContext ctx) {
+                        return InteractionResult.PASS;
+                    }
+                }).build());
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleScope.HOLDER, "second_provider", "second_entry",
+                PatchPriority.NORMAL, RoleHooks.builder().interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useEntity(ServerPlayer player,
+                                                       net.minecraft.world.entity.Entity target,
+                                                       InteractionHand hand, RoleHookContext ctx) {
+                        secondHits.incrementAndGet();
+                        return InteractionResult.FAIL;
+                    }
+                }).build());
+
+        assertEquals(InteractionResult.FAIL,
+                RoleEventDispatcher.INSTANCE.dispatchUseEntity(ROLE, null, null, InteractionHand.MAIN_HAND));
+        assertEquals(1, secondHits.get(), "a PASS must defer to the next handler");
+    }
+
+    @Test
+    void useBlockConsumeIsReturned() {
+        java.util.concurrent.atomic.AtomicReference<BlockHitResult> seen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        BlockHitResult hit = new BlockHitResult(
+                new net.minecraft.world.phys.Vec3(1.0, 2.0, 3.0),
+                net.minecraft.core.Direction.UP,
+                net.minecraft.core.BlockPos.ZERO,
+                false);
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
+                .interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useBlock(ServerPlayer player, BlockHitResult hitResult,
+                                                      InteractionHand hand, RoleHookContext ctx) {
+                        seen.set(hitResult);
+                        return InteractionResult.CONSUME;
+                    }
+                }).build());
+        assertEquals(InteractionResult.CONSUME,
+                RoleEventDispatcher.INSTANCE.dispatchUseBlock(ROLE, null, hit, InteractionHand.MAIN_HAND));
+        assertSame(hit, seen.get(), "the typed BlockHitResult must flow through unchanged");
+    }
+
+    @Test
+    void useBlockPassFallsThroughAndNoHooksReturnsPass() {
+        AtomicInteger secondHits = new AtomicInteger();
+        BlockHitResult hit = new BlockHitResult(
+                net.minecraft.world.phys.Vec3.ZERO,
+                net.minecraft.core.Direction.DOWN,
+                net.minecraft.core.BlockPos.ZERO,
+                false);
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleScope.HOLDER, "first_provider", "first_entry",
+                PatchPriority.NORMAL, RoleHooks.builder().interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useBlock(ServerPlayer player, BlockHitResult hitResult,
+                                                      InteractionHand hand, RoleHookContext ctx) {
+                        return InteractionResult.PASS;
+                    }
+                }).build());
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleScope.HOLDER, "second_provider", "second_entry",
+                PatchPriority.NORMAL, RoleHooks.builder().interaction(new RoleInteractionHooks() {
+                    @Override
+                    public InteractionResult useBlock(ServerPlayer player, BlockHitResult hitResult,
+                                                      InteractionHand hand, RoleHookContext ctx) {
+                        secondHits.incrementAndGet();
+                        return InteractionResult.PASS;
+                    }
+                }).build());
+
+        assertEquals(InteractionResult.PASS,
+                RoleEventDispatcher.INSTANCE.dispatchUseBlock(ROLE, null, hit, InteractionHand.MAIN_HAND));
+        assertEquals(1, secondHits.get());
+
+        RoleHookRegistry.INSTANCE.clear();
+        assertEquals(InteractionResult.PASS,
+                RoleEventDispatcher.INSTANCE.dispatchUseBlock(ROLE, null, hit, InteractionHand.MAIN_HAND),
+                "no registered block hooks must defer to vanilla");
     }
 
     @Test

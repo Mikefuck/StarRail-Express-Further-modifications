@@ -5,9 +5,11 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,6 +96,13 @@ public class TaskManager {
 
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
     public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); dlcTaskCounts.clear(); }
+
+    /** 只清空指定维度的活跃任务，避免一个世界结束影响另一个世界的对局。 */
+    public void clearActiveTasksForLevel(ResourceKey<Level> dimension) {
+        if (dimension == null) return;
+        activeCustomTasks.entrySet().removeIf(e -> dimension.equals(e.getValue().getDimension()));
+        activeFakeTasks.entrySet().removeIf(e -> dimension.equals(e.getValue().getDimension()));
+    }
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
         TaskInstance existing = activeCustomTasks.get(playerUuid);

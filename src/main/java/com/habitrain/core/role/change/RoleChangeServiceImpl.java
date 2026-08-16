@@ -414,18 +414,20 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                         game.addRole(id, captured.sreRole(), false);
                         game.syncRoles();
                     }
-                    if (captured.hadFaction()) {
-                        try {
-                            BlackoutRoleManager.assignRole(level, id, captured.sreRole().getIdentifier(),
-                                    BlackoutRoleManager.Faction.valueOf(captured.faction()));
-                        } catch (Throwable ignored) {}
-                    }
                 } else {
                     sreClearer.accept(player, null);
                     try {
                         BlackoutRoleManager.eliminate(level, id);
                     } catch (Throwable ignored) {}
                 }
+                try {
+                    if (captured.hadFaction()) {
+                        BlackoutRoleManager.setFaction(level, id,
+                                BlackoutRoleManager.Faction.valueOf(captured.faction()));
+                    } else {
+                        BlackoutRoleManager.setFaction(level, id, null);
+                    }
+                } catch (Throwable ignored) {}
             } catch (Throwable t) {
                 LOGGER.warn("role change rollback failed for {}", id, t);
             }

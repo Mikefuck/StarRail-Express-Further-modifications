@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -50,6 +51,8 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     private volatile boolean frozen;
     private volatile boolean loaded;
     private int hudWidgetSeq;
+    /** Providers whose client-extension registration committed (audit P1-4). */
+    private final Set<String> loadedProviders = new LinkedHashSet<>();
     /** Null means no server snapshot has arrived yet; all registered extensions are visible. */
     private volatile @Nullable Set<String> activeProviders;
     /** Active server entry ids from {@code RoleSnapshotPayload.EntryRow#entryId()}. */
@@ -70,6 +73,7 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             try {
                 container.getEntrypoint().register(scoped);
                 scoped.commit();
+                loadedProviders.add(providerId);
             } catch (RuntimeException e) {
                 scoped.rollback();
                 LOGGER.error("Role client extension provider {} failed", providerId, e);
@@ -77,6 +81,12 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
         }
         LOGGER.info("Loaded {} HUD spec(s), {} instinct rule(s), {} skin(s), {} screen(s)",
                 huds.size(), instincts.size(), skins.size(), screens.size());
+    }
+
+    /** Provider mod ids whose client-extension registration committed (audit P1-4). */
+    @Override
+    public synchronized Set<String> loadedProviderIds() {
+        return Set.copyOf(loadedProviders);
     }
 
     @Override
@@ -478,6 +488,7 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
         hudWidgets.clear();
         screens.clear();
         screenProviders.clear();
+        loadedProviders.clear();
         activeProviders = null;
         frozen = false;
         loaded = false;

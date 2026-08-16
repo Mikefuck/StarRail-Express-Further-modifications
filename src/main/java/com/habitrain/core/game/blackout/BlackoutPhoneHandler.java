@@ -44,6 +44,9 @@ public final class BlackoutPhoneHandler {
             if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
                 return InteractionResult.PASS;
             }
+            if (gameMode.get() instanceof BlackoutMode blackout && blackout.isGameEnded(serverLevel)) {
+                return InteractionResult.PASS;
+            }
 
             // 发起者必须存活（旁观者/已淘汰不可开电话 GUI；禁止 UI 路径 auto-revive）
             if (serverPlayer.isSpectator()) {

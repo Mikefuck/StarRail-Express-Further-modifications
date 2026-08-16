@@ -51,7 +51,7 @@ public final class BlackoutVoteState {
     public static String getDescription() { return description; }
     public static VotePurpose getPurpose() { return purpose; }
     public static List<BlackoutVotePayload.Entry> getCandidates() { return candidates; }
-    public static boolean isSelected(UUID id) { return id.equals(selectedTargetId); }
+    public static boolean isSelected(UUID id) { return id != null && id.equals(selectedTargetId); }
 
     public static void toggleSelection(UUID targetId) {
         if (selectedTargetId != null && selectedTargetId.equals(targetId)) {

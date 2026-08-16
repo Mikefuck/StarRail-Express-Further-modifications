@@ -72,15 +72,19 @@ public final class RoleRuntimeOverlayApplier {
         }
     }
 
-    private static final SkillBackend RUNTIME_SKILL_BACKEND = new RoleSkillBackend();
-    private static volatile SkillBackend skillBackend = RUNTIME_SKILL_BACKEND;
+    /** Runtime backend bound to the upstream {@code RoleSkill} table. */
+    static final SkillBackend RUNTIME_SKILL_BACKEND = new RoleSkillBackend();
     private static volatile @Nullable Function<RoleKey, SRERole> relationResolver;
 
     private RoleRuntimeOverlayApplier() {}
 
-    /** Binds a different skill backend (unit tests inject a Map-backed one). */
+    /**
+     * Binds a different skill backend (unit tests inject a Map-backed one).
+     * The binding lives in {@link RoleBaselineStore} so the snapshot compiler
+     * and the runtime applier always read the same unified skill table.
+     */
     public static void setSkillBackend(@Nullable SkillBackend backend) {
-        skillBackend = backend == null ? RUNTIME_SKILL_BACKEND : backend;
+        RoleBaselineStore.setSkillBackend(backend);
     }
 
     /**
@@ -115,10 +119,11 @@ public final class RoleRuntimeOverlayApplier {
             return role;
         }
         if (patches == null || patches.isEmpty()) {
+            RoleBaselineStore.restore(role, RoleBaselineStore.skillBackend());
             RoleOverlayAccessor.remove(role);
             return role;
         }
-        RoleBaseline baseline = RoleBaselineStore.getOrCapture(role, skillBackend);
+        RoleBaseline baseline = RoleBaselineStore.getOrCapture(role);
         CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlayConfigured(role, patches, baseline);
         return materialize(role, baseline, overlay);
     }
@@ -129,10 +134,11 @@ public final class RoleRuntimeOverlayApplier {
             return role;
         }
         if (patches == null || patches.isEmpty()) {
+            RoleBaselineStore.restore(role, RoleBaselineStore.skillBackend());
             RoleOverlayAccessor.remove(role);
             return role;
         }
-        RoleBaseline baseline = RoleBaselineStore.getOrCapture(role, skillBackend);
+        RoleBaseline baseline = RoleBaselineStore.getOrCapture(role);
         CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlay(role, patches, baseline);
         return materialize(role, baseline, overlay);
     }
@@ -164,7 +170,7 @@ public final class RoleRuntimeOverlayApplier {
             }
             CompiledModifyOverlay overlay = er.modifyOverlay();
             if (overlay != null) {
-                RoleBaseline baseline = RoleBaselineStore.getOrCapture(role, skillBackend);
+                RoleBaseline baseline = RoleBaselineStore.getOrCapture(role);
                 materialize(role, baseline, overlay);
             }
         }
@@ -207,7 +213,7 @@ public final class RoleRuntimeOverlayApplier {
 
     /** Restores every captured baseline (values back to pristine, overlays dropped). */
     public static void restoreAll() {
-        RoleBaselineStore.restoreAll(skillBackend);
+        RoleBaselineStore.restoreAll(RoleBaselineStore.skillBackend());
         RoleOverlayAccessor.clear();
     }
 
@@ -221,7 +227,6 @@ public final class RoleRuntimeOverlayApplier {
     public static void clear() {
         RoleBaselineStore.clear();
         RoleOverlayAccessor.clear();
-        skillBackend = RUNTIME_SKILL_BACKEND;
         relationResolver = null;
     }
 
@@ -261,6 +266,48 @@ public final class RoleRuntimeOverlayApplier {
         role.setHiddenForRoleRotation(overlay.hiddenForRotation());
         role.setOccupiedRoleCount(overlay.occupiedRoleCount());
         role.setSpecialMapRole(overlay.specialMapRole());
+        applyComputedProviders(role, overlay);
+    }
+
+    private static void applyComputedProviders(SRERole role, CompiledModifyOverlay overlay) {
+        if (overlay.colorProvider() != null) {
+            try {
+                role.setColor(overlay.colorProvider().getColor(role, null));
+            } catch (Throwable t) {
+                LOGGER.warn("Failed to apply v2 colorProvider for {}: {}", role.identifier(), t.toString());
+            }
+        }
+        if (overlay.flagsPatch() != null) {
+            try {
+                com.habitrain.core.api.role.patch.FlagsPatch.MutableFlagsPatch out =
+                        new com.habitrain.core.api.role.patch.FlagsPatch.MutableFlagsPatch();
+                overlay.flagsPatch().apply(role, null, out);
+                if (out.isInnocent != null) role.setInnocent(out.isInnocent);
+                if (out.canUseKiller != null) role.setCanUseKiller(out.canUseKiller);
+                if (out.isNeutrals != null) role.setNeutrals(out.isNeutrals);
+                if (out.isVigilanteTeam != null) role.setVigilanteTeam(out.isVigilanteTeam);
+                if (out.isNeutralForKiller != null) role.setNeutralForKiller(out.isNeutralForKiller);
+                if (out.isNeutralForInnocent != null) role.setNeutralForInnocent(out.isNeutralForInnocent);
+                if (out.canUseInstinct != null) role.setCanUseInstinct(out.canUseInstinct);
+                if (out.instinctNightVision != null) role.setInstinctNightVision(out.instinctNightVision);
+                if (out.canSeeTeammateKiller != null) role.setCanSeeTeammateKillerRole(out.canSeeTeammateKiller);
+            } catch (Throwable t) {
+                LOGGER.warn("Failed to apply v2 flagsPatch for {}: {}", role.identifier(), t.toString());
+            }
+        }
+        if (overlay.spawnInfoPatch() != null) {
+            try {
+                com.habitrain.core.api.role.patch.SpawnInfoPatch.MutableSpawnInfoPatch out =
+                        new com.habitrain.core.api.role.patch.SpawnInfoPatch.MutableSpawnInfoPatch();
+                overlay.spawnInfoPatch().apply(role, null, out);
+                if (out.defaultMax != null) role.setDefaultMax(out.defaultMax);
+                if (out.defaultEnableChance != null) role.setDefaultEnableChance(out.defaultEnableChance);
+                if (out.defaultEnableNeededPlayerCount != null) role.setDefaultEnableNeededPlayerCount(out.defaultEnableNeededPlayerCount);
+                if (out.defaultEnableMaxPlayerCount != null) role.setDefaultEnableMaxPlayerCount(out.defaultEnableMaxPlayerCount);
+            } catch (Throwable t) {
+                LOGGER.warn("Failed to apply v2 spawnInfoPatch for {}: {}", role.identifier(), t.toString());
+            }
+        }
     }
 
     private static void linkRelations(SRERole role, CompiledModifyOverlay overlay) {
@@ -290,7 +337,7 @@ public final class RoleRuntimeOverlayApplier {
             return;
         }
         try {
-            skillBackend.replace(roleId, defs);
+            RoleBaselineStore.skillBackend().replace(roleId, defs);
         } catch (Throwable t) {
             LOGGER.warn("Failed to apply MODIFY skills for {}: {}", roleId, t.toString());
         }

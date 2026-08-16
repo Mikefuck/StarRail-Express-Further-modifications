@@ -252,6 +252,9 @@ public class BetelTickEngine {
         if (EffectOwnershipTracker.release(pUuid, MobEffects.DARKNESS, "betel_quest")) {
             player.removeEffect(MobEffects.DARKNESS);
         }
+        if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SLOWDOWN, "betel_quest")) {
+            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+        }
         if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SPEED, "betel_quest")) {
             player.removeEffect(MobEffects.MOVEMENT_SPEED);
         }

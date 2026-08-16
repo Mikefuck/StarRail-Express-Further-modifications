@@ -155,6 +155,7 @@ class RoleConfigFilteringTest {
 
     @Test
     void unresolvedSamePriorityScalarSetsAreExcludedAndDiagnosed() {
+        seedKnownTarget();
         RoleExtensionRegistry.INSTANCE.modify(PROVIDER,
                 RolePatch.builder(TARGET).entryKey("buff")
                         .defaultMax(RolePatch.IntPatch.set(2)).build());
@@ -174,6 +175,7 @@ class RoleConfigFilteringTest {
 
     @Test
     void configuredWinnerResolvesSamePriorityScalarSetConflict() {
+        seedKnownTarget();
         RoleExtensionRegistry.INSTANCE.modify(PROVIDER,
                 RolePatch.builder(TARGET).entryKey("buff")
                         .defaultMax(RolePatch.IntPatch.set(2)).build());
@@ -195,6 +197,7 @@ class RoleConfigFilteringTest {
 
     @Test
     void recomputedEntriesMarkDisabled() {
+        seedKnownTarget();
         RoleExtensionRegistry.INSTANCE.modify(PROVIDER,
                 RolePatch.builder(TARGET).entryKey("buff").defaultMax(RolePatch.IntPatch.set(2)).build());
         RoleExtensionRegistry.INSTANCE.freeze();
@@ -282,6 +285,11 @@ class RoleConfigFilteringTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /** Seeds a managed ADD role for {@link #TARGET} so it counts as a known role id. */
+    private static void seedKnownTarget() {
+        seedManaged(ManagedSRERole.from(definition("sre", "vigilante")));
     }
 
     private static SRERole role(ResourceLocation id) {

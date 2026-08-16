@@ -55,23 +55,23 @@ public final class ProviderRegistrationTransaction {
     private final String providerId;
     private final RoleExtensionRegistry registry;
     private final List<RoleDefinition> stagedAdds = new ArrayList<>();
-    private final Map<ResourceLocation, ManagedSRERole> stagedAddRoles = new LinkedHashMap<>();
+    private final Map<ResourceLocation, SRERole> stagedAddRoles = new LinkedHashMap<>();
     private final List<RolePatch> stagedModifies = new ArrayList<>();
     private final List<RoleReplacement> stagedReplacements = new ArrayList<>();
     private final List<RoleAlias> stagedAliases = new ArrayList<>();
     private final List<StagedHooks> stagedHooks = new ArrayList<>();
-    private final List<RoleStateSpec<?>> stagedStates = new ArrayList<>();
-    private final List<RoleActionSpec> stagedActions = new ArrayList<>();
-    private final List<RoleVoicePolicy> stagedVoices = new ArrayList<>();
-    private final List<RoleChatPolicy> stagedChats = new ArrayList<>();
+    private final List<ManagedDeclaration<RoleStateSpec<?>>> stagedStates = new ArrayList<>();
+    private final List<ManagedDeclaration<RoleActionSpec>> stagedActions = new ArrayList<>();
+    private final List<ManagedDeclaration<RoleVoicePolicy>> stagedVoices = new ArrayList<>();
+    private final List<ManagedDeclaration<RoleChatPolicy>> stagedChats = new ArrayList<>();
     private final Set<ResourceLocation> stagedStateKeys = new HashSet<>();
     private final Set<ResourceLocation> stagedActionIds = new HashSet<>();
     private final Set<ResourceLocation> stagedVoiceIds = new HashSet<>();
     private final Set<ResourceLocation> stagedChatIds = new HashSet<>();
     private int hookSeq;
     private final Set<String> stagedEntryIds = new HashSet<>();
-    private final Map<ResourceLocation, String> stagedReplacementOwners = new LinkedHashMap<>();
     private boolean closed;
+    private boolean requiresClient;
 
     ProviderRegistrationTransaction(String providerId, RoleExtensionRegistry registry) {
         this.providerId = Objects.requireNonNull(providerId, "providerId");
@@ -81,6 +81,17 @@ public final class ProviderRegistrationTransaction {
     /** The provider mod id that owns every declaration staged here. */
     public String providerId() {
         return providerId;
+    }
+
+    /**
+     * Declares that this provider ships client-side role content (HUD /
+     * instinct / skins) and therefore must be present AND loaded on the client
+     * (audit P1-4). Set by the entrypoint loader from
+     * {@code RoleExtensionEntrypoint.requiresClient()}.
+     */
+    public void setRequiresClient(boolean requiresClient) {
+        ensureOpen();
+        this.requiresClient = requiresClient;
     }
 
     /**
@@ -99,7 +110,7 @@ public final class ProviderRegistrationTransaction {
         if (stagedAddRoles.containsKey(id) || registry.isAdded(id)) {
             throw new IllegalArgumentException("ADD role already registered: " + id);
         }
-        ManagedSRERole role = ManagedSRERole.from(def);
+        SRERole role = ManagedSRERole.compile(def);
         stagedAdds.add(def);
         stagedAddRoles.put(id, role);
         return role;
@@ -118,7 +129,7 @@ public final class ProviderRegistrationTransaction {
         stagedModifies.add(patch);
     }
 
-    /** Stages a {@code REPLACE} operation. Only one owner may claim a target. */
+    /** Stages a {@code REPLACE} operation. Multiple candidates may claim the same target (audit P2-1). */
     public void replace(RoleReplacement replacement) {
         ensureOpen();
         Objects.requireNonNull(replacement, "replacement");
@@ -128,12 +139,6 @@ public final class ProviderRegistrationTransaction {
         if (!stagedEntryIds.add(entryId)) {
             throw new IllegalArgumentException("Duplicate REPLACE entryId: " + entryId
                     + "; set a distinct entryKey for each declaration");
-        }
-        ResourceLocation target = replacement.target().location();
-        String previousOwner = stagedReplacementOwners.putIfAbsent(target, entryId);
-        if (previousOwner != null) {
-            throw new IllegalArgumentException("Replacement target " + target
-                    + " is already owned by " + previousOwner);
         }
         stagedReplacements.add(replacement);
     }
@@ -170,7 +175,11 @@ public final class ProviderRegistrationTransaction {
         stagedHooks.add(new StagedHooks(role, scope, hooks, entryId));
     }
 
-    /** Stages a provider-owned state schema instead of immediately mutating the singleton. */
+    /**
+     * Stages a provider-owned state schema instead of immediately mutating the
+     * singleton. Ownership (provider + config entry id) is captured so runtime
+     * gating, diagnostics and the manifest see one source of truth (audit P1-2).
+     */
     public <T> RoleStateKey<T> state(RoleStateSpec<T> spec) {
         ensureOpen();
         Objects.requireNonNull(spec, "spec");
@@ -178,11 +187,15 @@ public final class ProviderRegistrationTransaction {
         if (!stagedStateKeys.add(spec.id())) {
             throw new IllegalArgumentException("Duplicate staged role state: " + spec.id());
         }
-        stagedStates.add(spec);
+        stagedStates.add(new ManagedDeclaration<>(providerId, spec.id().toString(), spec.role(), spec));
         return new RoleStateKey<>(spec.id(), spec.role(), spec.type());
     }
 
-    /** Stages a provider-owned action schema instead of immediately mutating the singleton. */
+    /**
+     * Stages a provider-owned action schema instead of immediately mutating the
+     * singleton. Ownership (provider + config entry id) is captured so runtime
+     * gating, diagnostics and the manifest see one source of truth (audit P1-2).
+     */
     public RoleActionSpec action(RoleActionSpec spec) {
         ensureOpen();
         Objects.requireNonNull(spec, "spec");
@@ -190,7 +203,7 @@ public final class ProviderRegistrationTransaction {
         if (!stagedActionIds.add(spec.id())) {
             throw new IllegalArgumentException("Duplicate staged role action: " + spec.id());
         }
-        stagedActions.add(spec);
+        stagedActions.add(new ManagedDeclaration<>(providerId, spec.id().toString(), spec.role(), spec));
         return spec;
     }
 
@@ -201,7 +214,7 @@ public final class ProviderRegistrationTransaction {
         if (!stagedVoiceIds.add(policy.id())) {
             throw new IllegalArgumentException("Duplicate staged voice policy: " + policy.id());
         }
-        stagedVoices.add(policy);
+        stagedVoices.add(new ManagedDeclaration<>(providerId, policy.id().toString(), policy.role(), policy));
         return policy;
     }
 
@@ -212,7 +225,7 @@ public final class ProviderRegistrationTransaction {
         if (!stagedChatIds.add(policy.id())) {
             throw new IllegalArgumentException("Duplicate staged chat policy: " + policy.id());
         }
-        stagedChats.add(policy);
+        stagedChats.add(new ManagedDeclaration<>(providerId, policy.id().toString(), policy.role(), policy));
         return policy;
     }
 
@@ -225,14 +238,14 @@ public final class ProviderRegistrationTransaction {
     public void commit() {
         ensureOpen();
         for (ResourceLocation id : stagedAddRoles.keySet()) {
-            if (TMMRoles.getRole(id) != null) {
+            if (existsInTmm(id)) {
                 throw new IllegalStateException("ADD role id already exists in TMMRoles: " + id);
             }
         }
         for (RoleReplacement replacement : stagedReplacements) {
             if (replacement.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS) {
                 ResourceLocation rid = replacement.replacement().key().location();
-                if (TMMRoles.getRole(rid) != null) {
+                if (existsInTmm(rid)) {
                     throw new IllegalStateException(
                             "NEW_ID_WITH_ALIAS replacement id already exists in TMMRoles: " + rid);
                 }
@@ -265,19 +278,20 @@ public final class ProviderRegistrationTransaction {
                 RoleHookRegistry.INSTANCE.register(h.role(), h.scope(), providerId, h.entryId(),
                         PatchPriority.NORMAL, h.hooks());
             }
-            for (RoleStateSpec<?> spec : stagedStates) {
-                registerState(stateService, spec);
+            for (ManagedDeclaration<RoleStateSpec<?>> decl : stagedStates) {
+                registerState(stateService, decl);
             }
-            for (RoleActionSpec spec : stagedActions) {
-                actionService.register(spec);
+            for (ManagedDeclaration<RoleActionSpec> decl : stagedActions) {
+                actionService.registerManaged(decl.providerId(), decl.entryId(), decl.declaration());
             }
-            for (RoleVoicePolicy policy : stagedVoices) {
-                capabilityService.voice(policy);
+            for (ManagedDeclaration<RoleVoicePolicy> decl : stagedVoices) {
+                capabilityService.registerVoice(decl.providerId(), decl.entryId(), decl.declaration());
             }
-            for (RoleChatPolicy policy : stagedChats) {
-                capabilityService.chat(policy);
+            for (ManagedDeclaration<RoleChatPolicy> decl : stagedChats) {
+                capabilityService.registerChat(decl.providerId(), decl.entryId(), decl.declaration());
             }
             closed = true;
+            registry.noteProvider(providerId, requiresClient);
             LOGGER.info("Committed role extension declarations for provider {}", providerId);
         } catch (RuntimeException | Error e) {
             capabilityService.restoreTransactionSnapshot(capabilitySnapshot);
@@ -309,6 +323,20 @@ public final class ProviderRegistrationTransaction {
         }
     }
 
+    /**
+     * Bootstrap-safe {@code TMMRoles} existence check: in production the
+     * upstream table answers directly; in a bare unit-test JVM (where its
+     * static init needs the Minecraft bootstrap) the collision check degrades
+     * to "not present".
+     */
+    private static boolean existsInTmm(ResourceLocation id) {
+        try {
+            return TMMRoles.getRole(id) != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static RoleStateServiceImpl stateService() {
         return (RoleStateServiceImpl) RoleStateApi.instance();
     }
@@ -322,8 +350,9 @@ public final class ProviderRegistrationTransaction {
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private static void registerState(RoleStateServiceImpl service, RoleStateSpec<?> spec) {
-        service.register((RoleStateSpec) spec);
+    private static void registerState(RoleStateServiceImpl service,
+                                      ManagedDeclaration<RoleStateSpec<?>> decl) {
+        service.registerManaged(decl.providerId(), decl.entryId(), (RoleStateSpec) decl.declaration());
     }
 
     private record StagedHooks(RoleKey role, RoleScope scope, RoleHooks hooks, String entryId) {}

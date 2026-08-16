@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
+import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -28,6 +30,20 @@ public class ShopContentRoleOverrideMixin {
         ModifyRoleDefinition definition =
                 RoleOverrideEngine.getInstance().getActiveModify(roleId);
         if (definition == null || definition.shopTransform().isEmpty()) {
+            SRERole role = TMMRoles.getRole(roleId);
+            if (role == null) {
+                return;
+            }
+            CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(role);
+            if (overlay == null || overlay.shopTransform() == null) {
+                return;
+            }
+            List<ShopEntry> baseline =
+                    cir.getReturnValue() == null ? List.of() : List.copyOf(cir.getReturnValue());
+            List<ShopEntry> transformed = overlay.shopTransform()
+                    .transform(role, getServer(), baseline);
+            cir.setReturnValue(List.copyOf(
+                    Objects.requireNonNull(transformed, "v2 ShopTransform returned null")));
             return;
         }
 
@@ -37,6 +53,14 @@ public class ShopContentRoleOverrideMixin {
         }
         List<ShopEntry> baseline =
                 cir.getReturnValue() == null ? List.of() : List.copyOf(cir.getReturnValue());
+        CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(role);
+        if (overlay != null && overlay.shopTransform() != null) {
+            List<ShopEntry> transformed = overlay.shopTransform()
+                    .transform(role, getServer(), baseline);
+            cir.setReturnValue(List.copyOf(
+                    Objects.requireNonNull(transformed, "v2 ShopTransform returned null")));
+            return;
+        }
         List<ShopEntry> transformed = definition.shopTransform().get()
                 .transform(role, getServer(), baseline);
         cir.setReturnValue(List.copyOf(

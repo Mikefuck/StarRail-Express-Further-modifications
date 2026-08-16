@@ -15,6 +15,13 @@ import java.util.UUID;
  * via {@link #bindAdapter} from an optional entrypoint (e.g. voicechat).
  * Missing adapters stay {@link RoleCapabilityStatus#UNAVAILABLE}; policies
  * remain evaluable so tests and dedicated servers do not need the mod.
+ *
+ * <p>Policy registration is NOT a public write surface (audit P1-2): policies
+ * are registered through the provider-scoped {@code RoleExtensionRegistrar}
+ * transaction, which records provider/entry ownership so the v2 config's
+ * provider/entry gates apply at evaluation time. Disabled policies stay
+ * visible to queries and diagnostics but never participate in
+ * {@link #evaluateVoice}/{@link #evaluateChat}.
  */
 public interface RoleCapabilityApi {
 
@@ -28,10 +35,6 @@ public interface RoleCapabilityApi {
         static final RoleCapabilityApi INSTANCE =
                 new com.habitrain.core.role.capability.RoleCapabilityServiceImpl();
     }
-
-    RoleVoicePolicy voice(RoleVoicePolicy policy);
-
-    RoleChatPolicy chat(RoleChatPolicy policy);
 
     Collection<RoleVoicePolicy> voices();
 

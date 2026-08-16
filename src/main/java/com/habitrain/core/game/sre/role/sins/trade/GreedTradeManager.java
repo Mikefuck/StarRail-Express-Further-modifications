@@ -484,8 +484,17 @@ public final class GreedTradeManager {
             SREPlayerShopComponent toShop = SREPlayerShopComponent.KEY.get(to);
             if (fromShop == null || toShop == null) return false;
             if (fromShop.balance < amount) return false;
-            fromShop.setBalance(fromShop.balance - amount);
-            toShop.addToBalance(amount);
+            int oldFrom = fromShop.balance;
+            int oldTo = toShop.balance;
+            try {
+                fromShop.setBalance(oldFrom - amount);
+                toShop.addToBalance(amount);
+            } catch (Throwable t) {
+                // Restore both sides if the transfer partially mutated before failing.
+                try { fromShop.setBalance(oldFrom); } catch (Throwable ignored) {}
+                try { toShop.setBalance(oldTo); } catch (Throwable ignored) {}
+                throw t;
+            }
             return true;
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.warn("[GreedTrade] coin transfer failed", t);

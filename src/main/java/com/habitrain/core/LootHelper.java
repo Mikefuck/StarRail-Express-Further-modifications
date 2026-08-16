@@ -20,6 +20,14 @@ public class LootHelper {
     private static final int NUNCHUCK_COOLDOWN_SHERIFF = 200;
 
     public static ItemStack giveRandomBackpackItem(ServerPlayer player) {
+        return giveRandomBackpackItem(player, null);
+    }
+
+    /**
+     * @param grantTaskId 若非空，在放入背包/掉落前给道具打回收标签，避免
+     *                    Inventory.add() 消耗 stack 后再打标打到空栈上。
+     */
+    public static ItemStack giveRandomBackpackItem(ServerPlayer player, String grantTaskId) {
         try {
             var gameWorld = SREGameWorldComponent.KEY.get(player.level());
             var roles = gameWorld.getRoles();
@@ -73,6 +81,9 @@ public class LootHelper {
             var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
             if (item != Items.AIR) {
                 ItemStack stack = new ItemStack(item, 1);
+                if (grantTaskId != null && !grantTaskId.isBlank()) {
+                    com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(stack, grantTaskId);
+                }
                 if (!player.getInventory().add(stack)) {
                     player.drop(stack, false);
                 }

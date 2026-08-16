@@ -33,6 +33,18 @@ public interface RoleCombatHooks {
         return Decision.PASS;
     }
 
+    /**
+     * Called when the holder is the <em>killer</em> in an
+     * {@code AllowPlayerDeathWithKiller} event. The dispatcher evaluates this
+     * for the killer's role after the victim-side gate, so killer-only rules
+     * (e.g. Envy's mark gate, Sloth's attack lock) can cancel the death.
+     * {@link Decision#DENY} prevents the death.
+     */
+    default Decision allowKillByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
+                                       ResourceLocation deathReason, RoleHookContext ctx) {
+        return Decision.PASS;
+    }
+
     /** Called when the player dies. */
     default void onDeath(ServerPlayer player, ResourceLocation deathReason, RoleHookContext ctx) {}
 

@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -116,7 +117,10 @@ class LegacyRoleOverrideTranslatorTest {
     }
 
     @Test
-    void v2EntryShellsCarryProviderAndOperation() {
+    void v2EntryShellsCarryProviderAndOperation() throws Exception {
+        // Seed a known ADD role so the MODIFY target is not dangling-INVALID.
+        setField("managedRoles", new LinkedHashMap<>(Map.of(TARGET,
+                com.habitrain.core.role.extension.ManagedSRERole.from(definition("sre", "vigilante")))));
         RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
                 com.habitrain.core.api.role.v2.definition.RolePatch.builder(TARGET)
                         .defaultMax(com.habitrain.core.api.role.v2.definition.RolePatch.IntPatch.set(2))

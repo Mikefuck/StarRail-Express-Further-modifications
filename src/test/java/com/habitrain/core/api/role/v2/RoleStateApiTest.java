@@ -9,6 +9,7 @@ import com.habitrain.core.api.role.v2.state.StateScope;
 import com.habitrain.core.api.role.v2.state.SyncPolicy;
 import com.habitrain.core.role.change.RoleChangeServiceImpl;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.state.RoleStateServiceImpl;
 import com.mojang.serialization.Codec;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +46,7 @@ class RoleStateApiTest {
     void setUp() {
         store = new RoleStateServiceImpl();
         ((RoleStateServiceImpl) RoleStateApi.instance()).clear(true);
+        RoleExtensionConfigService.INSTANCE.resetForTests();
     }
 
     @AfterEach
@@ -92,6 +94,21 @@ class RoleStateApiTest {
         store.set(key, PLAYER, 7);
         assertEquals(7, store.get(key, PLAYER));
         assertEquals(0, store.get(key, OTHER_PLAYER), "other player still sees the default");
+    }
+
+    @Test
+    void disabledStateIsRetainedButInaccessible() {
+        RoleStateKey<Integer> key = store.registerManaged("gate_provider", "habitrain_core:souls",
+                RoleStateSpec.of("habitrain_core", "souls", Integer.class)
+                        .role(ROLE).defaultValue(() -> 0).build());
+        store.set(key, PLAYER, 7);
+        assertEquals(7, store.get(key, PLAYER));
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", false);
+        assertEquals(0, store.get(key, PLAYER), "disabled: reads expose the default, never the stored value");
+        store.set(key, PLAYER, 9);
+        assertEquals(0, store.get(key, PLAYER), "disabled: writes are no-ops");
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", true);
+        assertEquals(7, store.get(key, PLAYER), "re-enabled: the retained value resumes under its lifecycle");
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.habitrain.core.api.role.v2.definition.RoleRelationProfile;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
+import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.api.SRERole.SpecialMapRoleMap;
@@ -19,6 +20,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -44,7 +46,17 @@ public final class RoleExtensionCompiler {
 
     // Field keys, matching the fix-doc §13.1 conflict-winner syntax `target#field`.
     public static final String FIELD_COLOR = "presentation.color";
+    public static final String FIELD_COLOR_PROVIDER = "presentation.colorProvider";
+    public static final String FIELD_FLAGS_PATCH = "faction.flagsPatch";
+    public static final String FIELD_SPAWN_PATCH = "spawn.spawnInfoPatch";
     public static final String FIELD_MOOD = "presentation.mood";
+    public static final String FIELD_NAME = "presentation.name";
+    public static final String FIELD_DESCRIPTION = "presentation.description";
+    public static final String FIELD_SIMPLE_DESCRIPTION = "presentation.simpleDescription";
+    public static final String FIELD_DEFAULT_ITEMS = "inventory.defaultItems";
+    public static final String FIELD_SHOP_PATCH = "economy.shopPatch";
+    public static final String FIELD_SHOP_TRANSFORM = "economy.shopTransform";
+    public static final String FIELD_WIN_CONDITION_HOOK = "win.winConditionHook";
     public static final String FIELD_INNOCENT = "faction.innocent";
     public static final String FIELD_CAN_USE_KILLER = "faction.canUseKiller";
     public static final String FIELD_NEUTRAL = "faction.neutral";
@@ -101,7 +113,11 @@ public final class RoleExtensionCompiler {
         FoldedState s = fold(base, patches.stream().map(ConfiguredPatch::patch).toList(),
                 baseline, fieldMask);
         return new CompiledModifyOverlay(
-                s.color(), s.mood(), s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
+                s.color(), s.mood(),
+                s.colorProvider(), s.flagsPatch(), s.spawnInfoPatch(),
+                s.namePatch(), s.descriptionPatch(), s.simpleDescriptionPatch(),
+                s.defaultItemsPatch(), s.shopPatch(), s.shopTransform(), s.winConditionHook(),
+                s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
                 s.defaultMax(), s.enableChance(), s.needPlayerCount(), s.maxPlayerCount(),
                 s.canSeeCoin(), s.canPickUpRevolver(), s.canBeRandomed(), s.maxSprintTime(), s.canSeeTime(),
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
@@ -119,7 +135,11 @@ public final class RoleExtensionCompiler {
         }
         FoldedState s = fold(base, patches, baseline, fieldMask);
         return new CompiledModifyOverlay(
-                s.color(), s.mood(), s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
+                s.color(), s.mood(),
+                s.colorProvider(), s.flagsPatch(), s.spawnInfoPatch(),
+                s.namePatch(), s.descriptionPatch(), s.simpleDescriptionPatch(),
+                s.defaultItemsPatch(), s.shopPatch(), s.shopTransform(), s.winConditionHook(),
+                s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
                 s.defaultMax(), s.enableChance(), s.needPlayerCount(), s.maxPlayerCount(),
                 s.canSeeCoin(), s.canPickUpRevolver(), s.canBeRandomed(), s.maxSprintTime(), s.canSeeTime(),
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
@@ -162,7 +182,17 @@ public final class RoleExtensionCompiler {
         }
         Set<String> out = new HashSet<>();
         if (patch.color() != null) out.add(FIELD_COLOR);
+        if (patch.colorProvider() != null) out.add(FIELD_COLOR_PROVIDER);
+        if (patch.flagsPatch() != null) out.add(FIELD_FLAGS_PATCH);
+        if (patch.spawnInfoPatch() != null) out.add(FIELD_SPAWN_PATCH);
         if (patch.mood() != null) out.add(FIELD_MOOD);
+        if (patch.namePatch() != null) out.add(FIELD_NAME);
+        if (patch.descriptionPatch() != null) out.add(FIELD_DESCRIPTION);
+        if (patch.simpleDescriptionPatch() != null) out.add(FIELD_SIMPLE_DESCRIPTION);
+        if (patch.defaultItemsPatch() != null) out.add(FIELD_DEFAULT_ITEMS);
+        if (patch.shopPatch() != null) out.add(FIELD_SHOP_PATCH);
+        if (patch.shopTransform() != null) out.add(FIELD_SHOP_TRANSFORM);
+        if (patch.winConditionHook() != null) out.add(FIELD_WIN_CONDITION_HOOK);
         if (patch.innocent() != null) out.add(FIELD_INNOCENT);
         if (patch.canUseKiller() != null) out.add(FIELD_CAN_USE_KILLER);
         if (patch.neutral() != null) out.add(FIELD_NEUTRAL);
@@ -197,6 +227,16 @@ public final class RoleExtensionCompiler {
                                     @Nullable Function<RolePatch, Set<String>> fieldMask) {
         int color = baseline != null ? baseline.color() : base.getColor();
         MoodType mood = baseline != null ? baseline.mood() : base.getMoodType();
+        com.habitrain.core.api.role.patch.ColorPatch colorProvider = null;
+        com.habitrain.core.api.role.patch.FlagsPatch flagsPatch = null;
+        com.habitrain.core.api.role.patch.SpawnInfoPatch spawnInfoPatch = null;
+        com.habitrain.core.api.role.patch.NamePatch namePatch = null;
+        com.habitrain.core.api.role.patch.RoleTextPatch descriptionPatch = null;
+        com.habitrain.core.api.role.patch.RoleTextPatch simpleDescriptionPatch = null;
+        com.habitrain.core.api.role.patch.DefaultItemsPatch defaultItemsPatch = null;
+        com.habitrain.core.api.role.patch.ShopPatch shopPatch = null;
+        com.habitrain.core.api.role.patch.ShopTransform shopTransform = null;
+        com.habitrain.core.api.role.patch.WinConditionHook winConditionHook = null;
         boolean innocent = baseline != null ? baseline.innocent() : base.isInnocent();
         boolean canUseKiller = baseline != null ? baseline.canUseKiller() : base.canUseKiller();
         boolean neutral = baseline != null ? baseline.neutral() : base.isNeutrals();
@@ -233,7 +273,17 @@ public final class RoleExtensionCompiler {
         for (RolePatch patch : patches) {
             Set<String> masked = fieldMask == null ? null : fieldMask.apply(patch);
             if (patch.color() != null && allows(masked, FIELD_COLOR)) color = patch.color().color();
+            if (patch.colorProvider() != null && allows(masked, FIELD_COLOR_PROVIDER)) colorProvider = patch.colorProvider();
+            if (patch.flagsPatch() != null && allows(masked, FIELD_FLAGS_PATCH)) flagsPatch = patch.flagsPatch();
+            if (patch.spawnInfoPatch() != null && allows(masked, FIELD_SPAWN_PATCH)) spawnInfoPatch = patch.spawnInfoPatch();
             if (patch.mood() != null && allows(masked, FIELD_MOOD)) mood = patch.mood().mood();
+            if (patch.namePatch() != null && allows(masked, FIELD_NAME)) namePatch = patch.namePatch();
+            if (patch.descriptionPatch() != null && allows(masked, FIELD_DESCRIPTION)) descriptionPatch = patch.descriptionPatch();
+            if (patch.simpleDescriptionPatch() != null && allows(masked, FIELD_SIMPLE_DESCRIPTION)) simpleDescriptionPatch = patch.simpleDescriptionPatch();
+            if (patch.defaultItemsPatch() != null && allows(masked, FIELD_DEFAULT_ITEMS)) defaultItemsPatch = patch.defaultItemsPatch();
+            if (patch.shopPatch() != null && allows(masked, FIELD_SHOP_PATCH)) shopPatch = patch.shopPatch();
+            if (patch.shopTransform() != null && allows(masked, FIELD_SHOP_TRANSFORM)) shopTransform = patch.shopTransform();
+            if (patch.winConditionHook() != null && allows(masked, FIELD_WIN_CONDITION_HOOK)) winConditionHook = patch.winConditionHook();
             if (patch.innocent() != null && allows(masked, FIELD_INNOCENT)) {
                 innocent = applyBoolean(patch.innocent(), innocent);
             }
@@ -319,7 +369,11 @@ public final class RoleExtensionCompiler {
         }
 
         return new FoldedState(
-                color, mood, innocent, canUseKiller, neutral, vigilanteTeam,
+                color, mood,
+                colorProvider, flagsPatch, spawnInfoPatch,
+                namePatch, descriptionPatch, simpleDescriptionPatch,
+                defaultItemsPatch, shopPatch, shopTransform, winConditionHook,
+                innocent, canUseKiller, neutral, vigilanteTeam,
                 defaultMax, enableChance, needPlayerCount, maxPlayerCount,
                 canSeeCoin, canPickUpRevolver, canBeRandomed, maxSprintTime, canSeeTime,
                 neutralForKiller, neutralForInnocent, mafiaTeam,
@@ -333,7 +387,18 @@ public final class RoleExtensionCompiler {
     }
 
     private record FoldedState(
-            int color, MoodType mood, boolean innocent, boolean canUseKiller, boolean neutral,
+            int color, MoodType mood,
+            com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+            com.habitrain.core.api.role.patch.FlagsPatch flagsPatch,
+            com.habitrain.core.api.role.patch.SpawnInfoPatch spawnInfoPatch,
+            com.habitrain.core.api.role.patch.NamePatch namePatch,
+            com.habitrain.core.api.role.patch.RoleTextPatch descriptionPatch,
+            com.habitrain.core.api.role.patch.RoleTextPatch simpleDescriptionPatch,
+            com.habitrain.core.api.role.patch.DefaultItemsPatch defaultItemsPatch,
+            com.habitrain.core.api.role.patch.ShopPatch shopPatch,
+            com.habitrain.core.api.role.patch.ShopTransform shopTransform,
+            com.habitrain.core.api.role.patch.WinConditionHook winConditionHook,
+            boolean innocent, boolean canUseKiller, boolean neutral,
             boolean vigilanteTeam, int defaultMax, int enableChance, int needPlayerCount,
             int maxPlayerCount, boolean canSeeCoin, boolean canPickUpRevolver, boolean canBeRandomed,
             int maxSprintTime, boolean canSeeTime, boolean neutralForKiller, boolean neutralForInnocent,
@@ -364,6 +429,7 @@ public final class RoleExtensionCompiler {
             }
             case REMOVE -> current.stream().filter(k -> !patch.keys().contains(k)).toList();
             case REPLACE_ALL -> List.copyOf(patch.keys());
+            case REPLACE_MATCHING_IDS -> List.copyOf(patch.keys());
         };
     }
 
@@ -398,6 +464,12 @@ public final class RoleExtensionCompiler {
 
     private enum RelationKind { OCCUPATION, OPPOSING, RELATED }
 
+    /**
+     * The relation keys an arbitrary upstream {@link SRERole} already holds, so
+     * an {@code APPEND} keeps the original relations instead of replacing them
+     * with only the appended keys. Managed roles seed from their declarative
+     * profile; ordinary upstream roles seed from their live relation collections.
+     */
     private static List<RoleKey> seedRelationKeys(SRERole base, RelationKind kind) {
         if (base instanceof ManagedSRERole managed) {
             return switch (kind) {
@@ -406,14 +478,42 @@ public final class RoleExtensionCompiler {
                 case RELATED -> managed.relatedRoleKeys();
             };
         }
-        return List.of();
+        List<SRERole> raw = switch (kind) {
+            case OCCUPATION -> base.occupationRoles;
+            case OPPOSING -> new ArrayList<>(base.opposingRoles);
+            case RELATED -> new ArrayList<>(base.relatedRoles);
+        };
+        return raw.stream()
+                .filter(Objects::nonNull)
+                .filter(r -> r.identifier() != null)
+                .map(r -> RoleKey.of(r.identifier()))
+                .toList();
     }
 
+    /**
+     * The unified-skill specifications an arbitrary upstream {@link SRERole}
+     * already holds (read through the shared {@link RoleBaselineStore} backend,
+     * the same source the baseline capture uses), so a skills {@code APPEND}
+     * keeps the original skill table instead of replacing it.
+     */
     private static List<RoleSkillSpec> seedSkills(SRERole base) {
         if (base instanceof ManagedSRERole managed) {
             return managed.skills();
         }
-        return List.of();
+        List<RoleSkill.Definition> defs;
+        try {
+            defs = RoleBaselineStore.skillBackend().definitions(base.identifier());
+        } catch (Throwable t) {
+            defs = null;
+        }
+        if (defs == null) {
+            return List.of();
+        }
+        return defs.stream()
+                .filter(Objects::nonNull)
+                .filter(d -> d.id() != null)
+                .map(RoleSkillSpec::of)
+                .toList();
     }
 
     private static boolean applyBoolean(RolePatch.BooleanPatch p, boolean current) {

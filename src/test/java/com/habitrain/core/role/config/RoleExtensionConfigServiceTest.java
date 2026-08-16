@@ -17,6 +17,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -151,5 +152,78 @@ class RoleExtensionConfigServiceTest {
         RoleExtensionConfigService.INSTANCE.load();
         assertTrue(cfg.exists());
         assertTrue(Files.size(cfg.toPath()) > 0);
+    }
+
+    @Test
+    void loadWithNullTargetKeepsDefaultsAndDoesNotThrow() {
+        RoleExtensionConfigService.INSTANCE.setFileResolverForTests(() -> null);
+        // Neither load() nor save() may throw when no file target exists.
+        RoleExtensionConfigService.INSTANCE.load();
+        assertTrue(RoleExtensionConfigService.INSTANCE.isEnabled());
+        assertEquals(EntryGate.ENABLED,
+                RoleExtensionConfigService.INSTANCE.gateFor(entry(ENTRY_A, PROVIDER)));
+        RoleExtensionConfigService.INSTANCE.save();
+        assertNotNull(RoleExtensionConfigService.INSTANCE.lastSaveError());
+        assertTrue(RoleExtensionConfigService.INSTANCE.lastSaveError().contains("memory only"));
+    }
+
+    @Test
+    void corruptFileIsRenamedAndDefaultsSaved() throws Exception {
+        File cfg = tmp.resolve("corrupt_role_v2.json").toFile();
+        Files.writeString(cfg.toPath(), "{ not valid json !!!");
+        RoleExtensionConfigService.INSTANCE.setConfigFileForTests(cfg);
+        RoleExtensionConfigService.INSTANCE.load();
+        // Defaults in memory, no exception.
+        assertTrue(RoleExtensionConfigService.INSTANCE.isEnabled());
+        // The corrupt original is preserved under a unique .corrupt.* sibling.
+        Path backup;
+        try (var stream = Files.list(tmp)) {
+            backup = stream.filter(p -> p.getFileName().toString()
+                            .startsWith("corrupt_role_v2.json.corrupt."))
+                    .findFirst().orElseThrow();
+        }
+        assertTrue(Files.readString(backup).contains("not valid json"));
+        // The target path now holds parseable default JSON, not the corrupt bytes.
+        String saved = Files.readString(cfg.toPath());
+        assertTrue(saved.contains("roleExtensionsV2"));
+        assertTrue(saved.contains("\"version\": 1"));
+        assertNull(RoleExtensionConfigService.INSTANCE.lastSaveError());
+    }
+
+    @Test
+    void saveFailureSetsLastSaveErrorAndLeavesNoTempFiles() throws Exception {
+        // A regular FILE as parent makes directory creation fail inside save().
+        File blocker = tmp.resolve("blocker").toFile();
+        Files.writeString(blocker.toPath(), "x");
+        File cfg = new File(blocker, "role_v2.json");
+        RoleExtensionConfigService.INSTANCE.setConfigFileForTests(cfg);
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled(PROVIDER, false);
+        assertNotNull(RoleExtensionConfigService.INSTANCE.lastSaveError());
+        assertFalse(cfg.exists());
+        try (var stream = Files.list(tmp)) {
+            assertTrue(stream.noneMatch(p -> p.getFileName().toString().endsWith(".tmp")));
+        }
+    }
+
+    @Test
+    void atomicSaveLeavesNoTempFilesAndRoundTrips() throws Exception {
+        File cfg = tmp.resolve("atomic_role_v2.json").toFile();
+        RoleExtensionConfigService.INSTANCE.setConfigFileForTests(cfg);
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled(PROVIDER, false);
+        RoleExtensionConfigService.INSTANCE.setConflictWinner("sre:vigilante#spawn.defaultMax", ENTRY_A);
+        for (int i = 0; i < 3; i++) {
+            RoleExtensionConfigService.INSTANCE.save();
+        }
+        try (var stream = Files.list(tmp)) {
+            assertTrue(stream.noneMatch(p -> p.getFileName().toString().endsWith(".tmp")));
+        }
+        assertNull(RoleExtensionConfigService.INSTANCE.lastSaveError());
+        // Saved content reloads losslessly after a clean reset.
+        RoleExtensionConfigService.INSTANCE.resetForTests();
+        RoleExtensionConfigService.INSTANCE.setConfigFileForTests(cfg);
+        RoleExtensionConfigService.INSTANCE.load();
+        assertFalse(RoleExtensionConfigService.INSTANCE.isProviderEnabled(PROVIDER));
+        assertEquals(ENTRY_A,
+                RoleExtensionConfigService.INSTANCE.winnerFor("sre:vigilante#spawn.defaultMax"));
     }
 }

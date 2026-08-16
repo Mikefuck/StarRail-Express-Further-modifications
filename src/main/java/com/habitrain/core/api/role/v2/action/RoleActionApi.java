@@ -16,6 +16,12 @@ import java.util.UUID;
  * {@code CustomPacketPayload}. Core multiplexes one C2S and one S2C packet,
  * enforces size / rate / cooldown / current-role, and runs the handler on
  * the server thread.
+ *
+ * <p>Registration is NOT a public write surface (audit P1-2): schemas are
+ * registered through the provider-scoped {@code RoleExtensionRegistrar}
+ * transaction, which records provider/entry ownership so the v2 config's
+ * provider/entry gates apply at dispatch time. This interface is read-only
+ * plus the dispatch/send runtime methods.
  */
 public interface RoleActionApi {
 
@@ -29,16 +35,6 @@ public interface RoleActionApi {
         static final RoleActionApi INSTANCE =
                 new com.habitrain.core.role.action.RoleActionServiceImpl();
     }
-
-    /**
-     * Registers an action schema. Must be called during the registration phase
-     * (before freeze).
-     *
-     * @return the registered spec
-     * @throws IllegalStateException if the registry is frozen
-     * @throws IllegalArgumentException on duplicate id or missing fields
-     */
-    RoleActionSpec register(RoleActionSpec spec);
 
     /** The spec bound to {@code id}, or {@code null} if it was never registered. */
     @Nullable RoleActionSpec spec(ResourceLocation id);

@@ -28,6 +28,8 @@ public record RoleActionResult(boolean ok, String reasonKey, @Nullable String de
     public static final String DISCONNECTED = "roleapi.action.disconnected";
     /** Handshake gate refused the action (audit P1-4): missing provider / API mismatch / hash mismatch. */
     public static final String HANDSHAKE = "roleapi.action.handshake";
+    /** Provider/entry config gate refused the action (audit P1-2). */
+    public static final String CONFIG_DISABLED = "roleapi.action.config_disabled";
 
     public RoleActionResult {
         Objects.requireNonNull(reasonKey, "reasonKey");

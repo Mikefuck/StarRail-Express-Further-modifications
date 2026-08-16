@@ -1,8 +1,10 @@
 package com.habitrain.core.api;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 
 /**
  * Runtime task instance that stores progress and lifecycle state.
@@ -20,6 +22,8 @@ public class TaskInstance {
     private Player progressUpdatePlayer = null;
     // 任务归属玩家（由 onAssign/tick 设置），保证 tick 外 setProgress 也能派发回调。
     private Player ownerPlayer = null;
+    // 任务所在维度，用于按维度清理（避免一个世界结束清掉另一个世界的任务）。
+    private ResourceKey<Level> dimension = null;
 
     public TaskInstance(TaskDefinition definition) {
         this.definition = definition;
@@ -27,6 +31,8 @@ public class TaskInstance {
 
     public TaskDefinition getDefinition() { return definition; }
     public String getFullId() { return definition.getFullId(); }
+    public @org.jetbrains.annotations.Nullable ResourceKey<Level> getDimension() { return dimension; }
+    public void setDimension(@org.jetbrains.annotations.Nullable ResourceKey<Level> dimension) { this.dimension = dimension; }
     public int getProgress() { return progress; }
     public int getMaxProgress() { return maxProgress; }
     public boolean isFulfilled() { return fulfilled; }
@@ -140,8 +146,8 @@ public class TaskInstance {
         TaskInstance instance = new TaskInstance(def);
         instance.fulfilled = nbt.getBoolean("fulfilled");
         instance.failed = nbt.getBoolean("failed");
-        instance.progress = nbt.getInt("progress");
         instance.setMaxProgress(nbt.getInt("maxProgress"));
+        instance.progress = Math.max(0, Math.min(instance.getMaxProgress(), nbt.getInt("progress")));
         instance.elapsedTicks = Math.max(0, nbt.getInt("elapsedTicks"));
         if (instance.failed) {
             instance.fulfilled = true;

@@ -1,5 +1,13 @@
 package com.habitrain.core.api.role.v2.definition;
 
+import com.habitrain.core.api.role.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.patch.FlagsPatch;
+import com.habitrain.core.api.role.patch.NamePatch;
+import com.habitrain.core.api.role.patch.RoleTextPatch;
+import com.habitrain.core.api.role.patch.ShopPatch;
+import com.habitrain.core.api.role.patch.ShopTransform;
+import com.habitrain.core.api.role.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.book.RoleBookPatch;
 import com.habitrain.core.api.role.v2.skill.RoleSkillPatch;
@@ -79,7 +87,17 @@ public final class RolePatch {
     private final PatchPriority priority;
     private final String entryKey;
     private final @Nullable ColorPatch color;
+    private final @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+    private final @Nullable FlagsPatch flagsPatch;
+    private final @Nullable SpawnInfoPatch spawnInfoPatch;
     private final @Nullable MoodPatch mood;
+    private final @Nullable NamePatch namePatch;
+    private final @Nullable RoleTextPatch descriptionPatch;
+    private final @Nullable RoleTextPatch simpleDescriptionPatch;
+    private final @Nullable DefaultItemsPatch defaultItemsPatch;
+    private final @Nullable ShopPatch shopPatch;
+    private final @Nullable ShopTransform shopTransform;
+    private final @Nullable WinConditionHook winConditionHook;
     private final @Nullable BooleanPatch innocent;
     private final @Nullable BooleanPatch canUseKiller;
     private final @Nullable BooleanPatch neutral;
@@ -114,7 +132,17 @@ public final class RolePatch {
         this.priority = Objects.requireNonNull(b.priority, "priority");
         this.entryKey = b.entryKey;
         this.color = b.color;
+        this.colorProvider = b.colorProvider;
+        this.flagsPatch = b.flagsPatch;
+        this.spawnInfoPatch = b.spawnInfoPatch;
         this.mood = b.mood;
+        this.namePatch = b.namePatch;
+        this.descriptionPatch = b.descriptionPatch;
+        this.simpleDescriptionPatch = b.simpleDescriptionPatch;
+        this.defaultItemsPatch = b.defaultItemsPatch;
+        this.shopPatch = b.shopPatch;
+        this.shopTransform = b.shopTransform;
+        this.winConditionHook = b.winConditionHook;
         this.innocent = b.innocent;
         this.canUseKiller = b.canUseKiller;
         this.neutral = b.neutral;
@@ -163,7 +191,17 @@ public final class RolePatch {
     public PatchPriority priority() { return priority; }
     public @Nullable String entryKey() { return entryKey; }
     public @Nullable ColorPatch color() { return color; }
+    public @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider() { return colorProvider; }
+    public @Nullable FlagsPatch flagsPatch() { return flagsPatch; }
+    public @Nullable SpawnInfoPatch spawnInfoPatch() { return spawnInfoPatch; }
     public @Nullable MoodPatch mood() { return mood; }
+    public @Nullable NamePatch namePatch() { return namePatch; }
+    public @Nullable RoleTextPatch descriptionPatch() { return descriptionPatch; }
+    public @Nullable RoleTextPatch simpleDescriptionPatch() { return simpleDescriptionPatch; }
+    public @Nullable DefaultItemsPatch defaultItemsPatch() { return defaultItemsPatch; }
+    public @Nullable ShopPatch shopPatch() { return shopPatch; }
+    public @Nullable ShopTransform shopTransform() { return shopTransform; }
+    public @Nullable WinConditionHook winConditionHook() { return winConditionHook; }
     public @Nullable BooleanPatch innocent() { return innocent; }
     public @Nullable BooleanPatch canUseKiller() { return canUseKiller; }
     public @Nullable BooleanPatch neutral() { return neutral; }
@@ -195,7 +233,11 @@ public final class RolePatch {
 
     /** Whether this patch carries at least one field operation. */
     public boolean isEmpty() {
-        return color == null && mood == null && innocent == null && canUseKiller == null
+        return color == null && colorProvider == null && flagsPatch == null && spawnInfoPatch == null
+                && mood == null && namePatch == null && descriptionPatch == null
+                && simpleDescriptionPatch == null && defaultItemsPatch == null
+                && shopPatch == null && shopTransform == null && winConditionHook == null
+                && innocent == null && canUseKiller == null
                 && neutral == null && vigilanteTeam == null && defaultMax == null
                 && enableChance == null && needPlayerCount == null && maxPlayerCount == null
                 && canSeeCoin == null && canPickUpRevolver == null && canBeRandomed == null
@@ -212,7 +254,17 @@ public final class RolePatch {
         private PatchPriority priority = PatchPriority.NORMAL;
         private String entryKey;
         private ColorPatch color;
+        private com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+        private FlagsPatch flagsPatch;
+        private SpawnInfoPatch spawnInfoPatch;
         private MoodPatch mood;
+        private NamePatch namePatch;
+        private RoleTextPatch descriptionPatch;
+        private RoleTextPatch simpleDescriptionPatch;
+        private DefaultItemsPatch defaultItemsPatch;
+        private ShopPatch shopPatch;
+        private ShopTransform shopTransform;
+        private WinConditionHook winConditionHook;
         private BooleanPatch innocent;
         private BooleanPatch canUseKiller;
         private BooleanPatch neutral;
@@ -246,7 +298,20 @@ public final class RolePatch {
         public Builder priority(PatchPriority priority) { this.priority = Objects.requireNonNull(priority, "priority"); return this; }
         public Builder entryKey(String entryKey) { this.entryKey = entryKey; return this; }
         public Builder color(int color) { this.color = new ColorPatch(color); return this; }
+        public Builder colorProvider(com.habitrain.core.api.role.patch.ColorPatch p) {
+            this.colorProvider = Objects.requireNonNull(p, "colorProvider");
+            return this;
+        }
+        public Builder flagsPatch(FlagsPatch p) { this.flagsPatch = Objects.requireNonNull(p, "flagsPatch"); return this; }
+        public Builder spawnInfoPatch(SpawnInfoPatch p) { this.spawnInfoPatch = Objects.requireNonNull(p, "spawnInfoPatch"); return this; }
         public Builder mood(MoodType mood) { this.mood = new MoodPatch(Objects.requireNonNull(mood, "mood")); return this; }
+        public Builder namePatch(NamePatch p) { this.namePatch = Objects.requireNonNull(p, "namePatch"); return this; }
+        public Builder descriptionPatch(RoleTextPatch p) { this.descriptionPatch = Objects.requireNonNull(p, "descriptionPatch"); return this; }
+        public Builder simpleDescriptionPatch(RoleTextPatch p) { this.simpleDescriptionPatch = Objects.requireNonNull(p, "simpleDescriptionPatch"); return this; }
+        public Builder defaultItemsPatch(DefaultItemsPatch p) { this.defaultItemsPatch = Objects.requireNonNull(p, "defaultItemsPatch"); return this; }
+        public Builder shopPatch(ShopPatch p) { this.shopPatch = Objects.requireNonNull(p, "shopPatch"); return this; }
+        public Builder shopTransform(ShopTransform p) { this.shopTransform = Objects.requireNonNull(p, "shopTransform"); return this; }
+        public Builder winConditionHook(WinConditionHook p) { this.winConditionHook = Objects.requireNonNull(p, "winConditionHook"); return this; }
         public Builder innocent(BooleanPatch p) { this.innocent = p; return this; }
         public Builder canUseKiller(BooleanPatch p) { this.canUseKiller = p; return this; }
         public Builder neutral(BooleanPatch p) { this.neutral = p; return this; }
