@@ -117,7 +117,8 @@ public final class DlcTaskPoolBuilder {
         float target = getTargetRatio();
         float autoBoost;
         if (dlcCount > 0 && origCount > 0) {
-            autoBoost = (target / (1f - target)) * ((float) origCount / (float) dlcCount);
+            float safeRemainder = Math.max(0.01f, 1f - target);
+            autoBoost = (target / safeRemainder) * ((float) origCount / (float) dlcCount);
             autoBoost = Math.max(0.0f, Math.min(10.0f, autoBoost));
         } else {
             autoBoost = 1.0f;

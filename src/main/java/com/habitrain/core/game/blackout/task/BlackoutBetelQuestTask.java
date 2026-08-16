@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.betel.BetelTaskFacade;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -24,6 +25,7 @@ public class BlackoutBetelQuestTask {
             .blockTypeId(36)
             .instinctColor(46, 139, 87, 180)
             .scanBlockIds("betel-nut-mod:betel_palm_leaves")
+            .timeImpact(TaskDefinition.TimeImpact.TimeAxis.MAINTENANCE_OR_COUNTDOWN, 15)
             .onAssign((player, task) -> {
                 BetelTaskFacade.markQuestAssigned(player);
                 BetelTaskFacade.resetEatenStatus((ServerPlayer) player);
@@ -32,6 +34,8 @@ public class BlackoutBetelQuestTask {
                 BetelTaskFacade.hasPlayerEatenBetelNut(player))
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
+                    BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(),
+                            "habitrain_core:blackout_betel_quest");
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_betel_quest");
                 }
             })

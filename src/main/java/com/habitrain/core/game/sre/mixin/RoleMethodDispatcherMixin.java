@@ -7,6 +7,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
+import com.habitrain.core.role.behavior.RoleEventDispatcher;
 import io.wifi.starrailexpress.api.RoleMethodDispatcher;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
@@ -236,6 +237,12 @@ public class RoleMethodDispatcherMixin {
                                                          boolean isParallelTask, CallbackInfo ci) {
         try {
             if (player == null || player.level() == null || player.level().isClientSide) return;
+
+            try {
+                RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
+            } catch (Throwable t) {
+                LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
+            }
 
             TaskConfigEntry config = findConfigForQuest(quest);
             if (config == null) return;

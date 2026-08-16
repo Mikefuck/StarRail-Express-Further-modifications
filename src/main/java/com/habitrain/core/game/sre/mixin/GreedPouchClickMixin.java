@@ -66,9 +66,18 @@ public abstract class GreedPouchClickMixin {
             return;
         }
 
-        // Shift-click own pouch out of player inv into other container
+        // Shift-click own pouch out of player inv into other container.
+        // The old `slots.size() > 46` heuristic missed small containers
+        // (furnace/brewing stand/hopper), so detect any non-player slot instead.
         if (clickType == ClickType.QUICK_MOVE && slotOwn && slotIsPlayerInv) {
-            if (menu.slots.size() > 46) {
+            boolean hasExternalContainer = false;
+            for (Slot s : menu.slots) {
+                if (s != null && s.container != sp.getInventory()) {
+                    hasExternalContainer = true;
+                    break;
+                }
+            }
+            if (hasExternalContainer) {
                 cancel(sp, ci);
                 return;
             }

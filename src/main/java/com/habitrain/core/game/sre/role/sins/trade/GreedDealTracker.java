@@ -7,6 +7,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -20,6 +22,8 @@ public final class GreedDealTracker {
     public static final int BUY_CEILING = 300;
 
     private static final ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<String, Integer>> BY_LEVEL =
+            new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<UUID, Set<String>>> SOLD_BY_GREED =
             new ConcurrentHashMap<>();
 
     private GreedDealTracker() {}
@@ -57,13 +61,30 @@ public final class GreedDealTracker {
         });
     }
 
+    public static boolean hasSold(@Nullable ServerLevel level, @Nullable UUID greedId,
+                                  @Nullable String itemId) {
+        if (level == null || greedId == null || itemId == null) return false;
+        Map<UUID, Set<String>> byPlayer = SOLD_BY_GREED.get(level.dimension());
+        return byPlayer != null && byPlayer.getOrDefault(greedId, Set.of()).contains(itemId);
+    }
+
+    public static void recordSale(@Nullable ServerLevel level, @Nullable UUID greedId,
+                                  @Nullable String itemId) {
+        if (level == null || greedId == null || itemId == null || itemId.isEmpty()) return;
+        SOLD_BY_GREED.computeIfAbsent(level.dimension(), ignored -> new ConcurrentHashMap<>())
+                .computeIfAbsent(greedId, ignored -> ConcurrentHashMap.newKeySet())
+                .add(itemId);
+    }
+
     public static void clear(@Nullable ServerLevel level) {
         if (level == null) return;
         BY_LEVEL.remove(level.dimension());
+        SOLD_BY_GREED.remove(level.dimension());
     }
 
     public static void clearAll() {
         BY_LEVEL.clear();
+        SOLD_BY_GREED.clear();
     }
 
     public static Map<String, Integer> snapshot(@Nullable ServerLevel level) {

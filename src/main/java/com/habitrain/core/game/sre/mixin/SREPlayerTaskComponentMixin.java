@@ -53,22 +53,7 @@ public abstract class SREPlayerTaskComponentMixin {
             remap = false
     )
     private void habitrain$onInit(CallbackInfo ci) {
-        Player p = getPlayer();
-        if (p != null) {
-            TaskManager mgr = TaskManager.getInstance();
-            TaskInstance oldTask = mgr.getActiveTask(p.getUUID());
-            if (oldTask != null) {
-                LOGGER.debug("[HabiDebug] init() called - clearing activeCustomTask {} for player {}",
-                        oldTask.getFullId(), p.getName().getString());
-                // 先回收发放的物理道具（任务被新角色 init 取消时）
-                ItemReclaimHelper.reclaimForTask(p, oldTask);
-                mgr.removeActiveTask(p.getUUID());
-
-                if (p instanceof ServerPlayer sp) {
-                    ActiveTaskPayload.clearForPlayer(sp);
-                }
-            }
-        }
+        clearTrackedTasks(getPlayer(), "init");
     }
 
     @Inject(
@@ -77,20 +62,35 @@ public abstract class SREPlayerTaskComponentMixin {
             remap = false
     )
     private void habitrain$onClear(CallbackInfo ci) {
-        Player p = getPlayer();
-        if (p != null) {
-            TaskManager mgr = TaskManager.getInstance();
-            TaskInstance oldTask = mgr.getActiveTask(p.getUUID());
-            if (oldTask != null) {
-                // 先回收发放的物理道具（任务被 clear 取消时）
-                ItemReclaimHelper.reclaimForTask(p, oldTask);
-            }
-            mgr.removeActiveTask(p.getUUID());
-            LOGGER.debug("[HabiDebug] clear() called - removed activeCustomTask for player {}",
-                    p.getName().getString());
+        clearTrackedTasks(getPlayer(), "clear");
+    }
 
+    /** 对称清理主任务 + 假任务，避免 activeFakeTasks 残留继续 tick/发奖。 */
+    private static void clearTrackedTasks(Player p, String reason) {
+        if (p == null) return;
+        TaskManager mgr = TaskManager.getInstance();
+        TaskInstance oldTask = mgr.getActiveTask(p.getUUID());
+        if (oldTask != null) {
+            LOGGER.debug("[HabiDebug] {}() - clearing activeCustomTask {} for player {}",
+                    reason, oldTask.getFullId(), p.getName().getString());
+            ItemReclaimHelper.reclaimForTask(p, oldTask);
+            mgr.removeActiveTask(p.getUUID());
             if (p instanceof ServerPlayer sp) {
                 ActiveTaskPayload.clearForPlayer(sp);
+            }
+        }
+        TaskInstance fake = mgr.getFakeTask(p.getUUID());
+        if (fake != null) {
+            LOGGER.debug("[HabiDebug] {}() - clearing fakeTask {} for player {}",
+                    reason, fake.getFullId(), p.getName().getString());
+            try {
+                ItemReclaimHelper.reclaimForTask(p, fake);
+            } catch (Throwable t) {
+                LOGGER.debug("fake task reclaim failed on {}", reason, t);
+            }
+            mgr.removeFakeTask(p.getUUID());
+            if (p instanceof ServerPlayer sp) {
+                ActiveTaskPayload.clearForPlayer(sp, true);
             }
         }
     }

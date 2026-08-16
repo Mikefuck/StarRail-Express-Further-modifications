@@ -4,6 +4,7 @@
     "compatibilityLevel": "JAVA_21",
     "client": [
         "CustomTaskBlockRendererMixin",
+        "TaskBlockOverlayThroughWallMixin",
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
         "StarRailExpressTitleScreenMixin",
@@ -12,12 +13,19 @@
         "InstinctKillerTeamMixin",
         "InstinctSheriffGateMixin",
         "BlackoutTimeRendererMixin",
+        "EntityRendererMixin",
         "PlayerBodyEntityMixin",
         "MimeBodyHideMixin",
         "UnifiedSkillHudReadyShiftMixin",
         "SlothScreenLockMixin",
         "ScreenWidgetAccessor",
         "GreedBackpackTradeMixin",
-        "RoleArgumentTypeMixin"
+        "TaskSettingsMenuEntriesMixin",
+        "TaskSettingsBackpackPermissionMixin",
+        "TaskSettingsWaitingButtonMixin",
+        "RoleIntroduceScreenMixin",
+        "VoteLaunchFadeBlockMixin",
+        "VoteLaunchCameraBlockMixin",
+        "VoteLaunchAmbientSoundBlockMixin"
     ]
 }

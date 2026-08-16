@@ -44,6 +44,7 @@ public class TaskRegistry {
     public static List<TaskDefinition> getByCategory(TaskCategory category) {
         return REGISTRY.values().stream()
                 .filter(def -> def.getCategory().equals(category)
+                        || category.equals(def.getCustomCategory())
                         || TaskCategory.ALL.equals(def.getCategory()))
                 .toList();
     }

@@ -6,16 +6,25 @@ Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API�
 
 ## 构建 & 运行
 
-```powershell
-./gradlew build          # 完整构建（assemble 会触发 copyReleaseJar）
-./gradlew runClient      # 启动开发客户端
+Linux / bash（当前沙箱环境；`./gradlew` 可能没有执行位，统一用 `bash gradlew`）：
+
+```bash
+bash gradlew build          # 完整构建（assemble 会触发 copyReleaseJar）
+bash gradlew runClient      # 启动开发客户端
 ```
 
-- Java 21（`options.release = 21`），Fabric Loom 1.16.3；CI 使用 JDK 25 编译但字节码目标仍为 21
-- `libs/` 目录存放本地 JAR 依赖（SRE, TACZ, voicechat, betel-nut-mod），**需手动放置**，未纳入 git
-- `copyReleaseJar` 任务将产物复制到仓库同级目录 `../临时/`（非 `build/libs/`），`assemble` 已依赖它
-- **无任何测试**：仓库无 test 源集，验证靠 `./gradlew build`（编译 + processResources）和游戏内运行
-- README.md 内容已过时（仍用旧 API 名 `HabiTaskRegistry` 和旧配置路径 `habitrain_taskapi.json`），以本文件和代码为准
+交付构建（上级 AGENTS 要求）：
+
+```bash
+bash gradlew clean build
+# 将 build/libs/*.jar 复制到 /home/Mike/mcmod/临时/
+```
+
+- Java 21（`options.release = 21`），Fabric Loom 1.17.13；字节码目标为 21
+- `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat、betel-nut-mod 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
+- `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
+- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证仍以 `bash gradlew build` 和必要的游戏内运行共同完成
+- README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口
 
 ## 重要架构
 
@@ -56,13 +65,14 @@ Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API�
 | `ShaderConfigPayload` | S2C | 同步光影白名单配置 |
 | `ShaderInfoPayload` | C2S | 客户端上报当前使用的光影包名 |
 | `BlackoutTimerPayload` | S2C | 停电模式倒计时同步 |
-| `BlackoutStatusPayload` | S2C | 停电/恢复/警告等状态事件 |
 | `BlackoutAnnouncePayload` | S2C | 开局报幕（角色/目标信息） |
-| `BlackoutSheriffVotePayload` | S2C | 警长投票状态同步 |
-| `BlackoutSheriffVoteCastPayload` | C2S | 玩家投票请求 |
+| `FullConfigSyncPayload` | S2C | 同步完整服务端配置 |
+| `GameEndTransitionPayload` | S2C | 同步对局结束过渡与 MVP 数据 |
+| `OptionVotePayload` / `OptionVoteCastPayload` | S2C / C2S | 通用选项投票 |
+| `EliminatedRestPromptPayload` / `EliminatedRestTogglePayload` | S2C / C2S | 淘汰玩家休息区状态与切换 |
 
 ## 相关项目路径
 
-- 哈比列车附属mod（本项目，可修改）: `D:\Backup\mc mod\哈比列车api`
-- 哈比列车槟榔任务mod（可修改）: `D:\Backup\mc mod\槟榔`
-- 哈比列车 DLC（仅参照，不可修改）: `D:\Backup\mc mod\哈比列车dlc\StarRailExpress-master`
+- 哈比列车附属mod（本项目，可修改）: `/home/Mike/mcmod/哈比列车api`
+- 哈比列车槟榔任务mod（可修改）: `/home/Mike/mcmod/槟榔`
+- 哈比列车 DLC（仅参照，不可修改）: `/home/Mike/mcmod/哈比列车dlc/StarRailExpress-master`

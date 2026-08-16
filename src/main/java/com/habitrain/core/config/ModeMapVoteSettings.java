@@ -11,21 +11,23 @@ public final class ModeMapVoteSettings {
     public int mapDurationSeconds = 15;
     public final Map<String, ModeVoteEntry> modes = new LinkedHashMap<>();
     public final Map<String, MapVoteEntry> maps = new LinkedHashMap<>();
-    /** Global daily map pool rotation (variable pool count); never null after ensure. */
-    public MapPoolRotationSettings mapPoolRotation = MapPoolRotationSettings.createDefault();
+    /**
+     * Player-count based map draw (replaces the old fixed pool rotation); never null
+     * after {@link #playerCountOrDefault()}.
+     */
+    public MapPlayerCountSettings mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
 
     public static ModeMapVoteSettings createDefault() {
         ModeMapVoteSettings s = new ModeMapVoteSettings();
-        s.mapPoolRotation = MapPoolRotationSettings.createDefault();
+        s.mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
         return s;
     }
 
-    public MapPoolRotationSettings rotationOrDefault() {
-        if (mapPoolRotation == null) {
-            mapPoolRotation = MapPoolRotationSettings.createDefault();
+    public MapPlayerCountSettings playerCountOrDefault() {
+        if (mapPlayerCountDraw == null) {
+            mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
         }
-        mapPoolRotation.ensurePools();
-        return mapPoolRotation;
+        return mapPlayerCountDraw;
     }
 
     public JsonObject toJson() {
@@ -45,7 +47,7 @@ public final class ModeMapVoteSettings {
             mapsObj.add(e.getKey(), e.getValue().toJson());
         }
         o.add("maps", mapsObj);
-        o.add("mapPoolRotation", rotationOrDefault().toJson());
+        o.add("mapPlayerCountDraw", playerCountOrDefault().toJson());
         return o;
     }
 
@@ -74,10 +76,16 @@ public final class ModeMapVoteSettings {
                 }
             }
         }
-        if (o.has("mapPoolRotation") && o.get("mapPoolRotation").isJsonObject()) {
-            s.mapPoolRotation = MapPoolRotationSettings.fromJson(o.getAsJsonObject("mapPoolRotation"));
+        if (o.has("mapPlayerCountDraw") && o.get("mapPlayerCountDraw").isJsonObject()) {
+            s.mapPlayerCountDraw = MapPlayerCountSettings.fromJson(o.getAsJsonObject("mapPlayerCountDraw"));
         } else {
-            s.mapPoolRotation = MapPoolRotationSettings.createDefault();
+            // Migration from the removed fixed-pool rotation: keep the "enabled" intent.
+            if (o.has("mapPoolRotation") && o.get("mapPoolRotation").isJsonObject()) {
+                JsonObject old = o.getAsJsonObject("mapPoolRotation");
+                if (old.has("enabled") && old.get("enabled").getAsBoolean()) {
+                    s.mapPlayerCountDraw.enabled = true;
+                }
+            }
         }
         return s;
     }

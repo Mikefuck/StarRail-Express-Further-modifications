@@ -1,7 +1,6 @@
 package com.habitrain.core.client.network;
 
 import com.habitrain.core.network.ConfigUpdatePayload;
-import com.habitrain.core.network.MapPoolSkipPayload;
 import com.habitrain.core.network.OptionVoteCastPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
 import com.habitrain.core.network.VotePurpose;
@@ -76,11 +75,5 @@ public final class PayloadSenders {
     public static void sendOptionVoteCast(String voteId, @Nullable String optionId) {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new OptionVoteCastPayload(voteId, optionId));
-    }
-
-    /** OP skip current daily map pool (server validates permission ≥ 4). */
-    public static void sendMapPoolSkip() {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new MapPoolSkipPayload());
     }
 }

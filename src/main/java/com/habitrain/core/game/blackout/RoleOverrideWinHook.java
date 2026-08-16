@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout;
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.api.role.BlackoutWinCheckContext;
 import com.habitrain.core.api.role.ModifyRoleDefinition;
+import com.habitrain.core.role.extension.RoleV2WinHookSupport;
 import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -26,6 +27,8 @@ public final class RoleOverrideWinHook {
         for (var entry : RoleOverrideEngine.getInstance().getSnapshot().getActiveModifies().entrySet()) {
             ModifyRoleDefinition def = entry.getValue();
             if (def.winConditionHook().isEmpty()) continue;
+            if (!com.habitrain.core.game.sre.roleoverride.SreRoleOverrideWinBridge
+                    .hasAssignedRole(level, entry.getKey())) continue;
             SRERole role = TMMRoles.getRole(entry.getKey());
             if (role == null) continue;
             BlackoutWinCheckContext ctx = new BlackoutWinCheckContext(
@@ -38,6 +41,10 @@ public final class RoleOverrideWinHook {
                 com.habitrain.core.HabiTrainCore.LOGGER.warn(
                     "[RoleOverrideWinHook] hook for {} threw", entry.getKey(), t);
             }
+        }
+        WinResult v2 = RoleV2WinHookSupport.check(level);
+        if (v2 != null) {
+            return v2;
         }
         return null;
     }

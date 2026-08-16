@@ -16,7 +16,7 @@ public class TaskEditScreen extends Screen {
 
     private static final int PAD = 10;
     private static final int HEADER_H = 48;
-    private static final int FOOTER_H = 32;
+    private static final int FOOTER_H = 38;
     private static final int SECTION_GAP = 8;
     private static final int ROW_H = 22;
     private static final int LABEL_W = 76;
@@ -119,8 +119,6 @@ public class TaskEditScreen extends Screen {
                 MenuPermissions.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
-            saveController.saveCurrent();
             goBack();
         }).bounds(centerX - 58, btnY, 100, 20).build();
         addRenderableWidget(saveReturnBtn);
@@ -137,7 +135,7 @@ public class TaskEditScreen extends Screen {
         addRenderableWidget(resetBtn);
 
         topBackBtn = Button.builder(Component.literal("§7← 返回列表"), b -> goBack())
-                .bounds(width - 90, 4, 80, 16).build();
+                .bounds(8, 4, 74, 16).build();
         addRenderableWidget(topBackBtn);
 
         if (!remoteEditable) {
@@ -152,18 +150,8 @@ public class TaskEditScreen extends Screen {
         recalcContentHeight();
     }
 
-    private int calcSectionCount() {
-        // 停电专属任务在奖励区多一行（商店价格）
-        return 3 + 3 + 2 + 8 + (isBlackoutExclusiveTask() ? 1 : 0);
-    }
-
-    private int calcTotalContentHeight() {
-        int rows = calcSectionCount();
-        return PAD + 4 * 24 + rows * ROW_H + 3 * SECTION_GAP + PAD;
-    }
-
     private void recalcContentHeight() {
-        contentHeight = calcTotalContentHeight();
+        contentHeight = 420 + (isBlackoutExclusiveTask() ? ROW_H : 0);
         clampScroll();
     }
 
@@ -187,37 +175,34 @@ public class TaskEditScreen extends Screen {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g, mx, my, delta);
+        MenuTheme.drawBackdrop(g, width, height, modeAccentColor);
+        MenuTheme.editorHeader(g, font, width, def.getDisplayName(),
+                modeDisplayName + "  /  " + def.getFullId(), modeAccentColor);
+        MenuTheme.editorFooter(g, width, height, FOOTER_H);
         super.render(g, mx, my, delta);
 
-        Font f = font;
         int bodyTop = getBodyTop();
         int bodyBot = getBodyBottom();
-        int scrollW = width - PAD * 2;
-
-        String breadcrumb = "§7" + modeDisplayName + " §f> §r§l" + def.getDisplayName();
-        g.drawString(f, Component.literal(breadcrumb), PAD, 4, 0xFFFFFF, false);
-        g.drawString(f, Component.literal("§8" + def.getFullId()), PAD, 17, 0x555555, false);
-        boolean builtin = HabiTrainCore.MOD_ID.equals(def.getModId());
-        g.drawString(f, Component.literal(builtin ? "§8[内置任务]" : "§e[外部/DLC任务]"),
-                PAD, 30, 0, false);
         if (!remoteEditable) {
-            g.drawString(f, Component.literal("§c只读：联机服务器中仅 OP 可修改"),
-                    PAD, 42, 0xFF7777, false);
+            String readOnly = "只读 · 仅 OP 可修改";
+            g.drawString(font, readOnly, width - PAD - font.width(readOnly), 10, MenuTheme.DANGER, false);
         }
-        g.fill(PAD, HEADER_H - 1, width - PAD, HEADER_H, modeAccentColor);
 
-        g.enableScissor(PAD, bodyTop, width - PAD, bodyBot);
-        int labelX = PAD + 8;
-        int rowX = labelX + LABEL_W;
-        int curY = bodyTop - (int) scrollOffset;
+        int leftX = PAD;
+        int leftW = leftPanelWidth();
+        int rightX = rightPanelX();
+        int rightW = rightPanelWidth();
+        renderControlPanel(g, mx, my, delta, leftX, bodyTop, leftW, bodyBot - bodyTop);
 
-        curY = renderSectionBasic(g, f, scrollW, curY, labelX, rowX, mx, my, delta);
+        g.enableScissor(rightX, bodyTop, rightX + rightW, bodyBot);
+        int contentStartY = bodyTop - (int) scrollOffset;
+        int curY = contentStartY;
+        curY = renderRewardCard(g, mx, my, delta, rightX, curY, rightW);
         curY += SECTION_GAP;
-        curY = renderSectionReward(g, f, scrollW, curY, labelX, rowX, mx, my, delta);
+        curY = renderMapCard(g, mx, my, delta, rightX, curY, rightW);
         curY += SECTION_GAP;
-        curY = renderSectionMap(g, f, scrollW, curY, labelX, rowX, mx, my, delta);
-        curY += SECTION_GAP;
-        curY = renderSectionInfo(g, f, scrollW, curY, labelX, rowX);
+        curY = renderInfoCard(g, rightX, curY, rightW);
+        contentHeight = curY - contentStartY;
 
         g.disableScissor();
 
@@ -225,78 +210,131 @@ public class TaskEditScreen extends Screen {
         if (contentHeight > bodyH) {
             int thumbH = Math.max(20, bodyH * bodyH / contentHeight);
             int thumbY = bodyTop + (int) ((float) scrollOffset / (contentHeight - bodyH) * (bodyH - thumbH));
-            int sx = width - PAD - SCROLLBAR_W;
-            g.fill(sx, bodyTop, sx + SCROLLBAR_W, bodyBot, 0x20FFFFFF);
-            g.fill(sx, thumbY, sx + SCROLLBAR_W, thumbY + thumbH, 0x90AAAAAA);
+            int sx = rightX + rightW - SCROLLBAR_W;
+            g.fill(sx, bodyTop, sx + SCROLLBAR_W, bodyBot, MenuTheme.BG_PANEL);
+            g.fill(sx, thumbY, sx + SCROLLBAR_W, thumbY + thumbH, modeAccentColor);
         }
 
-        g.fill(PAD, bodyBot, width - PAD, bodyBot + 1, 0x30FFFFFF);
-        String tip = "§7提示: 修改后记得点击「保存修改」或「保存并返回」";
-        g.drawString(f, Component.literal(tip), PAD, bodyBot + 6, 0x777777, false);
+        String tip = "修改后请保存；返回时不会丢失已即时提交的开关";
+        g.drawString(font, tip, PAD, bodyBot + 9, MenuTheme.TEXT_SECONDARY, false);
     }
 
-    private int renderSectionFrame(GuiGraphics g, Font f, int w, int y, String title, int titleColor) {
-        int barH = 22;
-        g.fill(PAD, y, PAD + w, y + barH, titleColor & 0x00FFFFFF | 0x44000000);
-        g.fill(PAD, y, PAD + w, y + 1, titleColor | 0xFF000000);
-        g.drawString(f, Component.literal("§l§f" + title), PAD + 6, y + 7, 0xFFFFFF, false);
-        return y + barH;
-    }
+    private void renderControlPanel(GuiGraphics g, int mx, int my, float delta,
+                                    int x, int y, int w, int h) {
+        MenuTheme.panel(g, x, y, w, h);
+        g.fill(x, y, x + 3, y + h, cfg.getColor());
+        g.drawString(font, "任务控制", x + 14, y + 13, MenuTheme.TEXT_PRIMARY, false);
+        g.drawString(font, "状态、视觉与来源", x + 14, y + 28, MenuTheme.TEXT_SECONDARY, false);
 
-    private int renderSectionBasic(GuiGraphics g, Font f, int w, int y, int labelX, int rowX, int mx, int my, float delta) {
-        int secY = renderSectionFrame(g, f, w, y, "⚙ 基础设置", 0x44FFFFFF);
-
-        int r1 = secY;
-        g.drawString(f, Component.literal("§7任务状态:"), labelX, r1 + 4, 0xCCCCCC, false);
-        enableBtn.setX(rowX);
-        enableBtn.setY(r1);
+        enableBtn.setX(x + 14);
+        enableBtn.setY(y + 48);
+        enableBtn.setWidth(w - 28);
         enableBtn.render(g, mx, my, delta);
 
-        return colorPicker.render(g, f, labelX, rowX, r1 + ROW_H, mx, my, delta);
+        int afterColor = colorPicker.render(g, font, x + 14, x + 91, y + 78, mx, my, delta);
+        int metaY = afterColor + 12;
+        g.fill(x + 14, metaY, x + w - 14, metaY + 1, MenuTheme.BORDER);
+        metaY += 12;
+        metaLine(g, x + 14, metaY, w - 28, "来源", sourceLabel());
+        metaLine(g, x + 14, metaY + 19, w - 28, "分类", getCategoryName(category));
+        metaLine(g, x + 14, metaY + 38, w - 28, "模式", def.getGameModeId());
+        metaLine(g, x + 14, metaY + 57, w - 28, "任务 ID", def.getTaskId());
     }
 
-    private int renderSectionReward(GuiGraphics g, Font f, int w, int y, int labelX, int rowX, int mx, int my, float delta) {
-        int secY = renderSectionFrame(g, f, w, y, "💰 奖励设置", 0x44FFD700);
-
-        int r1 = secY;
-        g.drawString(f, Component.literal("§6金币奖励:"), labelX, r1 + 4, 0xCCCCCC, false);
-        goldField.setX(rowX);
-        goldField.setY(r1 + 4);
-        goldField.setWidth(60);
-        goldField.render(g, mx, my, delta);
-        g.drawString(f, Component.literal("§7(留空 = 系统默认值)"), rowX + 66, r1 + 4, 0x777777, false);
-
-        int r2 = r1 + ROW_H;
-        g.drawString(f, Component.literal("§d情绪奖励:"), labelX, r2 + 4, 0xCCCCCC, false);
-        emotionField.setX(rowX);
-        emotionField.setY(r2 + 4);
-        emotionField.setWidth(60);
-        emotionField.render(g, mx, my, delta);
-        g.drawString(f, Component.literal("§7(留空 = 系统默认值)"), rowX + 66, r2 + 4, 0x777777, false);
-
-        int r3 = r2 + ROW_H;
-        g.drawString(f, Component.literal("§e刷新权重:"), labelX, r3 + 4, 0xCCCCCC, false);
-        weightField.setX(rowX);
-        weightField.setY(r3 + 4);
-        weightField.setWidth(60);
-        weightField.render(g, mx, my, delta);
-        float effW = cfg.hasRefreshWeight ? cfg.refreshWeight : def.getWeight();
-        String effWStr = String.format("§7生效: §e%.1f", effW);
-        g.drawString(f, Component.literal(effWStr), rowX + 66, r3 + 4, 0x777777, false);
-
-        int nextY = r3 + ROW_H;
-        // 停电专属任务额外显示商店价格字段
+    private int renderRewardCard(GuiGraphics g, int mx, int my, float delta, int x, int y, int w) {
+        int rows = isBlackoutExclusiveTask() ? 4 : 3;
+        int cardH = 38 + rows * 24 + 8;
+        card(g, x, y, w, cardH, "奖励与权重", "留空时继承任务定义默认值", MenuTheme.ACCENT_AMBER);
+        int rowY = y + 38;
+        renderFieldRow(g, mx, my, delta, x, rowY, "金币奖励", goldField, "系统默认");
+        rowY += 24;
+        renderFieldRow(g, mx, my, delta, x, rowY, "情绪奖励", emotionField, "系统默认");
+        rowY += 24;
+        float effectiveWeight = cfg.hasRefreshWeight ? cfg.refreshWeight : def.getWeight();
+        renderFieldRow(g, mx, my, delta, x, rowY, "刷新权重", weightField,
+                String.format("当前 %.1f", effectiveWeight));
+        rowY += 24;
         if (isBlackoutExclusiveTask()) {
-            int r4 = nextY;
-            g.drawString(f, Component.literal("§6商店价格:"), labelX, r4 + 4, 0xCCCCCC, false);
-            shopPriceField.setX(rowX);
-            shopPriceField.setY(r4 + 4);
-            shopPriceField.setWidth(60);
-            shopPriceField.render(g, mx, my, delta);
-            g.drawString(f, Component.literal("§7(留空 = 系统默认值)"), rowX + 66, r4 + 4, 0x777777, false);
-            nextY = r4 + ROW_H;
+            renderFieldRow(g, mx, my, delta, x, rowY, "商店价格", shopPriceField, "系统默认");
         }
-        return nextY;
+        return y + cardH;
+    }
+
+    private int renderMapCard(GuiGraphics g, int mx, int my, float delta, int x, int y, int w) {
+        int cardH = 102;
+        card(g, x, y, w, cardH, "地图范围", "全部地图、白名单或黑名单", MenuTheme.ACCENT_BLUE);
+        mapEditor.render(g, font, x + 12, x + 90, w - 24, y + 38, mx, my, delta);
+        return y + cardH;
+    }
+
+    private int renderInfoCard(GuiGraphics g, int x, int y, int w) {
+        int cardH = 208;
+        card(g, x, y, w, cardH, "任务定义", "只读技术信息", MenuTheme.TEXT_DIM);
+        String[][] infos = {
+                {"任务名称", def.getDisplayName()}, {"完整 ID", def.getFullId()},
+                {"模组来源", def.getModId()}, {"任务分类", getCategoryName(def.getCategory())},
+                {"默认权重", String.format("%.1f", def.getWeight())},
+                {"方块类型 ID", def.getBlockTypeId() >= 0 ? String.valueOf(def.getBlockTypeId()) : "无"},
+                {"可直接获胜", def.canDirectlyWin() ? "是" : "否"},
+                {"扫描方块数", String.valueOf(def.getScanBlocks().size())}
+        };
+        int rowY = y + 40;
+        for (String[] info : infos) {
+            g.drawString(font, info[0], x + 12, rowY, MenuTheme.TEXT_SECONDARY, false);
+            String value = fit(info[1], w - 126);
+            g.drawString(font, value, x + 112, rowY, MenuTheme.TEXT_PRIMARY, false);
+            rowY += 20;
+        }
+        return y + cardH;
+    }
+
+    private void renderFieldRow(GuiGraphics g, int mx, int my, float delta,
+                                int x, int y, String label, EditBox field, String hint) {
+        g.drawString(font, label, x + 12, y + 7, MenuTheme.TEXT_SECONDARY, false);
+        field.setX(x + 102);
+        field.setY(y + 3);
+        field.setWidth(72);
+        field.render(g, mx, my, delta);
+        g.drawString(font, hint, x + 184, y + 7, MenuTheme.TEXT_DIM, false);
+    }
+
+    private void card(GuiGraphics g, int x, int y, int w, int h,
+                      String title, String subtitle, int accent) {
+        MenuTheme.panel(g, x, y, w, h);
+        g.fill(x, y, x + 3, y + h, accent);
+        g.drawString(font, title, x + 12, y + 10, MenuTheme.TEXT_PRIMARY, false);
+        g.drawString(font, subtitle, x + 12, y + 24, MenuTheme.TEXT_SECONDARY, false);
+    }
+
+    private void metaLine(GuiGraphics g, int x, int y, int w, String label, String value) {
+        g.drawString(font, label, x, y, MenuTheme.TEXT_SECONDARY, false);
+        String fitted = fit(value, w - 54);
+        g.drawString(font, fitted, x + 54, y, MenuTheme.TEXT_PRIMARY, false);
+    }
+
+    private String fit(String value, int maxWidth) {
+        if (value == null) return "—";
+        if (font.width(value) <= maxWidth) return value;
+        String suffix = "…";
+        int end = value.length();
+        while (end > 0 && font.width(value.substring(0, end) + suffix) > maxWidth) end--;
+        return value.substring(0, end) + suffix;
+    }
+
+    private String sourceLabel() {
+        return HabiTrainCore.MOD_ID.equals(def.getModId()) ? "HabiTrain Core" : def.getModId();
+    }
+
+    private int leftPanelWidth() {
+        return Math.min(240, Math.max(210, width / 3));
+    }
+
+    private int rightPanelX() {
+        return PAD + leftPanelWidth() + SECTION_GAP;
+    }
+
+    private int rightPanelWidth() {
+        return Math.max(1, width - rightPanelX() - PAD);
     }
 
     /** 是否为停电专属任务（电话商店购买类，需要商店价格配置）。 */
@@ -306,40 +344,21 @@ public class TaskEditScreen extends Screen {
                 || com.habitrain.core.game.blackout.BlackoutMode.BLACKOUT_BAD.equals(cat);
     }
 
-    private int renderSectionMap(GuiGraphics g, Font f, int w, int y, int labelX, int rowX, int mx, int my, float delta) {
-        int secY = renderSectionFrame(g, f, w, y, "🗺 地图设置", 0x4455AAFF);
-        return mapEditor.render(g, f, labelX, rowX, w, secY, mx, my, delta);
-    }
-
-    private int renderSectionInfo(GuiGraphics g, Font f, int w, int y, int labelX, int rowX) {
-        int secY = renderSectionFrame(g, f, w, y, "ℹ 基本信息 (只读)", 0x44555555);
-
-        String[][] infos = {
-                {"任务名称", def.getDisplayName()},
-                {"完整ID", def.getFullId()},
-                {"模组来源", def.getModId()},
-                {"任务分类", getCategoryName(def.getCategory())},
-                {"默认权重", String.format("%.1f", def.getWeight())},
-                {"方块类型ID", def.getBlockTypeId() >= 0 ? String.valueOf(def.getBlockTypeId()) : "无"},
-                {"可直接获胜", def.canDirectlyWin() ? "§a是" : "§c否"},
-                {"扫描方块数", String.valueOf(def.getScanBlocks().size())},
-        };
-
-        int curY = secY;
-        for (String[] info : infos) {
-            g.drawString(f, Component.literal("§7" + info[0] + ":"), PAD + 12, curY + 2, 0x888888, false);
-            g.drawString(f, Component.literal("§f" + info[1]), rowX, curY + 2, 0xFFFFFF, false);
-            curY += ROW_H - 2;
-        }
-        return curY;
-    }
-
     private Component makeEnableText() {
         return Component.literal(cfg.enabled ? "§a✔ 已启用" : "§c✘ 已禁用");
     }
 
     private void goBack() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
+            saveController.saveCurrent();
+        }
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    @Override
+    public void onClose() {
+        goBack();
     }
 
     private String getCategoryName(TaskCategory cat) {
@@ -354,7 +373,7 @@ public class TaskEditScreen extends Screen {
     public boolean mouseScrolled(double mx, double my, double dx, double dy) {
         int bodyTop = getBodyTop();
         int bodyBot = getBodyBottom();
-        if (my >= bodyTop && my < bodyBot) {
+        if (mx >= rightPanelX() && my >= bodyTop && my < bodyBot) {
             scrollOffset -= dy * 16;
             clampScroll();
             return true;
@@ -369,8 +388,8 @@ public class TaskEditScreen extends Screen {
         int bodyTop = getBodyTop();
         int bodyBot = getBodyBottom();
 
-        int sx = width - PAD - SCROLLBAR_W;
-        if (mx >= sx && mx < width - PAD && my >= bodyTop && my < bodyBot) {
+        int sx = rightPanelX() + rightPanelWidth() - SCROLLBAR_W;
+        if (mx >= sx && mx < sx + SCROLLBAR_W && my >= bodyTop && my < bodyBot) {
             draggingScroll = true;
             dragStartY = my;
             dragStartOff = scrollOffset;
@@ -385,7 +404,7 @@ public class TaskEditScreen extends Screen {
         shopPriceField.setFocused(false);
         mapEditor.mapField.setFocused(false);
 
-        if (mx >= enableBtn.getX() && mx < enableBtn.getX() + 88
+        if (mx >= enableBtn.getX() && mx < enableBtn.getX() + enableBtn.getWidth()
                 && my >= enableBtn.getY() && my < enableBtn.getY() + 20) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
@@ -398,7 +417,7 @@ public class TaskEditScreen extends Screen {
         if (colorPicker.handleMouseClick(mx, my, button)) return true;
         if (mapEditor.handleMouseClick(mx, my, button)) return true;
 
-        if (mx >= goldField.getX() && mx < goldField.getX() + 60
+        if (mx >= goldField.getX() && mx < goldField.getX() + goldField.getWidth()
                 && my >= goldField.getY() && my < goldField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
@@ -407,7 +426,7 @@ public class TaskEditScreen extends Screen {
             goldField.setFocused(true);
             return true;
         }
-        if (mx >= emotionField.getX() && mx < emotionField.getX() + 60
+        if (mx >= emotionField.getX() && mx < emotionField.getX() + emotionField.getWidth()
                 && my >= emotionField.getY() && my < emotionField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
@@ -416,7 +435,7 @@ public class TaskEditScreen extends Screen {
             emotionField.setFocused(true);
             return true;
         }
-        if (mx >= weightField.getX() && mx < weightField.getX() + 60
+        if (mx >= weightField.getX() && mx < weightField.getX() + weightField.getWidth()
                 && my >= weightField.getY() && my < weightField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
@@ -426,7 +445,7 @@ public class TaskEditScreen extends Screen {
             return true;
         }
         if (isBlackoutExclusiveTask()
-                && mx >= shopPriceField.getX() && mx < shopPriceField.getX() + 60
+                && mx >= shopPriceField.getX() && mx < shopPriceField.getX() + shopPriceField.getWidth()
                 && my >= shopPriceField.getY() && my < shopPriceField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();

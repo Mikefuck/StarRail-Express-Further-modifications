@@ -15,6 +15,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 警长（isVigilanteTeam()=true）因 canUseKiller=true → setCanUseInstinct(true)，
  * 使 isInstinctEnabled() 返回 true，从而获得了本应只属于杀手的透视。
  * 此处对警察阵营角色直接返回 false，一处关闭上述三项杀手透视。
+ * 仅当本地玩家存活（非旁观/非创造）时生效：死亡进入旁观/创造后放行，
+ * 保留 SRE 自带的旁观透视（上游对旁观者恒开启）。
  * 不改动 canUseKiller/canUseInstinct，因此警长的商店/左轮/手铐权限不受影响。
  */
 @Mixin(SREClient.class)
@@ -32,7 +34,8 @@ public class InstinctSheriffGateMixin {
         var player = Minecraft.getInstance().player;
         if (player == null) return;
         SRERole role = gameComponent.getRole(player);
-        if (role != null && role.isVigilanteTeam()) {
+        // 仅存活时移除警长误得的杀手透视；旁观/创造时保留 SRE 自带旁观透视。
+        if (role != null && role.isVigilanteTeam() && !SREClient.isPlayerSpectatingOrCreative()) {
             cir.setReturnValue(false);
         }
     }

@@ -44,6 +44,9 @@ public final class BlackoutPhoneHandler {
             if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
                 return InteractionResult.PASS;
             }
+            if (gameMode.get() instanceof BlackoutMode blackout && blackout.isGameEnded(serverLevel)) {
+                return InteractionResult.PASS;
+            }
 
             // 发起者必须存活（旁观者/已淘汰不可开电话 GUI；禁止 UI 路径 auto-revive）
             if (serverPlayer.isSpectator()) {
@@ -61,6 +64,10 @@ public final class BlackoutPhoneHandler {
             boolean hasHired = BlackoutPoliceHireService.hasHired(serverLevel, serverPlayer.getUUID());
             int sheriffCount = BlackoutRoleManager.getSheriffCount(serverLevel);
             int killerCount = BlackoutRoleManager.getRemainingBad(serverLevel);
+
+            // 记录电话交互会话，C2S 雇警必须通过此门闩
+            BlackoutPhoneSessionGate.markOpen(
+                    BlackoutPhoneSessionGate.Kind.HIRE, serverPlayer, pos);
 
             ServerPlayNetworking.send(serverPlayer, new BlackoutPhoneOpenPayload(
                     unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));

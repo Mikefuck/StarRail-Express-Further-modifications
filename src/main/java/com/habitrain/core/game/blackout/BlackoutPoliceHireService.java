@@ -108,15 +108,25 @@ public final class BlackoutPoliceHireService {
         if (gameMode.isEmpty() || !"habitrain:blackout".equals(gameMode.get().getId())) {
             return Component.literal("§c当前不在停电对局中");
         }
+        if (gameMode.get() instanceof BlackoutMode blackout && blackout.isGameEnded(level)) {
+            return Component.literal("§c对局已结束");
+        }
 
         HireState state = STATES.get(level.dimension());
         if (state == null) {
             return Component.literal("§c电话系统尚未就绪");
         }
 
-        // 1c. 发起者必须存活（旁观者/已淘汰不可雇）
-        if (initiator.isSpectator() || !BlackoutRoleManager.isAlive(level, initiator.getUUID())) {
+        // 1c. 发起者必须在线且存活（旁观者/已淘汰/断线宽限不可雇）
+        if (initiator.isSpectator() || !BlackoutRoleManager.isInteractable(level, initiator.getUUID())) {
             return Component.literal("§c你已淘汰，无法拨打110");
+        }
+
+        // 1d. 必须近期在路边电话处打开过 GUI，且仍在交互距离内
+        String gate = BlackoutPhoneSessionGate.validate(
+                BlackoutPhoneSessionGate.Kind.HIRE, level, initiator);
+        if (gate != null) {
+            return Component.literal("§c" + gate);
         }
 
         // 串行化扣款/转职，避免同 tick 并发突破 police≤killer
@@ -140,15 +150,17 @@ public final class BlackoutPoliceHireService {
 
             // 5. 警察不超杀手（成功前再读一遍）
             int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
-            if (sheriffCount + 1 > killerCount) {
-                return Component.literal("§c当前警力已足够，无法继续聘请");
-            }
+            boolean sheriffSlotsFull = sheriffCount + 1 > killerCount;
 
             // 6. 候选：存活非警察（含杀手）；排除发起者（禁自雇）
+            // 警长位满时仍允许抽中杀手雇佣；杀手不会转职，因而不新增警长职业位。
             Random random = new Random(level.getRandom().nextLong());
-            UUID targetId = BlackoutRoleManager.getRandomHireTarget(level, random, initiator.getUUID());
+            UUID targetId = BlackoutRoleManager.getRandomHireTarget(
+                    level, random, initiator.getUUID(), sheriffSlotsFull);
             if (targetId == null) {
-                return Component.literal("§c当前没有可调查的目标");
+                return Component.literal(sheriffSlotsFull
+                        ? "§c当前警力已足够，且没有可雇佣的杀手"
+                        : "§c当前没有可调查的目标");
             }
 
             ServerPlayer target = level.getServer().getPlayerList().getPlayer(targetId);
@@ -171,6 +183,7 @@ public final class BlackoutPoliceHireService {
             // ===== 成功流程 =====
             shop.addToBalance(-HIRE_COST);
             state.hasHired.add(initiator.getUUID());
+            BlackoutPhoneSessionGate.touch(BlackoutPhoneSessionGate.Kind.HIRE, initiator);
 
             if (targetIsKiller) {
                 // 杀手：保留原身份与 BAD 计数，仅加入 sheriffs 特权集

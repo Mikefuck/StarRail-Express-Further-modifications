@@ -18,6 +18,10 @@ public class PerPlayerTaskTicker {
     }
 
     public static void tick(Player player) {
+        // 维修人员不参与对局：不 tick/不派发任何 api 任务（双保险，SRE 本就不给其开局名单）
+        if (RepairModeManager.isRepairer(player)) {
+            return;
+        }
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance customTask = mgr.getActiveTask(player.getUUID());
         TaskInstance fakeTask = mgr.getFakeTask(player.getUUID());

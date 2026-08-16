@@ -105,6 +105,8 @@ public class GameLifecycleHandler {
 
             // 清除任务池缓存，确保下一局任务重新计算
             TaskPoolBuilder.invalidateAll();
+            // 兜底清空活跃/假任务，防止非内置模式或异常路径泄漏到下一局
+            TaskManager.getInstance().clearAllActiveTasks();
 
             // 重置背包翻找任务状态（下一局可以再次刷新）
             BackpackQuestState.getInstance().resetAll();

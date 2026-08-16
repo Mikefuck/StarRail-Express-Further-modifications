@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.server.level.ServerLevel;
@@ -8,7 +9,6 @@ import net.minecraft.world.entity.player.Player;
 import org.agmas.harpymodloader.Harpymodloader;
 import org.agmas.harpymodloader.SREDisableManager;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
-import org.agmas.harpymodloader.events.OnGamePlayerRolesConfirm;
 import pro.fazeclan.river.stupid_express.constants.SEModifiers;
 
 import java.util.ArrayList;
@@ -23,20 +23,10 @@ import java.util.UUID;
  * Forced roles ({@code FORCED_MODDED_ROLE_FLIP}) are never demoted by spawn gates.
  */
 public final class SevenSinsMutex {
-    private static boolean registered;
-
     /** Greed only appears naturally when participant count is greater than this. */
     public static final int GREED_MIN_PLAYERS_EXCLUSIVE = 12;
 
     private SevenSinsMutex() {}
-
-    public static void init() {
-        if (registered) return;
-        registered = true;
-        OnGamePlayerRolesConfirm.EVENT.register(SevenSinsMutex::beforeAssign);
-        HabiTrainCore.LOGGER.info(
-                "[SevenSins] mutex + lust/envy/greed natural gates registered (forced protected)");
-    }
 
     static void beforeAssign(ServerLevel level, Map<Player, SRERole> map) {
         if (map == null || map.isEmpty()) return;
@@ -165,17 +155,27 @@ public final class SevenSinsMutex {
      * (亡命徒) for neutral sins — that was turning forced Lust into 亡命徒.
      */
     public static SRERole fallbackNonSin(SRERole removed) {
-        if (removed == null) return TMMRoles.CIVILIAN;
+        SRERole civilian = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.CIVILIAN);
+        SRERole killer = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.KILLER);
+        SRERole vigilante = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.VIGILANTE);
+        SRERole looseEnd = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                .resolveOrOriginal(TMMRoles.LOOSE_END);
+        if (removed == null) return civilian;
         int type = removed.getRoleType();
-        if (type == TMMRoles.KILLER.getRoleType()) return TMMRoles.KILLER;
-        if (type == TMMRoles.VIGILANTE.getRoleType()) return TMMRoles.VIGILANTE;
-        if (type == TMMRoles.CIVILIAN.getRoleType()) return TMMRoles.CIVILIAN;
+        if (type == killer.getRoleType()) return killer;
+        if (type == vigilante.getRoleType()) return vigilante;
+        if (type == civilian.getRoleType()) return civilian;
 
         // Neutrals / other: prefer a non-sin same-type role that is not loose-end / other-mode.
-        SRERole candidate = TMMRoles.ROLES.values().stream()
+        // Pool comes from the v2 catalog (v1 fallback) so v2-added roles join the pool (audit P2-1).
+        SRERole candidate =
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool().stream()
                 .filter(role -> role != null && !SevenSins.isSin(role))
                 .filter(role -> role.getRoleType() == type)
-                .filter(role -> role != TMMRoles.LOOSE_END)
+                .filter(role -> role != looseEnd)
                 .filter(role -> {
                     try {
                         return !role.isOtherModeRole();
@@ -197,6 +197,6 @@ public final class SevenSinsMutex {
         if (candidate != null) return candidate;
 
         // Last resort for neutrals: civilian, never loose_end.
-        return TMMRoles.CIVILIAN;
+        return civilian;
     }
 }

@@ -33,7 +33,9 @@ import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -114,6 +116,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(actualItem.getItem());
         if (id == null) return false;
         String itemId = id.toString();
+        if (collectedTypeIds.contains(itemId)) return false;
         ItemStack stored = actualItem.copyWithCount(1);
         storedItems.add(stored);
         boolean fresh = collectedTypeIds.add(itemId);
@@ -337,7 +340,12 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
         ItemStack pouch = GreedPouchItem.createBoundPouch(sp);
         if (!sp.getInventory().add(pouch)) {
-            // Prefer keep on player; if full, force into a slot rather than world drop
+            // Prefer keep on player; if full, force into slot 0 and preserve the
+            // displaced item by dropping it instead of silently overwriting it.
+            ItemStack displaced = sp.getInventory().getItem(0);
+            if (!displaced.isEmpty()) {
+                sp.drop(displaced, false, false);
+            }
             sp.getInventory().setItem(0, pouch);
         }
         pouchGiven = true;
@@ -498,41 +506,60 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         ItemStack pouch = findOwnPouch(self);
         if (pouch.isEmpty()) return;
 
-        List<ItemStack> physical = GreedPouchItem.getStoredItems(pouch, self.registryAccess());
-        if (physical.isEmpty() && storedItems.isEmpty()) return;
+        List<ItemStack> ledger = GreedPouchItem.getLedgerItems(pouch, self.registryAccess());
+        List<ItemStack> actualVisible = GreedPouchItem.getBundleItems(pouch);
 
-        // If physical is empty but we have storedItems from absorb-path, keep writing them to UI.
-        if (physical.isEmpty()) {
-            syncPhysicalPouch(self);
+        // Migration/crash recovery: if the component lost its list but the bound item
+        // still has the complete backup, restore from that backup. A normal player
+        // removal cannot enter this branch because the component still has its prior list.
+        if (storedItems.isEmpty() && !ledger.isEmpty() && actualVisible.isEmpty()) {
+            storedItems.addAll(ledger.stream().map(ItemStack::copy).toList());
+            rebuildCollectedTypes();
+            GreedPouchItem.setStoredItems(pouch, storedItems, self.registryAccess());
+            KEY.sync(self);
             return;
         }
 
-        int before = collectedTypeIds.size();
-        // Prefer physical as source of truth for kinds present in the bag.
-        Set<String> next = new HashSet<>();
-        List<ItemStack> nextStored = new ArrayList<>();
-        for (ItemStack stack : physical) {
-            if (stack == null || stack.isEmpty() || GreedPouchItem.isGreedPouch(stack)) continue;
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
-            if (id == null) continue;
-            next.add(id.toString());
-            nextStored.add(stack.copyWithCount(1));
+        // The component is normally authoritative. The ledger is a crash/migration fallback
+        // and, unlike the vanilla bundle, contains entries hidden by the weight limit.
+        Map<String, ItemStack> previous = new LinkedHashMap<>();
+        for (ItemStack stack : storedItems) addStoredById(previous, stack);
+        for (ItemStack stack : ledger) addStoredById(previous, stack);
+        if (previous.isEmpty() && actualVisible.isEmpty()) return;
+
+        Set<String> actualVisibleIds = itemIds(actualVisible);
+        List<ItemStack> expectedVisible = GreedPouchItem.getDisplayableItems(
+                new ArrayList<>(previous.values()));
+
+        Map<String, ItemStack> nextStoredById = new LinkedHashMap<>(previous);
+        // Only a previously displayable entry can prove removal. Capacity overflow must stay.
+        for (String expectedId : itemIds(expectedVisible)) {
+            if (!actualVisibleIds.contains(expectedId)) {
+                nextStoredById.remove(expectedId);
+            }
         }
+        // Vanilla inventory UI writes newly inserted entries only to BUNDLE_CONTENTS.
+        for (ItemStack stack : actualVisible) addStoredById(nextStoredById, stack);
+
+        int before = collectedTypeIds.size();
+        Set<String> next = new HashSet<>(nextStoredById.keySet());
+        List<ItemStack> nextStored = new ArrayList<>(nextStoredById.values());
 
         // Detect newly added kinds vs previous set for feedback.
         Set<String> newly = new HashSet<>(next);
         newly.removeAll(collectedTypeIds);
 
-        boolean changed = !next.equals(collectedTypeIds) || nextStored.size() != storedItems.size();
+        boolean changed = !next.equals(collectedTypeIds);
         if (!changed) return;
 
         collectedTypeIds.clear();
         collectedTypeIds.addAll(next);
         storedItems.clear();
         storedItems.addAll(nextStored);
-        // Only update CUSTOM_DATA backup — never rewrite BUNDLE_CONTENTS here
-        // (would clobber vanilla insert order / multi-count stacks).
+        // Preserve actual vanilla stack counts/order while promoting ledger overflow
+        // into capacity opened by a removed visible entry.
         GreedPouchItem.setCustomDataBackup(pouch, storedItems, self.registryAccess());
+        GreedPouchItem.fillBundleFromLedger(pouch, storedItems);
         KEY.sync(self);
 
         if (!newly.isEmpty()) {
@@ -559,6 +586,23 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             HabiTrainCore.LOGGER.info("[Greed] {} pouch resync {} -> {} kinds (new={})",
                     self.getGameProfile().getName(), before, collectedTypeIds.size(), newly.size());
         }
+    }
+
+    private static void addStoredById(Map<String, ItemStack> target, ItemStack stack) {
+        if (stack == null || stack.isEmpty() || GreedPouchItem.isGreedPouch(stack)) return;
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (id != null) target.putIfAbsent(id.toString(), stack.copyWithCount(1));
+    }
+
+    private static Set<String> itemIds(List<ItemStack> stacks) {
+        Set<String> ids = new HashSet<>();
+        if (stacks == null) return ids;
+        for (ItemStack stack : stacks) {
+            if (stack == null || stack.isEmpty() || GreedPouchItem.isGreedPouch(stack)) continue;
+            ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            if (id != null) ids.add(id.toString());
+        }
+        return ids;
     }
 
     private static ItemStack findOwnPouch(ServerPlayer self) {

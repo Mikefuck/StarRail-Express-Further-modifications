@@ -1,5 +1,6 @@
 package com.habitrain.core.api;
 
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 
@@ -131,7 +132,18 @@ public class TaskDefinition {
     public TimeImpact getTimeImpact() { return timeImpact; }
 
     // --- Callback dispatch ---
-    public void onAssign(Player player, TaskInstance instance) { if (onAssignHandler != null) onAssignHandler.accept(player, instance); }
+    public void onAssign(Player player, TaskInstance instance) {
+        if (instance != null) {
+            instance.bindOwner(player);
+        }
+        if (onAssignHandler != null) {
+            onAssignHandler.accept(player, instance);
+        }
+        if (instance != null && player instanceof ServerPlayer serverPlayer) {
+            GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).ifPresent(mode ->
+                    mode.onTaskAssign(serverPlayer, instance));
+        }
+    }
     public void onComplete(Player player, TaskInstance instance) { if (onCompleteHandler != null) onCompleteHandler.accept(player, instance); }
     public void onRemove(Player player, TaskInstance instance) { if (onRemoveHandler != null) onRemoveHandler.accept(player, instance); }
     public void onFail(Player player, TaskInstance instance) { if (onFailHandler != null) onFailHandler.accept(player, instance); }

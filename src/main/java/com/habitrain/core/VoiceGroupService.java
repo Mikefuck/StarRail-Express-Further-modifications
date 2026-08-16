@@ -45,6 +45,7 @@ public final class VoiceGroupService {
         List<ServerPlayer> nearby = new ArrayList<>();
         for (ServerPlayer p : srv.getPlayerList().getPlayers()) {
             if (p.getUUID().equals(sender.getUUID())) continue;
+            if (!p.level().dimension().equals(sender.level().dimension())) continue;
             if (p.distanceToSqr(sender) <= (double) range * range) nearby.add(p);
         }
         if (nearby.isEmpty()) {

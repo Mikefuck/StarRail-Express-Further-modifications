@@ -35,7 +35,7 @@ public final class BlackoutDeathHandler {
         // 仅停电模式对局
         var modeOpt = GameModeRegistry.getActiveForLevel(level);
         if (modeOpt.isEmpty() || !(modeOpt.get() instanceof BlackoutMode mode)) return;
-        if (!mode.isActive(level) || mode.isGameEnded()) return;
+        if (!mode.isActive(level) || mode.isGameEnded(level)) return;
 
         // 已不在黑名单存活表 → 无需处理（幂等）
         if (!BlackoutRoleManager.isAlive(level, serverPlayer.getUUID())) return;

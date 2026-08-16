@@ -115,10 +115,8 @@ public class BetelTickEngine {
         long currentLastEatTime = addiction.getLastEatTime();
 
         if (currentLastEatTime > 0 && currentLastEatTime != data.lastDetectedEatTime) {
-            if (!data.hasEatenBetelNut) {
-                data.hasEatenBetelNut = true;
-                detectedEating = true;
-            }
+            data.hasEatenBetelNut = true;
+            detectedEating = true;
             data.lastDetectedEatTime = currentLastEatTime;
         }
 
@@ -186,6 +184,9 @@ public class BetelTickEngine {
             data.hasFoodRestriction = true;
             player.displayClientMessage(Component.literal("§c你的身体没办法接受正常的食物.."), true);
             HabiTrainCore.LOGGER.info("玩家 {} 达到Stage 3，食物限制已激活", player.getName().getString());
+        } else if (currentStage < 3 && data.hasFoodRestriction) {
+            data.hasFoodRestriction = false;
+            HabiTrainCore.LOGGER.info("玩家 {} 低于 Stage 3，食物限制已解除", player.getName().getString());
         }
 
         if (!config.enableAddictionSystem) {
@@ -250,6 +251,9 @@ public class BetelTickEngine {
 
         if (EffectOwnershipTracker.release(pUuid, MobEffects.DARKNESS, "betel_quest")) {
             player.removeEffect(MobEffects.DARKNESS);
+        }
+        if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SLOWDOWN, "betel_quest")) {
+            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
         }
         if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SPEED, "betel_quest")) {
             player.removeEffect(MobEffects.MOVEMENT_SPEED);

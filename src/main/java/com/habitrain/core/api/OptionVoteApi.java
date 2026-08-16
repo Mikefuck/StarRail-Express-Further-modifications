@@ -24,8 +24,7 @@ public final class OptionVoteApi {
      * 网络路径应使用 {@link OptionVoteManager#cast} 并传入客户端 voteId。
      */
     public static boolean cast(ServerLevel level, UUID voter, @Nullable String optionId) {
-        OptionVoteManager.cast(level, voter, OptionVoteManager.currentVoteId(level), optionId);
-        return OptionVoteManager.isActive(level);
+        return OptionVoteManager.cast(level, voter, OptionVoteManager.currentVoteId(level), optionId);
     }
 
     public static boolean isActive(ServerLevel level) {

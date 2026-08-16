@@ -6,8 +6,11 @@ import com.habitrain.core.client.gui.BlackoutTaskShopState;
 import com.habitrain.core.client.gui.BlackoutVoteState;
 import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import com.habitrain.core.client.gui.ClientBlackoutState;
-import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.gui.MapVotePreviewCache;
 import com.habitrain.core.client.gui.OptionVoteState;
+import com.habitrain.core.client.gui.VoteLaunchSession;
+import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
@@ -40,6 +43,9 @@ public class ClientLifecycleHandler {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             client.execute(() -> {
                 resetState();
+                // 结束转场覆盖层独立于 resetState()（后者在 OnGameFinishedClient 当帧被调用），
+                // 换世界/断线时在此显式释放，避免黑场屏蔽残留。
+                com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
                 shaderMonitor.start();
             });
         });
@@ -48,6 +54,7 @@ public class ClientLifecycleHandler {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             shaderMonitor.stop();
             resetState();
+            com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
         });
 
         // 客户端 tick：报幕 tick（每帧执行，独立于光影监测）
@@ -60,9 +67,17 @@ public class ClientLifecycleHandler {
             var mc = Minecraft.getInstance();
             if (mc.getConnection() == null) return;
 
+            // Refresh local registry views, live role cards, and an open role book.
+            com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
+
             // ★ 单机模式（集成服务器）：配置已保存在本地，无需同步
             //    mc.getSingleplayerServer() != null 表示当前正在运行本地集成服务器
-            if (mc.getSingleplayerServer() != null) return;
+            if (mc.getSingleplayerServer() != null) {
+                mc.getSingleplayerServer().execute(() ->
+                        com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
+                                .refreshServer(mc.getSingleplayerServer()));
+                return;
+            }
             if (!MenuPermissions.canEditRemoteConfigs()) return;
 
             // 发送当前完整配置到服务端
@@ -70,35 +85,59 @@ public class ClientLifecycleHandler {
             String configJson = ConfigManager.getInstance().toJsonString();
             InstinctColorHelper.markDirty();
             PayloadSenders.sendConfigUpdate(configJson);
-
-            // 本地刷新角色覆盖引擎（客户端预览）
-            com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
         });
 
-        // 监听 SRE 游戏结束事件 → 立即隐藏 HUD + 刷新游戏运行缓存
+                // 监听 SRE 游戏结束事件 → 交还结束转场（滑出）+ 立即隐藏 HUD + 刷新游戏运行缓存
+        // 必须先 markGameFinished() 再 resetState()：resetState() 只清开局转场覆盖层，
+        // 结束转场的覆盖层必须保留到滑出完成（fade-block 持续屏蔽 SRE 黑场淡出）。
         OnGameFinishedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
+                if (Minecraft.getInstance().screen
+                        instanceof com.habitrain.core.client.gui.GameEndTransitionScreen transition) {
+                    transition.markGameFinished();
+                }
                 GameRunningCache.invalidate();
                 resetState();
             });
         });
 
-        // 监听 SRE 游戏开始事件 → 刷新游戏运行缓存 (S9-002)
+        // 监听 SRE 游戏开始事件 → 刷新游戏运行缓存 + 交还开局转场（游戏进入 ACTIVE）
         OnGameStartedClient.EVENT.register(() -> {
-            Minecraft.getInstance().execute(GameRunningCache::invalidate);
+            Minecraft.getInstance().execute(() -> {
+                GameRunningCache.invalidate();
+                VoteLaunchSession.onGameActive();
+                if (Minecraft.getInstance().screen
+                        instanceof com.habitrain.core.client.gui.VoteLaunchTransitionScreen transition) {
+                    transition.markGameActive();
+                }
+            });
         });
     }
 
     private static void resetState() {
         GameRunningCache.invalidate();
+        RepairModeClientState.reset();
+        MenuAccessGuard.reset();
         BlackoutHudOverlay.reset();
         BlackoutWelcomeRenderer.reset();
         BlackoutVoteState.clear();
         OptionVoteState.clear();
+        VoteLaunchSession.clear();
+        MapVotePreviewCache.clearAll();
         ClientBlackoutState.setBlackoutModeActive(false);
         // 清活动任务/扫描方块缓存与商店状态，避免换世界后陈旧 ESP 轮廓与商店状态残留（P1-22/P1-23）
-        ActiveTaskCache.clear();
+        ActiveTaskCache.clearAll();
         CustomTaskBlockCache.clear();
         BlackoutTaskShopState.clear();
+        // 开局转场覆盖层在换世界/断线时释放，避免阻塞残留到下一局。
+        com.habitrain.core.client.gui.VoteLaunchOverlayState.setActive(false);
+        com.habitrain.core.client.gui.VoteLaunchOverlayState.scheduleGrace(0L);
+        // 角色状态同步镜像与角色动作回调在断线/换世界时清空，防止陈旧数据泄漏到下一服务器。
+        com.habitrain.core.client.role.RoleStateClientCache.clear();
+        com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.clear();
+        com.habitrain.core.client.role.RoleActionClientState.clear();
+        // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
+        com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
+        com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
     }
 }

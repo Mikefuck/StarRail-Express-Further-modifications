@@ -72,13 +72,14 @@ public final class SREOriginalModeBridge {
     }
 
     /**
-     * Core modeId segment after modId: {@code sre_proxy:<namespace>_<path>}.
+     * Core modeId segment after modId: {@code sre_proxy_<namespace>_<path>}.
+     * Kept free of ':' so the full id is always a valid ResourceLocation.
      * Path characters outside {@code [a-z0-9_]} become {@code _}.
      */
     static String toProxyModeId(ResourceLocation sreId) {
         String ns = sanitizeSegment(sreId.getNamespace());
         String path = sanitizeSegment(sreId.getPath());
-        return "sre_proxy:" + ns + "_" + path;
+        return "sre_proxy_" + ns + "_" + path;
     }
 
     private static String sanitizeSegment(String raw) {

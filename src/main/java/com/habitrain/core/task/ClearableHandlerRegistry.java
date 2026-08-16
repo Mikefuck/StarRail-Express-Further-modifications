@@ -1,5 +1,8 @@
 package com.habitrain.core.task;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +14,7 @@ import java.util.List;
  */
 public final class ClearableHandlerRegistry {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("ClearableHandlerRegistry");
     private static final List<Runnable> handlers = new ArrayList<>();
 
     private ClearableHandlerRegistry() {}
@@ -27,7 +31,11 @@ public final class ClearableHandlerRegistry {
     /** 调用所有已注册 handler 的清理方法。 */
     public static void clearAll() {
         for (Runnable handler : handlers) {
-            handler.run();
+            try {
+                handler.run();
+            } catch (Throwable t) {
+                LOGGER.warn("ClearableHandlerRegistry handler failed", t);
+            }
         }
     }
 }

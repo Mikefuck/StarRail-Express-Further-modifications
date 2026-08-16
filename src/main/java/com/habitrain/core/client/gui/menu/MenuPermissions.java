@@ -15,6 +15,12 @@ public final class MenuPermissions {
         return mc.player != null && mc.player.hasPermissions(4);
     }
 
+    /** SRE 背包中的任务点设置只要求普通管理员权限。 */
+    public static boolean canAccessTaskSettings() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null && mc.player != null && mc.player.hasPermissions(2);
+    }
+
     public static void showDeniedMessage() {
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {

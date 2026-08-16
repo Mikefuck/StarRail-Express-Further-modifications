@@ -2,13 +2,15 @@ package com.habitrain.core.game.sre.role.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoleItems;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -249,21 +251,30 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
         return -1;
     }
 
-    /** 转职用杀手池（排除 habitrain 投稿杀手）。 */
+    /** 转职用杀手池（上游杀手逻辑：canUseKiller && !isInnocent；排除其他模式/禁用/不可随机/七宗罪角色）。 */
     public static List<SRERole> randomKillerPool() {
         List<SRERole> killers = new ArrayList<>();
-        for (SRERole role : TMMRoles.ROLES.values()) {
+        // 池来自 v2 目录（v1 回退），使 v2 ADD 角色能进入转职杀手池（audit P2-1）。
+        for (SRERole role :
+                com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
             if (role == null) continue;
+            if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
             if (!role.canUseKiller()) continue;
             if (role.isVigilanteTeam()) continue;
             if (role.isNeutrals()) continue;
-            ResourceLocation id = role.identifier();
-            if (id != null && "habitrain_core".equals(id.getNamespace())) continue;
+            if (role.isInnocent()) continue;           // 对齐上游杀手池 (canUseKiller && !isInnocent)
+            if (SevenSins.isSin(role)) continue;       // 排除七宗罪：互斥仅开局执行，局中转罪会绕开一局一罪
             killers.add(role);
         }
+        // 空池回退：只接收通过过滤的替换杀手，否则留空（调用方已 warn+return）
         if (killers.isEmpty() && TMMRoles.KILLER != null) {
-            killers.add(TMMRoles.KILLER);
+            SRERole fallback = com.habitrain.core.role.catalog.RoleCatalogConsumer
+                    .resolveOrOriginal(TMMRoles.KILLER);
+            if (fallback != null && SreRolePoolFilter.isCurrentModeRandomizable(fallback)) {
+                killers.add(fallback);
+            }
         }
+        SreRolePoolFilter.warnIfLeaky("ScapegoatKiller", killers);
         return killers;
     }
 

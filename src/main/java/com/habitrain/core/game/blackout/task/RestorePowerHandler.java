@@ -143,9 +143,9 @@ public class RestorePowerHandler {
         rs.slowUntilTick = tick + SLOW_TICKS;
         activeStates.put(uuid, rs);
 
-        SlownessReapplyManager.register(serverPlayer.serverLevel().dimension(), serverPlayer.getUUID(),
-                new SlownessReapplyManager.EffectSpec(2, SLOW_TICKS + 10,
-                        ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER)));
+        SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
+                2, SLOW_TICKS + 10,
+                ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_RESTORE_POWER));
 
         return InteractionResult.FAIL;
     }

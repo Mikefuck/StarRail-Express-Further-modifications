@@ -9,20 +9,10 @@ import com.habitrain.core.game.sre.role.sins.component.PrideComponent;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
-import com.habitrain.core.game.sre.role.sins.win.GreedRole;
-import com.habitrain.core.game.sre.role.sins.win.LustRole;
-import com.habitrain.core.game.sre.role.sins.win.PrideRole;
-import com.habitrain.core.game.sre.role.sins.win.SlothRole;
-import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
-import io.wifi.starrailexpress.api.TMMRoles;
-import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
 
-import java.awt.Color;
-import java.util.List;
 import java.util.Set;
 
 public final class SevenSins {
@@ -58,11 +48,13 @@ public final class SevenSins {
     }
 
     public static void init() {
-        registerRoles();
+        // 七宗罪角色已由 CoreRoleExtensionProvider 经 v2 ADD + RoleFactory 注册并回填字段。
+        // 角色行为（战斗/交互/生命周期/互斥）已迁移到 SevenSinV2BehaviorHooks 的 v2 托管钩子。
         registerSkills();
         wireOpposingClique();
-        SevenSinsMutex.init();
         com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks.init();
+        // v2 win hooks moved into CoreRoleExtensionProvider.registerWith
+        // (audit P1-1): no process-global registrar writes.
         SevenSinEvents.init();
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] registered 7 sins: pride, envy, wrath, greed, gluttony, lust, sloth");
@@ -141,102 +133,6 @@ public final class SevenSins {
                             .build()
             );
         }
-    }
-
-    private static void registerRoles() {
-        // Pride: independent neutral, instinct, no time
-        PRIDE = TMMRoles.registerRole(new PrideRole(
-                PRIDE_ID, new Color(180, 40, 40).getRGB(),
-                false, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ).setComponentKey(PrideComponent.KEY)
-                .setNeutrals(true)
-                .setCanUseInstinct(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
-
-        // Envy: killer — shop override is authoritative (not customEntries)
-        ENVY = TMMRoles.registerRole(new NormalRole(
-                ENVY_ID, new Color(40, 160, 60).getRGB(),
-                false, true, SRERole.MoodType.FAKE, Integer.MAX_VALUE, false
-        ) {
-            @Override
-            public List<ShopEntry> getShopEntries() {
-                // Fresh list each open so prices/items cannot be mutated by shop UI.
-                return SevenSinShops.envyShop();
-            }
-        }.setComponentKey(EnvyComponent.KEY)
-                .setCanUseInstinct(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
-
-        // Wrath: neutral for killer, see time, no instinct; no shop; no default items
-        WRATH = TMMRoles.registerRole(new NormalRole(
-                WRATH_ID, new Color(200, 30, 30).getRGB(),
-                false, false, SRERole.MoodType.FAKE,
-                Integer.MAX_VALUE, true
-        ) {
-            @Override
-            public List<ItemStack> getDefaultItems() {
-                return List.of();
-            }
-
-            @Override
-            public List<ShopEntry> getShopEntries() {
-                return SevenSinShops.empty();
-            }
-        }.setComponentKey(WrathComponent.KEY)
-                .setNeutrals(true)
-                .setNeutralForKiller(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
-
-        // Greed: independent neutral CustomWinner; natural spawn >12 players (mutex gate)
-        GREED = TMMRoles.registerRole(new GreedRole(
-                GREED_ID, new Color(200, 160, 20).getRGB(),
-                false, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), true
-        ).setComponentKey(GreedComponent.KEY)
-                .setNeutrals(true)
-                .setCanUseInstinct(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1)
-                .setDefaultEnableNeededPlayerCount(13));
-
-        // Gluttony: innocent civilian
-        GLUTTONY = TMMRoles.registerRole(new NormalRole(
-                GLUTTONY_ID, new Color(140, 90, 50).getRGB(),
-                true, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ) {
-            @Override
-            public List<ShopEntry> getShopEntries() {
-                return SevenSinShops.gluttonyShop();
-            }
-        }.setComponentKey(GluttonyComponent.KEY)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
-
-        // Lust: independent neutral, instinct + see time
-        LUST = TMMRoles.registerRole(new LustRole(
-                LUST_ID, new Color(200, 50, 150).getRGB(),
-                false, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), true
-        ).setComponentKey(LustComponent.KEY)
-                .setNeutrals(true)
-                .setCanUseInstinct(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
-
-        // Sloth: independent neutral CustomWinner
-        SLOTH = TMMRoles.registerRole(new SlothRole(
-                SLOTH_ID, new Color(100, 100, 140).getRGB(),
-                false, false, SRERole.MoodType.REAL,
-                TMMRoles.CIVILIAN.getMaxSprintTime(), false
-        ).setComponentKey(SlothComponent.KEY)
-                .setNeutrals(true)
-                .setCanSeeCoin(true)
-                .setDefaultMax(1));
     }
 
     private static void wireOpposingClique() {

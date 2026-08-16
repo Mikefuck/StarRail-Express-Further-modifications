@@ -22,9 +22,10 @@ import java.util.Set;
 public class ModeAllowedMapsScreen extends Screen {
 
     private static final int PAD = 10;
-    private static final int HEADER_H = 36;
+    private static final int HEADER_H = 44;
+    private static final int FOOTER_H = 36;
     private static final int ROW_H = 22;
-    private static final int ACCENT = 0xFF7C9CFF;
+    private static final int ACCENT = MenuTheme.ACCENT_BLUE;
 
     private final Screen parent;
     private final String modeId;
@@ -114,14 +115,12 @@ public class ModeAllowedMapsScreen extends Screen {
         // and cover custom content with blur; widgets are drawn manually below.
         renderBackground(g, mx, my, delta);
         MenuTheme.drawBackdrop(g, width, height, ACCENT);
-
-        g.drawString(font, Component.literal("§l可选地图"), PAD + 80, 8, 0xFFFFFFFF, false);
-        g.drawString(font, Component.literal("§7模式: " + modeId), PAD + 80, 22, 0xFF888888, false);
-        g.drawString(font, Component.literal("§8空选 = 不限制地图"), width - PAD - font.width("空选 = 不限制地图"), 12,
-                MenuTheme.TEXT_SECONDARY, false);
+        MenuTheme.editorHeader(g, font, width, "可选地图",
+                "模式 " + modeId + " · 空选表示不限制地图", ACCENT);
+        MenuTheme.editorFooter(g, width, height, FOOTER_H);
 
         int contentTop = HEADER_H;
-        int contentBot = height - 34;
+        int contentBot = height - FOOTER_H;
         int contentH = contentBot - contentTop;
         int scrollW = width - PAD * 2;
 
@@ -136,8 +135,7 @@ public class ModeAllowedMapsScreen extends Screen {
             for (String id : mapIds) {
                 boolean on = selected.contains(id);
                 boolean hover = MenuTheme.inBounds(mx, my, PAD, y, scrollW - 8, ROW_H);
-                g.fill(PAD, y, PAD + scrollW - 8, y + ROW_H - 2,
-                        hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+                MenuTheme.row(g, PAD, y, scrollW - 8, ROW_H - 2, hover, false);
                 g.fill(PAD + 4, y + 4, PAD + 16, y + 16, on ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
                 if (on) {
                     g.drawString(font, "§a✓", PAD + 5, y + 5, 0xFFFFFFFF, false);
@@ -174,7 +172,7 @@ public class ModeAllowedMapsScreen extends Screen {
 
         if (!remoteEditable) {
             g.drawString(font, Component.literal("§c只读：联机服务器中仅 OP 可修改"),
-                    PAD, height - 12, 0xFF5555, false);
+                    PAD, height - 12, MenuTheme.DANGER, false);
         }
     }
 
@@ -186,6 +184,7 @@ public class ModeAllowedMapsScreen extends Screen {
         if (my >= contentTop && my < contentBot) {
             for (RowHit hit : rowHits) {
                 if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
+                    MenuSounds.playClick();
                     if (!remoteEditable) { MenuPermissions.showDeniedMessage(); return true; }
                     if (selected.contains(hit.id())) selected.remove(hit.id());
                     else selected.add(hit.id());
@@ -211,7 +210,7 @@ public class ModeAllowedMapsScreen extends Screen {
             int contentBot = height - 34;
             int contentH = contentBot - contentTop;
             int maxScroll = Math.max(0, contentHeight - contentH);
-            scrollOffset = Mth.clamp(dragStartOff + (dragStartY - my), 0, maxScroll);
+            scrollOffset = Mth.clamp(dragStartOff + (my - dragStartY), 0, maxScroll);
             return true;
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
@@ -235,6 +234,9 @@ public class ModeAllowedMapsScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            commitSave();
+        }
         Minecraft.getInstance().setScreen(parent);
     }
 }

@@ -26,7 +26,7 @@ class BlackoutTickCoordinator {
     }
 
     void tick(ServerLevel level) {
-        if (level != mode.getCurrentLevel() || mode.isGameEnded()) return;
+        if (!mode.hasRound(level) || mode.isGameEnded(level)) return;
 
         if (tickAccumulator % 20 == 0 || !cachedSreActive) {
             var sreGame = SREGameWorldComponent.KEY.get(level);
@@ -56,12 +56,15 @@ class BlackoutTickCoordinator {
             // Auto sheriff vote removed — police hire and exile vote ticked separately.
             BlackoutExileVoteManager.tickSecond(level);
 
+            // 断线宽限超时 → eliminate（与死亡路径分离）
+            mode.tickOfflineGrace(level);
+
             victoryChecker.tickSecond(level);
 
             // 临时电源提灯到期回收（每秒检查一次足够）
             com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.tickTempPower(level);
 
-            if (mode.getCurrentLevel() == null || mode.isGameEnded()) return;
+            if (!mode.hasRound(level) || mode.isGameEnded(level)) return;
 
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive(level)) {
                 victoryChecker.reapplyPermanentBlackout(level);

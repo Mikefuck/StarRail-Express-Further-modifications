@@ -4,6 +4,7 @@ import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.MenuTheme;
+import com.habitrain.core.client.gui.menu.ui.PillToggle;
 import com.habitrain.core.client.gui.menu.ui.ScrollArea;
 import com.habitrain.core.client.gui.menu.ui.SubTabBar;
 import com.habitrain.core.config.ConfigManager;
@@ -39,8 +40,7 @@ public class InGameEnvPage implements ConfigPage {
     public static final int SUB_RAIN = 2;
 
     private static final String[] SUB_LABELS = {"对局环境", "局后时间", "动态雨"};
-    private static final int ACCENT = 0xFF55C28A;
-    private static final int[] SUB_ACCENTS = {ACCENT, ACCENT, ACCENT};
+    private static final int ACCENT = MenuTheme.ACCENT_MINT;
     private static final int PAD = 12;
     private static final int ROW_H = 22;
     private static final int HEADER_H = 16;
@@ -62,7 +62,7 @@ public class InGameEnvPage implements ConfigPage {
     private EditBox minPlayersField;
 
     private ScrollArea area;
-    private final SubTabBar subTabBar = new SubTabBar(SUB_LABELS, SUB_ACCENTS);
+    private final SubTabBar subTabBar = new SubTabBar(SUB_LABELS, ACCENT);
 
     private final List<EnvEditorShared.ButtonHit> buttonHits = new ArrayList<>();
     private final List<MapRowHit> mapHits = new ArrayList<>();
@@ -206,6 +206,19 @@ public class InGameEnvPage implements ConfigPage {
     /** 提交聚焦的 profile tick/fog 文本框到当前 profile（保存/切页/关闭前调用）。 */
     @Override public void flushPending() {
         EnvEditorShared.flushFocusedFields(profileTickField, profileFogEndField, currentProfile(), editable);
+        if (!editable) return;
+        flushRuleTick(goodTickField, settings().goodWin);
+        flushRuleTick(otherTickField, settings().otherWin);
+    }
+
+    private void flushRuleTick(EditBox field, PostMatchTimeRule rule) {
+        if (field == null || rule == null || !field.isFocused()) return;
+        if (rule.time == null) rule.time = EnvTimeSpec.createDefault();
+        try {
+            rule.time.tick = EnvTimeSpec.clampTick(Integer.parseInt(field.getValue().trim()));
+            rule.time.mode = EnvTimeSpec.Mode.TICK;
+            ConfigManager.getInstance().markEnvironmentDirty();
+        } catch (NumberFormatException ignored) {}
     }
 
     // ---------------- 渲染 ----------------
@@ -219,10 +232,11 @@ public class InGameEnvPage implements ConfigPage {
         subHitThisFrame = subTabBar.render(g, font, x, y, w, subTab, mx, my);
         int contentY = y + SubTabBar.H + 4;
         int contentH = h - SubTabBar.H - 4;
-        area = new ScrollArea(x, contentY, w, contentH);
+        area.setBounds(x, contentY, w, contentH);
 
         g.enableScissor(x, contentY, x + w, contentY + contentH);
-        int cy = area.getContentY() + 6;
+        int contentStartY = area.getContentY();
+        int cy = contentStartY + 6;
         int labelX = x + PAD;
         int innerW = w - PAD * 2 - 6;
 
@@ -234,7 +248,7 @@ public class InGameEnvPage implements ConfigPage {
         }
 
         cy += 8;
-        area.setContentHeight(cy - contentY);
+        area.setContentHeight(cy - contentStartY);
         area.render(g);
         g.disableScissor();
 
@@ -245,7 +259,7 @@ public class InGameEnvPage implements ConfigPage {
     }
 
     private int renderMatch(GuiGraphics g, int mx, int my, float delta, int labelX, int cy, int innerW) {
-        g.drawString(font, Component.literal("§e§l对局环境配置"), labelX, cy, ACCENT, false);
+        g.drawString(font, "对局环境配置", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H + 2;
         g.drawString(font, "§7左侧选地图覆盖；无覆盖时使用默认配置", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
         cy += ROW_H;
@@ -311,7 +325,7 @@ public class InGameEnvPage implements ConfigPage {
     }
 
     private int renderPost(GuiGraphics g, int mx, int my, float delta, int labelX, int cy, int innerW) {
-        g.drawString(font, Component.literal("§e§l局后时间"), labelX, cy, ACCENT, false);
+        g.drawString(font, "局后时间", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H + 2;
         g.drawString(font, "§7好人 = isInnocentWin()；其余走杀手/中立", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
         cy += ROW_H;
@@ -322,7 +336,7 @@ public class InGameEnvPage implements ConfigPage {
         if (s.goodWin.time == null) s.goodWin.time = EnvTimeSpec.createDefault();
         if (s.otherWin.time == null) s.otherWin.time = EnvTimeSpec.createDefault();
 
-        g.drawString(font, Component.literal("§a§l好人胜利"), labelX, cy, ACCENT, false);
+        g.drawString(font, "好人胜利", labelX, cy, MenuTheme.ACCENT_MINT, false);
         cy += HEADER_H;
         cy = renderPostRule(g, mx, my, delta, labelX, cy, innerW, s.goodWin, "good", goodTickField);
 
@@ -330,7 +344,7 @@ public class InGameEnvPage implements ConfigPage {
         g.fill(labelX, cy, labelX + innerW, cy + 1, MenuTheme.SEPARATOR);
         cy += 8;
 
-        g.drawString(font, Component.literal("§c§l杀手/中立等"), labelX, cy, ACCENT, false);
+        g.drawString(font, "杀手 / 中立", labelX, cy, MenuTheme.DANGER, false);
         cy += HEADER_H;
         cy = renderPostRule(g, mx, my, delta, labelX, cy, innerW, s.otherWin, "other", otherTickField);
         return cy;
@@ -387,7 +401,7 @@ public class InGameEnvPage implements ConfigPage {
     }
 
     private int renderRain(GuiGraphics g, int mx, int my, float delta, int labelX, int cy, int innerW) {
-        g.drawString(font, Component.literal("§e§l动态雨（低人数）"), labelX, cy, ACCENT, false);
+        g.drawString(font, "动态雨 / 低人数", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H + 2;
         g.drawString(font, "§7人数低于阈值时强制下雨（对局中）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
         cy += ROW_H;
@@ -417,8 +431,7 @@ public class InGameEnvPage implements ConfigPage {
 
     private int drawToggle(GuiGraphics g, int labelX, int cy, String label, boolean on, String action) {
         int tw = 50;
-        g.fill(labelX, cy, labelX + tw, cy + 16, on ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, on ? "§a开" : "§c关", labelX + 16, cy + 4, 0xFFFFFFFF, false);
+        PillToggle.render(g, font, labelX, cy, tw, 16, on, "开", "关");
         buttonHits.add(new EnvEditorShared.ButtonHit(action, labelX, cy, tw, 16));
         g.drawString(font, label, labelX + tw + 8, cy + 4, MenuTheme.TEXT_PRIMARY, false);
         return cy + ROW_H;
@@ -432,6 +445,7 @@ public class InGameEnvPage implements ConfigPage {
 
         // 内层子 Tab 切换（滚动归零 + 强制同步字段 + 失焦）
         if (MenuTheme.inBounds(mx, my, x, y, w, SubTabBar.H)) {
+            if (subHitThisFrame >= 0) playClick();
             if (subHitThisFrame >= 0 && subHitThisFrame != subTab) {
                 subTab = subHitThisFrame;
                 area.reset();

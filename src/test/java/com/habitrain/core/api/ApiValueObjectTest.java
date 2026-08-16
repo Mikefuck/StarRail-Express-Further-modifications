@@ -1,0 +1,103 @@
+package com.habitrain.core.api;
+
+import com.habitrain.core.network.GameEndTransitionPayload;
+import net.minecraft.nbt.CompoundTag;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class ApiValueObjectTest {
+
+    @Test
+    void winResultKeepsDefensiveWinnerSnapshot() {
+        UUID winner = UUID.randomUUID();
+        List<UUID> source = new ArrayList<>();
+        source.add(winner);
+
+        WinResult result = new WinResult(source, "test");
+        source.clear();
+
+        assertEquals(List.of(winner), result.getWinners());
+        assertThrows(UnsupportedOperationException.class,
+                () -> result.getWinners().add(UUID.randomUUID()));
+    }
+
+    @Test
+    void voteResultKeepsDefensiveTalliesSnapshot() {
+        Map<String, Integer> source = new HashMap<>();
+        source.put("arena", 2);
+
+        VoteResult result = new VoteResult("mode", "arena", source, false);
+        source.put("arena", 9);
+
+        assertEquals(Map.of("arena", 2), result.tallies());
+        assertThrows(UnsupportedOperationException.class,
+                () -> result.tallies().put("repair", 1));
+    }
+
+    @Test
+    void nullCollectionsRemainEmpty() {
+        assertTrue(new WinResult(null, "none").getWinners().isEmpty());
+        assertTrue(new VoteResult("mode", null, null, false).tallies().isEmpty());
+    }
+
+    @Test
+    void voteApisRejectMissingLevel() {
+        assertFalse(OptionVoteApi.cast(null, UUID.randomUUID(), "arena"));
+        assertFalse(ModeMapVoteApi.cancel(null));
+        assertTrue(ModeMapVoteApi.getSnapshot(null).isEmpty());
+    }
+
+    @Test
+    void gameEndPayloadBoundsAndSnapshotsMvpPlayers() {
+        List<GameEndTransitionPayload.MvpPlayer> players = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            players.add(new GameEndTransitionPayload.MvpPlayer(
+                    UUID.randomUUID(), "player-" + i, i, i, i, i,
+                    GameEndTransitionPayload.ROLE_TYPE_KILLER));
+        }
+
+        GameEndTransitionPayload payload = new GameEndTransitionPayload(
+                "WIN", "sre:murder", "", 0, "", players, true);
+        players.clear();
+
+        assertEquals(GameEndTransitionPayload.MAX_MVP_PLAYERS, payload.mvpPlayers().size());
+        assertThrows(UnsupportedOperationException.class,
+                () -> payload.mvpPlayers().add(payload.mvpPlayers().getFirst()));
+    }
+
+    @Test
+    void gameEndPayloadNormalizesUnknownRoleType() {
+        GameEndTransitionPayload.MvpPlayer player = new GameEndTransitionPayload.MvpPlayer(
+                UUID.randomUUID(), "player", 1, 2, 3, 4, Integer.MAX_VALUE);
+
+        assertEquals(GameEndTransitionPayload.ROLE_TYPE_CIVILIAN, player.roleType());
+    }
+
+    @Test
+    void taskNbtRestorePreservesRuntimeInvariants() {
+        TaskDefinition definition = TaskRegistry.register(
+                "habitrain_test", "nbt_runtime_invariants", builder -> {});
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("customId", definition.getFullId());
+        nbt.putBoolean("fulfilled", false);
+        nbt.putBoolean("failed", true);
+        nbt.putInt("maxProgress", 0);
+        nbt.putInt("elapsedTicks", -20);
+
+        TaskInstance restored = TaskInstance.fromNbt(nbt);
+
+        assertEquals(1, restored.getMaxProgress());
+        assertTrue(restored.isFailed());
+        assertTrue(restored.isFulfilled());
+    }
+}

@@ -1,8 +1,10 @@
 package com.habitrain.core.api;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 
 /**
  * Runtime task instance that stores progress and lifecycle state.
@@ -20,6 +22,8 @@ public class TaskInstance {
     private Player progressUpdatePlayer = null;
     // 任务归属玩家（由 onAssign/tick 设置），保证 tick 外 setProgress 也能派发回调。
     private Player ownerPlayer = null;
+    // 任务所在维度，用于按维度清理（避免一个世界结束清掉另一个世界的任务）。
+    private ResourceKey<Level> dimension = null;
 
     public TaskInstance(TaskDefinition definition) {
         this.definition = definition;
@@ -27,10 +31,17 @@ public class TaskInstance {
 
     public TaskDefinition getDefinition() { return definition; }
     public String getFullId() { return definition.getFullId(); }
+    public @org.jetbrains.annotations.Nullable ResourceKey<Level> getDimension() { return dimension; }
+    public void setDimension(@org.jetbrains.annotations.Nullable ResourceKey<Level> dimension) { this.dimension = dimension; }
     public int getProgress() { return progress; }
     public int getMaxProgress() { return maxProgress; }
     public boolean isFulfilled() { return fulfilled; }
     public boolean isFailed() { return failed; }
+
+    void bindOwner(Player player) {
+        this.ownerPlayer = player;
+        this.progressUpdatePlayer = player;
+    }
 
     public void setProgress(int progress) {
         int old = this.progress;
@@ -41,6 +52,10 @@ public class TaskInstance {
             Player p = progressUpdatePlayer != null ? progressUpdatePlayer : ownerPlayer;
             if (p != null) {
                 definition.onProgressUpdate(p, this, old);
+                if (p instanceof ServerPlayer serverPlayer) {
+                    GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).ifPresent(mode ->
+                            mode.onTaskProgressChange(serverPlayer, this, old));
+                }
             }
         }
     }
@@ -65,8 +80,7 @@ public class TaskInstance {
         if (fulfilled) return;
 
         // 记录归属玩家，tick 外 setProgress 可回退使用
-        this.ownerPlayer = player;
-        progressUpdatePlayer = player;
+        bindOwner(player);
         try {
             if (definition.getTimeLimit() > 0) {
                 elapsedTicks++;
@@ -79,11 +93,30 @@ public class TaskInstance {
 
             definition.onTick(player, this);
 
-            if (definition.checkCompletion(player, this)) {
+            ServerPlayer serverPlayer = null;
+            GameMode activeMode = null;
+            if (player instanceof ServerPlayer sp) {
+                serverPlayer = sp;
+                activeMode = GameModeRegistry.getActiveForLevel(sp.serverLevel()).orElse(null);
+                if (activeMode != null) {
+                    activeMode.onTaskTick(sp, this);
+                }
+            }
+
+            boolean completed = definition.checkCompletion(player, this);
+            if (serverPlayer != null && activeMode != null) {
+                completed = activeMode.overrideCompletionCheck(serverPlayer, this).orElse(completed);
+            }
+
+            if (completed) {
                 this.fulfilled = true;
                 // 与 onFail 保持对称：对所有 Player 调用 onComplete。
                 // DLC 回调内部可自行用 instanceof ServerPlayer 判断是否在服务端上下文。
                 definition.onComplete(player, this);
+            } else if (!failed) {
+                // completion override=false 时撤销本 tick 内由任务逻辑写入的 fulfilled，
+                // 确保模式覆盖结果真正控制完成状态。
+                this.fulfilled = false;
             }
         } finally {
             // 恢复为 owner，tick 外 setProgress 仍可派发回调
@@ -113,9 +146,12 @@ public class TaskInstance {
         TaskInstance instance = new TaskInstance(def);
         instance.fulfilled = nbt.getBoolean("fulfilled");
         instance.failed = nbt.getBoolean("failed");
-        instance.progress = nbt.getInt("progress");
-        instance.maxProgress = nbt.getInt("maxProgress");
-        instance.elapsedTicks = nbt.getInt("elapsedTicks");
+        instance.setMaxProgress(nbt.getInt("maxProgress"));
+        instance.progress = Math.max(0, Math.min(instance.getMaxProgress(), nbt.getInt("progress")));
+        instance.elapsedTicks = Math.max(0, nbt.getInt("elapsedTicks"));
+        if (instance.failed) {
+            instance.fulfilled = true;
+        }
         return instance;
     }
 }

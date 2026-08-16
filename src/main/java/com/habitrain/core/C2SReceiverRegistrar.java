@@ -1,13 +1,13 @@
 package com.habitrain.core;
 
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.network.BlackoutPhoneOpenPayload;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.network.*;
 import com.habitrain.core.util.SubtitleNotifier;
-import com.habitrain.core.vote.MapPoolRotationService;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
@@ -35,13 +35,27 @@ public final class C2SReceiverRegistrar {
                     player.sendSystemMessage(Component.literal("§c你没有权限修改服务端配置（需要 OP 权限）"));
                     return;
                 }
-                // merge 语义：仅覆盖 OP 客户端发送的条目，不删除客户端视图缺失的服务端独有条目（P5-36）
-                ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
+                // Mod 菜单门控：专用服务器上门控开启且未授权时，服务端权威拒绝配置写入
+                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
+                        && !MenuGateService.isAllowed(player)) {
+                    player.sendSystemMessage(Component.literal("§c当前为未授权的访问：未获得服务器授权修改配置"));
+                    return;
+                }
+                // merge 语义：仅覆盖 OP 客户端发送的条目；失败则不 save/不广播
+                boolean merged = ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
+                if (!merged) {
+                    player.sendSystemMessage(Component.literal(
+                            "§c配置合并失败：JSON 无效或字段类型错误，服务端配置未改动"));
+                    LOGGER.warn("玩家 {} 的配置 merge 被拒绝（解析失败）", player.getName().getString());
+                    return;
+                }
                 ConfigManager.getInstance().save();
-                ConfigManager.getInstance().applyKnifeDurabilityToSreConfig();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 // Rebuild role override engine with updated config
                 com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild();
+                com.habitrain.core.role.override.RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
+                com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
+                        .refreshServer(context.server());
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
                 if (context.server().isSingleplayer()) return;
                 // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
@@ -57,14 +71,15 @@ public final class C2SReceiverRegistrar {
                 ConfigManager cfg = ConfigManager.getInstance();
                 if (!cfg.isShaderWhitelistEnabled()) return;
                 String shaderPackName = payload.getShaderPackName();
-                if (shaderPackName.isEmpty()) return;
+                // 关光影（空包名）始终允许；白名单只拦截“启用了但不在名单内”的光影
+                if (shaderPackName == null || shaderPackName.isEmpty()) return;
                 boolean allowed = cfg.getShaderWhitelist().stream()
                         .anyMatch(name -> name.equalsIgnoreCase(shaderPackName));
                 if (!allowed) {
                     player.connection.disconnect(Component.literal(
                             "§c✖ 未授权的光影包\n\n" +
                             "§7你使用的光影包 §e" + shaderPackName + " §7不在服务器白名单中。\n" +
-                            "§7请更换为允许的光影包后重新加入。\n\n" +
+                            "§7请更换为允许的光影包，或关闭光影后重新加入。\n\n" +
                             "§7如需帮助，请联系服务器管理员。"));
                 }
             });
@@ -154,14 +169,6 @@ public final class C2SReceiverRegistrar {
                 OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
             });
         });
-        // C2S 地图池跳过（OP ≥ 4）
-        ServerPlayNetworking.registerGlobalReceiver(MapPoolSkipPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                MapPoolRotationService.skip(player);
-            });
-        });
         // C2S 贪婪匿名交易确认/取消（与 /habi_api greed_trade 等价）
         ServerPlayNetworking.registerGlobalReceiver(GreedTradeActionPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -184,6 +191,62 @@ public final class C2SReceiverRegistrar {
                                 .openSelectedTrade(player, payload.partnerId());
                     }
                 }));
+        ServerPlayNetworking.registerGlobalReceiver(RoleActionC2SPayload.TYPE, (payload, context) ->
+                context.server().execute(() -> {
+                    ServerPlayer player = context.player();
+                    if (player == null || payload == null || payload.actionId() == null) {
+                        return;
+                    }
+                    // The service runs the §12.4 validation order and echoes the
+                    // result (with the request sequence) through its bound ResultSender.
+                    com.habitrain.core.api.role.v2.action.RoleActionApi.instance()
+                            .receiveC2S(player, payload.actionId(), payload.payload(), payload.sequence());
+                }));
+        // C2S 角色扩展 v2 配置更新（§13.1）：仅 OP4 且通过菜单门控的服务端权威应用。
+        ServerPlayNetworking.registerGlobalReceiver(RoleConfigUpdatePayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null || payload == null) {
+                    return;
+                }
+                if (!player.hasPermissions(4)) {
+                    player.sendSystemMessage(Component.literal("§c你没有权限修改角色扩展配置（需要 OP 权限）"));
+                    return;
+                }
+                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
+                        && !MenuGateService.isAllowed(player)) {
+                    player.sendSystemMessage(Component.literal("§c当前为未授权的访问：未获得服务器授权修改配置"));
+                    return;
+                }
+                if (!com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE
+                        .applyFromJson(payload.configJson())) {
+                    player.sendSystemMessage(Component.literal(
+                            "§c角色扩展配置合并失败：JSON 无效或字段类型错误，配置未改动"));
+                    LOGGER.warn("玩家 {} 的角色扩展配置更新被拒绝（解析失败）",
+                            player.getName().getString());
+                    return;
+                }
+                com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.save();
+                com.habitrain.core.role.config.RoleConfigApplyService.applyAndBroadcast(context.server());
+                player.sendSystemMessage(Component.literal(
+                        "§a角色扩展配置已应用；若在对局中，将下一局生效。"));
+                LOGGER.info("玩家 {} 更新了角色扩展 v2 配置", player.getName().getString());
+            });
+        });
+        // C2S 角色扩展握手本地 manifest 上报（audit P1-4）：服务端据此权威计算
+        // §14.2 握手结果并门控角色动作；断线时在 LifecycleEventsRegistrar 清除。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.RoleHandshakeReportPayload.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) {
+                                return;
+                            }
+                            com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
+                                    .record(player.getUUID(), payload.toClientManifest());
+                            LOGGER.debug("玩家 {} 上报角色扩展握手 manifest",
+                                    player.getName().getString());
+                        }));
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

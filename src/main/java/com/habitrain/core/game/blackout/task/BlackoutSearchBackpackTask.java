@@ -49,12 +49,9 @@ public class BlackoutSearchBackpackTask {
 
                 BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_search_backpack");
 
-                // 复用原版 search_backpack 的随机道具池（按角色分池：杀手/警长/平民）
-                net.minecraft.world.item.ItemStack granted = LootHelper.giveRandomBackpackItem(serverPlayer);
-                // 记录发放的道具，供任务取消时回收（打 NBT 标签 + 存入 TaskInstance）
-                if (granted != null) {
-                    com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(granted, "habitrain_core:blackout_search_backpack");
-                }
+                // 复用原版 search_backpack 的随机道具池（按角色分池：杀手/警长/平民）。
+                // 在放入背包前打回收标签，避免 add() 消耗 stack 后打标到空栈。
+                LootHelper.giveRandomBackpackItem(serverPlayer, "habitrain_core:blackout_search_backpack");
 
                 // 已删除完成弹窗（用户要求）— 仅金币/情绪奖励 + 道具，actionbar 文本由
                 // giveRandomBackpackItem 内部 player.displayClientMessage 给出。

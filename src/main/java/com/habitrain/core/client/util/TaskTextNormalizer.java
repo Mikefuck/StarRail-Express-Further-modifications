@@ -51,10 +51,14 @@ public final class TaskTextNormalizer {
             return component;
         }
 
-        return normalizeTaskKey(translatable.getKey());
+        return normalizeTaskKey(translatable.getKey(), translatable.getArgs());
     }
 
     private static Component normalizeTaskKey(String key) {
+        return normalizeTaskKey(key, null);
+    }
+
+    private static Component normalizeTaskKey(String key, @org.jetbrains.annotations.Nullable Object[] args) {
         if (key == null || key.isBlank()) {
             return Component.empty();
         }
@@ -65,13 +69,17 @@ public final class TaskTextNormalizer {
         }
 
         if (Language.getInstance().has(normalized)) {
-            return Component.translatable(normalized);
+            return args == null || args.length == 0
+                    ? Component.translatable(normalized)
+                    : Component.translatable(normalized, args);
         }
 
         if (normalized.startsWith("task.")) {
             String suffix = normalized.substring("task.".length());
             if (Language.getInstance().has(suffix)) {
-                return Component.translatable(suffix);
+                return args == null || args.length == 0
+                        ? Component.translatable(suffix)
+                        : Component.translatable(suffix, args);
             }
             return Component.literal(suffix);
         }

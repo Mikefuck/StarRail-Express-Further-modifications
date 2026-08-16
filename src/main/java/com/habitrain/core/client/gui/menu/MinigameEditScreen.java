@@ -18,7 +18,8 @@ import net.minecraft.util.Mth;
 public class MinigameEditScreen extends Screen {
 
     private static final int PAD = 10;
-    private static final int HEADER_H = 36;
+    private static final int HEADER_H = 44;
+    private static final int FOOTER_H = 36;
     private static final int ROW_H = 22;
     private static final int LABEL_W = 76;
     private static final int ALPHA = 0xB4;
@@ -130,9 +131,7 @@ public class MinigameEditScreen extends Screen {
         addRenderableWidget(mapField);
 
         saveBtn = Button.builder(Component.literal("§a保存并返回"), b -> {
-            commitFields();
-            ConfigManager.getInstance().setMinigameConfig(minigame.id(), cfg);
-            Minecraft.getInstance().setScreen(parent);
+            goBack();
         }).bounds(-10000, -10000, 100, 20).build();
         addRenderableWidget(saveBtn);
 
@@ -157,7 +156,7 @@ public class MinigameEditScreen extends Screen {
         addRenderableWidget(resetBtn);
 
         topBackBtn = Button.builder(Component.literal("§7← 返回"), b -> {
-            Minecraft.getInstance().setScreen(parent);
+            goBack();
         }).bounds(PAD, 4, 70, 18).build();
         addRenderableWidget(topBackBtn);
 
@@ -189,6 +188,10 @@ public class MinigameEditScreen extends Screen {
     }
 
     private void saveCurrent() {
+        if (!remoteEditable || !MenuPermissions.canEditRemoteConfigs()) {
+            MenuPermissions.showDeniedMessage();
+            return;
+        }
         ConfigManager.getInstance().putMinigameConfig(minigame.id(), cfg);
     }
 
@@ -228,16 +231,23 @@ public class MinigameEditScreen extends Screen {
         }
     }
 
+    private void goBack() {
+        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
+            commitFields();
+            ConfigManager.getInstance().setMinigameConfig(minigame.id(), cfg);
+        }
+        Minecraft.getInstance().setScreen(parent);
+    }
+
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g, mx, my, delta);
-
-        // 标题
-        g.drawString(font, Component.literal("§l" + displayName), PAD + 80, 8, 0xFFFFFFFF, false);
-        g.drawString(font, Component.literal("§7" + minigame.id()), PAD + 80, 22, 0xFF888888, false);
+        MenuTheme.drawBackdrop(g, width, height, MenuTheme.ACCENT_MINT);
+        MenuTheme.editorHeader(g, font, width, displayName, minigame.id(), MenuTheme.ACCENT_MINT);
+        MenuTheme.editorFooter(g, width, height, FOOTER_H);
 
         int contentTop = HEADER_H;
-        int contentBot = height - 30;
+        int contentBot = height - FOOTER_H;
         int contentH = contentBot - contentTop;
         int scrollW = width - PAD * 2;
 
@@ -245,7 +255,8 @@ public class MinigameEditScreen extends Screen {
         int y = contentTop - (int) scrollOffset;
 
         // ===== 基础设置 =====
-        g.drawString(font, Component.literal("§e§l基础设置"), PAD, y + 2, MenuTheme.ACCENT_CYAN, false);
+        g.drawString(font, "基础设置", PAD, y + 2, MenuTheme.TEXT_PRIMARY, false);
+        g.fill(PAD, y + 14, PAD + scrollW - 8, y + 15, MenuTheme.BORDER);
         y += ROW_H + 4;
 
         // 启用/禁用
@@ -271,7 +282,8 @@ public class MinigameEditScreen extends Screen {
         y += ROW_H + 6;
 
         // ===== 奖励设置 =====
-        g.drawString(font, Component.literal("§e§l奖励设置"), PAD, y + 2, MenuTheme.ACCENT_CYAN, false);
+        g.drawString(font, "奖励设置", PAD, y + 2, MenuTheme.TEXT_PRIMARY, false);
+        g.fill(PAD, y + 14, PAD + scrollW - 8, y + 15, MenuTheme.BORDER);
         y += ROW_H + 4;
 
         g.drawString(font, "金币奖励", PAD, y + 3, 0xFFCCCCCC, false);
@@ -287,7 +299,8 @@ public class MinigameEditScreen extends Screen {
         y += ROW_H + 6;
 
         // ===== 地图设置 =====
-        g.drawString(font, Component.literal("§e§l地图设置"), PAD, y + 2, MenuTheme.ACCENT_CYAN, false);
+        g.drawString(font, "地图设置", PAD, y + 2, MenuTheme.TEXT_PRIMARY, false);
+        g.fill(PAD, y + 14, PAD + scrollW - 8, y + 15, MenuTheme.BORDER);
         y += ROW_H + 4;
 
         g.drawString(font, "过滤模式", PAD, y + 3, 0xFFCCCCCC, false);
@@ -299,7 +312,8 @@ public class MinigameEditScreen extends Screen {
         y += ROW_H + 6;
 
         // ===== 基本信息 =====
-        g.drawString(font, Component.literal("§e§l基本信息（只读）"), PAD, y + 2, MenuTheme.ACCENT_CYAN, false);
+        g.drawString(font, "基本信息 / 只读", PAD, y + 2, MenuTheme.TEXT_PRIMARY, false);
+        g.fill(PAD, y + 14, PAD + scrollW - 8, y + 15, MenuTheme.BORDER);
         y += ROW_H + 4;
         g.drawString(font, "§7小游戏 ID: §f" + minigame.id(), PAD, y + 2, 0xFFAAAAAA, false);
         y += ROW_H;
@@ -311,12 +325,24 @@ public class MinigameEditScreen extends Screen {
         contentHeight = y - contentTop + (int) scrollOffset;
 
         // 底部按钮（在 super.render 前更新位置，确保渲染在裁剪区内外正确）
-        saveBtn.setX(width / 2 - 110); saveBtn.setY(height - 26); saveBtn.setWidth(100);
-        resetBtn.setX(width / 2 + 10); resetBtn.setY(height - 26); resetBtn.setWidth(60);
+        saveBtn.setX(width / 2 - 110); saveBtn.setY(height - 28); saveBtn.setWidth(100);
+        resetBtn.setX(width / 2 + 10); resetBtn.setY(height - 28); resetBtn.setWidth(60);
 
-        // 渲染 widgets（在裁剪区内）
-        super.render(g, mx, my, delta);
+        // 内容控件必须留在裁剪区，避免滚动后覆盖标题和底栏。
+        enableBtn.render(g, mx, my, delta);
+        colorBtn.render(g, mx, my, delta);
+        outlineMinusBtn.render(g, mx, my, delta);
+        outlinePlusBtn.render(g, mx, my, delta);
+        goldField.render(g, mx, my, delta);
+        emotionField.render(g, mx, my, delta);
+        weightField.render(g, mx, my, delta);
+        mapFilterBtn.render(g, mx, my, delta);
+        mapField.render(g, mx, my, delta);
         g.disableScissor();
+
+        topBackBtn.render(g, mx, my, delta);
+        saveBtn.render(g, mx, my, delta);
+        resetBtn.render(g, mx, my, delta);
 
         // 滚动条
         int maxScroll = Math.max(0, contentHeight - contentH);
@@ -324,7 +350,7 @@ public class MinigameEditScreen extends Screen {
 
         if (!remoteEditable) {
             g.drawString(font, Component.literal("§c只读：联机服务器中仅 OP 可修改"),
-                    PAD, height - 10, 0xFF5555, false);
+                    PAD, height - 12, MenuTheme.DANGER, false);
         }
     }
 
@@ -355,7 +381,7 @@ public class MinigameEditScreen extends Screen {
             int contentBot = height - 30;
             int contentH = contentBot - contentTop;
             int maxScroll = Math.max(0, contentHeight - contentH);
-            double delta = dragStartY - my;
+            double delta = my - dragStartY;
             scrollOffset = Mth.clamp(dragStartOff + delta, 0, maxScroll);
             return true;
         }
@@ -399,7 +425,6 @@ public class MinigameEditScreen extends Screen {
 
     @Override
     public void onClose() {
-        ConfigManager.getInstance().save();
-        Minecraft.getInstance().setScreen(parent);
+        goBack();
     }
 }

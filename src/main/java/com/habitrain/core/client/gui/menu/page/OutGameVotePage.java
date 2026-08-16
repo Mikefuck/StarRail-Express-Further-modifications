@@ -4,19 +4,16 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
-import com.habitrain.core.client.gui.menu.MapPoolEditorScreen;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ModeAllowedMapsScreen;
 import com.habitrain.core.client.gui.menu.ui.SubTabBar;
-import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MapPoolEntry;
-import com.habitrain.core.config.MapPoolRotationSettings;
+import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
-import com.habitrain.core.vote.MapPoolRotationService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -29,17 +26,15 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 
 /**
  * 游戏外·投票：内层子 Tab 拆分旧 VoteTabScreen。
- * 主设置 / 地图池轮换 / 可投票模式 / 可投票地图。
+ * 主设置 / 按人数抽图 / 可投票模式 / 可投票地图。
  */
 public class OutGameVotePage implements ConfigPage {
 
-    private static final String[] SUB_LABELS = {"主设置", "地图池轮换", "可投票模式", "可投票地图"};
-    private static final int[] SUB_ACCENTS = {0xFF7C9CFF, 0xFF7C9CFF, 0xFF7C9CFF, 0xFF7C9CFF};
+    private static final String[] SUB_LABELS = {"主设置", "按人数抽图", "可投票模式", "可投票地图"};
 
     private static final int PAD = 12;
     private static final int ROW_H = 24;
@@ -47,7 +42,7 @@ public class OutGameVotePage implements ConfigPage {
     private static final int SECTION_GAP = 8;
     private static final int DURATION_MIN = 5;
     private static final int DURATION_MAX = 120;
-    private static final int ACCENT = 0xFF7C9CFF;
+    private static final int ACCENT = MenuTheme.ACCENT_BLUE;
 
     private final ConfigMenuScreen root;
     private final Font font;
@@ -55,11 +50,14 @@ public class OutGameVotePage implements ConfigPage {
 
     private int innerTab = 0;
     private int subHitThisFrame = -1;
-    private final SubTabBar subTabBar = new SubTabBar(SUB_LABELS, SUB_ACCENTS);
+    private final SubTabBar subTabBar = new SubTabBar(SUB_LABELS, ACCENT);
 
     private boolean widgetsInitialized = false;
     private EditBox modeDurationField;
     private EditBox mapDurationField;
+    private EditBox drawCountField;
+    private final Map<String, EditBox> mapMinFields = new LinkedHashMap<>();
+    private final Map<String, EditBox> mapMaxFields = new LinkedHashMap<>();
 
     // 每个内层子 Tab 独立的滚动状态
     private final double[] scroll = new double[4];
@@ -145,7 +143,14 @@ public class OutGameVotePage implements ConfigPage {
         mapDurationField.setFilter(v -> v.isEmpty() || v.matches("\\d*"));
         mapDurationField.setEditable(editable);
 
+        drawCountField = new EditBox(font, -10000, -10000, 40, 14, Component.literal(""));
+        drawCountField.setMaxLength(2);
+        drawCountField.setValue(String.valueOf(s.playerCountOrDefault().drawCount));
+        drawCountField.setFilter(v -> v.isEmpty() || v.matches("\\d*"));
+        drawCountField.setEditable(editable);
+
         rebuildNameFields();
+        rebuildPlayerCountFields();
     }
 
     /** Create display EditBoxes without writing missing ids into settings. */
@@ -173,6 +178,31 @@ public class OutGameVotePage implements ConfigPage {
                 box.setValue(dn);
                 box.setEditable(editable);
                 mapNameFields.put(id, box);
+            }
+        }
+    }
+
+    /** Create per-map min/max player EditBoxes for the 按人数抽图 tab (missing ids only). */
+    private void rebuildPlayerCountFields() {
+        ModeMapVoteSettings s = settings();
+        for (String id : mapIds) {
+            if (!mapMinFields.containsKey(id)) {
+                MapVoteEntry e = s.maps.get(id);
+                EditBox box = new EditBox(font, -10000, -10000, 40, 14, Component.literal(""));
+                box.setMaxLength(3);
+                box.setFilter(v -> v.isEmpty() || v.matches("\\d*"));
+                box.setValue(e != null && e.minPlayers > 0 ? String.valueOf(e.minPlayers) : "0");
+                box.setEditable(editable);
+                mapMinFields.put(id, box);
+            }
+            if (!mapMaxFields.containsKey(id)) {
+                MapVoteEntry e = s.maps.get(id);
+                EditBox box = new EditBox(font, -10000, -10000, 40, 14, Component.literal(""));
+                box.setMaxLength(3);
+                box.setFilter(v -> v.isEmpty() || v.matches("\\d*"));
+                box.setValue(e != null && e.maxPlayers > 0 ? String.valueOf(e.maxPlayers) : "0");
+                box.setEditable(editable);
+                mapMaxFields.put(id, box);
             }
         }
     }
@@ -205,13 +235,19 @@ public class OutGameVotePage implements ConfigPage {
         ensureWidgetsInitialized();
         rebuildIdLists();
         rebuildNameFields();
+        rebuildPlayerCountFields();
+
+        // 命中列表每帧重建；不清空会在滚动后把旧坐标的行当作当前命中（错关其他选项）。
+        modeHits.clear();
+        mapHits.clear();
+        buttonHits.clear();
 
         subHitThisFrame = subTabBar.render(g, font, x, y, w, innerTab, mx, my);
         int contentY = y + SubTabBar.H + 4;
         int contentH = h - SubTabBar.H - 4;
         switch (innerTab) {
             case 0 -> renderMain(g, mx, my, delta, x, contentY, w, contentH);
-            case 1 -> renderPoolRotation(g, mx, my, delta, x, contentY, w, contentH);
+            case 1 -> renderPlayerCountDraw(g, mx, my, delta, x, contentY, w, contentH);
             case 2 -> renderVoteModes(g, mx, my, delta, x, contentY, w, contentH);
             default -> renderVoteMaps(g, mx, my, delta, x, contentY, w, contentH);
         }
@@ -233,7 +269,7 @@ public class OutGameVotePage implements ConfigPage {
         int innerW = w - PAD * 2 - 6;
 
         // ===== 总开关 =====
-        g.drawString(font, Component.literal("§e§l模式/地图投票"), labelX, cy, ACCENT, false);
+        g.drawString(font, "模式 / 地图投票", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         ModeMapVoteSettings s = settings();
         int toggleW = 70;
@@ -244,7 +280,7 @@ public class OutGameVotePage implements ConfigPage {
         cy += ROW_H + 4;
 
         // ===== 时长 =====
-        g.drawString(font, Component.literal("§e§l投票时长（秒，5–120）"), labelX, cy, ACCENT, false);
+        g.drawString(font, "投票时长 / 秒（5–120）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         g.drawString(font, "模式投票:", labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
         modeDurationField.setX(labelX + 60);
@@ -265,7 +301,7 @@ public class OutGameVotePage implements ConfigPage {
         g.disableScissor();
     }
 
-    private void renderPoolRotation(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
+    private void renderPlayerCountDraw(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
         int listTop = y;
         int listH = h;
         listHeight = listH;
@@ -276,57 +312,73 @@ public class OutGameVotePage implements ConfigPage {
         int innerW = w - PAD * 2 - 6;
 
         ModeMapVoteSettings s = settings();
+        MapPlayerCountSettings pc = s.playerCountOrDefault();
 
-        // ===== 地图池轮换 =====
+        // ===== 按人数抽图 =====
         g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
         cy += 4;
-        g.drawString(font, Component.literal("§e§l地图池轮换"), labelX, cy, ACCENT, false);
+        g.drawString(font, "按人数抽图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
 
-        MapPoolRotationSettings rot = s.rotationOrDefault();
-        MapPoolEntry curPool = rot.poolAt(rot.activePoolIndex);
-        int poolCount = curPool.mapIds != null ? curPool.mapIds.size() : 0;
-
-        // row: enable rotation
+        // row: enable draw + draw count
         int rToggleW = 70;
         g.fill(labelX, cy, labelX + rToggleW, cy + 16,
-                rot.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, rot.enabled ? "§a轮换开" : "§c轮换关", labelX + 6, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pool_toggle", labelX, cy, rToggleW, 16));
+                pc.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+        g.drawString(font, pc.enabled ? "§a抽图开" : "§c抽图关", labelX + 6, cy + 4, 0xFFFFFFFF, false);
+        buttonHits.add(new ButtonHit("pc_toggle", labelX, cy, rToggleW, 16));
 
-        int autoX = labelX + rToggleW + 8;
-        int autoW = 80;
-        g.fill(autoX, cy, autoX + autoW, cy + 16,
-                rot.autoRepartition ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, rot.autoRepartition ? "§a自动重分" : "§c不重分", autoX + 6, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pool_auto", autoX, cy, autoW, 16));
+        g.drawString(font, "抽取数量:", labelX + rToggleW + 10, cy + 4, MenuTheme.TEXT_SECONDARY, false);
+        drawCountField.setX(labelX + rToggleW + 10 + 56);
+        drawCountField.setY(cy);
+        drawCountField.setWidth(40);
+        drawCountField.render(g, mx, my, delta);
+        g.drawString(font, "§7(1–" + MapPlayerCountSettings.MAX_DRAW_COUNT + ")",
+                labelX + rToggleW + 10 + 100, cy + 4, MenuTheme.TEXT_SECONDARY, false);
+        cy += ROW_H + 2;
 
-        int modeX = autoX + autoW + 8;
-        int modeW = 100;
-        boolean direct = rot.isDirectPick();
-        g.fill(modeX, cy, modeX + modeW, cy + 16, MenuTheme.BG_EDIT);
-        g.drawString(font, direct ? "§e直接抽图" : "§e限制投票", modeX + 8, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pool_apply_mode", modeX, cy, modeW, 16));
-        cy += ROW_H;
-
-        String summary = "每局轮换 · 共" + rot.poolCount() + "池 · 当前池" + (rot.activePoolIndex + 1) + " · "
-                + (curPool.displayName != null ? curPool.displayName : "")
-                + " · " + poolCount + "图";
-        g.drawString(font, "§7" + summary, labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
-        cy += ROW_H;
-
-        int editW = 80;
-        g.fill(labelX, cy, labelX + editW, cy + 16, MenuTheme.BG_EDIT);
-        g.drawString(font, "§e编辑池子", labelX + 12, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pool_edit", labelX, cy, editW, 16));
-
-        int skipX = labelX + editW + 8;
-        int skipW = 80;
-        g.fill(skipX, cy, skipX + skipW, cy + 16, editable ? 0xFF3A2A1B : MenuTheme.BG_DISABLED);
-        g.drawString(font, "§6跳过当前", skipX + 12, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pool_skip", skipX, cy, skipW, 16));
+        g.drawString(font, "§7根据当前对局人数抽取地图；不足时补抽其他地图并标注“玩家人数不建议选择此地图”",
+                labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
         cy += ROW_H + SECTION_GAP;
 
+        // ===== 每张地图的推荐人数 =====
+        g.drawString(font, "§e每张地图的推荐人数（0 = 不限制）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+        cy += HEADER_H;
+        if (mapIds.isEmpty()) {
+            g.drawString(font, "§7暂无地图条目（启动投票或注册地图后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            cy += ROW_H;
+        } else {
+            for (String id : mapIds) {
+                boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
+                g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
+                        hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+                MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
+
+                String shortId = id.length() > 14 ? id.substring(0, 12) + "…" : id;
+                g.drawString(font, "§7" + shortId, labelX + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+
+                int minX = labelX + innerW - 150;
+                int maxX = labelX + innerW - 80;
+                g.drawString(font, "§7最小", minX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+                EditBox minBox = mapMinFields.get(id);
+                if (minBox != null) {
+                    minBox.setX(minX);
+                    minBox.setY(cy + 4);
+                    minBox.setWidth(40);
+                    minBox.render(g, mx, my, delta);
+                }
+                g.drawString(font, "§7最大", maxX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+                EditBox maxBox = mapMaxFields.get(id);
+                if (maxBox != null) {
+                    maxBox.setX(maxX);
+                    maxBox.setY(cy + 4);
+                    maxBox.setWidth(40);
+                    maxBox.render(g, mx, my, delta);
+                }
+                cy += ROW_H;
+            }
+        }
+
+        cy += SECTION_GAP;
         contentHeight[1] = cy - listTop + (int) scroll[1];
         int maxScroll = Math.max(0, contentHeight[1] - listH);
         scroll[1] = Mth.clamp(scroll[1], 0, maxScroll);
@@ -349,7 +401,7 @@ public class OutGameVotePage implements ConfigPage {
         // ===== 模式列表 =====
         g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
         cy += 4;
-        g.drawString(font, Component.literal("§e§l可投票模式"), labelX, cy, ACCENT, false);
+        g.drawString(font, "可投票模式", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         if (modeIds.isEmpty()) {
             g.drawString(font, "§7暂无模式条目（启动投票或注册模式后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
@@ -422,7 +474,7 @@ public class OutGameVotePage implements ConfigPage {
         // ===== 地图列表 =====
         g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
         cy += 4;
-        g.drawString(font, Component.literal("§e§l可投票地图"), labelX, cy, ACCENT, false);
+        g.drawString(font, "可投票地图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         if (mapIds.isEmpty()) {
             g.drawString(font, "§7暂无地图条目（服务端 ensureDefaults 后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
@@ -473,6 +525,7 @@ public class OutGameVotePage implements ConfigPage {
 
         // 先处理内层子 Tab
         if (MenuTheme.inBounds(mx, my, x, y, w, SubTabBar.H)) {
+            if (subHitThisFrame >= 0) MenuSounds.playClick();
             if (subHitThisFrame >= 0 && subHitThisFrame != innerTab) {
                 flushPending();
                 clearAllEditFocus();
@@ -487,7 +540,7 @@ public class OutGameVotePage implements ConfigPage {
 
         switch (innerTab) {
             case 0 -> { return clickMain(mx, my, btn); }
-            case 1 -> { return clickPoolRotation(mx, my, btn); }
+            case 1 -> { return clickPlayerCountDraw(mx, my, btn); }
             case 2 -> { return clickVoteModes(mx, my, btn); }
             default -> { return clickVoteMaps(mx, my, btn); }
         }
@@ -499,6 +552,7 @@ public class OutGameVotePage implements ConfigPage {
         for (ButtonHit hit : buttonHits) {
             if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 if ("toggle_enabled".equals(hit.action())) {
+                    MenuSounds.playClick();
                     if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                     ModeMapVoteSettings s = settings();
                     s.enabled = !s.enabled;
@@ -514,55 +568,24 @@ public class OutGameVotePage implements ConfigPage {
         return true;
     }
 
-    private boolean clickPoolRotation(double mx, double my, int btn) {
+    private boolean clickPlayerCountDraw(double mx, double my, int btn) {
+        if (tryFocusEditBox(drawCountField, mx, my)) return true;
+        for (EditBox box : mapMinFields.values()) {
+            if (tryFocusEditBox(box, mx, my)) return true;
+        }
+        for (EditBox box : mapMaxFields.values()) {
+            if (tryFocusEditBox(box, mx, my)) return true;
+        }
         for (ButtonHit hit : buttonHits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
+            MenuSounds.playClick();
             switch (hit.action()) {
-                case "pool_toggle" -> {
+                case "pc_toggle" -> {
                     if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                    ModeMapVoteSettings s = settings();
-                    MapPoolRotationSettings rot = s.rotationOrDefault();
-                    rot.enabled = !rot.enabled;
-                    if (rot.enabled) {
-                        MapPoolRotationService.ensureSeededIfNeeded(s, new Random());
-                    }
+                    MapPlayerCountSettings pc = settings().playerCountOrDefault();
+                    pc.enabled = !pc.enabled;
                     persist();
                     ConfigManager.getInstance().save();
-                    return true;
-                }
-                case "pool_auto" -> {
-                    if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                    ModeMapVoteSettings s = settings();
-                    MapPoolRotationSettings rot = s.rotationOrDefault();
-                    rot.autoRepartition = !rot.autoRepartition;
-                    persist();
-                    ConfigManager.getInstance().save();
-                    return true;
-                }
-                case "pool_apply_mode" -> {
-                    if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                    ModeMapVoteSettings s = settings();
-                    MapPoolRotationSettings rot = s.rotationOrDefault();
-                    rot.applyMode = rot.isDirectPick()
-                            ? MapPoolRotationSettings.APPLY_LIMIT_VOTE
-                            : MapPoolRotationSettings.APPLY_DIRECT_PICK;
-                    persist();
-                    ConfigManager.getInstance().save();
-                    return true;
-                }
-                case "pool_edit" -> {
-                    // 全员可进编辑页浏览；非 OP 只读
-                    flushPending();
-                    Minecraft.getInstance().setScreen(new MapPoolEditorScreen(root));
-                    return true;
-                }
-                case "pool_skip" -> {
-                    if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                    PayloadSenders.sendMapPoolSkip();
-                    var p = Minecraft.getInstance().player;
-                    if (p != null) {
-                        p.displayClientMessage(Component.literal("§e已请求跳过当前地图池…"), true);
-                    }
                     return true;
                 }
                 default -> { return true; }
@@ -581,6 +604,7 @@ public class OutGameVotePage implements ConfigPage {
         for (ButtonHit hit : buttonHits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
             if (hit.action() != null && hit.action().startsWith("mode_up:")) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 String id = hit.action().substring("mode_up:".length());
                 ensureModeEntry(id);
@@ -594,6 +618,7 @@ public class OutGameVotePage implements ConfigPage {
                 return true;
             }
             if (hit.action() != null && hit.action().startsWith("mode_down:")) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 String id = hit.action().substring("mode_down:".length());
                 ensureModeEntry(id);
@@ -608,6 +633,7 @@ public class OutGameVotePage implements ConfigPage {
         for (RowHit hit : modeHits) {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 // User edit: create entry only now
                 ModeVoteEntry e = settings().modes.computeIfAbsent(hit.id(), k -> ModeVoteEntry.createDefault());
@@ -616,6 +642,7 @@ public class OutGameVotePage implements ConfigPage {
                 return true;
             }
             if (hit.mapsW() > 0 && mx >= hit.mapsX() && mx < hit.mapsX() + hit.mapsW()) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 flushPending();
                 Minecraft.getInstance().setScreen(new ModeAllowedMapsScreen(root, hit.id()));
@@ -635,6 +662,7 @@ public class OutGameVotePage implements ConfigPage {
         for (RowHit hit : mapHits) {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
+                MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
                 MapVoteEntry e = settings().maps.computeIfAbsent(hit.id(), k -> MapVoteEntry.createDefault());
                 e.enabled = !e.enabled;
@@ -651,10 +679,17 @@ public class OutGameVotePage implements ConfigPage {
     private void clearAllEditFocus() {
         if (modeDurationField != null) modeDurationField.setFocused(false);
         if (mapDurationField != null) mapDurationField.setFocused(false);
+        if (drawCountField != null) drawCountField.setFocused(false);
         for (EditBox box : modeNameFields.values()) {
             box.setFocused(false);
         }
         for (EditBox box : mapNameFields.values()) {
+            box.setFocused(false);
+        }
+        for (EditBox box : mapMinFields.values()) {
+            box.setFocused(false);
+        }
+        for (EditBox box : mapMaxFields.values()) {
             box.setFocused(false);
         }
     }
@@ -707,10 +742,17 @@ public class OutGameVotePage implements ConfigPage {
     public boolean keyPressed(int key, int scan, int mod) {
         if (modeDurationField != null && modeDurationField.isFocused() && modeDurationField.keyPressed(key, scan, mod)) return true;
         if (mapDurationField != null && mapDurationField.isFocused() && mapDurationField.keyPressed(key, scan, mod)) return true;
+        if (drawCountField != null && drawCountField.isFocused() && drawCountField.keyPressed(key, scan, mod)) return true;
         for (EditBox box : modeNameFields.values()) {
             if (box.isFocused() && box.keyPressed(key, scan, mod)) return true;
         }
         for (EditBox box : mapNameFields.values()) {
+            if (box.isFocused() && box.keyPressed(key, scan, mod)) return true;
+        }
+        for (EditBox box : mapMinFields.values()) {
+            if (box.isFocused() && box.keyPressed(key, scan, mod)) return true;
+        }
+        for (EditBox box : mapMaxFields.values()) {
             if (box.isFocused() && box.keyPressed(key, scan, mod)) return true;
         }
         return false;
@@ -720,10 +762,17 @@ public class OutGameVotePage implements ConfigPage {
     public boolean charTyped(char ch, int mod) {
         if (modeDurationField != null && modeDurationField.isFocused() && modeDurationField.charTyped(ch, mod)) return true;
         if (mapDurationField != null && mapDurationField.isFocused() && mapDurationField.charTyped(ch, mod)) return true;
+        if (drawCountField != null && drawCountField.isFocused() && drawCountField.charTyped(ch, mod)) return true;
         for (EditBox box : modeNameFields.values()) {
             if (box.isFocused() && box.charTyped(ch, mod)) return true;
         }
         for (EditBox box : mapNameFields.values()) {
+            if (box.isFocused() && box.charTyped(ch, mod)) return true;
+        }
+        for (EditBox box : mapMinFields.values()) {
+            if (box.isFocused() && box.charTyped(ch, mod)) return true;
+        }
+        for (EditBox box : mapMaxFields.values()) {
             if (box.isFocused() && box.charTyped(ch, mod)) return true;
         }
         return false;
@@ -731,6 +780,18 @@ public class OutGameVotePage implements ConfigPage {
 
     private int clampDuration(int v) {
         return Math.max(DURATION_MIN, Math.min(DURATION_MAX, v));
+    }
+
+    /** Parse a player-count edit field; invalid/blank falls back to {@code fallback}. */
+    private int parseCount(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            int v = Integer.parseInt(raw.trim());
+            if (v < 0) return 0;
+            return Math.min(v, 99);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private void commitFieldsToSettings() {
@@ -745,6 +806,13 @@ public class OutGameVotePage implements ConfigPage {
         } catch (NumberFormatException ignored) {}
         modeDurationField.setValue(String.valueOf(s.modeDurationSeconds));
         mapDurationField.setValue(String.valueOf(s.mapDurationSeconds));
+
+        MapPlayerCountSettings pc = s.playerCountOrDefault();
+        try {
+            String v = drawCountField.getValue().trim();
+            if (!v.isEmpty()) pc.drawCount = pc.clampDrawCount(Integer.parseInt(v));
+        } catch (NumberFormatException ignored) {}
+        drawCountField.setValue(String.valueOf(pc.drawCount));
 
         for (var e : modeNameFields.entrySet()) {
             String val = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
@@ -767,6 +835,31 @@ public class OutGameVotePage implements ConfigPage {
                 me = MapVoteEntry.createDefault();
                 me.displayName = val;
                 s.maps.put(e.getKey(), me);
+            }
+        }
+        // Per-map min/max player counts; only create entries when a value actually changed.
+        for (String id : mapIds) {
+            EditBox minBox = mapMinFields.get(id);
+            if (minBox != null) {
+                MapVoteEntry cur = s.maps.get(id);
+                int current = cur != null ? cur.minPlayers : 0;
+                int val = parseCount(minBox.getValue(), current);
+                minBox.setValue(String.valueOf(val));
+                if (val != current) {
+                    MapVoteEntry me = s.maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+                    me.minPlayers = val;
+                }
+            }
+            EditBox maxBox = mapMaxFields.get(id);
+            if (maxBox != null) {
+                MapVoteEntry cur = s.maps.get(id);
+                int current = cur != null ? cur.maxPlayers : 0;
+                int val = parseCount(maxBox.getValue(), current);
+                maxBox.setValue(String.valueOf(val));
+                if (val != current) {
+                    MapVoteEntry me = s.maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+                    me.maxPlayers = val;
+                }
             }
         }
     }

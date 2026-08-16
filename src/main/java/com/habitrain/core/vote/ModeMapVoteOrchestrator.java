@@ -7,13 +7,15 @@ import com.habitrain.core.api.ModeMapVoteSnapshot;
 import com.habitrain.core.api.VoteOption;
 import com.habitrain.core.api.VoteResult;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MapPoolRotationSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
+import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.game.sre.SreOriginalModeProxy;
-import com.habitrain.core.network.FullConfigSyncPayload;
+import com.habitrain.core.network.MapVoteProfilePayload;
+import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,14 +25,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Two-phase lobby vote: mode options → map options → loadMap → startMode.
@@ -57,8 +60,6 @@ public final class ModeMapVoteOrchestrator {
         @Nullable String selectedModeDisplay;
         int phaseDurationSeconds;
         long phaseStartMs;
-        /** C10: 模式解析时用了 map pool，仅在 finishWithMap 开局成功后再 advance。 */
-        boolean pendingPoolAdvance = false;
     }
 
     public static boolean start(ServerLevel level, ModeMapVoteConfig config) {
@@ -126,6 +127,17 @@ public final class ModeMapVoteOrchestrator {
         session.phaseStartMs = System.currentTimeMillis();
         SESSIONS.put(level.dimension(), session);
 
+        // 只有一个可投票模式：跳过模式投票，直接选定该模式进入地图投票。
+        if (options.size() == 1) {
+            String onlyId = options.get(0).id();
+            session.selectedModeId = onlyId;
+            session.selectedModeDisplay = options.get(0).displayName();
+            LOGGER.info("[ModeMapVote] single mode option, skipping mode vote, mode={} dim={}",
+                    onlyId, level.dimension().location());
+            beginMapVote(level, session, onlyId, false);
+            return true;
+        }
+
         // title/description are client-localized via voteId; wire strings are placeholders only
         boolean started = OptionVoteManager.start(
                 level,
@@ -166,9 +178,14 @@ public final class ModeMapVoteOrchestrator {
         LOGGER.info("[ModeMapVote] mode selected={} randomPick={}",
                 winnerId, result != null && result.randomPick());
 
+        beginMapVote(level, session, winnerId, result != null && result.randomPick());
+    }
+
+    /** 模式已选定，进入地图投票阶段；单模式跳过模式投票时也走这里。 */
+    private static void beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
         List<String> available = SREModeStartAdapter.getAvailableMaps(level);
         ConfigManager.getInstance().ensureModeMapVoteDefaults(List.of(winnerId), available);
-        settings = ConfigManager.getInstance().getModeMapVoteSettings();
+        ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
 
         ModeVoteEntry modeEntry = settings.modes.get(winnerId);
         Set<String> allowed = null;
@@ -189,6 +206,10 @@ public final class ModeMapVoteOrchestrator {
             if (mapEntry != null && !mapEntry.enabled) {
                 continue;
             }
+            // 维修人员模式下被锁定的地图不进投票池（无人负责时自动回到池中）
+            if (RepairModeManager.isMapLocked(mapId)) {
+                continue;
+            }
             if (allowed != null && !allowed.contains(mapId)) {
                 continue;
             }
@@ -205,35 +226,39 @@ public final class ModeMapVoteOrchestrator {
         }
 
         Random rng = new Random(level.getRandom().nextLong());
+        int playerCount = participatingPlayerCount(level);
         List<String> effectiveIds = candidateIds;
-        MapPoolRotationSettings rot = settings.rotationOrDefault();
-        if (MapPoolRotationService.shouldApply(settings, candidateIds.size())) {
-            effectiveIds = MapPoolRotationService.resolveEffectiveMaps(settings, candidateIds, rng);
+        Set<String> notRecommended = Set.of();
+        if (MapPlayerCountService.shouldApply(settings)) {
+            MapPlayerCountService.DrawResult draw = MapPlayerCountService.draw(
+                    settings, candidateIds, playerCount, rng);
+            effectiveIds = draw.ids();
+            notRecommended = draw.notRecommended();
             if (effectiveIds.isEmpty()) {
                 effectiveIds = candidateIds;
             }
-            int usedPool = rot.activePoolIndex;
-            LOGGER.info("[ModeMapVote] map pool applied mode={} poolIndex={} candidates={} effective={} applyMode={}",
-                    winnerId, usedPool, candidateIds.size(), effectiveIds.size(), rot.applyMode);
-            // C10: 不在此处 advance。地图投票 start 失败 / loadMap 失败时不应推进池。
-            // advance 挪到 finishWithMap 开局成功后。
-            session.pendingPoolAdvance = true;
+            LOGGER.info("[ModeMapVote] player-count draw mode={} players={} candidates={} effective={} notRecommended={} drawCount={}",
+                    winnerId, playerCount, candidateIds.size(), effectiveIds.size(), notRecommended.size(),
+                    settings.playerCountOrDefault().drawCount);
         }
 
-        if (MapPoolRotationService.shouldApply(settings, candidateIds.size()) && rot.isDirectPick()) {
-            String pick = effectiveIds.get(rng.nextInt(effectiveIds.size()));
-            LOGGER.info("[ModeMapVote] DIRECT_PICK map={} from effective={}", pick, effectiveIds.size());
-            finishWithMap(level, session, pick, true);
-            return;
+        // 剔除 SRE 会把 map_vote 目录自身枚举成候选地图的保留 id（如 "map_vote/maps"）
+        List<String> filteredIds = new ArrayList<>();
+        for (String mapId : effectiveIds) {
+            if (!MapVoteProfileStore.isReservedMapId(mapId)) {
+                filteredIds.add(mapId);
+            }
         }
+        effectiveIds = filteredIds;
 
         List<VoteOption> mapOptions = new ArrayList<>();
         for (String mapId : effectiveIds) {
-            mapOptions.add(new VoteOption(mapId, resolveMapDisplayName(settings, mapId)));
+            String name = resolveMapDisplayName(settings, mapId);
+            if (notRecommended.contains(mapId)) {
+                name = name + MapPlayerCountService.NOT_RECOMMENDED_MARK;
+            }
+            mapOptions.add(new VoteOption(mapId, name));
         }
-
-        // Fresh random order each map-vote start; OptionVotePayload preserves list order to clients.
-        Collections.shuffle(mapOptions, rng);
 
         int duration = session.config != null && session.config.mapDurationSeconds > 0
                 ? session.config.mapDurationSeconds
@@ -258,6 +283,33 @@ public final class ModeMapVoteOrchestrator {
             clearSession(level);
             return;
         }
+
+        // 磁盘 I/O 与图片读取移出服务端 tick；完成后回到服务端线程确认投票仍有效并分片发送。
+        List<String> profileIds = List.copyOf(effectiveIds);
+        Map<String, MapVoteEntry> profileConfig = new java.util.LinkedHashMap<>();
+        for (String id : profileIds) {
+            MapVoteEntry source = settings.maps.get(id);
+            if (source == null) continue;
+            MapVoteEntry copy = MapVoteEntry.createDefault();
+            copy.enabled = source.enabled;
+            copy.displayName = source.displayName;
+            copy.minPlayers = source.minPlayers;
+            copy.maxPlayers = source.maxPlayers;
+            profileConfig.put(id, copy);
+        }
+        CompletableFuture.supplyAsync(() -> {
+            MapVoteProfileStore.ensureProfiles(level, profileIds, profileConfig);
+            return MapVoteProfileStore.loadProfiles(level, profileIds);
+        }).whenComplete((profiles, error) -> level.getServer().execute(() -> {
+            if (error != null) {
+                LOGGER.warn("[ModeMapVote] async profile load failed", error);
+                return;
+            }
+            if (SESSIONS.get(level.dimension()) != session || session.phase != Phase.MAP_VOTING) {
+                return;
+            }
+            OptionVoteManager.pushProfiles(level, profiles);
+        }));
 
         LOGGER.info("[ModeMapVote] map vote started mode={} options={} duration={}s",
                 winnerId, mapOptions.size(), duration);
@@ -303,51 +355,31 @@ public final class ModeMapVoteOrchestrator {
         session.phase = Phase.STARTING_MODE;
         String modeId = session.selectedModeId;
 
+        // 开局加载协调：地图重置开始即进入协调，客户端进入「加载」转场阶段；
+        // 真正开局（trueStartGame）时由 SRETrueStartGameMixin 广播开局确认。
+        MapVoteLoadCoordinator.beginLoad(level, mapId, modeId);
+
         boolean started = SREModeStartAdapter.startMode(level, modeId);
         if (!started) {
-            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept); pool not advanced",
-                    modeId, mapId);
+            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept)", modeId, mapId);
+            MapVoteLoadCoordinator.reset(level);
         } else {
-            LOGGER.info("[ModeMapVote] started mode={} map={}", modeId, mapId);
-            if (session.pendingPoolAdvance) {
-                commitPoolAdvance(level);
-            }
+            LOGGER.info("[ModeMapVote] started mode={} map={} (loading)", modeId, mapId);
         }
 
         clearSession(level);
     }
 
-    /** Advance map pool only after a successful mode start (C10). */
-    private static void commitPoolAdvance(ServerLevel level) {
-        try {
-            ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
-            if (settings == null) return;
-            Random rng = new Random(level.getRandom().nextLong());
-            boolean advanced = MapPoolRotationService.advance(settings, rng);
-            ConfigManager.getInstance().setModeMapVoteSettings(settings);
-            ConfigManager.getInstance().save();
-            try {
-                if (level.getServer() != null && !level.getServer().isSingleplayer()) {
-                    FullConfigSyncPayload.broadcastToAll(level.getServer());
-                }
-            } catch (Throwable t) {
-                LOGGER.warn("[ModeMapVote] map pool config sync failed", t);
-            }
-            LOGGER.info("[ModeMapVote] map pool post-start advance={} nextIndex={}",
-                    advanced, settings.rotationOrDefault().activePoolIndex);
-        } catch (Throwable t) {
-            LOGGER.warn("[ModeMapVote] map pool advance failed", t);
-        }
-    }
-
-    public static void cancel(ServerLevel level) {
-        if (level == null) return;
-        OptionVoteManager.cancel(level);
+    public static boolean cancel(ServerLevel level) {
+        if (level == null) return false;
         Session session = SESSIONS.remove(level.dimension());
-        if (session != null && session.phase != Phase.IDLE) {
-            LOGGER.info("[ModeMapVote] cancelled phase={} dim={}",
-                    session.phase, level.dimension().location());
+        if (session == null || session.phase == Phase.IDLE) {
+            return false;
         }
+        OptionVoteManager.cancel(level);
+        LOGGER.info("[ModeMapVote] cancelled phase={} dim={}",
+                session.phase, level.dimension().location());
+        return true;
     }
 
     public static boolean isRunning(ServerLevel level) {
@@ -366,7 +398,7 @@ public final class ModeMapVoteOrchestrator {
                 session.phase.name(),
                 session.selectedModeId,
                 session.selectedMapId,
-                remainingSeconds(session)
+                remainingSeconds(level, session)
         );
     }
 
@@ -379,20 +411,36 @@ public final class ModeMapVoteOrchestrator {
         OptionVoteManager.syncTo(player);
     }
 
-    private static int remainingSeconds(Session session) {
+    private static int remainingSeconds(ServerLevel level, Session session) {
         if (session.phase != Phase.MODE_VOTING && session.phase != Phase.MAP_VOTING) {
             return 0;
         }
         if (session.phaseDurationSeconds <= 0) {
             return 0;
         }
-        long elapsed = (System.currentTimeMillis() - session.phaseStartMs) / 1000L;
-        long left = session.phaseDurationSeconds - elapsed;
-        return (int) Math.max(0, left);
+        return OptionVoteManager.remainingSeconds(level);
     }
 
     private static void clearSession(ServerLevel level) {
         SESSIONS.remove(level.dimension());
+    }
+
+    /**
+     * 当前参加对局的人数：使用原版列车 SRE 的是否参加对局机制
+     * （ParticipationComponent，默认参与、可退出），每位已确认参加对局的玩家计 1。
+     */
+    private static int participatingPlayerCount(ServerLevel level) {
+        if (level == null) return 0;
+        try {
+            return Math.max(0, GameUtils.getParticipatingPlayerCount(level));
+        } catch (Throwable t) {
+            // SRE 参与组件不可用时的兜底：统计该维度非旁观在线玩家
+            int count = 0;
+            for (ServerPlayer p : level.players()) {
+                if (p != null && !p.isSpectator()) count++;
+            }
+            return count;
+        }
     }
 
     /**

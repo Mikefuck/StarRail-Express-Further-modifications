@@ -1,6 +1,7 @@
 {
     "schemaVersion": 1,
     "id": "habitrain_core",
+    "provides": ["habitrain_taskapi"],
     "version": "${version}",
     "name": "哈比列车核心 (HabiTrain Core)",
     "description": "哈比列车游戏框架与任务系统API模组",
@@ -14,7 +15,12 @@
         "client": ["com.habitrain.core.client.HabiTrainCoreClient"],
         "modmenu": ["com.habitrain.core.client.gui.ModMenuIntegration"],
         "cardinal-components": ["com.habitrain.core.game.sre.role.HabiComponents"],
-        "voicechat": ["com.habitrain.core.game.sre.role.sins.SlothVoicePlugin"]
+        "voicechat": [
+            "com.habitrain.core.game.sre.role.sins.SlothVoicePlugin",
+            "com.habitrain.core.role.capability.RoleVoiceCapabilityPlugin"
+        ],
+        "habitrain:role_extensions": ["com.habitrain.core.role.extension.CoreRoleExtensionProvider"],
+        "habitrain:role_client_extensions": []
     },
     "custom": {
         "cardinal-components": [
@@ -28,11 +34,14 @@
             "habitrain_core:sin_greed",
             "habitrain_core:sin_gluttony",
             "habitrain_core:sin_lust",
-            "habitrain_core:sin_sloth"
+            "habitrain_core:sin_sloth",
+            "habitrain_core:role_state_player",
+            "habitrain_core:role_state_world"
         ]
     },
     "mixins": [
         "habitrain_core.mixins.json",
+        "habitrain_core.rest_area.mixins.json",
         { "config": "habitrain_core.client.mixins.json", "environment": "client" }
     ],
     "depends": {
@@ -41,7 +50,9 @@
         "java": ">=21",
         "fabric-api": "*",
         "starrailexpress": "*",
-        "modmenu": "*",
         "betel-nut-mod": "*"
+    },
+    "suggests": {
+        "modmenu": "*"
     }
 }

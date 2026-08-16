@@ -33,30 +33,51 @@ import java.util.OptionalDouble;
  *
  * <p>Must live outside any {@code @Mixin} class: Mixin rejects non-private static methods
  * on mixin classes ({@code InvalidMixinException}), which previously killed all DLC ESP.
+ *
+ * <p>Wall-through notes (1.21 / AFTER_TRANSLUCENT):
+ * <ul>
+ *   <li>{@link RenderStateShard#NO_DEPTH_TEST} alone is not enough if the batch is flushed later
+ *       with a different depth state, or if {@code ITEM_ENTITY_TARGET} is composited with depth.</li>
+ *   <li>Use {@link RenderStateShard#MAIN_TARGET} + immediate {@code endBatch(type)} so the
+ *       NO_DEPTH_TEST state is applied when vertices are actually submitted.</li>
+ * </ul>
  */
 @Environment(EnvType.CLIENT)
 public final class TaskOverlayDrawer {
 
     private static final Map<Float, RenderType> RENDER_TYPE_CACHE = new HashMap<>();
 
+    /** Default SRE-style line width (matches {@code ALWAYS_VISIBLE_THICK_LINES}). */
+    public static final float DEFAULT_LINE_WIDTH = 4.0f;
+
     private TaskOverlayDrawer() {}
 
-    private static RenderType getRenderType(float lineWidth) {
-        return RENDER_TYPE_CACHE.computeIfAbsent(lineWidth, w -> RenderType.create(
-                "habitrain_custom_task_overlay_" + w,
+    /**
+     * Memoized see-through line RenderType. Safe to share across SRE redirect + Habi drawer.
+     */
+    public static RenderType throughWallLines(float lineWidth) {
+        float w = lineWidth > 0f ? lineWidth : DEFAULT_LINE_WIDTH;
+        return RENDER_TYPE_CACHE.computeIfAbsent(w, TaskOverlayDrawer::createThroughWallType);
+    }
+
+    private static RenderType createThroughWallType(float w) {
+        return RenderType.create(
+                "habitrain_task_overlay_xray_" + w,
                 DefaultVertexFormat.POSITION_COLOR_NORMAL,
                 VertexFormat.Mode.LINES, 256, false, false,
                 RenderType.CompositeState.builder()
                         .setShaderState(RenderStateShard.RENDERTYPE_LINES_SHADER)
                         .setLineState(new RenderStateShard.LineStateShard(OptionalDouble.of(w)))
-                        .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
+                        // MAIN_TARGET: drawn into the main color buffer so NO_DEPTH_TEST actually
+                        // covers terrain. ITEM_ENTITY_TARGET can be re-composited with depth on
+                        // some pipelines / shader packs, which looks like "outline but no xray".
+                        .setOutputState(RenderStateShard.MAIN_TARGET)
                         .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                        .setOutputState(RenderStateShard.ITEM_ENTITY_TARGET)
                         .setWriteMaskState(RenderStateShard.COLOR_WRITE)
                         .setCullState(RenderStateShard.NO_CULL)
                         .setDepthTestState(RenderStateShard.NO_DEPTH_TEST)
                         .createCompositeState(false)
-        ));
+        );
     }
 
     /**
@@ -71,15 +92,17 @@ public final class TaskOverlayDrawer {
         Level world = client != null ? client.level : null;
         if (world == null) return;
 
-        MultiBufferSource consumers = context.consumers();
-        if (consumers == null) return;
+        PoseStack matrices = context.matrixStack();
+        if (matrices == null) return;
 
         BlockState state = world.getBlockState(blockPos);
         AABB localAABB = getCombinedAABB(world, blockPos, state);
+        RenderType type = throughWallLines(lineWidth);
 
-        VertexConsumer vertexConsumer = consumers.getBuffer(getRenderType(lineWidth));
-        PoseStack matrices = context.matrixStack();
-        if (matrices == null) return;
+        // Independent BufferSource + immediate endBatch: do not wait for the world renderer's
+        // deferred flush (which can apply a different depth state and kill wall-through).
+        MultiBufferSource.BufferSource bufferSource = client.renderBuffers().bufferSource();
+        VertexConsumer vertexConsumer = bufferSource.getBuffer(type);
 
         matrices.pushPose();
         Vec3 cameraPos = context.camera().getPosition();
@@ -95,6 +118,8 @@ public final class TaskOverlayDrawer {
 
         LevelRenderer.renderLineBox(matrices, vertexConsumer, localAABB, red, green, blue, alpha);
         matrices.popPose();
+
+        bufferSource.endBatch(type);
     }
 
     /**

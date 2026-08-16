@@ -39,6 +39,7 @@ public final class DlcTaskTracker {
         LOGGER.debug("[HabiDebug] createAndTrackDlcTask: {} for {} (fake={})",
                 def.getFullId(), player.getName().getString(), isFakeTask);
         TaskInstance instance = new TaskInstance(def);
+        instance.setDimension(player.level().dimension());
         def.onAssign(player, instance);
 
         mgr.incrementDlcTaskCount(player.getUUID(), def.getFullId());

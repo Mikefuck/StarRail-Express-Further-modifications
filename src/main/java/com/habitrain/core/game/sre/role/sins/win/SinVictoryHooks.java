@@ -34,13 +34,10 @@ public final class SinVictoryHooks {
     public static void init() {
         if (registered) return;
         registered = true;
-        // SRE murder only — Blackout ends through BlackoutVictoryChecker.
-        // Array-backed AllowGameEnd: first non-NOT_MODIFY wins. Prepend so pride/sloth
-        // still see faction proposals; lust only steals when proposed is LOVERS.
-        AllowGameEnd.EVENT.register(SinVictoryHooks::onAllowGameEnd);
-        prependOurAllowGameEndHandler();
+        // AllowGameEnd is now owned by v2 RoleWinHooks (SevenSinV2Hooks).
+        // Helpers stay public for BlackoutVictoryChecker and CustomWinnerRole.checkWin.
         HabiTrainCore.LOGGER.info(
-                "[SevenSins] SinVictoryHooks registered (AllowGameEnd pride/sloth/lust; greed instant)");
+                "[SevenSins] SinVictoryHooks helpers ready (AllowGameEnd migrated to v2 RoleWinHooks)");
     }
 
     /**

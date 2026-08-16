@@ -48,10 +48,8 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
         addPlayersToTeam(world.getServer().createCommandSourceStack(), players, "harpymodloader_game");
 
-        // 开局不刷新警察阵营角色（需求：开局无警察，警察只能通过电话聘请产生）
-        BlackoutRoleManager.disableAllVigilanteRoles();
-        // 复用 SRE 原版角色分配流程（含 RoleCountManager/权重/forced role）
-        assignRole(world, game, players);
+        // ROLE_MAX 是全局表，只在分配临界区临时禁用警长角色并精确恢复原值。
+        BlackoutRoleManager.assignWithVigilantesDisabled(() -> assignRole(world, game, players));
         // 从 SRE 分配结果同步停电阵营状态
         BlackoutRoleManager.syncFactionsFromSreRoles(world, game, players);
         game.syncRoles();
@@ -111,13 +109,13 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
             var modeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(world);
             if (modeOpt.isPresent() && modeOpt.get() instanceof BlackoutMode active) {
                 bm = active;
-                winner = active.getLastWinningFaction();
+                winner = active.getLastWinningFaction(world);
             } else {
                 // 兜底：用注册表里的单例（ACTIVE 可能已摘掉，但 lastWinningFaction 仍在）
                 var registered = com.habitrain.core.api.GameModeRegistry.get(BlackoutMode.REGISTRY_FULL_ID);
                 if (registered instanceof BlackoutMode fallback) {
                     bm = fallback;
-                    winner = fallback.getLastWinningFaction();
+                    winner = fallback.getLastWinningFaction(world);
                 }
             }
 
@@ -126,7 +124,7 @@ public class SREBlackoutGameMode extends SREMurderGameMode {
 
             // 延后停止 habitrain GameMode：字幕已在 endGame 广播，这里只做清理
             if (bm != null && com.habitrain.core.api.GameModeRegistry.isActiveInLevel(world)) {
-                WinResult result = bm.getPendingWinResult();
+                WinResult result = bm.getPendingWinResult(world);
                 if (result == null) {
                     result = WinResult.forceEnd("游戏结束");
                 }

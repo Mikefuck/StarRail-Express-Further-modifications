@@ -1,12 +1,12 @@
 package com.habitrain.core.client.gui.menu.page;
 
-import com.habitrain.core.api.GameMode;
-import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.TaskEditScreen;
 import com.habitrain.core.config.ConfigManager;
@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * "任务配置" 子页 — 左侧模式列表 + 右侧任务网格。
@@ -37,6 +38,15 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private static final int ROW_H = 28;
     private static final int HEADER_H = 28;
     private static final int GROUP_HEADER_H = 20;
+    private static final String GROUP_ORIGINAL = "original";
+    private static final String GROUP_BLACKOUT = "blackout";
+    private static final String GROUP_MORE = "more";
+    private static final String GROUP_OTHER = "other";
+    private static final Set<String> ORIGINAL_SRE_TASK_IDS = Set.of(
+            "sleep", "eat", "drink", "exercise", "raed_book", "bathe", "toilet",
+            "chair", "note_block", "meditate", "outside", "breathe", "be_alone",
+            "repair_wire", "repair_panel", "vending_machine"
+    );
 
     private final ConfigMenuScreen root;
     private final Font font;
@@ -53,6 +63,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private boolean draggingContent = false;
     private double dragStartY = 0;
     private double dragStartScroll = 0;
+    private double maxSidebarScroll = 0;
+    private double maxContentScroll = 0;
 
     /** 每帧快照的 ConfigQueryService 代理 (S10-007)，避免 render 内反复 getInstance */
     private ConfigQueryService configSnapshot;
@@ -74,19 +86,15 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
     // ==================== 构建/分组 ====================
 
-    /**
-     * 构建侧边栏模式分组。
-     * <p>停电模式({@code habitrains:blackout})按阵营拆成两个独立侧栏条目：
-     * "§a停电模式 · 好人任务"和"§c停电模式 · 坏人任务"，各自只显示对应阵营池的任务。
-     * 其他模式仍按 gameModeId 合成一条。
-     * <p>新增好人/坏人任务时，只需在任务注册时指定 {@code .category(BlackoutMode.BLACKOUT_GOOD/BAD)}，
-     * 此处会自动归入对应侧栏条目，无需改 GUI 代码。
-     */
+    /** 按玩家理解成本划分固定四组，避免所有 {@code sre:base} 任务挤在“基础任务”中。 */
     private void rebuildSections() {
         Map<String, List<TaskDefinition>> grouped = new LinkedHashMap<>();
+        grouped.put(GROUP_ORIGINAL, new ArrayList<>());
+        grouped.put(GROUP_BLACKOUT, new ArrayList<>());
+        grouped.put(GROUP_MORE, new ArrayList<>());
+        grouped.put(GROUP_OTHER, new ArrayList<>());
         for (TaskDefinition def : TaskRegistry.getAll()) {
-            String sectionKey = sectionKeyFor(def);
-            grouped.computeIfAbsent(sectionKey, k -> new ArrayList<>()).add(def);
+            grouped.get(groupKeyFor(def)).add(def);
         }
         sections.clear();
         for (var entry : grouped.entrySet()) {
@@ -101,55 +109,40 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         }
     }
 
-    /**
-     * 为任务计算所属侧栏 key。停电模式按阵营拆成两个 key，其他模式用 gameModeId 原样。
-     */
-    private String sectionKeyFor(TaskDefinition def) {
-        String modeId = def.getGameModeId();
-        if (BlackoutMode.MODE_ID.equals(modeId)) {
-            TaskCategory cat = def.getCategory();
-            if (BlackoutMode.BLACKOUT_GOOD.equals(cat)) return BlackoutMode.MODE_ID + "__good";
-            if (BlackoutMode.BLACKOUT_BAD.equals(cat)) return BlackoutMode.MODE_ID + "__bad";
+    private String groupKeyFor(TaskDefinition def) {
+        TaskCategory category = def.getCategory();
+        if (BlackoutMode.MODE_ID.equals(def.getGameModeId())
+                || BlackoutMode.BLACKOUT_GOOD.equals(category)
+                || BlackoutMode.BLACKOUT_BAD.equals(category)) {
+            return GROUP_BLACKOUT;
         }
-        return modeId;
+        if (HabiTrainCore.MOD_ID.equals(def.getModId())
+                && "sre:base".equals(def.getGameModeId())
+                && ORIGINAL_SRE_TASK_IDS.contains(def.getTaskId())) {
+            return GROUP_ORIGINAL;
+        }
+        if (!HabiTrainCore.MOD_ID.equals(def.getModId()) || "sre:base".equals(def.getGameModeId())) {
+            return GROUP_MORE;
+        }
+        return GROUP_OTHER;
     }
 
     private String resolveSectionTitle(String sectionKey, List<TaskDefinition> tasks) {
-        if (sectionKey.endsWith("__good")) return "§a停电模式 · 好人任务";
-        if (sectionKey.endsWith("__bad")) return "§c停电模式 · 坏人任务";
-        String modeId = sectionKey;
-        if ("sre:base".equals(modeId)) return "基础任务";
-        GameMode mode = GameModeRegistry.get(fullModeId(modeId));
-        if (mode != null && mode.getDisplayName() != null && !mode.getDisplayName().isBlank()) {
-            return mode.getDisplayName();
-        }
-        String raw = simpleModeName(modeId);
-        return raw.isEmpty() ? modeId : raw;
+        return switch (sectionKey) {
+            case GROUP_ORIGINAL -> "原版哈比任务";
+            case GROUP_BLACKOUT -> "停电专属任务";
+            case GROUP_MORE -> "更多任务";
+            default -> "其他";
+        };
     }
 
     private int accentForSection(String sectionKey, List<TaskDefinition> tasks) {
-        if (sectionKey.endsWith("__good")) return 0xFF3FBF6F;
-        if (sectionKey.endsWith("__bad")) return 0xFFD84848;
-        return MenuTheme.accentFor(sectionKey);
-    }
-
-    private String fullModeId(String modeId) {
-        return "habitrain_core:" + modeId;
-    }
-
-    private String simpleModeName(String modeId) {
-        int idx = modeId.lastIndexOf(':');
-        String tail = idx >= 0 ? modeId.substring(idx + 1) : modeId;
-        tail = tail.replace('_', ' ').replace('-', ' ').trim();
-        if (tail.isEmpty()) return modeId;
-        StringBuilder sb = new StringBuilder();
-        for (String p : tail.split("\\s+")) {
-            if (p.isEmpty()) continue;
-            sb.append(Character.toUpperCase(p.charAt(0)));
-            if (p.length() > 1) sb.append(p.substring(1));
-            sb.append(' ');
-        }
-        return sb.toString().trim();
+        return switch (sectionKey) {
+            case GROUP_ORIGINAL -> MenuTheme.ACCENT_MINT;
+            case GROUP_BLACKOUT -> MenuTheme.DANGER;
+            case GROUP_MORE -> MenuTheme.ACCENT_BLUE;
+            default -> MenuTheme.TEXT_SECONDARY;
+        };
     }
 
     private int taskCategoryPriority(TaskCategory cat) {
@@ -221,7 +214,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         }
         // 滚动条
         int sidebarContentH = rowY + (int) sidebarScroll - sidebarListY;
-        int maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
+        maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
+        sidebarScroll = Mth.clamp(sidebarScroll, 0, maxSidebarScroll);
         MenuTheme.drawScrollbar(g, sidebarX + SIDEBAR_W - 4, sidebarListY, sidebarListH, sidebarScroll, maxSidebarScroll, 3);
         g.disableScissor();
 
@@ -251,21 +245,24 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             g.drawString(font, Component.literal("§e§l" + group.getKey()), contentX + 6, cy + 2, MenuTheme.ACCENT_CYAN, false);
             cy += GROUP_HEADER_H;
             for (TaskDefinition def : group.getValue()) {
-                drawTaskRow(g, def, contentX, cy, contentW);
+                drawTaskRow(g, def, contentX, cy, contentW, mx, my);
                 cy += ROW_H;
             }
         }
         // 内容滚动条
         int contentContentH = cy + (int) contentScroll - y;
-        int maxContentScroll = Math.max(0, contentContentH - h);
+        maxContentScroll = Math.max(0, contentContentH - h);
+        contentScroll = Mth.clamp(contentScroll, 0, maxContentScroll);
         MenuTheme.drawScrollbar(g, contentX + contentW - 4, y, h, contentScroll, maxContentScroll, 3);
         g.disableScissor();
     }
 
-    private void drawTaskRow(GuiGraphics g, TaskDefinition def, int x, int y, int w) {
+    private void drawTaskRow(GuiGraphics g, TaskDefinition def, int x, int y, int w, int mx, int my) {
         TaskConfigEntry cfg = configSnapshot.getTaskConfig(def.getFullId());
         boolean enabled = cfg == null || cfg.enabled;
         int color = cfg != null ? cfg.instinctColor : MenuTheme.accentFor(def.getFullId());
+        MenuTheme.row(g, x, y, w - 5, ROW_H - 1,
+                MenuTheme.inBounds(mx, my, x, y, w - 5, ROW_H), false);
         // 色条
         MenuTheme.drawAccentStripe(g, x, y, ROW_H, color);
         // 名称
@@ -292,8 +289,9 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         // 编辑按钮
         int editX = x + w - 64;
         int editW = 54;
-        g.fill(editX, y + 4, editX + editW, y + 18, MenuTheme.BG_EDIT);
-        g.drawString(font, "§e编辑", editX + (editW - font.width("编辑")) / 2, y + 6, 0xFFFFFFFF, false);
+        boolean editHover = MenuTheme.inBounds(mx, my, editX, y + 4, editW, 14);
+        MenuTheme.button(g, font, "编辑", editX, y + 4, editW, 14,
+                MenuTheme.ACCENT_AMBER, true, editHover);
         taskHits.add(new TaskRowHit(def, pillX, pillW, editX, editW, y, ROW_H));
     }
 
@@ -332,6 +330,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 selectedMode = hit.id();
                 contentScroll = 0;
+                MenuSounds.playClick();
                 return true;
             }
         }
@@ -339,10 +338,12 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         for (TaskRowHit hit : taskHits) {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
+                MenuSounds.playClick();
                 toggleTask(hit.def());
                 return true;
             }
             if (mx >= hit.editX() && mx < hit.editX() + hit.editW()) {
+                MenuSounds.playClick();
                 openTaskEditor(hit.def());
                 return true;
             }
@@ -368,11 +369,11 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
         if (draggingSidebar) {
-            sidebarScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, 10000);
+            sidebarScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxSidebarScroll);
             return true;
         }
         if (draggingContent) {
-            contentScroll = Mth.clamp(dragStartScroll + (dragStartY - my), 0, 10000);
+            contentScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxContentScroll);
             return true;
         }
         return false;
@@ -391,9 +392,9 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) {
         if (mx < x + SIDEBAR_W) {
-            sidebarScroll = Mth.clamp(sidebarScroll - sy * 18, 0, 10000);
+            sidebarScroll = Mth.clamp(sidebarScroll - sy * 18, 0, maxSidebarScroll);
         } else {
-            contentScroll = Mth.clamp(contentScroll - sy * 18, 0, 10000);
+            contentScroll = Mth.clamp(contentScroll - sy * 18, 0, maxContentScroll);
         }
         return true;
     }
@@ -432,8 +433,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
         if (cfg == null) cfg = TaskConfigEntry.createDefault();
         ConfigManager.getInstance().putTaskConfig(def.getFullId(), cfg);
-        // 用 sectionKeyFor 查找（停电模式已拆成 __good/__bad 两条）
-        ModeSection section = sections.get(sectionKeyFor(def));
+        ModeSection section = sections.get(groupKeyFor(def));
         String modeName = section != null ? section.title() : def.getGameModeId();
         int accent = section != null ? section.accent() : MenuTheme.accentFor(def.getGameModeId());
         Minecraft.getInstance().setScreen(new TaskEditScreen(root, def, cfg, def.getCategory(), modeName, accent));

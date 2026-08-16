@@ -19,8 +19,8 @@ import java.util.Set;
 
 public class CustomTaskBlockPayload implements CustomPacketPayload {
 
-    private static final int MAX_ENTRIES = 1024;
-    private static final int MAX_MAPS_PER_ENTRY = 64;
+    private static final int MAX_ENTRIES = 65_536;
+    private static final int MAX_TYPE_IDS_PER_ENTRY = 64;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "custom_task_blocks");
     public static final CustomPacketPayload.Type<CustomTaskBlockPayload> TYPE = new CustomPacketPayload.Type<>(ID);
@@ -49,7 +49,7 @@ public class CustomTaskBlockPayload implements CustomPacketPayload {
                 int z = buf.readInt();
                 BlockPos pos = new BlockPos(x, y, z);
                 int setCount = buf.readInt();
-                if (setCount < 0 || setCount > MAX_MAPS_PER_ENTRY) {
+                if (setCount < 0 || setCount > MAX_TYPE_IDS_PER_ENTRY) {
                     throw new DecoderException("Invalid setCount: " + setCount);
                 }
                 Set<Integer> typeIds = new HashSet<>();

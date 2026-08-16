@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.habitrain.core.mixin.rest",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "RestAreaServerPlayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

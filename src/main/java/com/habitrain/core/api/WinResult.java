@@ -1,6 +1,5 @@
 package com.habitrain.core.api;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,7 +13,7 @@ public class WinResult {
 
     public WinResult(List<UUID> winners, String reason) {
         this.winners = winners != null
-            ? Collections.unmodifiableList(winners)
+            ? List.copyOf(winners)
             : List.of();
         this.reason = reason;
     }

@@ -94,8 +94,9 @@ public final class BlackoutExileVoteManager {
         state.candidateOrder.clear();
         state.initiatorId = initiator.getUUID();
 
-        // 候选人 = 所有存活玩家
+        // 候选人 = 在线存活玩家（断线宽限内不列入，避免投给已离线者）
         for (UUID id : BlackoutRoleManager.getAllAlive(level)) {
+            if (BlackoutRoleManager.isDisconnected(level, id)) continue;
             state.candidateOrder.add(id);
         }
 
@@ -131,13 +132,14 @@ public final class BlackoutExileVoteManager {
         VoteState state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
 
-        // 校验投票者存活且在候选人中
+        // 校验投票者在线存活且在候选人中
         if (!state.candidateOrder.contains(voterId)) return;
-        if (!BlackoutRoleManager.isAlive(level, voterId)) return;
+        if (!BlackoutRoleManager.isInteractable(level, voterId)) return;
 
         if (targetId != null && !state.candidateOrder.contains(targetId)) return;
-        // 目标必须在投票开始后仍存活（投票期间死亡者不可被投票）
-        if (targetId != null && !BlackoutRoleManager.isAlive(level, targetId)) return;
+        // 目标必须在投票开始后仍在线存活
+        if (targetId != null && !BlackoutRoleManager.isInteractable(level, targetId)) return;
+        if (targetId != null && targetId.equals(voterId)) return;
 
         if (targetId != null) {
             state.votesByVoter.put(voterId, targetId);
@@ -155,14 +157,18 @@ public final class BlackoutExileVoteManager {
         // 统计票数
         Map<UUID, Integer> voteCounts = new HashMap<>();
         for (UUID candidateId : state.candidateOrder) {
-            voteCounts.put(candidateId, 0);
+            if (BlackoutRoleManager.isInteractable(level, candidateId)) {
+                voteCounts.put(candidateId, 0);
+            }
         }
         for (Map.Entry<UUID, UUID> entry : state.votesByVoter.entrySet()) {
             UUID target = entry.getValue();
-            voteCounts.merge(target, 1, Integer::sum);
+            if (voteCounts.containsKey(target)) {
+                voteCounts.merge(target, 1, Integer::sum);
+            }
         }
 
-        int totalVotes = state.votesByVoter.size();
+        int totalVotes = voteCounts.values().stream().mapToInt(Integer::intValue).sum();
 
         if (totalVotes == 0) {
             broadcastResult(level, "§e无人投票，本轮无人被放逐");

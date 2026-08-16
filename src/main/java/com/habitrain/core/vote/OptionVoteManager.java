@@ -2,7 +2,10 @@ package com.habitrain.core.vote;
 
 import com.habitrain.core.api.VoteOption;
 import com.habitrain.core.api.VoteResult;
+import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.network.MapVoteProfilePayload;
 import com.habitrain.core.network.OptionVotePayload;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -38,12 +41,15 @@ public final class OptionVoteManager {
         String voteId = "";
         String title = "";
         String description = "";
+        String resolvedOptionId = "";
         int remainingSeconds;
         int totalSeconds;
         final List<VoteOption> options = new ArrayList<>();
         final Map<UUID, String> votesByVoter = new HashMap<>(); // voter -> optionId
         @Nullable Consumer<VoteResult> onResolved;
-        int lastPayloadHash;
+        List<MapVoteProfilePayload> profilePayloads = List.of();
+        long stateVersion;
+        long lastSentVersion = -1L;
     }
 
     private static State getOrCreate(ServerLevel level) {
@@ -74,13 +80,15 @@ public final class OptionVoteManager {
         state.voteId = voteId;
         state.title = title == null ? "" : title;
         state.description = description == null ? "" : description;
+        state.resolvedOptionId = "";
         state.remainingSeconds = durationSeconds;
         state.totalSeconds = durationSeconds;
         state.options.clear();
         state.options.addAll(options);
         state.votesByVoter.clear();
         state.onResolved = onResolved;
-        state.lastPayloadHash = 0;
+        state.profilePayloads = List.of();
+        markChanged(state);
 
         LOGGER.info("[OptionVote] started voteId={} options={} duration={}s",
                 voteId, state.options.size(), durationSeconds);
@@ -92,12 +100,21 @@ public final class OptionVoteManager {
      * 投票或弃票。
      * {@code voteId} 必须与当前 active 投票匹配，否则 no-op。
      * {@code optionId == null} 表示弃票。
+     *
+     * @return true 表示投票或弃票请求已被当前投票接受
      */
-    public static void cast(ServerLevel level, UUID voterId, @Nullable String voteId, @Nullable String optionId) {
-        if (level == null || voterId == null) return;
+    public static boolean cast(ServerLevel level, UUID voterId, @Nullable String voteId, @Nullable String optionId) {
+        if (level == null || voterId == null) return false;
         State state = STATES.get(level.dimension());
-        if (state == null || !state.active) return;
-        if (voteId == null || !voteId.equals(state.voteId)) return;
+        if (state == null || !state.active) return false;
+        if (voteId == null || !voteId.equals(state.voteId)) return false;
+
+        // Only online, non-repairer players in this dimension may cast.
+        ServerPlayer voter = level.getServer() != null
+                ? level.getServer().getPlayerList().getPlayer(voterId) : null;
+        if (voter == null || voter.serverLevel() != level) return false;
+        if (RepairModeManager.isRepairer(voter)) return false;
+        if (voter.isSpectator()) return false;
 
         if (optionId != null) {
             boolean known = false;
@@ -107,12 +124,14 @@ public final class OptionVoteManager {
                     break;
                 }
             }
-            if (!known) return;
+            if (!known) return false;
             state.votesByVoter.put(voterId, optionId);
         } else {
             state.votesByVoter.remove(voterId);
         }
+        markChanged(state);
         broadcastState(level);
+        return true;
     }
 
     /** 当前 active 投票 id；无 active 时返回 null。 */
@@ -129,6 +148,7 @@ public final class OptionVoteManager {
         if (state == null || !state.active) return;
 
         state.remainingSeconds--;
+        markChanged(state);
         if (state.remainingSeconds <= 0) {
             resolve(level, state);
         } else {
@@ -176,6 +196,7 @@ public final class OptionVoteManager {
         }
 
         VoteResult result = new VoteResult(state.voteId, winnerId, tallies, randomPick);
+        state.resolvedOptionId = winnerId == null ? "" : winnerId;
         Consumer<VoteResult> callback = state.onResolved;
         state.onResolved = null;
 
@@ -198,6 +219,7 @@ public final class OptionVoteManager {
         State state = STATES.get(level.dimension());
         if (state == null || voterId == null) return;
         if (state.votesByVoter.remove(voterId) != null && state.active) {
+            markChanged(state);
             broadcastState(level);
         }
     }
@@ -207,8 +229,10 @@ public final class OptionVoteManager {
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
         state.active = false;
+        state.resolvedOptionId = "";
         state.onResolved = null;
         state.votesByVoter.clear();
+        markChanged(state);
         broadcastState(level);
         LOGGER.info("[OptionVote] cancelled voteId={}", state.voteId);
     }
@@ -223,9 +247,44 @@ public final class OptionVoteManager {
         return state != null && state.active;
     }
 
+    public static int remainingSeconds(ServerLevel level) {
+        if (level == null) return 0;
+        State state = STATES.get(level.dimension());
+        return state != null && state.active ? Math.max(0, state.remainingSeconds) : 0;
+    }
+
+    /**
+     * 地图投票开始后推送档案（一次性，不随 1Hz 票数广播重复推）。
+     * 仅当前 active 投票为地图阶段时生效。
+     */
+    public static void pushProfiles(ServerLevel level,
+                                    Map<String, MapVoteProfilePayload.MapProfile> profiles) {
+        if (level == null || profiles == null) return;
+        State state = STATES.get(level.dimension());
+        if (state == null || !state.active || !"map".equals(state.voteId)) return;
+        List<MapVoteProfilePayload> fragments = new ArrayList<>();
+        for (var entry : profiles.entrySet()) {
+            fragments.add(new MapVoteProfilePayload(Map.of(entry.getKey(), entry.getValue())));
+        }
+        state.profilePayloads = List.copyOf(fragments);
+        for (ServerPlayer player : level.players()) {
+            if (RepairModeManager.isRepairer(player)) continue;
+            sendProfileFragments(player, state.profilePayloads);
+        }
+    }
+
+    private static void sendProfileFragments(ServerPlayer player,
+                                             List<MapVoteProfilePayload> fragments) {
+        for (MapVoteProfilePayload fragment : fragments) {
+            ServerPlayNetworking.send(player, fragment);
+        }
+    }
+
     /** 玩家加入时同步当前 active 投票状态。 */
     public static void syncTo(ServerPlayer player) {
         if (player == null) return;
+        // 维修人员不进入对局，不收到大厅投票 GUI
+        if (RepairModeManager.isRepairer(player)) return;
         ServerLevel level = player.serverLevel();
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
@@ -241,30 +300,40 @@ public final class OptionVoteManager {
                 state.description,
                 entries
         );
+        // 地图阶段补发档案（中途加入的玩家）
+        if ("map".equals(state.voteId) && !state.profilePayloads.isEmpty()) {
+            sendProfileFragments(player, state.profilePayloads);
+        }
     }
 
     private static void broadcastState(ServerLevel level) {
         State state = STATES.get(level.dimension());
         if (state == null) return;
 
-        int hash = Objects.hash(state.active, state.remainingSeconds, state.voteId,
-                state.title, state.description, state.votesByVoter);
-        hash = 31 * hash + state.options.hashCode();
-        if (hash == state.lastPayloadHash) return;
-        state.lastPayloadHash = hash;
+        if (state.stateVersion == state.lastSentVersion) return;
+        state.lastSentVersion = state.stateVersion;
 
         List<OptionVotePayload.Entry> entries = buildEntries(state);
-        OptionVotePayload.broadcastToLevel(
-                level,
-                state.voteId,
-                state.active,
-                state.remainingSeconds,
-                state.totalSeconds,
-                1,
-                state.title,
-                state.description,
-                entries
-        );
+        for (ServerPlayer player : level.players()) {
+            // 维修人员不进入对局，不收到大厅投票 GUI
+            if (RepairModeManager.isRepairer(player)) continue;
+            OptionVotePayload.sendTo(
+                    player,
+                    state.voteId,
+                    state.active,
+                    state.remainingSeconds,
+                    state.totalSeconds,
+                    1,
+                    state.title,
+                    state.description,
+                    state.resolvedOptionId,
+                    entries
+            );
+        }
+    }
+
+    private static void markChanged(State state) {
+        state.stateVersion++;
     }
 
     private static List<OptionVotePayload.Entry> buildEntries(State state) {

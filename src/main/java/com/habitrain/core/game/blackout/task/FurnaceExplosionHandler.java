@@ -102,7 +102,8 @@ public class FurnaceExplosionHandler {
 
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
-        pendingExplosions.remove(uuid);
+        // 不在此移除 pendingExplosions：TNT 已点燃、任务已判完成后，玩家掉线/淘汰
+        // 不应取消 2 秒后必然发生的爆炸。clearAll() 仍会在整局清理时清空队列。
         SlownessReapplyManager.unregisterAllLevels(uuid);
     }
 
@@ -193,9 +194,8 @@ public class FurnaceExplosionHandler {
     }
 
     private static void giveSlow(ServerPlayer sp, UUID uuid, int ticks, boolean phaseProgressed) {
-        SlownessReapplyManager.register(sp.serverLevel().dimension(), uuid,
-                new SlownessReapplyManager.EffectSpec(2, ticks + 10,
-                        ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION)));
+        SlownessReapplyManager.register(sp.serverLevel(), uuid, 2, ticks + 10,
+                ResourceLocation.parse(com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION));
         long tick = sp.serverLevel().getServer().overworld().getGameTime();
         TorchState s = new TorchState();
         s.slowUntilTick = tick + ticks;

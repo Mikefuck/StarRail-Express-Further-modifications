@@ -4,7 +4,7 @@
 > **平台:** Minecraft 1.21.1 · Fabric · Java 21  
 > **公开包:** `com.habitrain.core.api`  
 > **配置:** `config/habitrain_core.json`  
-> **文档日期:** 2026-07-22  
+> **文档日期:** 2026-08-09
 
 本手册描述 **DLC / 附属模组可依赖的公开 API**。`task/`、`game/`、`network/`、`config/` 等包为内部实现，**不保证**跨版本稳定，请勿直接依赖。
 
@@ -630,7 +630,7 @@ TaskRegistry.register("habitrain_core", "add_coal", b -> b
 
 ### 11.1 概述
 
-本 API 允许 DLC/附属模组**替换**或**修改**哈比列车中已注册的 SRE 角色（包括原版 `sre:killer`、`sre:civilian` 以及 `habitrain_core` 的自定义角色）。
+本 API 允许 DLC/附属模组**替换**或**修改**哈比列车中已注册的 SRE 角色（包括原版 `starrailexpress:killer`、`starrailexpress:civilian` 以及 `habitrain_core` 的自定义角色）。注意：上游 SRE 的 mod ID 是 `starrailexpress`，角色 ID 一律写作 `starrailexpress:角色名`，不是 `sre:`。
 
 - **REPLACE（替换）**：用新角色完全取代目标角色。原角色从分配池、角色介绍书、命令补全中隐藏，新角色取而代之。
 - **MODIFY（调整）**：不改变目标角色 ID，动态覆盖其显示名、颜色、商店、初始物品、阵营 flags、生成参数、技能/被动、胜利条件。
@@ -642,6 +642,31 @@ TaskRegistry.register("habitrain_core", "add_coal", b -> b
 - 同一目标不能同时生效 REPLACE 和 MODIFY。
 - 多条覆盖同一目标 → 冲突，需在 ModMenu 中手动选择。
 
+### 11.1.1 v1/v2 状态（2026-08-16 审核后）
+
+- **v1（本 API）仍是正式兼容接口，不弃用。** v2 角色扩展 API 保持 preview / experimental：已补齐 v1 字段级 MODIFY 对等（名称、描述、初始物品、商店、胜利条件），但尚未完成真实 SRE 双端与复杂角色端到端验收，因此不标 Stable。
+- v2 中已可迁移的字段见下表；无等价能力的字段在 v2 补齐前继续使用本 API（或 provider 自有 Mixin）。
+
+**v1 → v2 逐字段迁移矩阵：**
+
+| v1 字段/能力 | v2 对应 | 状态 |
+|---|---|---|
+| `colorPatch` | `RolePatch.color` / `RolePatch.colorProvider` | 可迁移 |
+| `flagsPatch` | `RolePatch.flagsPatch`（另有对应布尔字段） | 可迁移 |
+| `spawnInfoPatch` | `RolePatch.spawnInfoPatch`（另有 defaultMax 等字段） | 可迁移 |
+| `managedSkillPatch` | `RoleSkillPatch` | 可迁移 |
+| `roleBookAppendices` | `RoleBookPatch.append` | 可迁移 |
+| `namePatch` | `RolePatch.namePatch` | 可迁移（2026-08-16） |
+| `descriptionPatch` | `RolePatch.descriptionPatch` | 可迁移（2026-08-16） |
+| `simpleDescriptionPatch` | `RolePatch.simpleDescriptionPatch` | 可迁移（2026-08-16） |
+| `shopPatch` | `RolePatch.shopPatch` | 可迁移（2026-08-16） |
+| `shopTransform` | `RolePatch.shopTransform` | 可迁移（2026-08-16） |
+| `defaultItemsPatch` | `RolePatch.defaultItemsPatch` | 可迁移（2026-08-16） |
+| `winConditionHook` | `RolePatch.winConditionHook`（已接入 SRE/Blackout 胜利桥） | 可迁移（2026-08-16） |
+| callback 动态语义 | 无声明式等价能力 | 暂不可迁移（按场景使用 provider Mixin） |
+
+> 能力矩阵（STABLE / EXPERIMENTAL / UNSUPPORTED / REQUIRES_PROVIDER_MIXIN）见《角色扩展API-v2使用教程.md》。
+
 ### 11.2 注册入口
 
 所有注册必须在模组的 `onInitialize()` 中调用。注册在 `SERVER_STARTED` 时冻结。
@@ -652,7 +677,7 @@ RoleOverrideApi.registerReplace(ReplaceRoleDefinition.builder()
     .sourceModId("my_dlc")
     .displayName(Component.literal("暗影列车员"))
     .customTypeLabel("完全替换")
-    .targetRoleId(ResourceLocation.parse("sre:killer"))
+    .targetRoleId(ResourceLocation.parse("starrailexpress:killer"))
     .replacementRole(shadowKiller)
     .build());
 
@@ -661,7 +686,7 @@ RoleOverrideApi.registerModify(ModifyRoleDefinition.builder()
     .sourceModId("my_dlc")
     .displayName(Component.literal("杀手·狂暴化"))
     .customTypeLabel("属性调整")
-    .targetRoleId(ResourceLocation.parse("sre:killer"))
+    .targetRoleId(ResourceLocation.parse("starrailexpress:killer"))
     .namePatch((original, server) -> Component.literal("狂暴杀手"))
     .shopPatch((original, server) -> MyShops.berzerkShop())
     .build());
@@ -697,7 +722,7 @@ public class MyDlcMod implements ModInitializer {
             .displayName(Component.literal("暗影列车员"))
             .description(Component.literal("来自暗影的杀手，拥有传送能力"))
             .customTypeLabel("完全替换")
-            .targetRoleId(ResourceLocation.parse("sre:killer"))
+            .targetRoleId(ResourceLocation.parse("starrailexpress:killer"))
             .replacementRole(shadowKiller)
             .build());
     }
@@ -723,7 +748,7 @@ MODIFY 支持以下补丁类型，每个都是可选的：
 RoleOverrideApi.registerModify(ModifyRoleDefinition.builder()
     .sourceModId("my_dlc")
     .displayName(Component.literal("平民·强化"))
-    .targetRoleId(ResourceLocation.parse("sre:civilian"))
+    .targetRoleId(ResourceLocation.parse("starrailexpress:civilian"))
     .namePatch((original, server) -> Component.literal("武装平民"))
     .colorPatch((original, server) -> 0x00FF00)
     .flagsPatch((original, server, out) -> {
@@ -784,16 +809,16 @@ DLC 可通过 `customTypeLabel` 自定义类型标签（如"完全替换"、"属
 
 ```java
 // 判断某角色是否被替换
-boolean replaced = RoleOverrideApi.isReplaced(ResourceLocation.parse("sre:killer"));
+boolean replaced = RoleOverrideApi.isReplaced(ResourceLocation.parse("starrailexpress:killer"));
 
 // 获取替换后的角色实例
-SRERole replacement = RoleOverrideApi.getReplacement(ResourceLocation.parse("sre:killer"));
+SRERole replacement = RoleOverrideApi.getReplacement(ResourceLocation.parse("starrailexpress:killer"));
 
 // 判断某角色是否被修改
-boolean modified = RoleOverrideApi.isModified(ResourceLocation.parse("sre:civilian"));
+boolean modified = RoleOverrideApi.isModified(ResourceLocation.parse("starrailexpress:civilian"));
 
 // 获取生效的 MODIFY 定义
-ModifyRoleDefinition def = RoleOverrideApi.getActiveModify(ResourceLocation.parse("sre:civilian"));
+ModifyRoleDefinition def = RoleOverrideApi.getActiveModify(ResourceLocation.parse("starrailexpress:civilian"));
 
 // 获取所有生效条目
 Collection<RoleOverrideEntry> entries = RoleOverrideApi.getEffectiveEntries();
@@ -855,5 +880,40 @@ GameMode 侧额外钩子（`onTaskTick` / `overrideCompletionCheck` 等）由内
 | `docs/使用教程.md` | **可能过时**，优先本手册 |
 
 ---
+
+
+---
+
+## 附录 C — 角色扩展 v2：审核 2026-08-14 修复记录
+
+本附录记录《哈比列车角色扩展 API 审核报告-2026-08-14》落地情况（分支 restore/merged-20260809）。
+
+### P0（必须优先，已修复）
+
+- **P0-1 状态删除/重置同步**：RoleStateSyncPayload 新增 removed 标志与单调 revision。reset / clearRoundState / clearWorldState 对每个实际删除的 slot 按原 SyncPolicy 广播删除；客户端 RoleStateClientCache 按完整 slot key 删除镜像。业务上的 null 值仍以「存在但为 null」的 value payload 传输，与删除严格区分。
+- **P0-2 迟加入/重连全量同步**：RoleStateServiceImpl.sendCurrentStateTo(player) 在 JOIN 的 manifest/snapshot 之后推送该玩家有权接收的全部当前 slot（OWNER / OWNER_AND_TRACKING / ALL；NONE / SERVER_ONLY 永不下发）。
+- **P0-3 ALIAS 同源冲突**：alias from 为独占冲突键。重复源在诊断视图标 CONFLICT 并从 activeAliases() / resolveAlias() 中排除；可通过 RoleExtensionConfigService 的 winnerFor(from, "alias") 配置胜者；禁用其中一条后另一条自动恢复。解析与快照不再依赖注册顺序。
+
+### P1（高优先，已修复或降级标注）
+
+- **P1-1 收紧注册入口**：RoleExtensionApi.registrar() 改为只读 facade，任何注册方法一律抛错。hooks/state/action/voice/chat 与 ADD/MODIFY/REPLACE/ALIAS 一样只能来自 habitrain:role_extensions 入口点的 provider-scoped 事务；core 自身的 HabiRoleHooks / SevenSinV2Hooks 已迁入 CoreRoleExtensionProvider。
+- **P1-2 客户端扩展兑现/标注**：RoleManifestService 将笼统的 client_ext 拆分为 client_hud / client_instinct / client_skin，并把尚未有运行时消费点的 client_name_render / client_screen 列入 experimentalCapabilities（manifest 与 payload 均已携带）。RoleNameRenderRule / RoleScreenSpec 标注 experimental，注册时打警告。2026-08-16 更新：HUD ICON/PROGRESS/COOLDOWN/CHARGE 已有基础 fallback 渲染；RoleNameRenderRule 的 NAMEPLATE 阶段已接入 EntityRendererMixin（hide/color）；RoleScreenSpec 新增 stock RoleScreen 分发入口（RoleClientExtensionHooks.openRoleScreen()）。
+- **P1-3 语音/聊天能力**：语音 adapter 现在填充真实语音群组 id（VoicechatConnection.getGroup().getId()）与说话者→接收者距离，isolateGroup + hearWorld(false) 与 maxDistance 真正生效。聊天 muteReceive 因 Fabric 1.21.1 无按接收者过滤事件，明确标注 experimental 并警告，muteSend 继续生效。
+- **P1-4 握手门控**：新增 C2S RoleHandshakeReportPayload（客户端收到 manifest 后回传本地 manifest）与服务端 RoleHandshakeGate。未上报 / API 不兼容 / 缺少 required provider → 角色动作被拒绝（新原因键 roleapi.action.handshake，附明确提示）；presentation 不匹配仅降级不阻断。
+  - **定义哈希边界（复审 2026-08-16 P1）**：stock 客户端现在上报服务端 RoleSnapshotPayload 中的 definitionHash，因此 manifest 与 snapshot 的哈希不一致会被 HASH_MISMATCH 捕获；但它仍不是客户端独立计算服务端编译视图的指纹，独立双端校验尚未闭环。
+- **P1-5 客户端状态 slot 身份**：RoleStateClientCache 的 slot key 纳入 worldKey 与 owner；「最新值」按服务端单调 revision 选择，不再使用 schema dataVersion。
+
+### P2（中优先，core 内可完成项）
+
+- **P2-1 消费者迁移**：BlackoutRoleManager（雇佣警/警长禁用）、SevenSinsMutex.fallbackNonSin、MikeCodeEditSkill.buildPool、WrathComponent.buildNonSinPool、CrimeScapegoatComponent.randomKillerPool 改为通过 RoleCatalogApi（新增 RoleCatalogConsumer.visiblePool() / resolveOrOriginal()）解析，快照未编译时回退 v1 路径，使 v2 ADD/REPLACE 角色进入原有消费者路径。
+- **P2-3 动作目标模型**：仍为 NONE / PLAYER_UUID；slot/slotgroup/card 等扩展目标列为后续设计，不在本版承诺。
+- **P2-5 文档**：本节即为此项；完整验收（专服、网络、可选依赖、多局冒烟）仍待游戏内验证。
+
+### 复审 2026-08-14 追加修复
+
+- **P2 状态快照撤销**：RoleStateSyncPayload 新增 snapshot 标志；sendCurrentStateTo 以 snapshot=true 批量推送按权限过滤的全量快照，客户端在批次首个 payload 时清空镜像再应用。观战者切换跟踪目标或玩家切换维度（LifecycleEventsRegistrar 每 tick 检测 camera/维度变化）都会触发重同步，修复"停止跟踪后重新跟踪仍残留旧镜像"的边界缺口。
+- **P2 聊天 muteReceive**：维持降级标注（Fabric 1.21.1 无按接收者过滤事件）；注册时警告 + 文档明示不受支持，muteSend 继续生效。
+- **P2 registrar Javadoc**：RoleExtensionApi 类说明与 registrar() 方法注释改为"仅兼容保留、只读、任何写操作抛错"，不再暗示可用 registrar() 声明角色。
+- **工作区清洁**：恢复项目根目录 .gitignore（构建/缓存/运行/日志/备份均忽略），清理根目录临时构建日志。
 
 *文档生成自 `src/main/java/com/habitrain/core/api` 源码；若 API 变更请同步更新本文件。*

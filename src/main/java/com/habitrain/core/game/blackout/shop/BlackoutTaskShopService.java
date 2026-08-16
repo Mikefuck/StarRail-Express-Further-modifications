@@ -76,7 +76,11 @@ public final class BlackoutTaskShopService {
     public static String purchaseBlockReason(ServerLevel level, ServerPlayer player, BlackoutTaskShopCatalog.Entry entry) {
         if (level == null || player == null || entry == null) return "无效请求";
         if (!isBlackoutRunning(level)) return "非停电模式";
-        if (player.isSpectator() || !BlackoutRoleManager.isAlive(level, player.getUUID())) return "已淘汰";
+        if (player.isSpectator() || !BlackoutRoleManager.isInteractable(level, player.getUUID())) return "已淘汰";
+        // C2S 必须先在红色电话处打开过商店，且仍在交互距离内
+        String gate = com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.validate(
+                com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.Kind.TASK_SHOP, level, player);
+        if (gate != null) return gate;
 
         BlackoutRoleManager.Faction faction = BlackoutRoleManager.getFaction(level, player.getUUID());
         if (faction == null) return "已淘汰";
@@ -100,6 +104,11 @@ public final class BlackoutTaskShopService {
 
         if (entry.oncePerGame() && BlackoutTaskShopState.isFurnaceExplosionTaken(level))
             return "本局已接取过炸毁发电机";
+
+        if (entry.kind() == BlackoutTaskShopCatalog.Kind.TASK
+                && TaskRegistry.get(entry.key()) == null) {
+            return "任务暂不可用";
+        }
 
         int price = entry.resolvePrice();
         var shop = SREPlayerShopComponent.KEY.get(player);
@@ -129,6 +138,8 @@ public final class BlackoutTaskShopService {
 
         // 扣款
         shop.addToBalance(-price);
+        com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.touch(
+                com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.Kind.TASK_SHOP, player);
 
         if (entry.kind() == BlackoutTaskShopCatalog.Kind.TEMP_POWER) {
             grantTempPower(level, player);
@@ -218,14 +229,10 @@ public final class BlackoutTaskShopService {
         }
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance instance = new TaskInstance(def);
+        instance.setDimension(level.dimension());
         def.onAssign(player, instance);
         mgr.setActiveTask(player.getUUID(), instance);
 
-        // once-per-game 登记（炸毁发电机）
-        var activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
-        if (activeMode instanceof BlackoutMode bm) {
-            bm.onTaskAssign(player, instance);
-        }
         if (entry.oncePerGame()) {
             BlackoutTaskShopState.markFurnaceExplosionTaken(level);
         }
@@ -249,8 +256,8 @@ public final class BlackoutTaskShopService {
         boolean added = player.getInventory().add(lantern);
         if (!added) player.drop(lantern, false);
 
-        // 登记持有状态（防叠买）；到期改为耐久驱动，此处用远未来值作占位
-        long expiry = level.getGameTime() + TEMP_POWER_MAX_DAMAGE * 20L + 40L;
+        // 服务端到期 tick 是权威时间；玩家离线时 gameTime 仍推进，因此不能暂停寿命。
+        long expiry = level.getGameTime() + TEMP_POWER_MAX_DAMAGE * 20L;
         BlackoutTaskShopState.setTempPower(level, player.getUUID(), expiry);
     }
 
@@ -270,8 +277,8 @@ public final class BlackoutTaskShopService {
     }
 
     /**
-     * 每秒 tick：对持有临时电源提灯的玩家扣 1 点耐久；耐久耗尽则销毁。
-     * 同时清理状态 map 中已无提灯的条目。
+     * 每秒 tick：按权威到期 tick 校准提灯耐久；离线时间照常流逝。
+     * 到期玩家下次在线时销毁提灯并清理状态。
      */
     public static void tickTempPower(ServerLevel level) {
         var entries = BlackoutTaskShopState.tempPowerEntries(level);
@@ -281,35 +288,31 @@ public final class BlackoutTaskShopService {
             ServerPlayer sp = level.getServer().getPlayerList().getPlayer(uuid);
             if (sp == null) continue;
 
+            long remainingTicks = e.getValue() - level.getGameTime();
+            if (remainingTicks <= 0L) {
+                reclaimTempLantern(sp);
+                it.remove();
+                SubtitleNotifier.sendTop(sp,
+                        Component.literal("§e临时电源"),
+                        Component.literal("§e提灯已损坏。"),
+                        60);
+                continue;
+            }
+
             boolean stillHas = false;
-            boolean broke = false;
+            int remainingSeconds = (int) Math.max(1L, (remainingTicks + 19L) / 20L);
             for (int i = 0; i < sp.getInventory().getContainerSize(); i++) {
                 ItemStack stack = sp.getInventory().getItem(i);
                 if (!isTempLantern(stack)) continue;
                 stillHas = true;
                 Integer maxD = stack.get(DataComponents.MAX_DAMAGE);
                 int max = maxD != null ? maxD : TEMP_POWER_MAX_DAMAGE;
-                int dmg = stack.getOrDefault(DataComponents.DAMAGE, 0) + 1;
-                if (dmg >= max) {
-                    sp.getInventory().setItem(i, ItemStack.EMPTY);
-                    broke = true;
-                } else {
-                    stack.set(DataComponents.DAMAGE, dmg);
-                }
+                stack.set(DataComponents.DAMAGE,
+                        Math.max(0, max - Math.min(max, remainingSeconds)));
             }
 
-            if (broke) {
-                SubtitleNotifier.sendTop(sp,
-                        Component.literal("§e临时电源"),
-                        Component.literal("§e提灯已损坏。"),
-                        60);
-            }
-
-            if (!stillHas || broke) {
-                // 若已无提灯，清状态；若还有第二把则保留（理论上不叠买）
-                if (!playerHasTempLantern(sp)) {
-                    it.remove();
-                }
+            if (!stillHas) {
+                it.remove();
             }
         }
     }
@@ -326,7 +329,9 @@ public final class BlackoutTaskShopService {
 
     private static boolean isBlackoutRunning(ServerLevel level) {
         var gm = GameModeRegistry.getActiveForLevel(level);
-        return gm.isPresent() && "habitrain:blackout".equals(gm.get().getId());
+        if (gm.isEmpty() || !"habitrain:blackout".equals(gm.get().getId())) return false;
+        if (gm.get() instanceof BlackoutMode blackout && blackout.isGameEnded(level)) return false;
+        return true;
     }
 
     /**
