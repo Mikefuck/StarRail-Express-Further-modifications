@@ -448,9 +448,14 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
                 self.setJumping(false);
             } catch (Throwable ignored) {
             }
-            self.teleportTo(sleepX, sleepY, sleepZ);
-            self.setYRot(sleepYaw);
-            self.setXRot(sleepPitch);
+            // 仅在位置/朝向实际偏离睡眠点时才传送：每 tick 无条件 teleportTo
+            // 会持续广播位置/旋转包（review L6）。
+            if (self.distanceToSqr(sleepX, sleepY, sleepZ) > 0.04
+                    || self.getYRot() != sleepYaw || self.getXRot() != sleepPitch) {
+                self.teleportTo(sleepX, sleepY, sleepZ);
+                self.setYRot(sleepYaw);
+                self.setXRot(sleepPitch);
+            }
             // No action-bar countdown: vanilla psycho HUD already covers berserk timer.
         }
     }

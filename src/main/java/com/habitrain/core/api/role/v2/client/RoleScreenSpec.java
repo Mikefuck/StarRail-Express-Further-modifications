@@ -11,10 +11,10 @@ import java.util.Objects;
  * fully custom layout still write their own screen and only use this
  * spec as the catalog entry.
  *
- * <p><b>Experimental (audit P1-2):</b> specs are stored, queryable and shown in
- * diagnostics, but no screen open/close dispatcher consumes them yet.
- * Advertised under the experimental capability {@code client_screen}; do not
- * rely on in-game effect until the adapter lands.
+ * <p>The stock client consumes these specs through
+ * {@code RoleClientExtensionHooks.openRoleScreen(...)}. Providers choose the
+ * gameplay trigger; the dispatcher supplies the standard picker/confirm/list
+ * implementation declared by {@link #kind()}.
  */
 public final class RoleScreenSpec {
 

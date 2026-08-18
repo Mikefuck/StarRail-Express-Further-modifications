@@ -150,9 +150,19 @@ public final class BlackoutTaskShopService {
             return null;
         }
 
-        // 任务条目：先无奖取消当前任务，再派发
+        // 任务条目：先无奖取消当前任务，再派发；派发失败（任务定义缺失等）
+        // 必须退款——正常由 purchaseBlockReason 同栈预检兜底，此处是防御
+        // 缺口（review L15）。
         cancelWithoutReward(level, player);
-        assignPaidTask(level, player, entry);
+        boolean assigned = assignPaidTask(level, player, entry);
+        if (!assigned) {
+            try {
+                shop.addToBalance(price);
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.error("[TaskShop] refund after failed assign failed", t);
+            }
+            return "任务派发失败，已退款";
+        }
         // 炸毁发电机不弹「已接取」提示，其它商店任务仍提示
         if (!BlackoutTaskShopCatalog.FURNACE_EXPLOSION.key().equals(entry.key())) {
             SubtitleNotifier.sendTop(player,
@@ -220,12 +230,12 @@ public final class BlackoutTaskShopService {
         mgr.clearBlackoutRotationFlag(uuid);
     }
 
-    /** 派发购买的停电任务。 */
-    private static void assignPaidTask(ServerLevel level, ServerPlayer player, BlackoutTaskShopCatalog.Entry entry) {
+    /** 派发购买的停电任务；返回是否成功（review L15）。 */
+    private static boolean assignPaidTask(ServerLevel level, ServerPlayer player, BlackoutTaskShopCatalog.Entry entry) {
         TaskDefinition def = TaskRegistry.get(entry.key());
         if (def == null) {
             HabiTrainCore.LOGGER.error("[TaskShop] task definition not found: {}", entry.key());
-            return;
+            return false;
         }
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance instance = new TaskInstance(def);
@@ -239,6 +249,7 @@ public final class BlackoutTaskShopService {
 
         ActiveTaskPayload.sendToPlayer(player, def.getFullId());
         ExclusiveTaskHudSync.insert(player, instance);
+        return true;
     }
 
     /** 发放临时电源提灯（MC 耐久条 60 点 = 1 分钟）。 */

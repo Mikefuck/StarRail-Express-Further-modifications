@@ -73,6 +73,13 @@ public final class CompiledModifyOverlay {
     /** True when at least one patch explicitly supplied a skill operation. */
     private final boolean skillsSpecified;
 
+    /**
+     * Convenience constructor. {@code skillsSpecified} is derived from
+     * {@code !skills.isEmpty()} so a non-empty list is never silently dropped by
+     * {@link #hasSkills()}-dispatching consumers (review M13). The opposing
+     * relation is wired two-way; use the full constructor for one-way
+     * opposition.
+     */
     public CompiledModifyOverlay(
             int color, MoodType mood, boolean innocent, boolean canUseKiller, boolean neutral,
             boolean vigilanteTeam, int defaultMax, int enableChance, int needPlayerCount,
@@ -92,7 +99,8 @@ public final class CompiledModifyOverlay {
                 neutralForKiller, neutralForInnocent, mafiaTeam,
                 canUseInstinct, instinctNightVision, canSeeTeammateKiller,
                 otherModeRole, hiddenForRotation, occupiedRoleCount, specialMapRole,
-                occupationKeys, opposingKeys, relatedKeys, true, skills, false);
+                occupationKeys, opposingKeys, relatedKeys, true, skills,
+                skills != null && !skills.isEmpty());
     }
 
     public CompiledModifyOverlay(

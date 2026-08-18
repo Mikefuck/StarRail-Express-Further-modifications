@@ -37,10 +37,12 @@ public final class RoleSnapshotService {
         }
         RoleSnapshot snap = RoleSnapshotManager.INSTANCE.current();
         RoleSnapshot round = RoleSnapshotManager.INSTANCE.round();
+        RoleSnapshot pending = RoleSnapshotManager.INSTANCE.pending();
         return new RoleSnapshotPayload(
                 rows,
                 snap == null ? "none" : snap.id().toString(),
                 round == null ? null : round.id().toString(),
+                pending == null ? null : pending.id().toString(),
                 RoleManifestHashes.definitionHash(),
                 RoleExtensionConfigService.INSTANCE.toJsonString());
     }

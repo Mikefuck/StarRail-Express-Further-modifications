@@ -309,9 +309,10 @@ public class ConfigMenuScreen extends Screen {
             int y = NAV_TOP + i * (NAV_ITEM_H + NAV_GAP);
             if (MenuTheme.inBounds(mx, my, 7, y, navW - 14, NAV_ITEM_H)) {
                 if (taskSettingsOnly && i != TOP_MODE) return true;
-                if (i != topTab) currentPage().flushPending();
+                currentPage().flushPending();
+                boolean switched = i != topTab;
                 topTab = i;
-                subTab = 0;
+                if (switched) subTab = 0;
                 MenuSounds.playClick();
                 return true;
             }

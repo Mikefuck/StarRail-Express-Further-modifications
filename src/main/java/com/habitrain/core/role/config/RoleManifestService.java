@@ -32,18 +32,17 @@ public final class RoleManifestService {
      */
     public static final Set<String> CAPABILITIES = Set.of(
             "add", "modify", "replace", "alias", "state", "action", "hooks",
-            "client_hud", "client_instinct", "client_skin");
+            "client_hud", "client_instinct", "client_skin",
+            "client_name_render", "client_screen");
 
     /**
-     * Capabilities that are registered and diagnosable but NOT yet backed by a
-     * runtime consumer (audit P1-2/P1-5): name-render rules and screen specs
-     * are only stored; the ICON/PROGRESS/COOLDOWN/CHARGE HUD kinds
-     * ({@code client_hud_visual}) have no stock visual model yet. Advertised
+     * Capabilities that are registered and diagnosable but not fully backed by
+     * a stock visual model. ICON/PROGRESS/COOLDOWN/CHARGE HUD kinds currently
+     * use text fallback rendering ({@code client_hud_visual}). Advertised
      * separately so no provider mistakes a stored declaration for a delivered
      * feature.
      */
-    public static final Set<String> EXPERIMENTAL_CAPABILITIES = Set.of(
-            "client_name_render", "client_screen", "client_hud_visual");
+    public static final Set<String> EXPERIMENTAL_CAPABILITIES = Set.of("client_hud_visual");
 
     public static RoleManifest build() {
         String coreApi = RoleExtensionApi.instance().apiVersion();

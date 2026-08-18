@@ -55,21 +55,7 @@ public class ConfigStore {
 
     public void load(ConfigRepository repo) {
         this.dirty = false;
-        repo.getMutableTaskConfigs().clear();
-        repo.getMutableGameModeConfigs().clear();
-        repo.getMutableMinigameConfigs().clear();
-        repo.setDlcProbabilityTarget(0.5f);
-        repo.setShaderWhitelistEnabled(false);
-        repo.setShaderWhitelist(List.of());
-        repo.setSheriffCountDivisor(6);
-        repo.setTempPowerPrice(100);
-        repo.setMinigameGlobalEnabled(true);
-        repo.setKnifeDurabilityEnabled(false);
-        repo.setLobbyVoiceGroupEnabled(true);
-        repo.setBlackoutEffectEnhancementEnabled(false);
-        repo.setModeMapVote(ModeMapVoteSettings.createDefault());
-        repo.setEnvironment(EnvironmentSettings.createDefault());
-        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
+        applyDefaults(repo);
 
         if (!configFile.exists()) {
             createDefaultConfig(repo);
@@ -201,16 +187,33 @@ public class ConfigStore {
         } catch (Exception e) {
             LOGGER.error("加载任务配置失败，备份损坏文件后重建默认配置", e);
             quarantineCorruptConfig();
+            // 恢复流程必须重置与 load() 开头相同的完整默认值序列：JSON 在 global
+            // 段中途抛错时，此前已 set 的项（如 knifeDurabilityEnabled /
+            // sheriffCountDivisor / tempPowerPrice）会残留半解析值并被写入
+            // "默认"配置（review M19）。
+            applyDefaults(repo);
             createDefaultConfig(repo);
-            repo.getMutableGameModeConfigs().clear();
-            repo.setShaderWhitelistEnabled(false);
-            repo.setShaderWhitelist(List.of());
-            repo.getMutableMinigameConfigs().clear();
-            repo.setMinigameGlobalEnabled(true);
-            repo.setModeMapVote(ModeMapVoteSettings.createDefault());
-            repo.setEnvironment(EnvironmentSettings.createDefault());
             save(repo);
         }
+    }
+
+    /** 与 load() 开头一致的默认值重置序列（review M19 提取共用）。 */
+    private void applyDefaults(ConfigRepository repo) {
+        repo.getMutableTaskConfigs().clear();
+        repo.getMutableGameModeConfigs().clear();
+        repo.getMutableMinigameConfigs().clear();
+        repo.setDlcProbabilityTarget(0.5f);
+        repo.setShaderWhitelistEnabled(false);
+        repo.setShaderWhitelist(List.of());
+        repo.setSheriffCountDivisor(6);
+        repo.setTempPowerPrice(100);
+        repo.setMinigameGlobalEnabled(true);
+        repo.setKnifeDurabilityEnabled(false);
+        repo.setLobbyVoiceGroupEnabled(true);
+        repo.setBlackoutEffectEnhancementEnabled(false);
+        repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+        repo.setEnvironment(EnvironmentSettings.createDefault());
+        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
     }
 
     /**

@@ -54,6 +54,23 @@ public final class RoleExtensionRegistry {
     private Map<ResourceLocation, SRERole> managedRoles = new LinkedHashMap<>();
     private Map<ResourceLocation, ManagedSRERole> compiledReplacements = new LinkedHashMap<>();
 
+    /**
+     * Compiled replacement instances cached by target id, then by the exact
+     * {@code RoleReplacement} source, so a recompute (config toggle, freeze's
+     * second pass through {@code recomputeCompiledEntries()}) reuses the SAME
+     * object instead of compiling a fresh one. Object identity matters:
+     * {@code TMMRoles}, live snapshots and player components all hold
+     * references, and recompiling an unchanged entry would fork one role id
+     * into two live objects, silently reverting holders of the role to
+     * baseline values (audit S2). Stale entries stay unreachable
+     * (identity-keyed by source) and are harmless.
+     */
+    private final Map<ResourceLocation, Map<RoleReplacement, ManagedSRERole>> replacementCompileCache =
+            new LinkedHashMap<>();
+
+    /** Lazily probed {@code TMMRoles} reachability; see {@link #canTouchTmmRoles()}. */
+    private Boolean tmmReachable;
+
     private final List<ManagedPatch> patches = new ArrayList<>();
     private final List<ManagedReplacement> replacements = new ArrayList<>();
     private final List<ManagedAlias> aliases = new ArrayList<>();
@@ -372,7 +389,14 @@ public final class RoleExtensionRegistry {
      * (audit P2-1) reflect the live toggles without a server restart.
      */
     public void recomputeCompiledEntries() {
-        compileReplacements();
+        try {
+            compileReplacements();
+        } catch (RuntimeException e) {
+            // A mid-recompute failure must leave the previously compiled
+            // replacements intact (audit M2); compileReplacements only swaps
+            // the published map after every entry validated.
+            LOGGER.error("Replacement compilation failed; keeping the previous compiled replacements", e);
+        }
         try {
             this.compiledEntries = RoleConflictAnalyzer.analyze();
         } catch (RuntimeException e) {
@@ -460,9 +484,36 @@ public final class RoleExtensionRegistry {
         }
     }
 
+    /**
+     * TMMRoles' static initializer touches vanilla registries ({@code MobEffects}),
+     * so a first access without the Minecraft bootstrap (unit tests) throws and
+     * permanently poisons the class. Production always bootstraps long before
+     * freeze, so probe once and cache. This replaces the old {@code tmmAccessible}
+     * gate that required a prior ADD before a NEW_ID_WITH_ALIAS replacement
+     * could ever reach the upstream registry (audit L12).
+     */
+    private boolean canTouchTmmRoles() {
+        if (tmmAccessible) {
+            return true;
+        }
+        Boolean reachable = tmmReachable;
+        if (reachable == null) {
+            try {
+                TMMRoles.getRole(ResourceLocation.parse("habitrain_core:tmm_reachability_probe"));
+                reachable = true;
+            } catch (Throwable t) {
+                reachable = false;
+            }
+            tmmReachable = reachable;
+        }
+        return reachable;
+    }
+
     private void compileReplacements() {
         Map<ResourceLocation, ManagedSRERole> compiled = new LinkedHashMap<>();
         Set<ResourceLocation> claimed = new HashSet<>(managedRoles.keySet());
+        List<ManagedSRERole> pendingTmmRegisters = new ArrayList<>();
+        boolean tmmReachableNow = canTouchTmmRoles();
         for (ManagedReplacement mr : replacements) {
             // Audit P2-1: only the effective winner per target compiles a surface
             // role. Conflicted/disabled candidates keep their diagnostics but
@@ -471,26 +522,48 @@ public final class RoleExtensionRegistry {
                 continue;
             }
             RoleReplacement replacement = mr.replacement();
-            ManagedSRERole role = RoleExtensionCompiler.compileReplacement(replacement);
+            ResourceLocation target = replacement.target().location();
+            // Reuse the instance compiled for this exact source so recomputes never
+            // fork the role id into two live objects (audit S2).
+            ManagedSRERole role = replacementCompileCache
+                    .getOrDefault(target, Map.of())
+                    .get(replacement);
+            if (role == null) {
+                role = RoleExtensionCompiler.compileReplacement(replacement);
+                replacementCompileCache
+                        .computeIfAbsent(target, k -> new LinkedHashMap<>())
+                        .put(replacement, role);
+            }
             ResourceLocation rid = role.identifier();
             if (replacement.identity() == com.habitrain.core.api.role.v2.definition.ReplacementIdentity.NEW_ID_WITH_ALIAS) {
                 if (!claimed.add(rid) || compiled.containsKey(rid)) {
                     throw new IllegalStateException(
                             "NEW_ID_WITH_ALIAS replacement id collides with an existing role: " + rid);
                 }
-                if (tmmAccessible && TMMRoles.getRole(rid) != null) {
-                    throw new IllegalStateException(
-                            "NEW_ID_WITH_ALIAS replacement id already exists in TMMRoles: " + rid);
+                if (tmmReachableNow) {
+                    SRERole existing = TMMRoles.getRole(rid);
+                    if (existing != null && existing != role) {
+                        throw new IllegalStateException(
+                                "NEW_ID_WITH_ALIAS replacement id already exists in TMMRoles: " + rid);
+                    }
+                    if (existing == null) {
+                        pendingTmmRegisters.add(role);
+                    }
                 }
             }
             compiled.put(rid, role);
-            this.compiledReplacements = compiled;
-            if (replacement.identity() == com.habitrain.core.api.role.v2.definition.ReplacementIdentity.NEW_ID_WITH_ALIAS
-                    && tmmAccessible && TMMRoles.getRole(rid) == null) {
+        }
+        // Publish the fully built map only after every entry validated: a failure
+        // mid-loop must leave the previous compile intact (audit M2).
+        this.compiledReplacements = compiled;
+        // Audit L12: register NEW_ID_WITH_ALIAS roles whenever the upstream table
+        // is reachable, not only after some ADD already touched it.
+        for (ManagedSRERole role : pendingTmmRegisters) {
+            if (TMMRoles.getRole(role.identifier()) == null) {
                 TMMRoles.registerRole(role);
+                tmmAccessible = true;
             }
         }
-        this.compiledReplacements = compiled;
     }
 
     /**

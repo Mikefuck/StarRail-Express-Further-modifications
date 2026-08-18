@@ -26,7 +26,12 @@ public enum RoleOrdering {
     public Comparator<EffectiveRole> comparator() {
         return switch (this) {
             case ID -> Comparator.comparing(er -> er.key().location().toString());
-            case NAME -> Comparator.comparing(er -> er.role().getName().getString());
+            // role() is null for archived snapshots (see EffectiveRole#role):
+            // fall back to the key string so sorting a catalog containing
+            // snapshots never NPEs (review M12).
+            case NAME -> Comparator.comparing(er -> er.role() != null
+                    ? er.role().getName().getString()
+                    : er.key().location().toString());
             case REGISTRATION -> (a, b) -> 0;
         };
     }

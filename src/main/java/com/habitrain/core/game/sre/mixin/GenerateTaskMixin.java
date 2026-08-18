@@ -39,8 +39,15 @@ public abstract class GenerateTaskMixin {
             "repair_wire", "repair_panel"
     );
 
-    /** Throttle empty-pool WARN logs per player (ms). */
-    private static final Map<UUID, Long> EMPTY_POOL_WARN_AT = new HashMap<>();
+    /** Throttle empty-pool WARN logs per player (ms). Bounded so the
+     *  per-player UUID map cannot accumulate across rounds forever (review L14). */
+    private static final Map<UUID, Long> EMPTY_POOL_WARN_AT =
+            new LinkedHashMap<>(16, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<UUID, Long> eldest) {
+                    return size() > 64;
+                }
+            };
     private static final long EMPTY_POOL_WARN_COOLDOWN_MS = 15_000L;
 
     @Shadow(remap = false) private Player player;

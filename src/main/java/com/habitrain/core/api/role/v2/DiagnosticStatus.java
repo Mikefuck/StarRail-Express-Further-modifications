@@ -16,7 +16,12 @@ public enum DiagnosticStatus {
     INVALID,
     /** The entry conflicts with another entry and is not effective. */
     CONFLICT,
-    /** The entry is queued to take effect on the next round. */
+    /**
+     * @deprecated Pending activation is reported at snapshot level via
+     * {@link DiagnosticSnapshot#pendingId()}; an entry is not marked pending
+     * unless its current and prepared effective forms are compared.
+     */
+    @Deprecated
     PENDING_NEXT_ROUND,
     /** A legacy/unmanaged registration that v2 does not control. */
     LEGACY_UNMANAGED,

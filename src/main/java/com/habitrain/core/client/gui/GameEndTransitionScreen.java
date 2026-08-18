@@ -996,7 +996,10 @@ extends Screen {
             }
             return true;
         }
-        return true;
+        // 仅消费 ESC；其余按键放行给全局键（F2 截图/F3 调试/F11 全屏），
+        // 否则约 7~14 秒的结算转场内全局键全部失效（review M11）。
+        // shouldCloseOnEsc 已为 false，super 不会再触发关闭。
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     public boolean shouldCloseOnEsc() {

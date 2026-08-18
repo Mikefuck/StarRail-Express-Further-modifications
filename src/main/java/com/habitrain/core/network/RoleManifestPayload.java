@@ -16,6 +16,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import io.netty.handler.codec.DecoderException;
+
 /**
  * S2C payload carrying the server's role-extension manifest (§14.2) so the client
  * can compare API version, required provider versions, capability set, gameplay
@@ -39,6 +41,10 @@ public record RoleManifestPayload(
 
     public static final Type<RoleManifestPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_manifest"));
+
+    private static final int MAX_PROVIDERS = 64;
+    private static final int MAX_STRINGS = 4096;
+
     public static final StreamCodec<FriendlyByteBuf, RoleManifestPayload> CODEC =
             StreamCodec.ofMember(RoleManifestPayload::write, RoleManifestPayload::new);
 
@@ -111,6 +117,9 @@ public record RoleManifestPayload(
 
     private static List<ProviderRow> readProviders(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
+        if (n < 0 || n > MAX_PROVIDERS) {
+            throw new DecoderException("Invalid provider count: " + n);
+        }
         List<ProviderRow> rows = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             rows.add(new ProviderRow(buf.readUtf(128), buf.readUtf(64), buf.readBoolean()));
@@ -120,6 +129,9 @@ public record RoleManifestPayload(
 
     private static List<String> readStrings(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
+        if (n < 0 || n > MAX_STRINGS) {
+            throw new DecoderException("Invalid string list size: " + n);
+        }
         List<String> out = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             out.add(buf.readUtf(64));

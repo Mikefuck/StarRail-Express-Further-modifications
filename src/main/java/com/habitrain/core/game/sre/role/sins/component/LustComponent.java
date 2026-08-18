@@ -58,6 +58,9 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     private final Set<UUID> desireMarked = new HashSet<>();
     /** Cached true-lover UUIDs for client highlight (read-only). */
     private final Set<UUID> knownLovers = new HashSet<>();
+    /** 真爱对扫描缓存（10 tick 一次，review L4）。 */
+    private transient List<ServerPlayer> cachedPair;
+    private long lastPairScanTick;
 
     public LustComponent(Player player) {
         this.player = player;
@@ -195,6 +198,8 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         desireMarkUsed = false;
         desireMarked.clear();
         knownLovers.clear();
+        cachedPair = null;
+        lastPairScanTick = 0;
     }
 
     @Override
@@ -210,12 +215,16 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
             return;
         }
 
-        // Always refresh known true lovers for phase-1 highlight (read-only).
-        refreshKnownLovers(level);
+        // 已知真爱名单仅用于 phase-1 高亮（只读），10 tick 刷新一次足够；
+        // 每 tick 全员组件查询无必要（review L4）。
+        if (level.getGameTime() % 10L == 0L) {
+            refreshKnownLovers(level);
+        }
 
         if (phase2) {
             if (observing) {
                 observing = false;
+                cachedPair = null;
                 KEY.sync(self);
             }
             return;
@@ -223,9 +232,18 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
 
         if (!observing) return;
 
-        List<ServerPlayer> pair = findTrueLoverPair(level);
+        // 真爱对扫描是 O(存活玩家²)，同样 10 tick 一次；LOS 与充能仍逐 tick
+        // （review L4）。缓存的玩家引用每 tick 校验存活/未移除。
+        long now = level.getGameTime();
+        if (cachedPair == null || now - lastPairScanTick >= 10) {
+            lastPairScanTick = now;
+            cachedPair = findTrueLoverPair(level);
+        }
+        List<ServerPlayer> pair = cachedPair;
         boolean charging = false;
-        if (pair != null && pair.size() == 2) {
+        if (pair != null && pair.size() == 2
+                && pair.get(0).isAlive() && !pair.get(0).isRemoved()
+                && pair.get(1).isAlive() && !pair.get(1).isRemoved()) {
             ServerPlayer a = pair.get(0);
             ServerPlayer b = pair.get(1);
             if (isNearWithLos(self, a) && isNearWithLos(self, b)) {
@@ -238,6 +256,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
             if (chargeTicks >= PHASE1_CHARGE_TICKS) {
                 phase2 = true;
                 observing = false;
+                cachedPair = null;
                 KEY.sync(self);
                 self.displayClientMessage(
                         Component.translatable("message.habitrain_core.sin_lust.phase2_unlock"),

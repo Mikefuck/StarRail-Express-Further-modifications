@@ -293,6 +293,17 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
             self.removeEffect(debuff);
         }
 
+        // review L5：先 hasEffect 短路，避免每 tick 无负面效果时仍全量拷贝
+        // 活跃效果列表。第二个循环只可能命中 CLEARABLE_DEBUFFS 中的条目。
+        boolean anyCandidate = false;
+        for (Holder<MobEffect> debuff : CLEARABLE_DEBUFFS) {
+            if (self.hasEffect(debuff)) {
+                anyCandidate = true;
+                break;
+            }
+        }
+        if (!anyCandidate) return;
+
         List<MobEffectInstance> actives = new ArrayList<>(self.getActiveEffects());
         for (MobEffectInstance inst : actives) {
             Holder<MobEffect> holder = inst.getEffect();

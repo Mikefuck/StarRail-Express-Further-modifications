@@ -41,27 +41,41 @@ public class BetelTickEngine {
     private static final int MAX_WITHDRAWAL_VALUE = 25;
     private static final int DARKNESS_DURATION_TICKS = 600;
 
-    // Startup-cached registry lookups
+    // Lazily cached registry lookups (review L42): a one-shot static block
+    // caches a miss forever; retrying keeps the lookups working when mods load
+    // or register after the first query.
     private static final ResourceLocation NOELLES_EFFECT_ID = ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles");
     private static final ResourceKey<MobEffect> NOELLES_EFFECT_KEY = ResourceKey.create(Registries.MOB_EFFECT, NOELLES_EFFECT_ID);
-    private static final Holder<MobEffect> NOELLES_EFFECT_HOLDER;
-    private static final Item BETEL_NUT_RESIDUE_ITEM;
+    private static volatile Holder<MobEffect> noellesEffectHolderCache;
+    private static volatile Item betelNutResidueItemCache;
 
-    static {
-        Holder<MobEffect> effectHolder = null;
-        try {
-            var holderOpt = BuiltInRegistries.MOB_EFFECT.getHolder(NOELLES_EFFECT_KEY);
-            if (holderOpt.isPresent()) {
-                effectHolder = holderOpt.get();
-            }
-        } catch (Exception ignored) {}
-        NOELLES_EFFECT_HOLDER = effectHolder;
+    /** Noelles 效果 holder；未注册时返回 null 并在下次重试（不缓存失败）。 */
+    private static Holder<MobEffect> noellesEffectHolder() {
+        Holder<MobEffect> holder = noellesEffectHolderCache;
+        if (holder == null) {
+            try {
+                var holderOpt = BuiltInRegistries.MOB_EFFECT.getHolder(NOELLES_EFFECT_KEY);
+                if (holderOpt.isPresent()) {
+                    holder = holderOpt.get();
+                    noellesEffectHolderCache = holder;
+                }
+            } catch (Exception ignored) {}
+        }
+        return holder;
+    }
 
-        Item residueItem = Items.AIR;
-        try {
-            residueItem = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("betel-nut-mod", "betel_nut_residue"));
-        } catch (Exception ignored) {}
-        BETEL_NUT_RESIDUE_ITEM = residueItem;
+    /** 槟榔渣物品；未注册时返回 AIR 并在下次重试（不缓存失败）。 */
+    private static Item betelNutResidueItem() {
+        Item item = betelNutResidueItemCache;
+        if (item == null) {
+            try {
+                item = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("betel-nut-mod", "betel_nut_residue"));
+                if (item != Items.AIR) {
+                    betelNutResidueItemCache = item;
+                }
+            } catch (Exception ignored) {}
+        }
+        return item == null ? Items.AIR : item;
     }
 
     public static void tickPlayer(ServerPlayer player) {
@@ -227,7 +241,8 @@ public class BetelTickEngine {
             data.addictionStage = BetelQuestState.AddictionStage.SEVERE;
             BetelWithdrawal.applyHeavyAddictionEffects(player, data);
         } else {
-            if (data.addictionStage != BetelQuestState.AddictionStage.NONE && betelAddictionStage < 3) {
+            // 位于 >=3 的 else 分支，betelAddictionStage < 3 恒真（review L40）。
+            if (data.addictionStage != BetelQuestState.AddictionStage.NONE) {
                 data.addictionStage = BetelQuestState.AddictionStage.NONE;
                 data.effectState = BetelQuestState.EffectState.NONE;
             }
@@ -263,8 +278,9 @@ public class BetelTickEngine {
         }
 
         try {
-            if (NOELLES_EFFECT_HOLDER != null) {
-                player.removeEffect(NOELLES_EFFECT_HOLDER);
+            Holder<MobEffect> noellesHolder = noellesEffectHolder();
+            if (noellesHolder != null) {
+                player.removeEffect(noellesHolder);
             }
         } catch (Exception ignored) {}
 
@@ -288,18 +304,20 @@ public class BetelTickEngine {
     }
 
     private static void applyNoellesrolesEffect(ServerPlayer player) {
-        if (NOELLES_EFFECT_HOLDER != null) {
-            player.addEffect(new MobEffectInstance(NOELLES_EFFECT_HOLDER, 200, 0, false, true, true));
+        Holder<MobEffect> noellesHolder = noellesEffectHolder();
+        if (noellesHolder != null) {
+            player.addEffect(new MobEffectInstance(noellesHolder, 200, 0, false, true, true));
         }
     }
 
     private static void giveBetelNutResidue(ServerPlayer player) {
         try {
-            if (BETEL_NUT_RESIDUE_ITEM == null || BETEL_NUT_RESIDUE_ITEM == Items.AIR) {
+            Item residueItem = betelNutResidueItem();
+            if (residueItem == Items.AIR) {
                 HabiTrainCore.LOGGER.warn("槟榔渣物品未找到");
                 return;
             }
-            ItemStack residue = new ItemStack(BETEL_NUT_RESIDUE_ITEM, 1);
+            ItemStack residue = new ItemStack(residueItem, 1);
             if (!player.getInventory().add(residue)) {
                 player.drop(residue, false);
             }
@@ -312,6 +330,8 @@ public class BetelTickEngine {
         try {
             List<ServerPlayer> allPlayers = new ArrayList<>();
             for (ServerPlayer p : revealer.getServer().getPlayerList().getPlayers()) {
+                // 揭晓每局仅一次：排除揭示者自己与旁观者，否则随机命中自己即浪费（review M16）。
+                if (p == revealer || p.isSpectator()) continue;
                 if (p.level().dimension() == revealer.level().dimension()) {
                     allPlayers.add(p);
                 }

@@ -8,7 +8,6 @@ import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.AllowGameEnd;
-import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -40,118 +39,10 @@ public final class SinVictoryHooks {
                 "[SevenSins] SinVictoryHooks helpers ready (AllowGameEnd migrated to v2 RoleWinHooks)");
     }
 
-    /**
-     * Move our handler to the front of the array-backed event so pride/sloth run
-     * before other faction ends. Lust steals only on proposed {@code LOVERS}.
-     */
-    private static void prependOurAllowGameEndHandler() {
-        try {
-            Object event = AllowGameEnd.EVENT;
-            java.lang.reflect.Field handlersField = null;
-            Class<?> c = event.getClass();
-            while (c != null && handlersField == null) {
-                try {
-                    handlersField = c.getDeclaredField("handlers");
-                } catch (NoSuchFieldException ignored) {
-                    c = c.getSuperclass();
-                }
-            }
-            if (handlersField == null) {
-                for (java.lang.reflect.Field f : event.getClass().getDeclaredFields()) {
-                    if (f.getType().isArray()) {
-                        handlersField = f;
-                        break;
-                    }
-                }
-            }
-            if (handlersField == null) {
-                HabiTrainCore.LOGGER.warn(
-                        "[SinVictoryHooks] could not reorder AllowGameEnd handlers; lust may lose race to lovers");
-                return;
-            }
-            handlersField.setAccessible(true);
-            Object arr = handlersField.get(event);
-            if (!(arr instanceof Object[] handlers) || handlers.length == 0) return;
+    // review L13：曾存在 prependOurAllowGameEndHandler（反射重排事件监听）与
+    // onAllowGameEnd（返回 NONE 阻断）两个无调用者的遗留路径；AllowGameEnd 语义
+    // 已由 v2 RoleWinHooks（SevenSinV2Hooks）接管，二者已删除，防止未来被误接线。
 
-            int ours = -1;
-            for (int i = 0; i < handlers.length; i++) {
-                if (handlers[i] != null
-                        && handlers[i].getClass().getName().contains("SinVictoryHooks")) {
-                    ours = i;
-                    break;
-                }
-            }
-            if (ours <= 0) return; // already first or not found
-
-            Object h = handlers[ours];
-            System.arraycopy(handlers, 0, handlers, 1, ours);
-            handlers[0] = h;
-            HabiTrainCore.LOGGER.info(
-                    "[SinVictoryHooks] prepended sin handler to AllowGameEnd index 0 (was {})",
-                    ours);
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn(
-                    "[SinVictoryHooks] AllowGameEnd reorder failed; lust may lose race to lovers", t);
-        }
-    }
-
-    static GameUtils.WinStatus onAllowGameEnd(ServerLevel world, GameUtils.WinStatus proposed,
-                                              boolean loose) {
-        if (world == null || proposed == null) {
-            return GameUtils.WinStatus.NOT_MODIFY;
-        }
-
-        // Order (priority):
-        // 1) only-pride → CUSTOM pride
-        // 2) pride blocking (pride alive + others) on PASSENGERS/KILLERS → NONE
-        // 3) sloth alive on PASSENGERS/KILLERS/TIME → CUSTOM sloth
-        // 4) lust alive + proposed LOVERS only → CUSTOM lust
-        // Pride must never lose the end to a sloth hijack while still blocking.
-        // Lust steals only when proposed is LOVERS — never faction/timer/other ends,
-        // and never races ahead via lovers.won() (safer; requires LOVERS to surface).
-        if (proposed == GameUtils.WinStatus.KILLERS || proposed == GameUtils.WinStatus.PASSENGERS) {
-            if (isOnlyPrideAlive(world)) {
-                ServerPlayer pride = findAlivePridePlayer(world);
-                triggerCustomSinWin(world, SevenSins.PRIDE, pride);
-                HabiTrainCore.LOGGER.info(
-                        "[SinVictoryHooks] only pride alive → CUSTOM (proposed={}, loose={})",
-                        proposed, loose);
-                return GameUtils.WinStatus.CUSTOM;
-            }
-            if (isPrideBlocking(world)) {
-                HabiTrainCore.LOGGER.debug(
-                        "[SinVictoryHooks] pride blocks {} (loose={})",
-                        proposed, loose);
-                return GameUtils.WinStatus.NONE;
-            }
-        }
-
-        if (proposed == GameUtils.WinStatus.KILLERS
-                || proposed == GameUtils.WinStatus.PASSENGERS) {
-            if (isSlothAlive(world)) {
-                ServerPlayer sloth = findAliveSlothPlayer(world);
-                triggerCustomSinWin(world, SevenSins.SLOTH, sloth);
-                HabiTrainCore.LOGGER.info(
-                        "[SinVictoryHooks] sloth alive → CUSTOM hijack (proposed={}, loose={})",
-                        proposed, loose);
-                return GameUtils.WinStatus.CUSTOM;
-            }
-        }
-
-        // Lust lovers steal: only when proposed is LOVERS (no wouldLoversWin race).
-        // Reflective prepend keeps us ahead of LoversWinCheckEvent when possible; if
-        // reorder fails we still only steal once LOVERS is the proposed status.
-        if (!loose && proposed == GameUtils.WinStatus.LOVERS && isLustAlive(world)) {
-            ServerPlayer lust = findAliveLustPlayer(world);
-            stealLoversWinForLust(world, lust);
-            HabiTrainCore.LOGGER.info(
-                    "[SinVictoryHooks] lust steals lovers win → CUSTOM (proposed=LOVERS, loose={})",
-                    loose);
-            return GameUtils.WinStatus.CUSTOM;
-        }
-
-        return GameUtils.WinStatus.NOT_MODIFY;
-    }
 
     /**
      * Pride is still alive and at least one other assigned/alive participant remains.

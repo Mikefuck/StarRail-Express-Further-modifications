@@ -119,6 +119,7 @@ public final class RoleDiagnosticsCommands {
         } else {
             lines.add("  live=none");
         }
+        lines.add("  pending=" + (info.pendingId() == null ? "none" : info.pendingId().version()));
         return lines;
     }
 
@@ -226,7 +227,10 @@ public final class RoleDiagnosticsCommands {
 
     private static boolean matchesListFilter(DiagnosticEntry entry, String kind) {
         return switch (kind) {
-            case "effective", "all", "active" -> entry.status() == DiagnosticStatus.ACTIVE;
+            // "all" 名义上是全部条目，不能再折叠成 ACTIVE 子集（review L11）；
+            // 未知过滤器维持旧行为显示全部。
+            case "all" -> true;
+            case "effective", "active" -> entry.status() == DiagnosticStatus.ACTIVE;
             case "disabled" -> entry.status() == DiagnosticStatus.DISABLED;
             case "conflict" -> entry.status() == DiagnosticStatus.CONFLICT;
             case "invalid" -> entry.status() == DiagnosticStatus.INVALID;

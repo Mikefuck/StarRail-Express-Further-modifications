@@ -65,6 +65,8 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     private boolean collectionComplete;
     private boolean lostPouchKilled;
     private int graceTicks = 40; // 2s after assign before lost-pouch death
+    /** 上次袋子 NBT 重算的游戏刻（review L7：解析昂贵，5 tick 一次足够）。 */
+    private long lastPouchResyncTick = Long.MIN_VALUE;
 
     public GreedComponent(Player player) {
         this.player = player;
@@ -439,7 +441,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
         if (!isGreed) {
             try {
-                if (SevenSins.GREED_ID.equals(BlackoutRoleManager.getRoleHistory(level).get(sp.getUUID()))) {
+                if (SevenSins.GREED_ID.equals(BlackoutRoleManager.getRoleHistoryEntry(level, sp.getUUID()))) {
                     isGreed = true;
                 }
             } catch (Throwable ignored) {
@@ -478,9 +480,14 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             return;
         }
 
-        // CRITICAL: vanilla bundle UI inserts only update BUNDLE_CONTENTS.
-        // Win counter lives in collectedTypeIds — resync every tick from the physical pouch.
-        resyncFromPhysicalPouch(sp);
+        // Vanilla bundle UI inserts only update BUNDLE_CONTENTS and offers no
+        // insertion event, so the win counter must be polled from the physical
+        // pouch — but not every tick: the NBT parse (CustomData.copyTag + 逐条
+        // parse + 多次集合分配) runs every 5 ticks instead (review L7).
+        if (level.getGameTime() - lastPouchResyncTick >= 5) {
+            lastPouchResyncTick = level.getGameTime();
+            resyncFromPhysicalPouch(sp);
+        }
 
         // Periodic progress HUD every 5s
         if (level.getGameTime() % 100L == 0L && targetCount > 0) {

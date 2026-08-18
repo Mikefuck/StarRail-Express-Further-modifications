@@ -210,7 +210,8 @@ public class BetelLeafHandler {
     }
 
     /**
-     * 统计玩家背包中 roasted_betel_nut 的数量
+     * 统计玩家背包（含副手，review L41——否则 5 颗上限可被副手绕过）中
+     * roasted_betel_nut 的数量
      */
     private static int getBetelNutCount(ServerPlayer player) {
         try {
@@ -219,6 +220,11 @@ public class BetelLeafHandler {
 
             int count = 0;
             for (var stack : player.getInventory().items) {
+                if (!stack.isEmpty() && stack.getItem() == betelNutItem) {
+                    count += stack.getCount();
+                }
+            }
+            for (var stack : player.getInventory().offhand) {
                 if (!stack.isEmpty() && stack.getItem() == betelNutItem) {
                     count += stack.getCount();
                 }

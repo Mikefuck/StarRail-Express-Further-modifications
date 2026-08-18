@@ -123,7 +123,7 @@ public final class RoleExtensionCompiler {
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
                 s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
                 s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), true, s.skills(), s.skillsSpecified());
+                s.occupation(), s.opposing(), s.related(), opposingTwoWayOf(base), s.skills(), s.skillsSpecified());
     }
 
     /** Internal fold used by the plain overload (no conflict-winner masking). */
@@ -145,7 +145,20 @@ public final class RoleExtensionCompiler {
                 s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
                 s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
                 s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), true, s.skills(), s.skillsSpecified());
+                s.occupation(), s.opposing(), s.related(), opposingTwoWayOf(base), s.skills(), s.skillsSpecified());
+    }
+
+    /**
+     * Direction for the folded opposing keys: a compiled replacement carries its
+     * declared {@code RoleRelationProfile}; a plain upstream baseline cannot
+     * express one-way opposition through the {@code RolePatch} API, so it stays
+     * two-way (review M15).
+     */
+    private static boolean opposingTwoWayOf(SRERole base) {
+        if (base instanceof ManagedSRERole managed && managed.relationProfile() != null) {
+            return managed.relationProfile().opposingTwoWay();
+        }
+        return true;
     }
 
     /**

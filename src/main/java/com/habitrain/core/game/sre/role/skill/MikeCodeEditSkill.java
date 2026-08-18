@@ -6,6 +6,7 @@ import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.NecromancerReviveSupport;
 import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.SRE;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
@@ -86,7 +87,8 @@ public final class MikeCodeEditSkill {
 
         // 校验通过后再扣费 / 改职
         shop.addToBalance(-COST);
-        clearAllItems(target);
+        // 不在转职前清包：reassignRole 失败时物品无法恢复（catch 块仅退款），
+        // 成功路径下方本就会再清一次并按新职业发初始物（review M4）。
 
         try {
             if (target.level() instanceof ServerLevel level) {
@@ -229,6 +231,7 @@ public final class MikeCodeEditSkill {
                 com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
             if (role == null) continue;
             if (!SreRolePoolFilter.isCurrentModeRandomizable(role)) continue;
+            if (SevenSins.isSin(role)) continue; // 排除七宗罪：互斥仅开局执行，局中转罪会绕开一局一罪（review M5）
             if (current != null && role.equals(current)) continue;
             pool.add(role);
         }

@@ -31,6 +31,8 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
     private final Player player;
     private long breakImmuneUntilGameTime;
     private boolean weaponImmune;
+    /** 上次光环重算的游戏刻（review L3 的 5 tick 节流）。 */
+    private long lastAuraCheckTick = Long.MIN_VALUE;
 
     public PrideComponent(Player player) {
         this.player = player;
@@ -97,9 +99,16 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
             return;
         }
 
+        // 每 5 tick 重算一次光环（距离扫描是 O(维度玩家数)），期间沿用上次结果
+        // （review L3）。40 tick 的发光缓冲天然容忍 5 tick 的判定粒度。
+        long now = level.getGameTime();
+        if (now - lastAuraCheckTick < 5) {
+            return;
+        }
+        lastAuraCheckTick = now;
+
         int others = countOtherAliveNearby(self, level, game);
         boolean aura = others >= AURA_OTHERS_NEEDED;
-        long now = level.getGameTime();
         boolean broken = now < breakImmuneUntilGameTime;
         weaponImmune = aura && !broken;
 
@@ -112,7 +121,8 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
     private static int countOtherAliveNearby(ServerPlayer self, ServerLevel level, SREGameWorldComponent game) {
         double rangeSq = AURA_RANGE * AURA_RANGE;
         int count = 0;
-        boolean blackout = !BlackoutRoleManager.getAllAlive(level).isEmpty();
+        // 用 hasAnyAlive 替代 getAllAlive 列表拷贝（review L3）。
+        boolean blackout = BlackoutRoleManager.hasAnyAlive(level);
         for (ServerPlayer other : level.players()) {
             if (other == self || other.isSpectator()) continue;
             if (self.distanceToSqr(other) > rangeSq) continue;

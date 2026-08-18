@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -117,8 +118,10 @@ public class TaskConfigPayload implements CustomPacketPayload {
 
                 buf.writeBoolean(config.enabled);
 
-                buf.writeInt(config.enabledMaps.size());
-                for (String map : config.enabledMaps) {
+                // 防御性快照 enabledMaps，防止编码期间并发修改导致 CME
+                List<String> enabledMaps = new ArrayList<>(config.enabledMaps);
+                buf.writeInt(enabledMaps.size());
+                for (String map : enabledMaps) {
                     if (map == null) {
                         // 写入 0 长度占位，保持 count 一致
                         buf.writeInt(0);
@@ -131,7 +134,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
 
                 buf.writeInt(config.instinctColor);
 
-                buf.writeInt(config.mapFilterMode);
+                buf.writeInt(Math.max(0, Math.min(2, config.mapFilterMode)));
 
                 buf.writeBoolean(config.hasGoldReward);
                 buf.writeInt(config.goldReward);

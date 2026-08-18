@@ -32,11 +32,6 @@ public class RoleMethodDispatcherMixin {
     /** 与 SREConfig.civilianTaskReward 默认值对齐；运行时优先反射读配置。 */
     private static final int FALLBACK_CIVILIAN_TASK_REWARD = 50;
 
-    /** 记录本次 callOnFinishQuest 是否被 HEAD 接管（已发自定义金 + cancel 原方法）。
-     *  TAIL 据此决定是否发自定义情绪：仅 HEAD 接管时才发，避免 progression==null 路径
-     *  与 SRE 原版情绪双发（P2-28）。 */
-    private static final ThreadLocal<Boolean> headHandled = ThreadLocal.withInitial(() -> false);
-
     @Shadow(remap = false)
     private static SRERole getCurrentRole(Player player) {
         throw new AssertionError("Shadowed");
@@ -119,6 +114,42 @@ public class RoleMethodDispatcherMixin {
         return (int) ((readCivilianTaskReward() + streakBonus) * rewardMultiplier);
     }
 
+    /**
+     * callOnFinishQuest 的公共后置效果：v2 finish-quest 钩子（所有路径都要触发）与
+     * 配置情绪奖励（仅 HEAD 接管路径——已 cancel 原方法、SRE 原版情绪不会发放，
+     * 避免双发 P2-28）。
+     *
+     * <p>HEAD 的 cancel 分支必须直接调用本方法：{@code ci.cancel()} 后原方法体被整体
+     * 跳过，位于方法体内的 {@code @At("TAIL")} 注入不会执行，不能依赖 TAIL（审查 S1）。
+     */
+    private static void habitrain$postQuestEffects(Player player, String quest, int taskStreak,
+                                                   boolean isParallelTask, boolean headTakeover) {
+        try {
+            RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
+        } catch (Throwable t) {
+            LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
+        }
+        if (!headTakeover) {
+            return;
+        }
+        try {
+            TaskConfigEntry config = findConfigForQuest(quest);
+            if (config == null || !config.hasEmotionReward) {
+                return;
+            }
+            SREPlayerMoodComponent.KEY.maybeGet(player).ifPresent(mood -> {
+                float actualReward = isParallelTask
+                        ? config.emotionReward * 1.5f
+                        : config.emotionReward;
+                mood.addMood(actualReward);
+                LOGGER.info("[Reward] 发放配置情绪奖励: {} (并列={}) 给 {}",
+                        String.format("%.2f", actualReward), isParallelTask, player.getName().getString());
+            });
+        } catch (Exception e) {
+            LOGGER.error("[Reward] 发放自定义情绪奖励失败", e);
+        }
+    }
+
     @Inject(
             method = "callOnFinishQuest(Lnet/minecraft/world/entity/player/Player;Ljava/lang/String;IZ)V",
             at = @At("HEAD"),
@@ -127,7 +158,6 @@ public class RoleMethodDispatcherMixin {
     )
     private static void habitrain$beforeCallOnFinishQuest(Player player, String quest, int taskStreak,
                                                           boolean isParallelTask, CallbackInfo ci) {
-        headHandled.set(false);
         if (player == null || player.level() == null || player.level().isClientSide) return;
 
         // 默剧杀手：可做任务但不加金币，并累计狂暴折扣
@@ -137,17 +167,16 @@ public class RoleMethodDispatcherMixin {
             if (progressionOpt.isEmpty()) {
                 // 无 progression 时仍取消原逻辑发金，并尽量累计折扣
                 ci.cancel();
-                headHandled.set(true);
                 try {
                     MimeKillerComponent.KEY.maybeGet(player).ifPresent(MimeKillerComponent::onTaskComplete);
                 } catch (Throwable ignored) {}
                 LOGGER.debug("[Reward] 默剧杀手无 player_progression，跳过 onRoundQuestFinished: {}",
                         player.getName().getString());
+                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
                 return;
             }
             try {
                 ci.cancel();
-                headHandled.set(true);
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
                 if (role != null) {
@@ -159,6 +188,9 @@ public class RoleMethodDispatcherMixin {
                 LOGGER.info("[Reward] 默剧杀手任务无金币，狂暴折扣+50: {}", player.getName().getString());
             } catch (Exception e) {
                 LOGGER.error("[Reward] 默剧杀手任务处理失败", e);
+            }
+            if (ci.isCancelled()) {
+                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
             }
             return;
         }
@@ -176,8 +208,6 @@ public class RoleMethodDispatcherMixin {
             }
             try {
                 ci.cancel();
-                headHandled.set(true);
-
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
 
@@ -197,6 +227,9 @@ public class RoleMethodDispatcherMixin {
             } catch (Exception e) {
                 LOGGER.error("[Reward] 发放自定义金币奖励失败", e);
             }
+            if (ci.isCancelled()) {
+                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
+            }
             return;
         }
 
@@ -209,8 +242,6 @@ public class RoleMethodDispatcherMixin {
             }
             try {
                 ci.cancel();
-                headHandled.set(true);
-
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
                 if (role != null) {
@@ -225,6 +256,9 @@ public class RoleMethodDispatcherMixin {
             } catch (Exception e) {
                 LOGGER.error("[Reward] 停电杀手任务金发放失败", e);
             }
+            if (ci.isCancelled()) {
+                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
+            }
         }
     }
 
@@ -235,34 +269,14 @@ public class RoleMethodDispatcherMixin {
     )
     private static void habitrain$afterCallOnFinishQuest(Player player, String quest, int taskStreak,
                                                          boolean isParallelTask, CallbackInfo ci) {
+        // 仅在 HEAD 未 cancel（原 SRE 逻辑正常执行）时运行；HEAD cancel 路径已在其分支内
+        // 直接调用 habitrain$postQuestEffects。SRE 原版已发自己的情绪，此处不再发自定义
+        // 情绪，避免双发（P2-28）。
         try {
             if (player == null || player.level() == null || player.level().isClientSide) return;
-
-            try {
-                RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
-            } catch (Throwable t) {
-                LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
-            }
-
-            TaskConfigEntry config = findConfigForQuest(quest);
-            if (config == null) return;
-
-            // 仅当 HEAD 已接管（cancel 了原方法、发了自定义金）时才发自定义情绪，
-            // 避免 progression==null 路径下 SRE 原版情绪 + 自定义情绪双发（P2-28）。
-            if (headHandled.get() && config.hasEmotionReward) {
-                SREPlayerMoodComponent.KEY.maybeGet(player).ifPresent(mood -> {
-                    float actualReward = isParallelTask
-                            ? config.emotionReward * 1.5f
-                            : config.emotionReward;
-                    mood.addMood(actualReward);
-                    LOGGER.info("[Reward] 发放配置情绪奖励: {} (并列={}) 给 {}",
-                            String.format("%.2f", actualReward), isParallelTask, player.getName().getString());
-                });
-            }
-        } catch (Exception e) {
-            LOGGER.error("[Reward] 发放自定义情绪奖励失败", e);
-        } finally {
-            headHandled.remove();
+            RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
+        } catch (Throwable t) {
+            LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
         }
     }
 }

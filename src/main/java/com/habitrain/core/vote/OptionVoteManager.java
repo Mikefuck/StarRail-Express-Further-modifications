@@ -125,12 +125,21 @@ public final class OptionVoteManager {
                 }
             }
             if (!known) return false;
+            // 重复投同一选项：no-op，不 bump 版本、不广播（review M18——
+            // 恶意刷包时每包不应产生全维度全量广播）。
+            if (optionId.equals(state.votesByVoter.get(voterId))) {
+                return true;
+            }
             state.votesByVoter.put(voterId, optionId);
         } else {
+            if (!state.votesByVoter.containsKey(voterId)) {
+                return true;
+            }
             state.votesByVoter.remove(voterId);
         }
         markChanged(state);
-        broadcastState(level);
+        // 不在 cast 内立即广播：tickSecond 的 1Hz 全量重播兜底（最多 1 秒
+        // 延迟），避免每票 × 全维度玩家的出站放大（review M18）。
         return true;
     }
 

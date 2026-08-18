@@ -73,7 +73,9 @@ public final class RuntimeHookGates implements HookGates {
     public boolean presentInRound(RoleKey role, @Nullable ServerLevel level) {
         try {
             Optional<RoleSnapshot> snap = RoleCatalogApi.instance().currentSnapshot();
-            return snap.map(s -> s.isActive(role.location())).orElse(true);
+            // Fail-closed（与类 javadoc 一致，review L10）：无快照时放行广播钩子
+            // 比漏发一次事件更危险，orElse(true) 会把缺失快照当作"全部在场"。
+            return snap.map(s -> s.isActive(role.location())).orElse(false);
         } catch (Throwable t) {
             return false;
         }

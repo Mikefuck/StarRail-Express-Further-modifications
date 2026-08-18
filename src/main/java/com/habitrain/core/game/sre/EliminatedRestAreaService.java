@@ -57,11 +57,15 @@ public final class EliminatedRestAreaService {
         initialized = true;
 
         OnPlayerDeath.EVENT.register((player, deathReason) -> {
-            if (player instanceof ServerPlayer serverPlayer
-                    && SREGameWorldComponent.KEY.get(serverPlayer.serverLevel()).isRunning()) {
-                ELIMINATED_PLAYERS.add(serverPlayer.getUUID());
-                RESTING_MATCH_LEVELS.remove(serverPlayer.getUUID());
-                syncPrompt(serverPlayer, false);
+            // OnPlayerDeath 是全局事件：玩家可能在未挂 SRE 世界组件的维度死亡，
+            // KEY.get 结果必须判 null，否则 NPE 会中断后续监听链（review M7）。
+            if (player instanceof ServerPlayer serverPlayer) {
+                SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(serverPlayer.serverLevel());
+                if (gameWorld != null && gameWorld.isRunning()) {
+                    ELIMINATED_PLAYERS.add(serverPlayer.getUUID());
+                    RESTING_MATCH_LEVELS.remove(serverPlayer.getUUID());
+                    syncPrompt(serverPlayer, false);
+                }
             }
         });
         OnGameStarted.EVENT.register(level -> clearRoundState(level.getServer()));
@@ -135,7 +139,9 @@ public final class EliminatedRestAreaService {
 
         if (isResting(player)) {
             ServerLevel matchLevel = getRestingMatchLevel(player);
-            if (matchLevel == null || !SREGameWorldComponent.KEY.get(matchLevel).isRunning()) {
+            SREGameWorldComponent matchWorld = matchLevel == null
+                    ? null : SREGameWorldComponent.KEY.get(matchLevel);
+            if (matchLevel == null || matchWorld == null || !matchWorld.isRunning()) {
                 RESTING_MATCH_LEVELS.remove(player.getUUID());
                 syncPrompt(player, true);
                 return;
@@ -146,7 +152,7 @@ public final class EliminatedRestAreaService {
 
         ServerLevel matchLevel = player.serverLevel();
         SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(matchLevel);
-        if (!gameWorld.isRunning()) {
+        if (gameWorld == null || !gameWorld.isRunning()) {
             syncPrompt(player, true);
             return;
         }
@@ -236,7 +242,8 @@ public final class EliminatedRestAreaService {
             return false;
         }
         ServerLevel level = player.serverLevel();
-        return SREGameWorldComponent.KEY.get(level).isRunning() && GameUtils.isPlayerEliminated(player);
+        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(level);
+        return gameWorld != null && gameWorld.isRunning() && GameUtils.isPlayerEliminated(player);
     }
 
     private static void syncPromptStates(MinecraftServer server) {

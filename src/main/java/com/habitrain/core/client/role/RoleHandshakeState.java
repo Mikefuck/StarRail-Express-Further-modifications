@@ -36,10 +36,26 @@ public final class RoleHandshakeState {
 
     /** Records a received server manifest and recomputes the handshake result. */
     public void accept(RoleManifest manifest) {
+        accept(manifest, buildLocalManifest());
+    }
+
+    void accept(RoleManifest manifest, ClientManifest localManifest) {
         this.serverManifest = manifest;
         this.result = manifest == null ? new RoleHandshakeResult(
                 RoleHandshakeStatus.HASH_MISMATCH, "空 manifest", java.util.List.of())
-                : RoleHandshakeMatcher.match(manifest, buildLocalManifest());
+                : RoleHandshakeMatcher.match(manifest, localManifest);
+    }
+
+    /** Re-evaluates an already received manifest after the snapshot hash changes. */
+    public void onSnapshotUpdated() {
+        onSnapshotUpdated(buildLocalManifest());
+    }
+
+    void onSnapshotUpdated(ClientManifest localManifest) {
+        RoleManifest manifest = this.serverManifest;
+        if (manifest != null) {
+            this.result = RoleHandshakeMatcher.match(manifest, localManifest);
+        }
     }
 
     /**

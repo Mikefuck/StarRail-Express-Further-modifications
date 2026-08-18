@@ -93,6 +93,8 @@ public class BlackoutTaskShopScreen extends Screen {
 
         int totalHeight = entries.isEmpty() ? 0 : entries.size() * (ROW_H + ROW_GAP) - ROW_GAP;
         int maxScroll = Math.max(0, totalHeight - listH);
+        // 刷新后 entries 可能减少，clamp 防止 scrollOffset 越界
+        scrollOffset = Math.min(scrollOffset, maxScroll);
         if (maxScroll > 0) {
             int barH = Math.max(12, (int) ((float) listH * listH / totalHeight));
             int barY = listY + (int) ((listH - barH) * (scrollOffset / maxScroll));

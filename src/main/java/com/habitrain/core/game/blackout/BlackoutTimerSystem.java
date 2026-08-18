@@ -6,8 +6,8 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Blackout mode timer system.
@@ -15,7 +15,8 @@ import java.util.Map;
 public class BlackoutTimerSystem {
     private static final Logger LOGGER = LoggerFactory.getLogger("BlackoutTimer");
 
-    private static final Map<ResourceKey<Level>, TimerState> instances = new HashMap<>();
+    // 同项目其余 per-level 静态状态均用 ConcurrentHashMap，统一（review L17）。
+    private static final Map<ResourceKey<Level>, TimerState> instances = new ConcurrentHashMap<>();
 
     private static final int TOTAL_TIME = 600;
     private static final int FIRST_BLACKOUT_CD = 240;

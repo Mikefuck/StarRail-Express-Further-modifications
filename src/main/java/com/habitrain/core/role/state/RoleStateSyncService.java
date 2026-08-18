@@ -43,8 +43,8 @@ public final class RoleStateSyncService {
         Collection<UUID> inWorld(@Nullable String worldKey);
 
         /**
-         * Online players currently tracking {@code playerId} this round — i.e.
-         * spectators whose camera follows that player. Defaults to empty so
+         * Online players currently tracking {@code playerId}, including Fabric
+         * entity trackers and spectators whose camera follows that player. Defaults to empty so
          * simple providers only need {@link #allOnline()} and {@link #inWorld}.
          */
         default Collection<UUID> trackersOf(@Nullable UUID playerId) {

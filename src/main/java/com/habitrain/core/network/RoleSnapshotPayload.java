@@ -12,6 +12,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.netty.handler.codec.DecoderException;
+
 /**
  * S2C payload carrying the compiled role-extension entry view (with statuses,
  * enablement source, conflict fields) plus the current snapshot ids and config,
@@ -22,8 +24,16 @@ public record RoleSnapshotPayload(
         List<EntryRow> entries,
         String lobbySnapshotId,
         @Nullable String roundSnapshotId,
+        @Nullable String pendingSnapshotId,
         String definitionHash,
         String configJson) implements CustomPacketPayload {
+
+    /** Compatibility constructor retained for code compiled before pending snapshots. */
+    public RoleSnapshotPayload(List<EntryRow> entries, String lobbySnapshotId,
+                               @Nullable String roundSnapshotId, String definitionHash,
+                               String configJson) {
+        this(entries, lobbySnapshotId, roundSnapshotId, null, definitionHash, configJson);
+    }
 
     /** One compiled entry row over the wire. */
     public record EntryRow(
@@ -40,12 +50,16 @@ public record RoleSnapshotPayload(
 
     public static final Type<RoleSnapshotPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_snapshot"));
+
+    private static final int MAX_ENTRIES = 4096;
+
     public static final StreamCodec<FriendlyByteBuf, RoleSnapshotPayload> CODEC =
             StreamCodec.ofMember(RoleSnapshotPayload::write, RoleSnapshotPayload::new);
 
     private RoleSnapshotPayload(FriendlyByteBuf buf) {
         this(readEntries(buf),
                 buf.readUtf(128),
+                buf.readBoolean() ? buf.readUtf(128) : null,
                 buf.readBoolean() ? buf.readUtf(128) : null,
                 buf.readUtf(128),
                 buf.readUtf(1 << 20));
@@ -71,12 +85,19 @@ public record RoleSnapshotPayload(
         if (roundSnapshotId != null) {
             buf.writeUtf(roundSnapshotId, 128);
         }
+        buf.writeBoolean(pendingSnapshotId != null);
+        if (pendingSnapshotId != null) {
+            buf.writeUtf(pendingSnapshotId, 128);
+        }
         buf.writeUtf(definitionHash == null ? "" : definitionHash, 128);
         buf.writeUtf(configJson == null ? "" : configJson, 1 << 20);
     }
 
     private static List<EntryRow> readEntries(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
+        if (n < 0 || n > MAX_ENTRIES) {
+            throw new DecoderException("Invalid snapshot entry count: " + n);
+        }
         List<EntryRow> rows = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             rows.add(new EntryRow(

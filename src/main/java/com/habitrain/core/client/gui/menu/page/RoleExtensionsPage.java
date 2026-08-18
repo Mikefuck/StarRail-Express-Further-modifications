@@ -11,7 +11,6 @@ import com.habitrain.core.network.RoleConfigUpdatePayload;
 import com.habitrain.core.network.RoleSnapshotPayload;
 import com.habitrain.core.role.config.RoleExtensionConfigSection;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
@@ -228,12 +227,18 @@ public class RoleExtensionsPage implements ConfigPage {
 
     private void sendConfig() {
         String json = RoleExtensionConfigService.toJsonString(section);
-        ClientPlayNetworking.send(new RoleConfigUpdatePayload(json));
+        com.habitrain.core.client.network.PayloadSenders.sendRoleConfigUpdate(json);
         payloadGeneration = -1; // 等待服务端回推后 refresh
     }
 
     private List<Row> buildRows() {
         List<Row> rows = new ArrayList<>();
+        RoleSnapshotPayload snapshot = RoleSnapshotState.INSTANCE.get();
+        if (snapshot != null) {
+            rows.add(Row.header("snapshots  current=" + snapshot.lobbySnapshotId()
+                    + (snapshot.roundSnapshotId() == null ? "" : "  round=" + snapshot.roundSnapshotId())
+                    + (snapshot.pendingSnapshotId() == null ? "" : "  pending=" + snapshot.pendingSnapshotId())));
+        }
         rows.add(Row.header("providers (" + providers.size() + ")"));
         for (ProviderRow p : providers) {
             rows.add(Row.item(p.id + (p.version.isBlank() ? "" : "@" + p.version)

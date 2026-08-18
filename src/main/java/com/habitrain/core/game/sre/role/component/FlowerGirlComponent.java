@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 卖花女：赠送花束、静止落叶计时、死亡清场。
@@ -55,7 +56,7 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     private final Map<UUID, Boolean> rewarded = new HashMap<>();
 
     /** 全服近战免疫截止 gameTime（按玩家 UUID 存于该组件所属卖花女不合适；用静态弱表） */
-    private static final Map<UUID, Long> MELEE_IMMUNE_UNTIL = new HashMap<>();
+    private static final Map<UUID, Long> MELEE_IMMUNE_UNTIL = new ConcurrentHashMap<>();
 
     public FlowerGirlComponent(Player player) {
         this.player = player;
@@ -81,6 +82,10 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
             return false;
         }
         return true;
+    }
+
+    public static void clearMeleeImmune() {
+        MELEE_IMMUNE_UNTIL.clear();
     }
 
     public static boolean useGift(RoleSkill.RoleSkillContext ctx) {

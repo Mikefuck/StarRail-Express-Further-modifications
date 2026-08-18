@@ -21,8 +21,12 @@ public final class RoleConfigApplyService {
         RoleExtensionRegistry.INSTANCE.recomputeCompiledEntries();
         RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
         if (server != null) {
-            RoleManifestPayload.broadcastToAll(server);
+            // The client reports the definition hash from its latest snapshot.
+            // Publish that snapshot first so a config change cannot make the
+            // manifest receiver report the previous hash and fail-close role
+            // actions until the next reconnect.
             RoleSnapshotPayload.broadcastToAll(server);
+            RoleManifestPayload.broadcastToAll(server);
         }
     }
 }

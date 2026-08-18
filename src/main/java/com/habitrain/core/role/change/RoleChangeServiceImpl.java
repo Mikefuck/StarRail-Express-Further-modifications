@@ -54,6 +54,9 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             (key, player) -> RoleEventDispatcher.INSTANCE.dispatchOnLost(key, player);
     private volatile Function<ServerPlayer, RoleKey> currentRoleLookup = this::lookupCurrentRole;
     private final Map<UUID, List<RoleHistoryEntry>> timelines = new ConcurrentHashMap<>();
+    /** Per-player timeline cap; without it timelines grow unboundedly with
+     *  player count × role changes over a long-running server (review M3). */
+    private static final int MAX_TIMELINE_ENTRIES = 64;
     private volatile BiConsumer<ServerPlayer, SRERole> sreClearer = RoleChangeServiceImpl::clearSreRole;
     private volatile StateResetHook stateResetter = RoleChangeServiceImpl::resetState;
     /** Per-transaction live data needed only after the reversible commit succeeds. */
@@ -146,8 +149,18 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             }
         } catch (Throwable ignored) {
         }
-        timelines.computeIfAbsent(playerId, id -> new ArrayList<>())
-                .add(new RoleHistoryEntry(role, cause, System.currentTimeMillis(), snap, display, provider));
+        // try 块内被重新赋值的变量不是 effectively final，lambda 捕获前先拷贝一份。
+        final RoleSnapshotId snapRef = snap;
+        final String displayRef = display;
+        final String providerRef = provider;
+        timelines.compute(playerId, (id, list) -> {
+            List<RoleHistoryEntry> entries = list == null ? new ArrayList<>() : list;
+            entries.add(new RoleHistoryEntry(role, cause, System.currentTimeMillis(), snapRef, displayRef, providerRef));
+            if (entries.size() > MAX_TIMELINE_ENTRIES) {
+                entries.subList(0, entries.size() - MAX_TIMELINE_ENTRIES).clear();
+            }
+            return entries;
+        });
     }
 
     public void recordTimeline(@Nullable ServerPlayer player, @Nullable RoleKey role, RoleChangeCause cause) {
@@ -224,8 +237,13 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                     role = RoleKey.of(r.identifier());
                 }
             } catch (Throwable ignored) {}
-            BlackoutRoleManager.Faction f = BlackoutRoleManager.getFaction(level, id);
-            faction = f == null ? null : f.name();
+            try {
+                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFaction(level, id);
+                faction = f == null ? null : f.name();
+            } catch (Throwable ignored) {
+                // 与上方 SRE 读取一致：faction 读取失败不得沿 lookupCurrentRole
+                // 炸给事务 VALIDATE 阶段（review L9）。
+            }
         }
         return new RoleView(id, role, faction);
     }

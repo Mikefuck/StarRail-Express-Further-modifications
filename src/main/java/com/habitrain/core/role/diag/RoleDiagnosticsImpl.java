@@ -152,11 +152,14 @@ public final class RoleDiagnosticsImpl implements RoleDiagnostics {
     @Override
     public DiagnosticSnapshot snapshotInfo() {
         RoleSnapshot current = RoleSnapshotManager.INSTANCE.current();
+        RoleSnapshot pending = RoleSnapshotManager.INSTANCE.pending();
         if (current == null) {
-            return new DiagnosticSnapshot(new RoleSnapshotId(0), 0, 0, 0);
+            return new DiagnosticSnapshot(new RoleSnapshotId(0), 0, 0, 0,
+                    pending == null ? null : pending.id());
         }
         return new DiagnosticSnapshot(current.id(), current.roles().size(),
-                current.replacedTargets().size(), current.aliases().size());
+                current.replacedTargets().size(), current.aliases().size(),
+                pending == null ? null : pending.id());
     }
 
     private Set<String> providers() {

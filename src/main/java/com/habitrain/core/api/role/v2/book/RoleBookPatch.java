@@ -38,7 +38,10 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
     /**
      * Folds this patch onto {@code current}. {@link ListOp#REMOVE} drops current
      * pages whose title string matches a patch page; {@link ListOp#APPEND}
-     * concatenates; {@link ListOp#REPLACE_ALL} discards current.
+     * concatenates; {@link ListOp#REPLACE_ALL} discards current;
+     * {@link ListOp#REPLACE_MATCHING_IDS} replaces only the baseline pages whose
+     * title matches a patch page (pages carry no ids, so titles are the match
+     * key) and keeps the unmatched ones.
      */
     public List<RoleBookPage> apply(List<RoleBookPage> current) {
         List<RoleBookPage> baseline = current == null ? List.of() : current;
@@ -55,7 +58,17 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
                         .toList();
             }
             case REPLACE_ALL -> List.copyOf(pages);
-            case REPLACE_MATCHING_IDS -> List.copyOf(pages);
+            // 与 RoleSkillPatch 同语义：剔除命中项后追加全部 patch 页（review M14——
+            // 此前实现与 REPLACE_ALL 完全相同，会丢弃全部基线页）。
+            case REPLACE_MATCHING_IDS -> {
+                Set<String> replace = titles(pages);
+                List<RoleBookPage> kept = baseline.stream()
+                        .filter(page -> !replace.contains(titleOf(page)))
+                        .toList();
+                List<RoleBookPage> next = new ArrayList<>(kept);
+                next.addAll(pages);
+                yield List.copyOf(next);
+            }
         };
     }
 

@@ -50,9 +50,10 @@ public class RestAreaKillMixin {
         boolean victimResting = isResting(victim);
         boolean killerResting = isResting(killer);
 
-        // 休息者发起击杀，或休息者被“非存活对局参与者”（休息者/无来源）击杀：
-        // 都属于休息区行为，不进入 GameMode.killPlayer 的对局判定。
-        if (killerResting || (victimResting && !GameUtils.isPlayerAliveAndSurvival(killer))) {
+        // 休息者发起击杀，或休息者被"非存活对局参与者"（休息者/无来源 killer=null，
+        // 例如放逐投票/理智崩溃/sloth 爆炸）击杀：都属于休息区行为，不进入
+        // GameMode.killPlayer 的对局判定（review L16：killer 需判 null）。
+        if (killerResting || (victimResting && !(killer != null && GameUtils.isPlayerAliveAndSurvival(killer)))) {
             ci.cancel();
             if (victimResting && victim.getHealth() < victim.getMaxHealth()) {
                 victim.setHealth(victim.getMaxHealth());

@@ -240,7 +240,12 @@ public class NetworkReceiverRegistrar {
                 // 1Hz rebroadcasts must not re-force the screen if the player closed it.
                 if (result.shouldStartMapTransition()) {
                     VoteLaunchSession.begin(result.resolvedOptionId());
+                    // 容器屏（箱子/背包等）不能作为交还目标：转场几十秒后服务端早已
+                    // 关闭该容器，重新打开只会得到点击无响应的幽灵界面（review M10）。
                     Screen destination = ctx.client().screen;
+                    if (destination instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) {
+                        destination = null;
+                    }
                     ctx.client().setScreen(new VoteLaunchTransitionScreen(
                             destination, result.resolvedOptionId()));
                 } else if (result.shouldClose()) {
@@ -464,7 +469,25 @@ public class NetworkReceiverRegistrar {
         // 22) 角色扩展编译条目快照（§13.2）→ 客户端页面数据源
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.RoleSnapshotPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
-                                com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.accept(payload)));
+                        ctx.client().execute(() -> {
+                            com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.accept(payload);
+                            com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.onSnapshotUpdated();
+                            // Be robust to packet reordering and future senders: if a
+                            // manifest was already accepted, report again with the
+                            // freshly received definition hash.
+                            if (com.habitrain.core.client.role.RoleHandshakeState.INSTANCE
+                                    .serverManifest() != null) {
+                                try {
+                                    net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
+                                            com.habitrain.core.network.RoleHandshakeReportPayload
+                                                    .fromClientManifest(
+                                                            com.habitrain.core.client.role.RoleHandshakeState
+                                                                    .buildLocalManifest()));
+                                } catch (Throwable t) {
+                                    com.habitrain.core.HabiTrainCore.LOGGER.debug(
+                                            "Handshake report resend after snapshot skipped", t);
+                                }
+                            }
+                        }));
     }
 }

@@ -137,6 +137,25 @@ class RoleDiagnosticsTest {
         assertEquals(1, info.roleCount());
         assertEquals(1, info.replacedCount());
         assertEquals(1, info.aliasCount());
+        assertEquals(null, info.pendingId());
+    }
+
+    @Test
+    void snapshotDiagnosticsExposePreparedPendingSnapshot() {
+        RoleKey canonical = RoleKey.of("habitrain_core", "plague_doctor");
+        RoleSnapshot lobby = new RoleSnapshot(new RoleSnapshotId(7),
+                Map.of(canonical.location(), new EffectiveRole(canonical, role(canonical.location()))),
+                Map.of(), Set.of());
+        RoleSnapshot pending = new RoleSnapshot(new RoleSnapshotId(8),
+                Map.of(canonical.location(), new EffectiveRole(canonical, role(canonical.location()))),
+                Map.of(), Set.of());
+        RoleSnapshotManager.INSTANCE.setLobby(lobby);
+        RoleSnapshotManager.INSTANCE.queuePending(pending);
+
+        DiagnosticSnapshot info = new RoleDiagnosticsImpl().snapshotInfo();
+        assertEquals(new RoleSnapshotId(8), info.pendingId());
+        assertTrue(RoleDiagnosticsCommands.snapshot().stream()
+                .anyMatch(line -> line.equals("  pending=8")));
     }
 
     @Test

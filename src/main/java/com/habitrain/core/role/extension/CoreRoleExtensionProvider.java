@@ -222,6 +222,12 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        EnvyComponent.MARK_SKILL_ID,
+                        "skill.habitrain_core.sin_envy.mark",
+                        EnvyComponent::useMark
+                ).cooldownSeconds(EnvyComponent.MARK_CD_SECONDS)
+                        .showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new NormalRole(d.key().location(),
                         d.presentation().color(), false, true,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
@@ -278,6 +284,12 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        GreedComponent.STEAL_SKILL_ID,
+                        "skill.habitrain_core.sin_greed.steal",
+                        GreedComponent::useSteal
+                ).cooldownSeconds(GreedComponent.STEAL_CD_SECONDS)
+                        .showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new GreedRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
@@ -295,6 +307,12 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .componentKey(GluttonyComponent.KEY)
                         .canSeeCoin()
                         .build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        GluttonyComponent.BUFF_SKILL_ID,
+                        "skill.habitrain_core.sin_gluttony.buff",
+                        GluttonyComponent::useBuffSkillHud
+                ).cooldownSeconds(GluttonyComponent.BUFF_CD_SECONDS)
+                        .showOnHud(true).announceToSelf(false).build()))
                 .roleFactory(d -> new NormalRole(d.key().location(),
                         d.presentation().color(), true, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
@@ -317,6 +335,16 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        HabiTrainCore.id("sin_lust_observe"),
+                        "skill.habitrain_core.sin_lust.observe",
+                        LustComponent::useObserve
+                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        HabiTrainCore.id("sin_lust_desire"),
+                        "skill.habitrain_core.sin_lust.desire",
+                        LustComponent::useDesireMark
+                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new LustRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
@@ -334,6 +362,11 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .componentKey(SlothComponent.KEY)
                         .canSeeCoin()
                         .build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(
+                        HabiTrainCore.id("sin_sloth_awake"),
+                        "skill.habitrain_core.sin_sloth.awake",
+                        SlothComponent::useAwake
+                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new SlothRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))

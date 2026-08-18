@@ -260,6 +260,15 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             if (role != null && !role.equals(spec.role())) {
                 continue;
             }
+            if (playerScoped && spec.scope() != StateScope.PLAYER) {
+                // ROLE_LOST/ROLE_ASSIGNED only clear PLAYER slots (ResetCause
+                // javadoc): a player UUID can never match a WORLD/ROUND slot's
+                // world key, so resetting those scopes here was silently a no-op
+                // (review M1).
+                LOGGER.debug("Skipping {}-scope state spec {} for player-scoped reset cause {}",
+                        spec.scope(), spec.id(), cause);
+                continue;
+            }
             removeSlotsFor(spec, playerScoped ? playerId : null);
         }
     }
@@ -436,14 +445,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
      */
     private void removeSlotsFor(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
         List<StateSlotKey> removed = collectSlotsFor(spec, worldOrPlayer);
-        String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
-        Predicate<StateSlotKey> match = key -> key.scope() == spec.scope()
-                && key.id().equals(spec.id())
-                && key.role().equals(spec.role())
-                && (filter == null || filter.equals(
-                        spec.scope() == StateScope.PLAYER
-                                ? String.valueOf(key.playerId())
-                                : key.worldKey()));
+        Predicate<StateSlotKey> match = slotMatcher(spec, worldOrPlayer);
         transientValues.keySet().removeIf(match);
         store.removeWhere(match);
         migrationRequired.removeIf(match);
@@ -452,16 +454,11 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         }
     }
 
-    /** The slots that {@code removeSlotsFor} would delete for a spec + filter. */
+    /**
+     * The slots that {@code removeSlotsFor} would delete for a spec + filter.
+     */
     private List<StateSlotKey> collectSlotsFor(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
-        String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
-        Predicate<StateSlotKey> match = key -> key.scope() == spec.scope()
-                && key.id().equals(spec.id())
-                && key.role().equals(spec.role())
-                && (filter == null || filter.equals(
-                        spec.scope() == StateScope.PLAYER
-                                ? String.valueOf(key.playerId())
-                                : key.worldKey()));
+        Predicate<StateSlotKey> match = slotMatcher(spec, worldOrPlayer);
         List<StateSlotKey> out = new ArrayList<>();
         for (StateSlotKey key : transientValues.keySet()) {
             if (match.test(key)) {
@@ -474,6 +471,18 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             }
         }
         return out;
+    }
+
+    /** Shared slot matcher for a spec, optionally narrowed to one world/player id. */
+    private static Predicate<StateSlotKey> slotMatcher(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
+        String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
+        return key -> key.scope() == spec.scope()
+                && key.id().equals(spec.id())
+                && key.role().equals(spec.role())
+                && (filter == null || filter.equals(
+                        spec.scope() == StateScope.PLAYER
+                                ? String.valueOf(key.playerId())
+                                : key.worldKey()));
     }
 
     private void notifyRemoved(RoleStateSpec<?> spec, StateSlotKey slot) {

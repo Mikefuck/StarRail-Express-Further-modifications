@@ -43,7 +43,12 @@ public record BlackoutVotePayload(
     private static VotePurpose readPurpose(FriendlyByteBuf buf) {
         String raw = buf.readUtf(32);
         VotePurpose p = VotePurpose.fromString(raw);
-        return p != null ? p : VotePurpose.EXILE; // fallback for forward compatibility
+        if (p == null) {
+            // 未来版本新增 purpose 时旧客户端不应误渲染为放逐投票，
+            // 丢弃该包（接收端 catch DecoderException 后跳过）。
+            throw new DecoderException("Unknown VotePurpose: " + raw);
+        }
+        return p;
     }
 
     private static List<Entry> readCandidates(FriendlyByteBuf buf) {

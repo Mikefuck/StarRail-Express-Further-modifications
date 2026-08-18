@@ -142,12 +142,14 @@ public final class BlackoutExileVoteManager {
         if (targetId != null && targetId.equals(voterId)) return;
 
         if (targetId != null) {
+            // 重复投同一目标：no-op，不广播（review M18——刷包不再放大为
+            // 全维度出站包；状态变化由 tickSecond 的 1Hz 重播兜底）。
+            if (targetId.equals(state.votesByVoter.get(voterId))) return;
             state.votesByVoter.put(voterId, targetId);
         } else {
+            if (!state.votesByVoter.containsKey(voterId)) return;
             state.votesByVoter.remove(voterId);
         }
-
-        broadcastState(level);
     }
 
     /** 结算 */

@@ -55,21 +55,13 @@ public class OptionVoteScreen extends Screen {
     private static final int CARD_MAX_H = 142;
 
     // ---- 地图档案卡（仅 map 阶段） ----
-    private static final long DETAIL_OPEN_MILLIS = 220L;      // 档案卡滑入时长
-    private static final long DETAIL_CLOSE_MILLIS = 180L;     // 档案卡收起时长
-    private static final long DETAIL_SWITCH_MILLIS = 140L;    // 切换地图时交叉淡入时长
-    private static final float DECK_CENTER_RATIO = 0.29f;      // 档案展开后，候选卡组位于左半区
-    private static final float DETAIL_CENTER_RATIO = 0.76f;    // 档案卡中心位于右半区
-    private static final float DETAIL_W_RATIO = 0.34f;         // 档案卡承担右半区的主要视觉重量
-    private static final int DETAIL_MIN_W = 158;
-    private static final int DETAIL_MAX_W = 520;
-    private static final int DETAIL_MIN_H = 190;
-    private static final int DETAIL_MAX_H = 520;
+    private static final long DETAIL_OPEN_MILLIS = 320L;      // 档案浮层从底部升起时长
+    private static final long DETAIL_CLOSE_MILLIS = 220L;     // 档案浮层回落时长
+    private static final long DETAIL_SWITCH_MILLIS = 200L;    // 切换地图时交叉淡入时长
+    private static final int DETAIL_MIN_W = 220;
+    private static final int DETAIL_MAX_W = 1920;
     private static final int LAYOUT_MARGIN = 24;              // 左右边距
-    private static final int LAYOUT_GAP = 28;                 // 卡组与档案卡最小间隙
-    private static final int DETAIL_PAD = 14;
-    private static final int PREVIEW_ASPECT_W = 16;
-    private static final int PREVIEW_ASPECT_H = 9;
+    private static final int LAYOUT_GAP = 24;                 // 紧凑列表与档案浮层最小间隙
 
     private final Screen parent;
     private final long openedAtMillis = Util.getMillis();
@@ -77,6 +69,8 @@ public class OptionVoteScreen extends Screen {
     private final List<CardVisual> visualBuffer = new ArrayList<>();
     private final List<CardHitbox> hitboxBuffer = new ArrayList<>();
     private final Map<String, List<FormattedCharSequence>> wrappedTextCache = new HashMap<>();
+    /** 上次 wrap 时的 Language 实例，用于 F3+T 重载后失效缓存（review L8）。 */
+    private net.minecraft.locale.Language wrappedLanguage;
 
     private List<CardHitbox> cardHitboxes = List.of();
     private Rect closeBounds = Rect.EMPTY;
@@ -158,7 +152,7 @@ public class OptionVoteScreen extends Screen {
     private void updateDetailAnimation(float frameSeconds, List<OptionVotePayload.Entry> candidates) {
         mapPhase = "map".equals(OptionVoteState.getVoteId()) && !candidates.isEmpty();
 
-        // 地图投票先展示完整候选卡组；玩家明确投票后，卡组才整体左移并让出档案区。
+        // 地图投票先展示完整候选卡组；玩家选择/聚焦地图后，卡组才整体左移并让出档案区。
         boolean target = mapPhase && detailRequested;
         if (target != detailOpenTarget) {
             detailOpenTarget = target;
@@ -295,7 +289,7 @@ public class OptionVoteScreen extends Screen {
             return null;
         }
 
-        DeckMetrics metrics = deckMetrics();
+        DeckMetrics metrics = deckMetrics(mapPhase);
         int cardWidth = metrics.cardWidth();
         int cardHeight = metrics.cardHeight();
         int spacing = metrics.spacing();
@@ -355,8 +349,13 @@ public class OptionVoteScreen extends Screen {
         cardHitboxes = hitboxes;
 
         int arrowY = metrics.deckTop() + metrics.deckHeight() / 2 - 10;
-        previousBounds = new Rect(8, arrowY, 20, 20);
-        nextBounds = new Rect(Math.max(8, listRight - 28), arrowY, 20, 20);
+        // 左箭头放在卡片左侧留白中，避免与当前焦点卡片重叠。
+        int cardLeft = layout.deckCenterX() - cardWidth / 2;
+        previousBounds = new Rect(Math.max(2, cardLeft - 22), arrowY, 18, 20);
+        int nextArrowX = t > 0.001f
+                ? Math.max(8, listRight - 20)
+                : Math.max(8, listRight - 28);
+        nextBounds = new Rect(nextArrowX, arrowY, 20, 20);
         renderArrow(g, previousBounds, "<", focusedIndex > 0,
                 previousBounds.contains(mouseX, mouseY));
         renderArrow(g, nextBounds, ">", focusedIndex < candidates.size() - 1,
@@ -478,7 +477,7 @@ public class OptionVoteScreen extends Screen {
         renderModeDetails(g, focused, candidateCount);
     }
 
-    /** 地图阶段：右侧档案卡 + 连接线 + 底部栏重组。 */
+    /** 地图阶段：大型档案浮层 + 连接线 + 底部栏重组。 */
     private void renderMapDetails(GuiGraphics g, OptionVotePayload.Entry focused, int candidateCount,
                                   float elapsedSeconds) {
         float t = easeOutCubic(Mth.clamp(detailProgress, 0.0f, 1.0f));
@@ -492,53 +491,58 @@ public class OptionVoteScreen extends Screen {
         MapLayout layout = computeMapLayout();
         int detailW = layout.detailW();
         int detailH = layout.detailH();
-        float entrance = easeOutBack(Mth.clamp(detailProgress, 0.0f, 1.0f));
-        int detailX = Math.round(Mth.lerp(entrance, width + detailW / 2.0f, layout.detailCenterX()));
+        float entrance = easeOutQuint(Mth.clamp(detailProgress, 0.0f, 1.0f));
+        int detailX = layout.detailCenterX();
         int restingY = layout.detailY();
-        int floatY = detailProgress >= 0.98f
-                ? Math.round(Mth.sin(elapsedSeconds * 1.45f) * 1.5f) : 0;
-        int detailY = restingY + floatY;
+        // 浮层从屏幕底部平滑向上展开，最终覆盖到屏幕顶部，与左侧列表使用同一曲线，避免错位。
+        int detailY = Math.round(Mth.lerp(entrance, height + detailH + 24.0f, restingY));
+        detailY = Math.max(0, detailY);
         int detailLeft = detailX - detailW / 2;
         detailBounds = new Rect(detailLeft, detailY, detailW, detailH);
         mapPaneSplitX = Math.round(Mth.lerp(t, width,
                 (layout.listRight() + layout.detailLeft()) / 2.0f));
 
+        // 浮层盖在当前 GUI 之上，因此先绘制底部栏再绘制档案卡。
+        renderMapBottomBar(g, focused, candidateCount);
         renderConnector(g, focused, detailLeft, detailY, detailH, t);
         renderDetailCard(g, focused, detailLeft, detailY, detailW, detailH, t, elapsedSeconds);
-        renderMapBottomBar(g, focused, candidateCount);
     }
 
     /**
-     * 地图阶段响应式布局：右侧档案占主要视觉重量，左侧卡带保留原宽并在分栏边界裁剪。
-     * 这样窄屏也不会为了强行并排而把候选卡压成细条。
+     * 地图阶段响应式布局：展开后左侧只保留“略大于一张卡片”的紧凑窗格，
+     * 右侧大型档案浮层从屏幕顶部到底部上下撑满，地图背景以 cover 方式铺满；
+     * 列表从右往左靠紧，档案从底部升起。窄屏也不会把候选卡压成细条，
+     * 而是让浮层承担主要阅读空间。
      */
     private MapLayout computeMapLayout() {
-        int horizontalMargin = Math.min(LAYOUT_MARGIN, Math.max(8, width / 24));
-        int detailW = Mth.clamp(Math.round(width * DETAIL_W_RATIO), DETAIL_MIN_W, DETAIL_MAX_W);
-        detailW = Math.min(detailW, Math.max(96, width - horizontalMargin * 2));
-        int detailCenterX = Math.min(Math.round(width * DETAIL_CENTER_RATIO),
-                width - horizontalMargin - detailW / 2);
-        int detailLeft = detailCenterX - detailW / 2;
+        // 至少留出 24px，确保左箭头与当前卡片之间不重叠。
+        int horizontalMargin = Math.max(24, Math.min(LAYOUT_MARGIN, Math.max(8, width / 24)));
+        DeckMetrics metrics = deckMetrics(mapPhase);
+        int cardWidth = metrics.cardWidth();
 
-        int detailTop = 53;
-        int bottomBarY = height - (height < 210 ? 40 : 48) - 6;
-        int availableHeight = Math.max(96, bottomBarY - detailTop - 8);
-        int preferredHeight = Mth.clamp(Math.round(detailW * 1.52f), DETAIL_MIN_H, DETAIL_MAX_H);
-        int detailH = Math.min(preferredHeight, availableHeight);
-        int detailY = detailTop + Math.max(0, (availableHeight - detailH) / 2);
+        // 紧凑列表窗格：左边距 + 一张卡片 + 右侧箭头专用空间。
+        int listRight = horizontalMargin + cardWidth + 24;
+        int deckCenterX = horizontalMargin + cardWidth / 2;
 
-        DeckMetrics metrics = deckMetrics();
-        int listRight = Math.max(horizontalMargin + metrics.cardWidth(), detailLeft - LAYOUT_GAP);
-        int minDeckCenter = horizontalMargin + metrics.cardWidth() / 2;
-        int maxDeckCenter = Math.max(minDeckCenter, listRight - metrics.cardWidth() / 2);
-        int deckCenterX = Mth.clamp(Math.round(width * DECK_CENTER_RATIO),
-                minDeckCenter, maxDeckCenter);
+        // 大型档案浮层：从紧凑列表右侧一直延伸到屏幕右边，上下覆盖满。
+        int detailLeft = listRight + LAYOUT_GAP;
+        int availableRight = Math.max(detailLeft + 1, width - horizontalMargin);
+        int availableW = Math.max(1, availableRight - detailLeft);
+        int detailW = Math.min(DETAIL_MAX_W, availableW);
+
+        int detailTop = 0;
+        int detailBottom = height;
+        int detailH = Math.max(1, detailBottom - detailTop);
+
+        int detailCenterX = detailLeft + detailW / 2;
+        int detailY = 0;
+
         return new MapLayout(deckCenterX, listRight, detailCenterX, detailLeft,
                 detailY, detailW, detailH);
     }
 
     /** 卡组尺寸随可用高度缩放；展开档案时只改变可见窗口，不改变卡片本身比例。 */
-    private DeckMetrics deckMetrics() {
+    private DeckMetrics deckMetrics(boolean mapPhase) {
         int detailHeight = height < 210 ? 40 : 48;
         int detailY = height - detailHeight - 6;
         int deckTop = 51;
@@ -547,7 +551,10 @@ public class OptionVoteScreen extends Screen {
         int cardHeight = Mth.clamp(deckHeight - 4, CARD_MIN_H, CARD_MAX_H);
         int cardWidth = Mth.clamp(Math.round(cardHeight * 0.68f), CARD_MIN_W, CARD_MAX_W);
         // 地图档案展开后改用裁剪形成“卡带穿过窗框”的效果，不再把卡压成细条。
-        int spacing = cardWidth + Math.max(8, cardWidth / 9);
+        // 地图阶段给右侧箭头留出独立空间，避免下一张卡与箭头重叠。
+        int spacing = mapPhase
+                ? cardWidth + Math.max(28, cardWidth / 5)
+                : cardWidth + Math.max(8, cardWidth / 9);
         int baseY = deckTop + Math.max(0, (deckHeight - cardHeight) / 2) + 2;
         return new DeckMetrics(cardWidth, cardHeight, spacing, baseY, deckTop, deckHeight);
     }
@@ -557,6 +564,12 @@ public class OptionVoteScreen extends Screen {
 
     private record MapLayout(int deckCenterX, int listRight, int detailCenterX, int detailLeft,
                              int detailY, int detailW, int detailH) {}
+
+    /** 信息栏预布局结果：绘制端直接消费，避免二次测量。 */
+    private record SheetMetrics(Component name, Component number, Component rec, Component share,
+                                boolean selected, boolean oneRow, int percent,
+                                List<FormattedCharSequence> descLines, boolean descBlank,
+                                List<List<Component>> tagRows, int nameH, int contentH) {}
 
     /** 焦点卡底部菱形 → 档案卡左缘的细暗金连接线。 */
     private void renderConnector(GuiGraphics g, OptionVotePayload.Entry focused,
@@ -589,134 +602,227 @@ public class OptionVoteScreen extends Screen {
         return null;
     }
 
-    /** 地图档案卡：预览图 + 名称/编号 + 推荐人数 + 标签 + 介绍。 */
+    /**
+     * 地图档案卡：顶部为地图大图（图上不叠任何文字信息），下方是一块与卡同宽、
+     * 可整体滑动的信息栏——名称/编号/统计/正文/标签全部集中在栏内。向上滚动时
+     * 大图随页面一起滑出视野，露出更多介绍正文。整卡仍从底部升起、切图交叉淡入。
+     */
     private void renderDetailCard(GuiGraphics g, OptionVotePayload.Entry focused,
                                   int x, int y, int w, int h, float t, float elapsedSeconds) {
         int alpha = Math.round(255 * t);
         if (alpha <= 0) return;
 
-        float breath = 0.5f + 0.5f * Mth.sin(elapsedSeconds * 1.8f);
-        int glowAlpha = Math.round(alpha * (0.10f + breath * 0.08f));
-        // 分层投影和低频呼吸光把档案卡从后方背景里“抬”出来。
+        float breath = 0.5f + 0.5f * Mth.sin(elapsedSeconds * 1.6f);
+        int glowAlpha = Math.round(alpha * (0.12f + breath * 0.08f));
+        // 分层投影和低频呼吸光先把档案卡从后方背景里“抬”出来。
         fillChamfered(g, x + 7, y + 9, w, h, 5, withAlpha(0xFF000000, alpha * 90 / 255));
         fillChamfered(g, x - 3, y - 3, w + 6, h + 6, 6, withAlpha(GOLD_DARK, glowAlpha));
-        g.fillGradient(x, y, x + w, y + h, withAlpha(PANEL, alpha), withAlpha(INK, alpha));
+
+        MapVoteProfilePayload.MapProfile profile = OptionVoteState.getProfile(focused.optionId());
+        String mapId = focused.optionId();
+        float switchT = easeOutCubic(Mth.clamp(detailSwitch, 0.0f, 1.0f));
+        int contentAlpha = Math.round(alpha * (0.30f + switchT * 0.70f));
+
+        // 页面结构：顶部大图 + 下方信息栏，作为一个整体随滚动上移。
+        int heroH = Mth.clamp(Math.round(w * 9.0f / 16.0f), 90, Math.round(h * 0.55f));
+        heroH = Math.min(heroH, Math.max(48, h - 72));
+
+        SheetMetrics sheet = computeInfoSheet(focused, profile, mapId, w);
+        int sheetH = Math.max(sheet.contentH(), h - heroH);
+        detailScrollMax = Math.max(0.0f, heroH + sheetH - h);
+        detailScrollTarget = Mth.clamp(detailScrollTarget, 0.0f, detailScrollMax);
+        detailScroll = Mth.clamp(detailScroll, 0.0f, detailScrollMax);
+        int scrollOffset = Math.round(detailScroll);
+
+        // 卡身底色：大图滑出后信息栏上方不会露出透明区域。
+        g.fill(x, y, x + w, y + h, withAlpha(PANEL, Math.round(alpha * 0.96f)));
+
+        // 图 + 信息栏整体上移，超出卡身的部分裁掉。
+        g.enableScissor(x + 1, y + 1, x + w - 1, y + h - 1);
+        int heroY = y - scrollOffset;
+        renderMapBackground(g, mapId, profile, x, heroY, w, heroH, t, elapsedSeconds);
+        g.fillGradient(x, heroY + heroH - 18, x + w, heroY + heroH,
+                withAlpha(0xFF221917, 0), withAlpha(0xFF221917, Math.round(alpha * 0.96f)));
+        renderInfoSheet(g, x, heroY + heroH, w, sheet, contentAlpha, alpha);
+        g.disableScissor();
+
+        // 边框与四角装饰压在内容之上。
         int border = mixColor(BRONZE, GOLD, 0.18f + breath * 0.20f);
         g.renderOutline(x, y, w, h, withAlpha(border, alpha));
         g.hLine(x + 8, x + w - 8, y + 2,
                 withAlpha(GOLD_BRIGHT, Math.round(alpha * (0.48f + breath * 0.22f))));
         renderDetailCorners(g, x, y, w, h, alpha, breath);
-        drawDiamond(g, x + w / 2, y + h - 4, breath > 0.72f ? 4 : 3,
-                withAlpha(GOLD, alpha));
 
-        // 很淡的竖向扫描光只经过卡体一次，不遮挡文字。
-        float bodyScan = (elapsedSeconds * 0.075f) % 1.0f;
-        int bodyScanX = x + 4 + Math.round(bodyScan * Math.max(1, w - 9));
-        g.fill(bodyScanX, y + 5, bodyScanX + 1, y + h - 5,
-                withAlpha(GOLD_BRIGHT, Math.round(alpha * 0.055f)));
+        // 整页滚动条沿卡片右缘。
+        renderDetailScrollIndicator(g, x + w - 10, y + 8, h - 16, alpha);
+    }
 
-        MapVoteProfilePayload.MapProfile profile = OptionVoteState.getProfile(focused.optionId());
-        String mapId = focused.optionId();
-        int pad = DETAIL_PAD;
+    /** 信息栏预布局：一次算好所有块的内容与总高，绘制端零重复计算。 */
+    private SheetMetrics computeInfoSheet(OptionVotePayload.Entry focused,
+                                          MapVoteProfilePayload.MapProfile profile, String mapId,
+                                          int w) {
+        int innerX = 14;
+        int innerW = Math.max(24, w - innerX * 2);
+        float nameScale = 1.25f;
 
-        // 预览图固定在档案顶部，下面的信息区域单独滚动。
-        int previewW = w - pad * 2;
-        int previewH = Math.min(previewW * PREVIEW_ASPECT_H / PREVIEW_ASPECT_W,
-                Math.max(46, h / 3));
-        int previewX = x + pad;
-        int previewY = y + pad;
-        renderPreview(g, mapId, profile, previewX, previewY, previewW, previewH, t, elapsedSeconds);
+        Component name = fit(OptionVoteTexts.candidateLabel(mapId, focused.displayName()),
+                Math.max(20, Math.round(innerW / nameScale)));
+        int nameH = Math.round(font.lineHeight * nameScale);
+        Component number = fit(OptionVoteTexts.mapNumber(shortOptionId(mapId)), innerW);
 
-        int bodyTop = previewY + previewH + 9;
-        int bodyBottom = y + h - pad - 2;
-        int bodyHeight = Math.max(12, bodyBottom - bodyTop);
-        int scrollOffset = Math.round(detailScroll);
-        float switchT = easeOutCubic(Mth.clamp(detailSwitch, 0.0f, 1.0f));
-        int contentAlpha = Math.round(alpha * (0.34f + switchT * 0.66f));
-        int contentX = x + pad + Math.round((1.0f - switchT) * 7.0f);
-        int contentWidth = Math.max(24, w - pad * 2 - 6);
-        int relativeY = 0;
-
-        g.enableScissor(x + pad, bodyTop, x + w - pad, bodyBottom);
-
-        // 名称（米白偏金）
-        Component name = OptionVoteTexts.candidateLabel(mapId, focused.displayName());
-        g.drawString(font, fit(name, contentWidth), contentX, bodyTop + relativeY - scrollOffset,
-                withAlpha(0xFFE6D6B5, contentAlpha), true);
-        relativeY += 12;
-
-        // 地图编号
-        Component number = OptionVoteTexts.mapNumber(shortOptionId(mapId));
-        g.drawString(font, fit(number, contentWidth), contentX, bodyTop + relativeY - scrollOffset,
-                withAlpha(TEXT_FAINT, contentAlpha), false);
-        relativeY += 14;
-
-        // 推荐人数
         int minP = profile != null ? profile.minPlayers() : 0;
         int maxP = profile != null ? profile.maxPlayers() : 0;
-        Component recLabel = OptionVoteTexts.recommendedPlayersLabel();
         Component recValue = (minP <= 0 && maxP <= 0)
                 ? OptionVoteTexts.unlimited()
                 : Component.literal((minP > 0 ? minP : 1) + " - " + (maxP > 0 ? maxP : 64) + " 人");
-        int rowY = bodyTop + relativeY - scrollOffset;
-        g.drawString(font, fit(recLabel, Math.max(18, contentWidth - font.width(recValue) - 8)),
-                contentX, rowY, withAlpha(TEXT_MUTED, contentAlpha), false);
-        g.drawString(font, recValue, x + w - pad - 6 - font.width(recValue), rowY,
-                withAlpha(GOLD, contentAlpha), true);
-        relativeY += 14;
+        Component rec = OptionVoteTexts.recommendedPlayersLabel().copy()
+                .append("  ").append(recValue);
 
-        // 标签完整保留，超出的部分由右侧独立滚动查看。
-        if (profile != null && !profile.tags().isEmpty()) {
-            List<String> tags = profile.tags();
-            int line = 0;
-            int lineX = contentX;
-            for (String tag : tags) {
-                Component tagComp = Component.literal("◇ " + tag);
-                int tagW = font.width(tagComp);
-                if (lineX > contentX && lineX + tagW > x + w - pad - 6) {
-                    line++;
-                    lineX = contentX;
-                }
-                g.drawString(font, fit(tagComp, contentWidth), lineX,
-                        bodyTop + relativeY + line * 10 - scrollOffset,
-                        withAlpha(GOLD, contentAlpha), false);
-                lineX += tagW + 10;
+        int totalVotes = OptionVoteState.getCandidates().stream()
+                .mapToInt(OptionVotePayload.Entry::votes).sum();
+        int percent = totalVotes <= 0 ? 0 : Math.round(focused.votes() * 100.0f / totalVotes);
+        Component share = OptionVoteTexts.voteShare(focused.votes(), percent);
+        boolean selected = OptionVoteState.isSelected(focused.optionId());
+        boolean oneRow = font.width(rec) + font.width(share) + (selected ? 8 : 0) + 16 <= innerW;
+
+        boolean descBlank = profile == null || profile.description().isBlank();
+        List<FormattedCharSequence> descLines = descBlank ? List.of()
+                : wrapped("description|" + mapId, Component.literal(profile.description()),
+                        Math.min(innerW, 520));
+        int lineHeight = font.lineHeight + 1;
+        int descH = descBlank ? font.lineHeight : Math.max(1, descLines.size()) * lineHeight;
+
+        List<String> tags = profile != null && profile.tags() != null
+                ? profile.tags() : List.of();
+        List<List<Component>> tagRows = layoutTagRows(tags, innerW);
+        int chipH = font.lineHeight + 4;
+        int tagsH = tagRows.isEmpty() ? 0 : tagRows.size() * chipH + (tagRows.size() - 1) * 4;
+
+        // 顶距 + 名称 + 编号 + 统计行 + 比例条 + 分隔线 + 正文 + 标签 + 底距
+        int contentH = 12 + nameH + 4 + font.lineHeight + 6
+                + (oneRow ? 1 : 2) * font.lineHeight + 4
+                + 8 + 10 + descH + (tagsH > 0 ? 8 + tagsH : 0) + 14;
+
+        return new SheetMetrics(name, number, rec, share, selected, oneRow, percent,
+                descLines, descBlank, tagRows, nameH, contentH);
+    }
+
+    /** 图片下方的可滑动信息栏：名称 → 编号 → 统计行 + 比例条 → 正文 → 标签胶囊。 */
+    private void renderInfoSheet(GuiGraphics g, int x, int sheetY, int w,
+                                 SheetMetrics m, int contentAlpha, int alpha) {
+        if (alpha <= 0) return;
+        int innerX = x + 14;
+        int innerRight = x + w - 14;
+
+        // 名称（放大）→ 编号。
+        g.pose().pushPose();
+        g.pose().translate(innerX, sheetY + 12, 0.0f);
+        g.pose().scale(1.25f, 1.25f, 1.0f);
+        g.drawString(font, m.name(), 0, 0, withAlpha(0xFFE6D6B5, contentAlpha), true);
+        g.pose().popPose();
+        int cy = sheetY + 12 + m.nameH() + 4;
+        g.drawString(font, m.number(), innerX, cy, withAlpha(TEXT_FAINT, contentAlpha), false);
+        cy += font.lineHeight + 6;
+
+        // 统计行：推荐人数（左）+ 票数占比（右，已投带菱形徽记），放不下拆两行。
+        g.drawString(font, m.rec(), innerX, cy, withAlpha(GOLD, contentAlpha), true);
+        if (m.oneRow()) {
+            int shareX = innerRight - font.width(m.share());
+            if (m.selected()) {
+                drawDiamond(g, shareX - 8, cy + font.lineHeight / 2, 2,
+                        withAlpha(GOLD_BRIGHT, contentAlpha));
             }
-            relativeY += (line + 1) * 10 + 4;
-        }
-
-        // 分隔线
-        int separatorY = bodyTop + relativeY - scrollOffset;
-        g.hLine(contentX, x + w - pad - 6, separatorY,
-                withAlpha(BRONZE, Math.round(contentAlpha * 0.48f)));
-        relativeY += 8;
-
-        // 介绍不再截成四行；右侧滚轮可以阅读完整内容。
-        if (profile != null && !profile.description().isBlank()) {
-            Component description = Component.literal(profile.description());
-            List<FormattedCharSequence> lines = wrapped(
-                    "description|" + mapId, description, contentWidth);
-            for (int i = 0; i < lines.size(); i++) {
-                g.drawString(font, lines.get(i), contentX,
-                        bodyTop + relativeY + i * 9 - scrollOffset,
-                        withAlpha(TEXT, contentAlpha), false);
-            }
-            relativeY += Math.max(1, lines.size()) * 9;
+            g.drawString(font, m.share(), shareX, cy, withAlpha(GOLD_BRIGHT, contentAlpha), true);
+            cy += font.lineHeight + 4;
         } else {
-            g.drawString(font, Component.literal("…"), contentX,
-                    bodyTop + relativeY - scrollOffset, withAlpha(TEXT_FAINT, contentAlpha), false);
-            relativeY += 9;
+            cy += font.lineHeight + 2;
+            if (m.selected()) {
+                drawDiamond(g, innerX + 3, cy + font.lineHeight / 2, 2,
+                        withAlpha(GOLD_BRIGHT, contentAlpha));
+            }
+            g.drawString(font, m.share(), m.selected() ? innerX + 8 : innerX, cy,
+                    withAlpha(GOLD_BRIGHT, contentAlpha), true);
+            cy += font.lineHeight + 4;
         }
 
-        g.disableScissor();
+        // 迷你票数比例条。
+        g.fill(innerX, cy, innerRight, cy + 2, withAlpha(BRONZE, Math.round(contentAlpha * 0.60f)));
+        int fillW = Math.round((innerRight - innerX) * Mth.clamp(m.percent() / 100.0f, 0.0f, 1.0f));
+        if (fillW > 0) {
+            g.fill(innerX, cy, innerX + fillW, cy + 2, withAlpha(GOLD, Math.round(contentAlpha * 0.95f)));
+        }
+        cy += 2 + 8;
 
-        detailScrollMax = Math.max(0.0f, relativeY - bodyHeight);
-        detailScrollTarget = Mth.clamp(detailScrollTarget, 0.0f, detailScrollMax);
-        detailScroll = Mth.clamp(detailScroll, 0.0f, detailScrollMax);
-        renderDetailScrollIndicator(g, x, w, bodyTop, bodyHeight, alpha);
+        // 细分隔线，之下为介绍正文。
+        g.hLine(innerX, innerRight, cy, withAlpha(BRONZE, Math.round(contentAlpha * 0.60f)));
+        cy += 10;
+        if (m.descBlank()) {
+            g.drawString(font, Component.literal("…"), innerX, cy,
+                    withAlpha(TEXT_FAINT, contentAlpha), false);
+            cy += font.lineHeight;
+        } else {
+            int lineHeight = font.lineHeight + 1;
+            for (FormattedCharSequence line : m.descLines()) {
+                g.drawString(font, line, innerX, cy, withAlpha(TEXT, contentAlpha), false);
+                cy += lineHeight;
+            }
+        }
+
+        // 标签胶囊。
+        int chipH = font.lineHeight + 4;
+        if (!m.tagRows().isEmpty()) {
+            cy += 8;
+            for (List<Component> row : m.tagRows()) {
+                int chipX = innerX;
+                for (Component label : row) {
+                    int chipW = font.width(label) + 8;
+                    g.fill(chipX, cy, chipX + chipW, cy + chipH,
+                            withAlpha(0xFF1C1611, Math.round(contentAlpha * 0.85f)));
+                    g.renderOutline(chipX, cy, chipW, chipH,
+                            withAlpha(BRONZE, Math.round(contentAlpha * 0.55f)));
+                    g.drawString(font, label, chipX + 4, cy + 2,
+                            withAlpha(GOLD, contentAlpha), false);
+                    chipX += chipW + 4;
+                }
+                cy += chipH + 4;
+            }
+        }
+    }
+
+    /** 标签胶囊按宽度贪心换行，最多 3 行（8 个短标签通常 1-2 行），超出丢弃。 */
+    private List<List<Component>> layoutTagRows(List<String> tags, int maxW) {
+        if (tags.isEmpty() || maxW < 30) return List.of();
+        List<List<Component>> rows = new ArrayList<>();
+        List<Component> current = new ArrayList<>();
+        int rowW = 0;
+        for (String tag : tags) {
+            if (tag == null || tag.isBlank()) continue;
+            Component label = fit(Component.literal(tag), Math.max(20, maxW - 8));
+            int chipW = font.width(label) + 8;
+            if (!current.isEmpty() && rowW + 4 + chipW > maxW) {
+                rows.add(current);
+                current = new ArrayList<>();
+                rowW = 0;
+            }
+            current.add(label);
+            rowW += chipW + 4;
+        }
+        if (!current.isEmpty()) rows.add(current);
+        return rows.size() > 3 ? new ArrayList<>(rows.subList(0, 3)) : rows;
     }
 
     private List<FormattedCharSequence> wrapped(String key, Component text, int width) {
+        // 语言/资源重载（F3+T）会替换 Language 实例：以实例身份检测变化并清空，
+        // 避免旧语言文本滞留；同时给缓存一个上限，防止反复缩放时按宽度累积
+        // （review L8）。
+        net.minecraft.locale.Language language = net.minecraft.locale.Language.getInstance();
+        if (language != wrappedLanguage) {
+            wrappedLanguage = language;
+            wrappedTextCache.clear();
+        }
+        if (wrappedTextCache.size() > 512) {
+            wrappedTextCache.clear();
+        }
         String cacheKey = key + '|' + width + '|' + text.getString();
         return wrappedTextCache.computeIfAbsent(cacheKey, ignored -> font.split(text, width));
     }
@@ -731,25 +837,29 @@ public class OptionVoteScreen extends Screen {
         g.fill(x + w - 6, y + h - 3 - length, x + w - 5, y + h - 2, color);
     }
 
-    private void renderDetailScrollIndicator(GuiGraphics g, int x, int w,
+    private void renderDetailScrollIndicator(GuiGraphics g, int x,
                                              int bodyTop, int bodyHeight, int alpha) {
         if (detailScrollMax <= 0.5f || bodyHeight <= 12) return;
-        int trackX = x + w - 7;
-        int thumbHeight = Math.max(12,
+        int trackX = x;
+        int thumbHeight = Math.max(14,
                 Math.round(bodyHeight * bodyHeight / (bodyHeight + detailScrollMax)));
         int travel = Math.max(1, bodyHeight - thumbHeight);
         int thumbY = bodyTop + Math.round(travel * detailScroll / detailScrollMax);
-        g.fill(trackX, bodyTop, trackX + 1, bodyTop + bodyHeight,
-                withAlpha(BRONZE, Math.round(alpha * 0.42f)));
-        g.fill(trackX - 1, thumbY, trackX + 2, thumbY + thumbHeight,
-                withAlpha(GOLD, Math.round(alpha * 0.78f)));
+        g.fill(trackX, bodyTop, trackX + 2, bodyTop + bodyHeight,
+                withAlpha(BRONZE, Math.round(alpha * 0.50f)));
+        g.fill(trackX - 1, thumbY, trackX + 3, thumbY + thumbHeight,
+                withAlpha(GOLD, Math.round(alpha * 0.85f)));
     }
 
-    /** 预览图：懒解码缓存；无图/解码失败回退占位贴图；降亮 + 底部渐隐。 */
-    private void renderPreview(GuiGraphics g, String mapId, MapVoteProfilePayload.MapProfile profile,
-                               int x, int y, int w, int h, float t, float elapsedSeconds) {
+    /**
+     * 地图背景：懒解码缓存；无图/解码失败回退占位贴图；整张卡作为 16:9 背景铺满，
+     * 切换地图时旧图/新图交叉淡入。
+     */
+    private void renderMapBackground(GuiGraphics g, String mapId,
+                                     MapVoteProfilePayload.MapProfile profile,
+                                     int x, int y, int w, int h, float t, float elapsedSeconds) {
         int alpha = Math.round(255 * t);
-        if (alpha <= 0) return;
+        if (alpha <= 0 || w <= 0 || h <= 0) return;
 
         MapVotePreviewCache.Decoded decoded = profile != null
                 ? MapVotePreviewCache.getOrDecode(mapId, profile.previewBytes()) : null;
@@ -757,7 +867,6 @@ public class OptionVoteScreen extends Screen {
         int texW = decoded != null ? decoded.width() : 512;
         int texH = decoded != null ? decoded.height() : 288;
 
-        // 切换地图时交叉淡入：旧图 alpha (1-switchT) 且 X+5px，新图 alpha switchT 且 X-5px
         float switchT = easeOutCubic(Mth.clamp(detailSwitch, 0.0f, 1.0f));
         if (oldProfile != null && switchT < 1.0f) {
             MapVotePreviewCache.Decoded oldDecoded = MapVotePreviewCache.getOrDecode(
@@ -765,36 +874,44 @@ public class OptionVoteScreen extends Screen {
             if (oldDecoded != null) {
                 int oldAlpha = Math.round(alpha * (1.0f - switchT));
                 if (oldAlpha > 0) {
-                    drawPreviewTexture(g, oldDecoded.texture(), x + 5, y, w, h,
+                    drawPreviewTextureCover(g, oldDecoded.texture(), x, y, w, h,
                             oldDecoded.width(), oldDecoded.height(), oldAlpha);
                 }
             }
         }
-        int newAlpha = Math.round(alpha * switchT);
+        // 首次打开没有旧图时直接显示新图，避免交叉淡入起始帧空白。
+        int newAlpha = Math.round(alpha * (oldProfile == null ? 1.0f : switchT));
         if (newAlpha > 0) {
-            drawPreviewTexture(g, tex, x - Math.round(5 * (1.0f - switchT)), y, w, h, texW, texH, newAlpha);
+            drawPreviewTextureCover(g, tex, x, y, w, h, texW, texH, newAlpha);
         }
-        g.renderOutline(x, y, w, h, withAlpha(BRONZE, Math.round(alpha * 0.72f)));
-        float scan = (elapsedSeconds * 0.16f) % 1.0f;
+
+        // 极淡的扫描光经过背景，不遮挡文字。
+        float scan = (elapsedSeconds * 0.08f) % 1.0f;
         int scanX = x + Math.round(scan * Math.max(1, w - 1));
         g.fill(scanX, y + 1, scanX + 1, y + h - 1,
-                withAlpha(GOLD_BRIGHT, Math.round(alpha * 0.16f)));
+                withAlpha(GOLD_BRIGHT, Math.round(alpha * 0.05f)));
     }
 
-    private void drawPreviewTexture(GuiGraphics g, ResourceLocation tex, int x, int y,
-                                    int w, int h, int texW, int texH, int alpha) {
-        if (alpha <= 0) return;
+    /** 把地图纹理以 cover 方式铺满目标矩形，保持原图比例并裁掉多余部分。 */
+    private void drawPreviewTextureCover(GuiGraphics g, ResourceLocation tex, int x, int y,
+                                         int w, int h, int texW, int texH, int alpha) {
+        if (alpha <= 0 || w <= 0 || h <= 0 || texW <= 0 || texH <= 0) return;
+        float scale = Math.max(w / (float) texW, h / (float) texH);
+        int srcW = Math.max(1, Math.round(w / scale));
+        int srcH = Math.max(1, Math.round(h / scale));
+        int srcX = (texW - srcW) / 2;
+        int srcY = (texH - srcH) / 2;
         RenderSystem.enableBlend();
-        RenderSystem.setShaderColor(0.85f, 0.82f, 0.78f, Mth.clamp(alpha / 255.0f, 0.0f, 1.0f));
-        g.blit(tex, x, y, 0.0f, 0.0f, w, h, texW, texH);
+        RenderSystem.setShaderColor(0.82f, 0.79f, 0.75f, Mth.clamp(alpha / 255.0f, 0.0f, 1.0f));
+        g.blit(tex, x, y, w, h, srcX, srcY, srcW, srcH, texW, texH);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
-        // 底部黑棕渐隐遮罩，让图片自然融入卡体
-        g.fillGradient(x, y + h - Math.max(8, h / 4), x + w, y + h,
-                withAlpha(0x000000, 0), withAlpha(0x000000, Math.round(alpha * 0.70f)));
     }
 
-    /** 地图阶段底部栏：操作提示 + 当前投票状态。 */
+    /**
+     * 地图阶段底部栏：介绍页未展开时显示右侧票数/状态；介绍页展开后由浮层内
+     * 的右下角信息接管，这里不再重复绘制，避免“1票 100%”同时出现两个。
+     */
     private void renderMapBottomBar(GuiGraphics g, OptionVotePayload.Entry focused, int candidateCount) {
         int panelHeight = height < 210 ? 40 : 48;
         int panelX = 12;
@@ -807,14 +924,12 @@ public class OptionVoteScreen extends Screen {
         g.renderOutline(panelX, panelY, panelW, panelHeight, 0x8A76512B);
         g.fill(panelX + 1, panelY + 1, panelX + 3, panelY + panelHeight - 1, GOLD_DARK);
 
-        if (focused == null) return;
+        if (focused == null || detailProgress > 0.01f) return;
 
         int totalVotes = OptionVoteState.getCandidates().stream()
                 .mapToInt(OptionVotePayload.Entry::votes).sum();
         int percent = totalVotes <= 0 ? 0 : Math.round(focused.votes() * 100.0f / totalVotes);
         Component share = OptionVoteTexts.voteShare(focused.votes(), percent);
-        g.drawString(font, share, panelX + panelW - 10 - font.width(share),
-                panelY + 7, GOLD, true);
 
         boolean selected = OptionVoteState.isSelected(focused.optionId());
         Component status;
@@ -833,13 +948,11 @@ public class OptionVoteScreen extends Screen {
                 statusColor = TEXT_MUTED;
             }
         }
+
+        g.drawString(font, share, panelX + panelW - 10 - font.width(share),
+                panelY + 7, GOLD, true);
         g.drawString(font, status, panelX + panelW - 10 - font.width(status),
                 panelY + 20, statusColor, false);
-
-        if (panelHeight >= 48) {
-            Component hint = fit(OptionVoteTexts.mapControlHint(), Math.max(30, panelW - 20));
-            g.drawCenteredString(font, hint, width / 2, panelY + 34, TEXT_FAINT);
-        }
     }
 
     private String selectedOptionId() {
@@ -971,7 +1084,12 @@ public class OptionVoteScreen extends Screen {
         boolean changed = focusedIndex != clamped;
         focusedIndex = clamped;
         focusedOptionId = candidates.get(clamped).optionId();
-        if (sound && changed) playUiSound(1.25f);
+        if (sound && changed) {
+            playUiSound(1.25f);
+            if ("map".equals(OptionVoteState.getVoteId())) {
+                detailRequested = true;
+            }
+        }
     }
 
     private void castVote(int index) {
@@ -981,7 +1099,8 @@ public class OptionVoteScreen extends Screen {
 
         OptionVotePayload.Entry entry = candidates.get(index);
         if ("map".equals(OptionVoteState.getVoteId())) {
-            detailRequested = true;
+            // 点击左侧地图卡：当前展开则收起，当前收起则展开。
+            detailRequested = !detailRequested;
         }
         setFocus(index, candidates, false);
         boolean wasSelected = OptionVoteState.isSelected(entry.optionId());
@@ -1021,6 +1140,12 @@ public class OptionVoteScreen extends Screen {
                             castVote(hitbox.index());
                             return true;
                         }
+                    }
+                    // 点击左侧列表的空白区域：介绍页展开时直接收起。
+                    if (mapPhase && detailProgress > 0.01f && mouseX < mapPaneSplitX
+                            && mouseY >= 46 && mouseY <= height - 56) {
+                        detailRequested = false;
+                        return true;
                     }
                 }
             }
@@ -1172,11 +1297,10 @@ public class OptionVoteScreen extends Screen {
         return 1.0f - inverse * inverse * inverse;
     }
 
-    private static float easeOutBack(float value) {
-        float c1 = 1.70158f;
-        float c3 = c1 + 1.0f;
-        float shifted = value - 1.0f;
-        return 1.0f + c3 * shifted * shifted * shifted + c1 * shifted * shifted;
+    private static float easeOutQuint(float value) {
+        float t = Mth.clamp(value, 0.0f, 1.0f);
+        float inverse = 1.0f - t;
+        return 1.0f - inverse * inverse * inverse * inverse * inverse;
     }
 
     private static int withAlpha(int color, int alpha) {

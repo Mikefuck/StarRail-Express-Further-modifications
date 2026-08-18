@@ -49,6 +49,10 @@ logs/
 
 libs/*.bak
 
+# local tooling directories
+
+.*/
+
 # Loom sidecar target files
 
 libs/*:loom-target

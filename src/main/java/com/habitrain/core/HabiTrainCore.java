@@ -164,9 +164,21 @@ public class HabiTrainCore implements ModInitializer {
                     if (server == null || playerId == null) {
                         return java.util.List.of();
                     }
-                    java.util.List<java.util.UUID> ids = new java.util.ArrayList<>();
+                    net.minecraft.server.level.ServerPlayer target =
+                            server.getPlayerList().getPlayer(playerId);
+                    if (target == null) {
+                        return java.util.List.of();
+                    }
+                    java.util.LinkedHashSet<java.util.UUID> ids = new java.util.LinkedHashSet<>();
+                    // Actual server-side entity trackers (players receiving the
+                    // target entity's tracking packets).
+                    for (net.minecraft.server.level.ServerPlayer observer
+                            : net.fabricmc.fabric.api.networking.v1.PlayerLookup.tracking(target)) {
+                        ids.add(observer.getUUID());
+                    }
                     for (net.minecraft.server.level.ServerPlayer p : server.getPlayerList().getPlayers()) {
-                        // A spectator's camera entity is the player they are tracking.
+                        // Spectator camera followers may not be present in the
+                        // ordinary tracking set, so retain that compatibility path.
                         net.minecraft.world.entity.Entity camera = p.getCamera();
                         if (camera != null && playerId.equals(camera.getUUID())) {
                             ids.add(p.getUUID());

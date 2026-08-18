@@ -166,4 +166,14 @@ class RoleHandshakeMatcherTest {
         assertEquals(a, b);
         assertFalse(a.isBlank());
     }
+
+    @Test
+    void consumedNameAndScreenCapabilitiesAreStable() {
+        assertTrue(RoleManifestService.CAPABILITIES.contains("client_name_render"));
+        assertTrue(RoleManifestService.CAPABILITIES.contains("client_screen"));
+        assertFalse(RoleManifestService.EXPERIMENTAL_CAPABILITIES.contains("client_name_render"));
+        assertFalse(RoleManifestService.EXPERIMENTAL_CAPABILITIES.contains("client_screen"));
+        assertEquals(Set.of("client_hud_visual"),
+                RoleManifestService.EXPERIMENTAL_CAPABILITIES);
+    }
 }

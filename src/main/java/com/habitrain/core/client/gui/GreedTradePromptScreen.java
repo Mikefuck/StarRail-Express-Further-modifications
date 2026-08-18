@@ -1,8 +1,6 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.network.GreedTradeActionPayload;
 import com.habitrain.core.network.GreedTradePromptPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -37,7 +35,8 @@ public final class GreedTradePromptScreen extends Screen {
     private void answer(String action) {
         if (answered) return;
         answered = true;
-        ClientPlayNetworking.send(new GreedTradeActionPayload(action, offer.sessionId()));
+        // 未连接（断线瞬间的 ESC/按钮回调）时 PayloadSenders 内部静默跳过（review M9）。
+        com.habitrain.core.client.network.PayloadSenders.sendGreedTradeAction(action, offer.sessionId());
         if (minecraft != null) minecraft.setScreen(parent);
     }
 

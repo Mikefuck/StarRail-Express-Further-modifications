@@ -477,6 +477,17 @@ public class BlackoutRoleManager {
     }
 
     /**
+     * 单玩家的角色历史只读查询：INSTANCES 直查，不拷贝整表、不在未开局维度
+     * 创建空 {@code RoleState}。供每 tick 调用方使用（review M6：此前每 tick
+     * 每玩家走 {@link #getRoleHistory} 全量拷贝）。
+     */
+    @org.jetbrains.annotations.Nullable
+    public static ResourceLocation getRoleHistoryEntry(ServerLevel level, UUID playerId) {
+        RoleState state = INSTANCES.get(level.dimension());
+        return state == null ? null : state.roleHistory.get(playerId);
+    }
+
+    /**
      * 雇警上限用的「正牌警察」人数：仅统计仍为 GOOD 的 sheriffs。
      * 杀手被「点警」只拿特权枪/金，保留 BAD，不占 police≤killer 名额（C13）。
      */
@@ -511,6 +522,12 @@ public class BlackoutRoleManager {
 
     public static List<UUID> getAllAlive(ServerLevel level) {
         return new ArrayList<>(getOrCreate(level).roles.keySet());
+    }
+
+    /** 是否存在任何存活入局玩家（等价于 {@code !getAllAlive(level).isEmpty()}，
+     *  但不分配列表；供每 tick 调用方使用，review L3）。 */
+    public static boolean hasAnyAlive(ServerLevel level) {
+        return !getOrCreate(level).roles.isEmpty();
     }
 
     /**

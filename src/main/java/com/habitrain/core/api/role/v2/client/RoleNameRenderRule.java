@@ -9,11 +9,9 @@ import java.util.Objects;
 /**
  * Declarative name-render override for one role at one {@link RoleRenderPhase}.
  *
- * <p><b>Experimental (audit P1-2):</b> rules are stored, queryable and shown in
- * diagnostics, but no runtime name-tag renderer consumes them yet (Fabric 1.21.1
- * exposes no name-tag render event). Advertised under the experimental
- * capability {@code client_name_render}; do not rely on in-game effect until the
- * adapter lands.
+ * <p>The stock client consumes {@link RoleRenderPhase#NAMEPLATE} through its
+ * entity-renderer adapter and applies {@link #hide()} / {@link #color()}.
+ * Other phases remain reserved until a matching renderer is added.
  */
 public final class RoleNameRenderRule {
 

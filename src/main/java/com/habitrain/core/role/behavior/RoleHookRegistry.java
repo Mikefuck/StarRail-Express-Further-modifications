@@ -42,6 +42,14 @@ public final class RoleHookRegistry {
 
     private final Map<RoleKey, Map<HookType, List<ManagedHookEntry>>> hooks = new LinkedHashMap<>();
     private boolean frozen;
+    /**
+     * Immutable per-(role, type) / per-type snapshots cached for the frozen
+     * state so the per-event {@code entries()} and per-tick {@code allEntries()}
+     * dispatch stop re-copying lists on every call (review L1). Invalidated by
+     * {@link #clear()} and transaction restores.
+     */
+    private final Map<RoleKey, Map<HookType, List<ManagedHookEntry>>> entryCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<HookType, List<ManagedHookEntry>> allEntryCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private RoleHookRegistry() {}
 
@@ -90,11 +98,26 @@ public final class RoleHookRegistry {
             return List.of();
         }
         List<ManagedHookEntry> list = byType.get(type);
-        return list == null ? List.of() : List.copyOf(list);
+        if (list == null) {
+            return List.of();
+        }
+        if (frozen) {
+            return entryCache
+                    .computeIfAbsent(role, k -> new java.util.concurrent.ConcurrentHashMap<>())
+                    .computeIfAbsent(type, k -> List.copyOf(list));
+        }
+        return List.copyOf(list);
     }
 
     /** Every registered entry for a hook type, in role-insertion then stable order. */
     public List<ManagedHookEntry> allEntries(HookType type) {
+        if (frozen) {
+            return allEntryCache.computeIfAbsent(type, this::buildAllEntries);
+        }
+        return buildAllEntries(type);
+    }
+
+    private List<ManagedHookEntry> buildAllEntries(HookType type) {
         List<ManagedHookEntry> out = new ArrayList<>();
         for (Map<HookType, List<ManagedHookEntry>> byType : hooks.values()) {
             List<ManagedHookEntry> list = byType.get(type);
@@ -188,12 +211,16 @@ public final class RoleHookRegistry {
             hooks.put(role.getKey(), byType);
         }
         frozen = snapshot.frozen();
+        entryCache.clear();
+        allEntryCache.clear();
     }
 
     /** Test isolation: drops all entries and unfreezes. */
     public synchronized void clear() {
         hooks.clear();
         frozen = false;
+        entryCache.clear();
+        allEntryCache.clear();
     }
 
     private static void insertSorted(List<ManagedHookEntry> list, ManagedHookEntry entry) {

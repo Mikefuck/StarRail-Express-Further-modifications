@@ -109,9 +109,15 @@ public class GameLifecycleHandler {
             TaskManager.getInstance().clearAllActiveTasks();
 
             // 重置背包翻找任务状态（下一局可以再次刷新）
-            BackpackQuestState.getInstance().resetAll();
+            if (BackpackQuestState.getInstance() != null) {
+                BackpackQuestState.getInstance().resetAll();
+            }
             // 清除所有背包翻找动作（防止残留状态影响下一局）
             BackpackSearchHandler.clearAllSearches();
+
+            // 清除跨局静态状态
+            com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
+            com.habitrain.core.game.sre.role.component.FlowerGirlComponent.clearMeleeImmune();
 
             HabiTrainCore.LOGGER.info("游戏结束，已清除所有槟榔效果");
         }

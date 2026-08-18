@@ -1,7 +1,5 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.network.GreedTradeSelectPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -69,7 +67,8 @@ public final class GreedTradeSelectScreen extends Screen {
         int y = height / 2 - 54;
         for (AbstractClientPlayer player : new ArrayList<>(visibleCandidates.subList(from, to))) {
             addRenderableWidget(Button.builder(Component.literal(player.getGameProfile().getName()), button -> {
-                ClientPlayNetworking.send(new GreedTradeSelectPayload(player.getUUID()));
+                // 未连接时 PayloadSenders 内部静默跳过（review M9）。
+                com.habitrain.core.client.network.PayloadSenders.sendGreedTradeSelect(player.getUUID());
                 if (minecraft != null) minecraft.setScreen(parent);
             }).bounds(width / 2 - 100, y, 200, 20).build());
             y += 22;

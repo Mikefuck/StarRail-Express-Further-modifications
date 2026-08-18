@@ -7,6 +7,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
+import io.netty.handler.codec.DecoderException;
+
 /**
  * Multiplex S2C payload for every v2 {@link com.habitrain.core.api.role.v2.action.RoleActionSpec}.
  *
@@ -26,6 +28,9 @@ public record RoleActionS2CPayload(
 
     public static final Type<RoleActionS2CPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_action_s2c"));
+
+    private static final int MAX_PAYLOAD_BYTES = 65536;
+
     public static final StreamCodec<FriendlyByteBuf, RoleActionS2CPayload> CODEC =
             StreamCodec.ofMember(RoleActionS2CPayload::write, RoleActionS2CPayload::new);
 
@@ -34,8 +39,18 @@ public record RoleActionS2CPayload(
                 buf.readVarInt(),
                 buf.readBoolean(),
                 buf.readUtf(128),
-                buf.readByteArray(),
+                readBoundedByteArray(buf, MAX_PAYLOAD_BYTES),
                 buf.readBoolean());
+    }
+
+    private static byte[] readBoundedByteArray(FriendlyByteBuf buf, int maxBytes) {
+        int len = buf.readVarInt();
+        if (len < 0 || len > maxBytes) {
+            throw new DecoderException("RoleActionS2C payload too large: " + len + " > " + maxBytes);
+        }
+        byte[] data = new byte[len];
+        buf.readBytes(data);
+        return data;
     }
 
     private void write(FriendlyByteBuf buf) {

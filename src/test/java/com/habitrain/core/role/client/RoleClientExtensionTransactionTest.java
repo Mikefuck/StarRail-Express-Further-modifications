@@ -112,7 +112,10 @@ class RoleClientExtensionTransactionTest {
 
     @Test
     void globalRegistryConflictRollsBackWholeBatch() {
-        store.hud(RoleHudSpec.of("habitrain_core", "existing").role(CIVILIAN).build());
+        ScopedRoleClientExtensionRegistrar seed =
+                new ScopedRoleClientExtensionRegistrar("habitrain_core", store);
+        seed.hud(RoleHudSpec.of("habitrain_core", "existing").role(CIVILIAN).build());
+        seed.commit();
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("habitrain_core", store);
         registrar.hud(RoleHudSpec.of("habitrain_core", "new").entryKey("new").role(CIVILIAN).build());
         registrar.hud(RoleHudSpec.of("habitrain_core", "existing").role(CIVILIAN).build());

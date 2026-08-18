@@ -27,15 +27,14 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Process-wide client-extension registry. Types are common so tests can
- * register HUD / instinct rules without a client; {@link #loadProviders()}
- * is only called from {@code HabiTrainCoreClient}.
+ * Process-wide client-extension registry. Provider writes are accepted only
+ * through transactional {@link ScopedRoleClientExtensionRegistrar} instances;
+ * {@link #loadProviders()} is only called from {@code HabiTrainCoreClient}.
  */
 public final class RoleClientExtensionRegistry implements RoleClientExtensionApi {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleClientExtensionApi");
     public static final String ENTRYPOINT_KEY = "habitrain:role_client_extensions";
-    private static final String DEFAULT_PROVIDER = "habitrain_core";
 
     private final Map<ResourceLocation, RoleHudSpec> huds = new LinkedHashMap<>();
     private final Map<ResourceLocation, String> hudProviders = new LinkedHashMap<>();
@@ -50,7 +49,6 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     private final Map<ResourceLocation, String> screenProviders = new LinkedHashMap<>();
     private volatile boolean frozen;
     private volatile boolean loaded;
-    private int hudWidgetSeq;
     /** Providers whose client-extension registration committed (audit P1-4). */
     private final Set<String> loadedProviders = new LinkedHashSet<>();
     /** Null means no server snapshot has arrived yet; all registered extensions are visible. */
@@ -91,12 +89,12 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
 
     @Override
     public synchronized void hud(RoleHudSpec spec) {
-        commitHud(DEFAULT_PROVIDER, spec);
+        throw directRegistrationUnsupported();
     }
 
     @Override
     public synchronized void instinct(RoleInstinctRule rule) {
-        commitInstinct(DEFAULT_PROVIDER, rule);
+        throw directRegistrationUnsupported();
     }
 
     @Override
@@ -120,28 +118,27 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
 
     @Override
     public synchronized void skin(RoleSkinSpec spec) {
-        commitSkin(DEFAULT_PROVIDER, spec);
+        throw directRegistrationUnsupported();
     }
 
     @Override
     public synchronized void nameRender(RoleNameRenderRule rule) {
-        commitNameRender(DEFAULT_PROVIDER, rule);
+        throw directRegistrationUnsupported();
     }
 
     @Override
     public synchronized void hudWidget(ResourceLocation id, String entryKey, RoleKey role, RoleHudWidget widget) {
-        commitHudWidget(DEFAULT_PROVIDER, id, entryKey, role, widget);
+        throw directRegistrationUnsupported();
     }
 
     @Override
     public synchronized void hudWidget(RoleKey role, RoleHudWidget widget) {
-        String path = role.location().getPath() + "/widget/" + (++hudWidgetSeq);
-        hudWidget(ResourceLocation.fromNamespaceAndPath(DEFAULT_PROVIDER, path), null, role, widget);
+        throw directRegistrationUnsupported();
     }
 
     @Override
     public synchronized void screen(RoleScreenSpec spec) {
-        commitScreen(DEFAULT_PROVIDER, spec);
+        throw directRegistrationUnsupported();
     }
 
     @Override
@@ -255,6 +252,38 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
                                                 @Nullable Set<String> entryKeys) {
         this.activeProviders = providers == null ? null : Set.copyOf(providers);
         this.activeEntryKeys = entryKeys == null ? null : Set.copyOf(entryKeys);
+        this.activeEntryIndex = entryKeys == null ? null : buildActiveEntryIndex(entryKeys);
+    }
+
+    /**
+     * Prefix index for {@code provider$key@target} entry keys, grouped by the
+     * provider segment, plus the exact-match (legacy/role-id) leftovers. Per-frame
+     * {@link #isActive} then scans only the one provider's entries instead of the
+     * whole set (review L2).
+     */
+    private volatile @Nullable ActiveEntryIndex activeEntryIndex;
+
+    private static final class ActiveEntryIndex {
+        final Map<String, List<String>> byProvider = new java.util.HashMap<>();
+        final Set<String> exact = new java.util.HashSet<>();
+    }
+
+    private static ActiveEntryIndex buildActiveEntryIndex(Set<String> entryKeys) {
+        ActiveEntryIndex index = new ActiveEntryIndex();
+        for (String entry : entryKeys) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            int dollar = entry.indexOf('$');
+            if (dollar > 0) {
+                index.byProvider
+                        .computeIfAbsent(entry.substring(0, dollar), k -> new java.util.ArrayList<>())
+                        .add(entry);
+            } else {
+                index.exact.add(entry);
+            }
+        }
+        return index;
     }
 
     /** Package-private prevalidation used by {@link ScopedRoleClientExtensionRegistrar}. */
@@ -384,9 +413,6 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             throw new IllegalArgumentException("Duplicate name-render rule: " + rule.id());
         }
         nameRenderProviders.put(rule.id(), provider);
-        // Audit P1-2: stored + diagnosable, but no name-tag renderer consumes it yet.
-        LOGGER.warn("[Experimental] name-render rule {} is stored but has no runtime "
-                + "consumer yet (capability client_name_render)", rule.id());
     }
 
     synchronized void commitHudWidget(@Nullable String provider, ResourceLocation id,
@@ -414,9 +440,12 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             throw new IllegalArgumentException("Duplicate screen spec: " + spec.id());
         }
         screenProviders.put(spec.id(), provider);
-        // Audit P1-2: stored + diagnosable, but no screen dispatcher consumes it yet.
-        LOGGER.warn("[Experimental] screen spec {} is stored but has no runtime "
-                + "consumer yet (capability client_screen)", spec.id());
+    }
+
+    private static UnsupportedOperationException directRegistrationUnsupported() {
+        return new UnsupportedOperationException(
+                "Direct client-extension registration is not supported; register through "
+                        + "the habitrain:role_client_extensions entrypoint and its provider-scoped registrar");
     }
 
     private boolean isActive(@Nullable String provider, RoleKey role, @Nullable String entryKey) {
@@ -432,6 +461,22 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             return true;
         }
         if (entryKey != null && !entryKey.isBlank()) {
+            ActiveEntryIndex index = activeEntryIndex;
+            if (index != null) {
+                // Prefix matches can only live under this provider's group; legacy
+                // shape / bare role ids live in the exact set (review L2).
+                String serverShape = provider + "$" + entryKey + "@";
+                List<String> providerEntries = index.byProvider.get(provider);
+                if (providerEntries != null) {
+                    for (String activeEntry : providerEntries) {
+                        if (activeEntry.startsWith(serverShape)) {
+                            return true;
+                        }
+                    }
+                }
+                return index.exact.contains(legacyEntryKey(provider, role))
+                        || index.exact.contains(role.location().toString());
+            }
             for (String activeEntry : entries) {
                 if (matchesActiveEntry(provider, entryKey, role, activeEntry)) {
                     return true;
@@ -490,6 +535,8 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
         screenProviders.clear();
         loadedProviders.clear();
         activeProviders = null;
+        activeEntryKeys = null;
+        activeEntryIndex = null;
         frozen = false;
         loaded = false;
     }

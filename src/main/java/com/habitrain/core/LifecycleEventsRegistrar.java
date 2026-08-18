@@ -26,6 +26,7 @@ import com.habitrain.core.vote.ModeMapVoteOrchestrator;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.EntityTrackingEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -157,9 +158,17 @@ public final class LifecycleEventsRegistrar {
             } catch (Exception e) {
                 LOGGER.error("[VoiceGroup] 处理语音群组加入失败", e);
             }
-            // 同步配置
-            TaskConfigPayload.sendToPlayer(player);
-            CustomTaskBlockPayload.sendToPlayer(player);
+            // 同步配置。单机（集成服务器）跳过：客户端与服务端同 JVM 共享
+            // ConfigManager，渲染线程 clear+putAll 会与服务端线程读取竞态
+            // （review M17；与 C2S 广播路径的 isSingleplayer 守卫一致）。
+            if (!server.isSingleplayer()) {
+                TaskConfigPayload.sendToPlayer(player);
+                CustomTaskBlockPayload.sendToPlayer(player);
+                ShaderConfigPayload.sendToPlayer(player);
+                // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
+                // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
+                FullConfigSyncPayload.sendToPlayer(player);
+            }
             // 中途重连：重发该玩家当前活跃/假 DLC 任务，否则客户端 ActiveTaskCache 为空 → 无自定义任务框
             try {
                 var tm = com.habitrain.core.task.TaskManager.getInstance();
@@ -176,10 +185,6 @@ public final class LifecycleEventsRegistrar {
             } catch (Exception e) {
                 LOGGER.debug("ActiveTask resync on JOIN skipped", e);
             }
-            ShaderConfigPayload.sendToPlayer(player);
-            // 完整配置同步（global + tasks + gameModes + minigames）：让客户端显示服务端真实值，
-            // 避免 OP 联机保存时用本地过期全局项覆盖服务端。
-            FullConfigSyncPayload.sendToPlayer(player);
             // Mod 菜单访问门控同步：让客户端立即按授权状态决定是否锁定受门控页面
             MenuGatePayload.sendToPlayer(player);
             // 处理离线背包里遗留的刀耐久组件，确保全局开关对刚上线玩家同样生效。
@@ -192,8 +197,10 @@ public final class LifecycleEventsRegistrar {
             }
             // 角色扩展 manifest 握手：晚加入/中途重连的玩家立即获得当前服务端配置
             try {
-                com.habitrain.core.network.RoleManifestPayload.sendTo(player);
+                // Snapshot must precede the manifest: the client handshake report
+                // includes the snapshot definition hash.
                 com.habitrain.core.network.RoleSnapshotPayload.sendTo(player);
+                com.habitrain.core.network.RoleManifestPayload.sendTo(player);
                 // 角色状态 v2 全量同步（audit P0-2）：在 manifest/snapshot 之后推送
                 // 该玩家有权接收的所有当前 slot（OWNER/OWNER_AND_TRACKING/ALL，
                 // NONE/SERVER_ONLY 由 syncService 过滤），否则迟加入/重连玩家只能
@@ -233,6 +240,13 @@ public final class LifecycleEventsRegistrar {
                 LOGGER.debug("role-state view resync tick skipped", t);
             }
         });
+        // Fabric entity tracking is broader than spectator-camera following.
+        // A full filtered snapshot on both edges makes OWNER_AND_TRACKING mirrors
+        // appear immediately and removes them as soon as tracking stops.
+        EntityTrackingEvents.START_TRACKING.register((trackedEntity, observer) ->
+                sendCurrentRoleState(observer));
+        EntityTrackingEvents.STOP_TRACKING.register((trackedEntity, observer) ->
+                sendCurrentRoleState(observer));
         // 玩家断线：通知激活的 GameMode 处理。
         // 停电模式据此把断线玩家移出存活阵营，避免其继续被计为放逐候选人或卡住胜负判定（Q8）。
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
@@ -271,5 +285,18 @@ public final class LifecycleEventsRegistrar {
                 LOGGER.error("[GameMode] 处理玩家断线失败", e);
             }
         });
+    }
+
+    private static void sendCurrentRoleState(ServerPlayer observer) {
+        if (observer == null) {
+            return;
+        }
+        try {
+            ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                    com.habitrain.core.api.role.v2.state.RoleStateApi.instance())
+                    .sendCurrentStateTo(observer.getUUID());
+        } catch (Throwable t) {
+            LOGGER.debug("role-state tracking resync skipped", t);
+        }
     }
 }

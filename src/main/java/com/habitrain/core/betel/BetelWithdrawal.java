@@ -14,8 +14,12 @@ public class BetelWithdrawal {
         if (data.effectState != BetelQuestState.EffectState.WITHDRAWAL_ACTIVE) {
             player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 1, false, true, true));
             EffectOwnershipTracker.claim(player.getUUID(), MobEffects.MOVEMENT_SLOWDOWN, "betel_quest");
-            player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 100, 0, false, true, true));
-            EffectOwnershipTracker.claim(player.getUUID(), MobEffects.DARKNESS, "betel_quest");
+            // 戒断路径本 tick 已施加更长时长（600t）的 DARKNESS 并置 DARKNESS_APPLIED：
+            // 不再叠加 100t 短效果干扰其节奏（review L39）。
+            if (data.effectState != BetelQuestState.EffectState.DARKNESS_APPLIED) {
+                player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 100, 0, false, true, true));
+                EffectOwnershipTracker.claim(player.getUUID(), MobEffects.DARKNESS, "betel_quest");
+            }
         }
     }
 

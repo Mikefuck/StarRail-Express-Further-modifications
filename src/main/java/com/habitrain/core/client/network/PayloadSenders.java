@@ -76,4 +76,26 @@ public final class PayloadSenders {
         if (Minecraft.getInstance().getConnection() == null) return;
         ClientPlayNetworking.send(new OptionVoteCastPayload(voteId, optionId));
     }
+
+    /**
+     * 从客户端发送角色扩展（roleExtensionsV2）配置更新。
+     * 未连接（例如从主菜单的 ModMenu 配置中心点开关）时静默跳过——裸 send 会抛
+     * IllegalStateException 直接崩游戏（review M9）。
+     */
+    public static void sendRoleConfigUpdate(String configJson) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.RoleConfigUpdatePayload(configJson));
+    }
+
+    /** 从客户端回复贪婪交易提示（接受/拒绝/取消）。未连接时静默跳过（review M9）。 */
+    public static void sendGreedTradeAction(String action, String sessionId) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.GreedTradeActionPayload(action, sessionId));
+    }
+
+    /** 从客户端选择贪婪交易对象。未连接（断线瞬间的按钮回调）时静默跳过（review M9）。 */
+    public static void sendGreedTradeSelect(UUID targetPlayerId) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.GreedTradeSelectPayload(targetPlayerId));
+    }
 }

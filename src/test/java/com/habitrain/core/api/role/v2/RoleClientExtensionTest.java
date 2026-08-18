@@ -1,8 +1,10 @@
-package com.habitrain.core.api.role.v2;
+package com.habitrain.core.role.client;
 
+import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.client.InstinctDecision;
 import com.habitrain.core.api.role.v2.client.InstinctPhase;
 import com.habitrain.core.api.role.v2.client.RoleClientExtensionApi;
+import com.habitrain.core.api.role.v2.client.RoleClientExtensionRegistrar;
 import com.habitrain.core.api.role.v2.client.RoleHudKind;
 import com.habitrain.core.api.role.v2.client.RoleHudSpec;
 import com.habitrain.core.api.role.v2.client.RoleInstinctRule;
@@ -12,8 +14,6 @@ import com.habitrain.core.api.role.v2.client.RoleScreenSpec;
 import com.habitrain.core.api.role.v2.client.RoleSkinKind;
 import com.habitrain.core.api.role.v2.client.RoleSkinSpec;
 import com.habitrain.core.api.role.v2.client.RoleNameRenderRule;
-import com.habitrain.core.role.client.InstinctRuleResolver;
-import com.habitrain.core.role.client.RoleClientExtensionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,32 +59,37 @@ class RoleClientExtensionTest {
 
     @Test
     void registryStoresHudAndInstinct() {
-        store.hud(RoleHudSpec.of("habitrain_core", "lust_badge")
-                .role(VIEWER)
-                .kind(RoleHudKind.BADGE)
-                .textKey("hud.habitrain_core.lust")
-                .build());
-        store.instinct(RoleInstinctRule.of("habitrain_core", "lust_pink")
-                .viewerRole(VIEWER)
-                .targetRole(TARGET)
-                .color(0xFF66AA)
-                .build());
+        register(r -> {
+            r.hud(RoleHudSpec.of("habitrain_core", "lust_badge")
+                    .role(VIEWER).kind(RoleHudKind.BADGE)
+                    .textKey("hud.habitrain_core.lust").build());
+            r.instinct(RoleInstinctRule.of("habitrain_core", "lust_pink")
+                    .viewerRole(VIEWER).targetRole(TARGET).color(0xFF66AA).build());
+        });
         assertEquals(1, store.hudsFor(VIEWER).size());
         assertEquals(1, store.instinctsFor(VIEWER).size());
         assertTrue(store.hudsFor(TARGET).isEmpty());
     }
 
     @Test
-    void freezeRejectsFurtherHud() {
-        store.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build());
+    void freezeRejectsScopedCommit() {
+        ScopedRoleClientExtensionRegistrar registrar =
+                new ScopedRoleClientExtensionRegistrar("habitrain_core", store);
+        registrar.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build());
         store.freeze();
-        assertThrows(IllegalStateException.class,
+        assertThrows(IllegalStateException.class, registrar::commit);
+    }
+
+    @Test
+    void globalRegistryRejectsDirectRegistrationBypass() {
+        UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class,
                 () -> store.hud(RoleHudSpec.of("habitrain_core", "b").role(VIEWER).build()));
+        assertTrue(error.getMessage().contains("role_client_extensions"));
     }
 
     @Test
     void activeProviderFilterHidesDisabledProviderExtensions() {
-        store.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build());
+        register(r -> r.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build()));
         store.setActiveProviders(java.util.Set.of("othermod"), java.util.Set.of());
         assertTrue(store.hudsFor(VIEWER).isEmpty(), "disabled provider HUD must not be consumed");
         store.setActiveProviders(java.util.Set.of("habitrain_core"),
@@ -95,12 +100,10 @@ class RoleClientExtensionTest {
     @Test
     void activeEntryFilterDisablesOnlyOneRoleEntry() {
         RoleKey other = RoleKey.of("habitrain_core", "other_role");
-        store.hud(RoleHudSpec.of("habitrain_core", "a")
-                .entryKey("a")
-                .role(VIEWER).build());
-        store.hud(RoleHudSpec.of("habitrain_core", "b")
-                .entryKey("b")
-                .role(other).build());
+        register(r -> {
+            r.hud(RoleHudSpec.of("habitrain_core", "a").entryKey("a").role(VIEWER).build());
+            r.hud(RoleHudSpec.of("habitrain_core", "b").entryKey("b").role(other).build());
+        });
         store.setActiveProviders(java.util.Set.of("habitrain_core"),
                 java.util.Set.of("habitrain_core$b@habitrain_core:other_role"));
         assertTrue(store.hudsFor(VIEWER).isEmpty(), "disabled entry HUD must not be consumed");
@@ -110,12 +113,12 @@ class RoleClientExtensionTest {
     @Test
     void sameProviderSameTargetDifferentEntryKeysResolveIndependently() {
         RoleKey civilian = RoleKey.of("sre", "civilian");
-        store.hud(RoleHudSpec.of("habitrain_core", "armed")
-                .entryKey("armed_civilian")
-                .role(civilian).build());
-        store.hud(RoleHudSpec.of("habitrain_core", "pacifist")
-                .entryKey("pacifist_civilian")
-                .role(civilian).build());
+        register(r -> {
+            r.hud(RoleHudSpec.of("habitrain_core", "armed")
+                    .entryKey("armed_civilian").role(civilian).build());
+            r.hud(RoleHudSpec.of("habitrain_core", "pacifist")
+                    .entryKey("pacifist_civilian").role(civilian).build());
+        });
 
         store.setActiveProviders(java.util.Set.of("habitrain_core"),
                 java.util.Set.of("habitrain_core$armed_civilian@sre:civilian"));
@@ -132,9 +135,8 @@ class RoleClientExtensionTest {
     @Test
     void newIdWithAliasReplacementUsesRealServerEntryId() {
         RoleKey replacement = RoleKey.of("habitrain_core", "shadow_killer");
-        store.hud(RoleHudSpec.of("habitrain_core", "shadow_hud")
-                .entryKey("shadow_killer")
-                .role(replacement).build());
+        register(r -> r.hud(RoleHudSpec.of("habitrain_core", "shadow_hud")
+                .entryKey("shadow_killer").role(replacement).build()));
 
         store.setActiveProviders(java.util.Set.of("habitrain_core"),
                 java.util.Set.of("habitrain_core$shadow_killer@sre:killer"));
@@ -148,10 +150,12 @@ class RoleClientExtensionTest {
 
     @Test
     void resolverFirstMatchingColorWins() {
-        store.instinct(RoleInstinctRule.of("habitrain_core", "pink")
-                .viewerRole(VIEWER).targetRole(TARGET).color(0xFF66AA).build());
-        store.instinct(RoleInstinctRule.of("habitrain_core", "red")
-                .viewerRole(VIEWER).color(0xFF0000).build());
+        register(r -> {
+            r.instinct(RoleInstinctRule.of("habitrain_core", "pink")
+                    .viewerRole(VIEWER).targetRole(TARGET).color(0xFF66AA).build());
+            r.instinct(RoleInstinctRule.of("habitrain_core", "red")
+                    .viewerRole(VIEWER).color(0xFF0000).build());
+        });
         InstinctDecision d = InstinctRuleResolver.resolve(
                 store.instincts().stream().toList(),
                 InstinctPhase.ALIVE_AFTER, VIEWER, TARGET);
@@ -161,10 +165,12 @@ class RoleClientExtensionTest {
 
     @Test
     void resolverHideBeatsLaterColor() {
-        store.instinct(RoleInstinctRule.of("habitrain_core", "hide")
-                .viewerRole(VIEWER).hide().build());
-        store.instinct(RoleInstinctRule.of("habitrain_core", "color")
-                .viewerRole(VIEWER).color(0xFF0000).build());
+        register(r -> {
+            r.instinct(RoleInstinctRule.of("habitrain_core", "hide")
+                    .viewerRole(VIEWER).hide().build());
+            r.instinct(RoleInstinctRule.of("habitrain_core", "color")
+                    .viewerRole(VIEWER).color(0xFF0000).build());
+        });
         InstinctDecision d = InstinctRuleResolver.resolve(
                 store.instincts().stream().toList(),
                 InstinctPhase.ALIVE_AFTER, VIEWER, TARGET);
@@ -173,11 +179,11 @@ class RoleClientExtensionTest {
 
     @Test
     void resolverWrongPhasePasses() {
-        store.instinct(RoleInstinctRule.of("habitrain_core", "pink")
+        register(r -> r.instinct(RoleInstinctRule.of("habitrain_core", "pink")
                 .viewerRole(VIEWER)
                 .phase(InstinctPhase.SPECTATOR)
                 .color(0xFF66AA)
-                .build());
+                .build()));
         InstinctDecision d = InstinctRuleResolver.resolve(
                 store.instincts().stream().toList(),
                 InstinctPhase.ALIVE_AFTER, VIEWER, TARGET);
@@ -198,24 +204,20 @@ class RoleClientExtensionTest {
 
     @Test
     void registryStoresSkinAndScreenAndWidget() {
-        store.skin(RoleSkinSpec.of("habitrain_core", "lust_normal")
-                .role(VIEWER)
-                .kind(RoleSkinKind.NORMAL)
-                .texture(net.minecraft.resources.ResourceLocation.parse("habitrain_core:textures/entity/lust.png"))
-                .build());
-        store.screen(RoleScreenSpec.of("habitrain_core", "lust_pick")
-                .role(VIEWER)
-                .kind(RoleScreenKind.PLAYER_PICK)
-                .titleKey("screen.habitrain_core.lust")
-                .build());
-        store.nameRender(RoleNameRenderRule.of("habitrain_core", "lust_hide")
-                .role(VIEWER)
-                .phase(RoleRenderPhase.NAMEPLATE)
-                .hide()
-                .build());
         java.util.concurrent.atomic.AtomicInteger draws = new java.util.concurrent.atomic.AtomicInteger();
-        store.hudWidget(net.minecraft.resources.ResourceLocation.parse("habitrain_core:lust_widget"),
-                "lust", VIEWER, (w, h, t) -> draws.incrementAndGet());
+        register(r -> {
+            r.skin(RoleSkinSpec.of("habitrain_core", "lust_normal")
+                    .role(VIEWER).kind(RoleSkinKind.NORMAL)
+                    .texture(net.minecraft.resources.ResourceLocation.parse(
+                            "habitrain_core:textures/entity/lust.png")).build());
+            r.screen(RoleScreenSpec.of("habitrain_core", "lust_pick")
+                    .role(VIEWER).kind(RoleScreenKind.PLAYER_PICK)
+                    .titleKey("screen.habitrain_core.lust").build());
+            r.nameRender(RoleNameRenderRule.of("habitrain_core", "lust_hide")
+                    .role(VIEWER).phase(RoleRenderPhase.NAMEPLATE).hide().build());
+            r.hudWidget(net.minecraft.resources.ResourceLocation.parse("habitrain_core:lust_widget"),
+                    "lust", VIEWER, (w, h, t) -> draws.incrementAndGet());
+        });
         assertEquals(1, store.skinsFor(VIEWER).size());
         assertEquals(RoleSkinKind.NORMAL, store.skinFor(VIEWER, RoleSkinKind.NORMAL).kind());
         assertEquals(1, store.screensFor(VIEWER).size());
@@ -223,5 +225,12 @@ class RoleClientExtensionTest {
         assertEquals(1, store.hudWidgetsFor(VIEWER).size());
         store.hudWidgetsFor(VIEWER).iterator().next().render(100, 50, 0f);
         assertEquals(1, draws.get());
+    }
+
+    private void register(java.util.function.Consumer<RoleClientExtensionRegistrar> action) {
+        ScopedRoleClientExtensionRegistrar registrar =
+                new ScopedRoleClientExtensionRegistrar("habitrain_core", store);
+        action.accept(registrar);
+        registrar.commit();
     }
 }
