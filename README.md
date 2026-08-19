@@ -162,4 +162,4 @@ src/main/java/com/habitrain/core/
 
 ## 许可证
 
-MIT，详见 [LICENSE](LICENSE)。
+GPLv3，详见 [LICENSE](LICENSE)。

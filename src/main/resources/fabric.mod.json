@@ -7,7 +7,7 @@
     "description": "哈比列车游戏框架与任务系统API模组",
     "authors": ["HabiTrain"],
     "contact": { "homepage": "https://github.com/" },
-    "license": "MIT",
+    "license": "GPL-3.0",
     "icon": "assets/habitrain_core/icon.png",
     "environment": "*",
     "entrypoints": {
