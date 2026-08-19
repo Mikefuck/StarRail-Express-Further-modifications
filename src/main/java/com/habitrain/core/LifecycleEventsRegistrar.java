@@ -72,17 +72,21 @@ public final class LifecycleEventsRegistrar {
             LOGGER.info("配置已加载，共 {} 个已注册任务（注册表已冻结）", TaskRegistry.size());
 
             // Seed modeMapVote defaults so ModMenu maps list is usable before first vote.
-            // Map discovery needs ServerLevel (train_maps under world path); client VoteTab
-            // cannot call MapManager safely — server start is the client/server-safe hook.
+            // Map discovery reads both ServerMapConfig (train_vote_maps.json) and MapManager
+            // (train_maps/ folder), populating display names, player counts, and pruning deleted maps.
             try {
                 ServerLevel overworld = server.getLevel(Level.OVERWORLD);
                 if (overworld != null) {
-                    ConfigManager.getInstance().ensureModeMapVoteDefaults(
+                    var discoveredMaps = com.habitrain.core.config.SREIntegration.discoverServerMaps(overworld);
+                    boolean updated = ConfigManager.getInstance().syncAndPruneMaps(
                             GameModeRegistry.getAllIds(),
-                            SREModeStartAdapter.getAvailableMaps(overworld));
+                            discoveredMaps);
+                    if (updated) {
+                        ConfigManager.getInstance().save();
+                    }
                 }
             } catch (Throwable t) {
-                LOGGER.debug("modeMapVote ensureDefaults on SERVER_STARTED skipped", t);
+                LOGGER.debug("modeMapVote syncAndPruneMaps on SERVER_STARTED skipped", t);
             }
 
             // 服务端启动后应用大厅环境（时间/天气/雪雾等）
@@ -115,6 +119,7 @@ public final class LifecycleEventsRegistrar {
             }
             OptionVoteManager.resetAll();
             ModeMapVoteOrchestrator.resetAll();
+            com.habitrain.core.vote.MapFileMonitor.reset();
             // 清理所有跨局残留状态
             com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
             com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
@@ -213,6 +218,23 @@ public final class LifecycleEventsRegistrar {
             } catch (Exception e) {
                 LOGGER.debug("Role manifest/snapshot/state send on JOIN skipped", e);
             }
+            // 同步最新地图介绍与地图档案（图片/中文描述/标签），确保进服立即可见并填充缓存
+            try {
+                var introPayload = com.habitrain.core.vote.MapFileMonitor.buildMapIntroPayload(server);
+                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, introPayload);
+
+                ServerLevel overworld = server.overworld();
+                if (overworld != null) {
+                    var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
+                    var profiles = com.habitrain.core.vote.MapVoteProfileStore.loadProfiles(overworld, configMaps.keySet(), configMaps);
+                    for (var fragment : com.habitrain.core.network.MapVoteProfilePayload.fragment(profiles)) {
+                        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, fragment);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.debug("Map intro/profile send on JOIN skipped", e);
+            }
+
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
             ModeMapVoteOrchestrator.onPlayerJoin(player);
         });

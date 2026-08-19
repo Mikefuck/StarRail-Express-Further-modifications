@@ -26,6 +26,9 @@
         "RoleIntroduceScreenMixin",
         "VoteLaunchFadeBlockMixin",
         "VoteLaunchCameraBlockMixin",
-        "VoteLaunchAmbientSoundBlockMixin"
+        "VoteLaunchAmbientSoundBlockMixin",
+        "TaskInstinctDefaultDisableMixin",
+        "MapIntroSyncPayloadMixin",
+        "MapIntroduceScreenMixin"
     ]
 }

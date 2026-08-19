@@ -4,6 +4,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
+import com.habitrain.core.config.SREIntegration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -61,18 +62,23 @@ public class ModeAllowedMapsScreen extends Screen {
     }
 
     private void loadFromSettings() {
+        mapIds.clear();
+        selected.clear();
+        if (Minecraft.getInstance().level == null) {
+            return;
+        }
         ModeMapVoteSettings s = settings();
         Set<String> ids = new LinkedHashSet<>(s.maps.keySet());
         ModeVoteEntry mode = s.modes.get(modeId);
         if (mode != null && mode.allowedMaps != null) {
             ids.addAll(mode.allowedMaps);
         }
-        mapIds.clear();
+        ids.removeIf(SREIntegration::isReservedMapId);
         mapIds.addAll(ids);
-        selected.clear();
         if (mode != null && mode.allowedMaps != null) {
             selected.addAll(mode.allowedMaps);
         }
+        selected.removeIf(SREIntegration::isReservedMapId);
     }
 
     @Override
@@ -129,7 +135,7 @@ public class ModeAllowedMapsScreen extends Screen {
 
         int y = contentTop + 4 - (int) scrollOffset;
         if (mapIds.isEmpty()) {
-            g.drawString(font, "§7暂无地图配置条目", PAD + 4, y + 4, MenuTheme.TEXT_SECONDARY, false);
+            g.drawString(font, Minecraft.getInstance().level != null ? "§7暂无地图配置条目" : "§7暂无地图条目（需在世界中配置）", PAD + 4, y + 4, MenuTheme.TEXT_SECONDARY, false);
             y += ROW_H;
         } else {
             for (String id : mapIds) {
@@ -141,8 +147,10 @@ public class ModeAllowedMapsScreen extends Screen {
                     g.drawString(font, "§a✓", PAD + 5, y + 5, 0xFFFFFFFF, false);
                 }
                 MapVoteEntry me = settings().maps.get(id);
-                String label = (me != null && me.displayName != null && !me.displayName.isEmpty())
-                        ? me.displayName + " §8(" + id + ")"
+                String dn = (me != null && me.displayName != null && !me.displayName.isBlank())
+                        ? me.displayName : SREIntegration.getMapDisplayName(id);
+                String label = (dn != null && !dn.isBlank() && !dn.equals(id))
+                        ? dn + " §8(" + id + ")"
                         : id;
                 g.drawString(font, label, PAD + 22, y + 5, MenuTheme.TEXT_PRIMARY, false);
                 rowHits.add(new RowHit(id, PAD, y, scrollW - 8, ROW_H - 2));

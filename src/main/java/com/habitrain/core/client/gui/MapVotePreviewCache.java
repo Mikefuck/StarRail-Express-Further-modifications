@@ -98,6 +98,20 @@ public final class MapVotePreviewCache {
         return PLACEHOLDER;
     }
 
+    /**
+     * 使单张地图的纹理缓存失效（在收到新档案或上传新图时调用）。
+     */
+    public static void invalidate(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            return;
+        }
+        FAILED_IDS.remove(mapId);
+        Decoded old = CACHE.remove(mapId);
+        if (old != null) {
+            PENDING_CLOSE.add(old);
+        }
+    }
+
     /** 释放全部动态纹理（跨局/换世界）。 */
     public static void clearAll() {
         for (Decoded entry : CACHE.values()) {

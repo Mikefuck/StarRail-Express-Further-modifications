@@ -62,6 +62,7 @@
         "SRERepairResetPlayerMixin",
         "SRERepairTeamJoinMixin",
         "TMMRolesLegacyScanMixin",
-        "SRERoleSkinMixin"
+        "SRERoleSkinMixin",
+        "SREReceiverRegisterMixin"
     ]
 }

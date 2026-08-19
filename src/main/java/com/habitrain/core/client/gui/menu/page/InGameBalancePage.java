@@ -136,6 +136,7 @@ public class InGameBalancePage implements ConfigPage {
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         if (sheriffField.mouseClicked(mx, my, btn)) return true;
+        sheriffField.setFocused(false);
         for (Hit hit : hits) {
             if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }

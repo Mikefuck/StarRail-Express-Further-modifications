@@ -57,6 +57,25 @@ public final class C2SReceiverRegistrar {
                 com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
                         .refreshServer(context.server());
                 LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
+                // 同步最新的地图档案与预览图
+                try {
+                    ServerLevel overworld = context.server().overworld();
+                    if (overworld != null) {
+                        var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
+                        var profiles = com.habitrain.core.vote.MapVoteProfileStore.loadProfiles(
+                                overworld, configMaps.keySet(), configMaps);
+                        if (!profiles.isEmpty()) {
+                            var profilePayloads = MapVoteProfilePayload.fragment(profiles);
+                            for (ServerPlayer sp : context.server().getPlayerList().getPlayers()) {
+                                for (var profilePayload : profilePayloads) {
+                                    ServerPlayNetworking.send(sp, profilePayload);
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable t) {
+                    LOGGER.debug("MapVoteProfile broadcast on ConfigUpdate skipped", t);
+                }
                 if (context.server().isSingleplayer()) return;
                 // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
                 // 单独的 TaskConfigPayload / ShaderConfigPayload 广播冗余，去掉（P1-16）。
@@ -86,6 +105,25 @@ public final class C2SReceiverRegistrar {
                             "§a地图 “" + payload.mapId() + "” 的预览图已上传并替换旧图"));
                     LOGGER.info("玩家 {} 上传地图预览图 map={} bytes={}",
                             player.getName().getString(), payload.mapId(), payload.pngBytes().length);
+                    // 广播最新的 MapVoteProfilePayload 给所有在线玩家（包含上传者），使客户端即时刷新预览
+                    try {
+                        ServerLevel overworld = context.server().overworld();
+                        if (overworld != null) {
+                            var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
+                            var profiles = com.habitrain.core.vote.MapVoteProfileStore.loadProfiles(
+                                    overworld, configMaps.keySet(), configMaps);
+                            if (!profiles.isEmpty()) {
+                                var profilePayloads = MapVoteProfilePayload.fragment(profiles);
+                                for (ServerPlayer sp : context.server().getPlayerList().getPlayers()) {
+                                    for (var profilePayload : profilePayloads) {
+                                        ServerPlayNetworking.send(sp, profilePayload);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        LOGGER.debug("MapVoteProfile broadcast on preview upload skipped", t);
+                    }
                 } else {
                     player.sendSystemMessage(Component.literal("§c预览图上传失败：" + result.message()));
                     LOGGER.warn("玩家 {} 上传地图预览图失败 map={} reason={}",

@@ -79,10 +79,11 @@ public final class MapVoteProfileStore {
 
     /** SRE 会把 map_vote 目录自身枚举成候选地图，这里统一剔除。 */
     public static boolean isReservedMapId(String mapId) {
-        if (mapId == null) return false;
+        if (mapId == null || mapId.isBlank()) return false;
         String normalized = mapId.replace('\\', '/');
         return normalized.equals(MAP_VOTE_PREFIX)
-                || normalized.startsWith(MAP_VOTE_PREFIX + "/");
+                || normalized.startsWith(MAP_VOTE_PREFIX + "/")
+                || normalized.equalsIgnoreCase("random");
     }
 
     /** 地图 id → 安全文件名：子路径/非法字符统一转下划线。 */

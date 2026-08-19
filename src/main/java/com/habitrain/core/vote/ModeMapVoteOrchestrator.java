@@ -10,6 +10,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
+import com.habitrain.core.config.SREIntegration;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
 import com.habitrain.core.game.sre.RepairModeManager;
@@ -89,11 +90,11 @@ public final class ModeMapVoteOrchestrator {
             return false;
         }
 
-        List<String> availableMaps = SREModeStartAdapter.getAvailableMaps(level);
+        var discoveredMaps = SREIntegration.discoverServerMaps(level);
 
         // Seed defaults for registry + known config keys so settings.modes can hold order.
         List<String> registryModeIds = new ArrayList<>(GameModeRegistry.getAllIds());
-        ConfigManager.getInstance().ensureModeMapVoteDefaults(registryModeIds, availableMaps);
+        ConfigManager.getInstance().ensureModeMapVoteDefaultsWithInfo(registryModeIds, discoveredMaps);
         // re-read after ensure (same instance, but entries may have been inserted)
         settings = ConfigManager.getInstance().getModeMapVoteSettings();
 
@@ -187,8 +188,9 @@ public final class ModeMapVoteOrchestrator {
 
     /** 模式已选定，进入地图投票阶段；单模式跳过模式投票时也走这里。 */
     private static void beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
-        List<String> available = SREModeStartAdapter.getAvailableMaps(level);
-        ConfigManager.getInstance().ensureModeMapVoteDefaults(List.of(winnerId), available);
+        var discovered = SREIntegration.discoverServerMaps(level);
+        ConfigManager.getInstance().ensureModeMapVoteDefaultsWithInfo(List.of(winnerId), discovered);
+        List<String> available = new ArrayList<>(discovered.keySet());
         ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
 
         ModeVoteEntry modeEntry = settings.modes.get(winnerId);
@@ -478,6 +480,10 @@ public final class ModeMapVoteOrchestrator {
             if (entry != null && entry.displayName != null && !entry.displayName.isBlank()) {
                 return entry.displayName;
             }
+        }
+        String sreName = SREIntegration.getMapDisplayName(mapId);
+        if (sreName != null && !sreName.isBlank()) {
+            return sreName;
         }
         return mapId;
     }

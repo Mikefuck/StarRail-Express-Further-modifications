@@ -357,6 +357,11 @@ public class MinigameEditScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
         if (super.mouseClicked(mx, my, btn)) return true;
+        setFocused(null);
+        if (goldField != null) goldField.setFocused(false);
+        if (emotionField != null) emotionField.setFocused(false);
+        if (weightField != null) weightField.setFocused(false);
+        if (mapField != null) mapField.setFocused(false);
         int contentTop = HEADER_H;
         int contentBot = height - 30;
         if (my >= contentTop && my < contentBot) {

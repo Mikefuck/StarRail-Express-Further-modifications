@@ -12,6 +12,8 @@ class MapVoteProfileStoreTest {
         assertTrue(MapVoteProfileStore.isReservedMapId("map_vote"));
         assertTrue(MapVoteProfileStore.isReservedMapId("map_vote/maps"));
         assertTrue(MapVoteProfileStore.isReservedMapId("map_vote\\maps"));
+        assertTrue(MapVoteProfileStore.isReservedMapId("random"));
+        assertTrue(MapVoteProfileStore.isReservedMapId("RANDOM"));
         assertFalse(MapVoteProfileStore.isReservedMapId("map_vote_arena"));
         assertFalse(MapVoteProfileStore.isReservedMapId("map_voter"));
     }

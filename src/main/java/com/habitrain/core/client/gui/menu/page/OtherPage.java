@@ -133,6 +133,7 @@ public class OtherPage implements ConfigPage {
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         if (tempPowerField.mouseClicked(mx, my, btn)) return true;
+        tempPowerField.setFocused(false);
         for (Hit hit : hits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
             if (!editable) {

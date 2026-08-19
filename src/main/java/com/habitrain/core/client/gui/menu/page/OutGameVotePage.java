@@ -15,6 +15,7 @@ import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
+import com.habitrain.core.config.SREIntegration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -106,6 +107,7 @@ public class OutGameVotePage implements ConfigPage {
     /**
      * Build display id lists from registry + existing settings keys only.
      * Does NOT insert default entries into ConfigManager settings.
+     * Outside of a world (title screen), mapIds is kept empty so no stale maps are shown.
      */
     private void rebuildIdLists() {
         ModeMapVoteSettings s = settings();
@@ -119,12 +121,23 @@ public class OutGameVotePage implements ConfigPage {
         modeIds.clear();
         modeIds.addAll(modes);
 
-        Set<String> maps = new LinkedHashSet<>(s.maps.keySet());
-        for (ModeVoteEntry me : s.modes.values()) {
-            if (me.allowedMaps != null) maps.addAll(me.allowedMaps);
-        }
         mapIds.clear();
-        mapIds.addAll(maps);
+        if (isInWorld()) {
+            Set<String> maps = new LinkedHashSet<>(s.maps.keySet());
+            for (ModeVoteEntry me : s.modes.values()) {
+                if (me.allowedMaps != null) maps.addAll(me.allowedMaps);
+            }
+            maps.removeIf(SREIntegration::isReservedMapId);
+            mapIds.addAll(maps);
+        }
+    }
+
+    private boolean isInWorld() {
+        try {
+            return Minecraft.getInstance().level != null;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private void ensureWidgetsInitialized() {
@@ -171,11 +184,9 @@ public class OutGameVotePage implements ConfigPage {
         }
         for (String id : mapIds) {
             if (!mapNameFields.containsKey(id)) {
-                MapVoteEntry e = s.maps.get(id);
                 EditBox box = new EditBox(font, -10000, -10000, 120, 14, Component.literal(""));
                 box.setMaxLength(64);
-                String dn = (e != null && e.displayName != null && !e.displayName.isEmpty())
-                        ? e.displayName : id;
+                String dn = resolveMapDisplay(id);
                 box.setValue(dn);
                 box.setEditable(editable);
                 mapNameFields.put(id, box);
@@ -217,6 +228,19 @@ public class OutGameVotePage implements ConfigPage {
         } catch (Throwable ignored) {}
         int idx = id.lastIndexOf(':');
         return idx >= 0 ? id.substring(idx + 1) : id;
+    }
+
+    private String resolveMapDisplay(String id) {
+        ModeMapVoteSettings s = settings();
+        MapVoteEntry e = s.maps.get(id);
+        if (e != null && e.displayName != null && !e.displayName.isBlank()) {
+            return e.displayName;
+        }
+        String sreName = SREIntegration.getMapDisplayName(id);
+        if (sreName != null && !sreName.isBlank()) {
+            return sreName;
+        }
+        return id;
     }
 
     private boolean modeEnabled(ModeMapVoteSettings s, String id) {
@@ -345,7 +369,7 @@ public class OutGameVotePage implements ConfigPage {
         g.drawString(font, "§e每张地图的推荐人数（0 = 不限制）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         if (mapIds.isEmpty()) {
-            g.drawString(font, "§7暂无地图条目（启动投票或注册地图后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            g.drawString(font, isInWorld() ? "§7暂无地图条目（启动投票或注册地图后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
             cy += ROW_H;
         } else {
             for (String id : mapIds) {
@@ -405,7 +429,7 @@ public class OutGameVotePage implements ConfigPage {
         g.drawString(font, "可投票模式", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         if (modeIds.isEmpty()) {
-            g.drawString(font, "§7暂无模式条目（启动投票或注册模式后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            g.drawString(font, "§7暂无已注册的模式", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
             cy += ROW_H;
         } else {
             for (String id : modeIds) {
@@ -424,30 +448,33 @@ public class OutGameVotePage implements ConfigPage {
                 g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
 
                 EditBox nameBox = modeNameFields.get(id);
+                int mapsBtnW = 72;
+                int mapsBtnX = labelX + innerW - mapsBtnW - 6;
                 if (nameBox != null) {
-                    nameBox.setX(labelX + 160);
+                    nameBox.setX(labelX + 180);
                     nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(40, innerW - 340));
+                    nameBox.setWidth(Math.max(40, mapsBtnX - nameBox.getX() - 6));
                     nameBox.render(g, mx, my, delta);
                 }
 
-                int mapsW = 60;
-                int mapsX = labelX + innerW - mapsW - 6;
-                g.fill(mapsX, cy + 4, mapsX + mapsW, cy + 18, MenuTheme.BG_EDIT);
-                g.drawString(font, "§e可选地图", mapsX + 4, cy + 6, 0xFFFFFFFF, false);
+                boolean mapsBtnHover = MenuTheme.inBounds(mx, my, mapsBtnX, cy + 3, mapsBtnW, 16);
+                MenuTheme.button(g, font, "可选地图…", mapsBtnX, cy + 3, mapsBtnW, 16,
+                        ACCENT, editable, mapsBtnHover);
 
-                int upW = 16;
-                int downW = 16;
-                int downX = mapsX - 6 - downW;
-                int upX = downX - 4 - upW;
-                g.fill(upX, cy + 4, upX + upW, cy + 18, MenuTheme.BG_EDIT);
-                g.drawString(font, "§f↑", upX + 4, cy + 6, 0xFFFFFFFF, false);
-                g.fill(downX, cy + 4, downX + downW, cy + 18, MenuTheme.BG_EDIT);
-                g.drawString(font, "§f↓", downX + 4, cy + 6, 0xFFFFFFFF, false);
-                buttonHits.add(new ButtonHit("mode_up:" + id, upX, cy + 4, upW, 14));
-                buttonHits.add(new ButtonHit("mode_down:" + id, downX, cy + 4, downW, 14));
+                int orderW = 18;
+                int orderX = mapsBtnX - orderW - 4;
+                boolean upHover = MenuTheme.inBounds(mx, my, orderX, cy + 3, orderW, 16);
+                MenuTheme.button(g, font, "▲", orderX, cy + 3, orderW, 16,
+                        ACCENT, editable, upHover);
+                buttonHits.add(new ButtonHit("mode_up:" + id, orderX, cy + 3, orderW, 16));
 
-                modeHits.add(new RowHit(id, tX, tW, mapsX, mapsW, cy, ROW_H - 2, true));
+                int downX = orderX - orderW - 2;
+                boolean downHover = MenuTheme.inBounds(mx, my, downX, cy + 3, orderW, 16);
+                MenuTheme.button(g, font, "▼", downX, cy + 3, orderW, 16,
+                        ACCENT, editable, downHover);
+                buttonHits.add(new ButtonHit("mode_down:" + id, downX, cy + 3, orderW, 16));
+
+                modeHits.add(new RowHit(id, tX, tW, mapsBtnX, mapsBtnW, cy, ROW_H - 2, true));
                 cy += ROW_H;
             }
         }
@@ -478,7 +505,7 @@ public class OutGameVotePage implements ConfigPage {
         g.drawString(font, "可投票地图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
         cy += HEADER_H;
         if (mapIds.isEmpty()) {
-            g.drawString(font, "§7暂无地图条目（服务端 ensureDefaults 后出现）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            g.drawString(font, isInWorld() ? "§7暂无地图条目（服务端启动扫描后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
             cy += ROW_H;
         } else {
             for (String id : mapIds) {
@@ -493,16 +520,17 @@ public class OutGameVotePage implements ConfigPage {
                 g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
                 g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
 
-                String shortId = id.length() > 22 ? id.substring(0, 20) + "…" : id;
+                String shortId = id.length() > 20 ? id.substring(0, 18) + "…" : id;
                 g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
 
+                int profileW = 60;
+                int profileX = labelX + innerW - profileW - 4;
+
                 EditBox nameBox = mapNameFields.get(id);
-                int profileW = 72;
-                int profileX = labelX + innerW - profileW - 6;
                 if (nameBox != null) {
-                    nameBox.setX(labelX + 180);
+                    nameBox.setX(labelX + 160);
                     nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(40, profileX - nameBox.getX() - 6));
+                    nameBox.setWidth(Math.max(30, profileX - nameBox.getX() - 6));
                     nameBox.render(g, mx, my, delta);
                 }
 
@@ -686,7 +714,12 @@ public class OutGameVotePage implements ConfigPage {
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
                 MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                MapVoteEntry e = settings().maps.computeIfAbsent(hit.id(), k -> MapVoteEntry.createDefault());
+                MapVoteEntry e = settings().maps.computeIfAbsent(hit.id(), k -> {
+                    MapVoteEntry created = MapVoteEntry.createDefault();
+                    String dn = resolveMapDisplay(hit.id());
+                    if (!dn.equals(hit.id())) created.displayName = dn;
+                    return created;
+                });
                 e.enabled = !e.enabled;
                 persist();
                 return true;
@@ -900,8 +933,8 @@ public class OutGameVotePage implements ConfigPage {
         MapVoteEntry entry = settings().maps.get(id);
         EditBox name = mapNameFields.get(id);
         if (name != null) {
-            name.setValue(entry != null && entry.displayName != null
-                    ? entry.displayName : id);
+            name.setValue(entry != null && entry.displayName != null && !entry.displayName.isBlank()
+                    ? entry.displayName : resolveMapDisplay(id));
         }
         EditBox min = mapMinFields.get(id);
         if (min != null) min.setValue(String.valueOf(entry != null ? entry.minPlayers : 0));

@@ -352,7 +352,19 @@ public final class MapVoteProfileScreen extends Screen {
         }
 
         ConfigManager.getInstance().setModeMapVoteSettings(voteSettings);
-        ConfigManager.getInstance().save();
+        byte[] existingBytes = com.habitrain.core.client.cache.ClientMapIntroCache.getPreviewBytes(mapId);
+        byte[] previewBytes = pendingPreview != null ? pendingPreview.pngBytes()
+                : (existingBytes != null ? existingBytes : new byte[0]);
+        com.habitrain.core.network.MapVoteProfilePayload.MapProfile updatedProfile =
+                new com.habitrain.core.network.MapVoteProfilePayload.MapProfile(
+                        profileOverride ? descriptionField.getValue().trim() : "",
+                        profileOverride ? MapVoteProfileSettings.normalizedTags(parseTags(tagsField.getValue())) : List.of(),
+                        parsePlayers(minPlayersField.getValue()),
+                        parsePlayers(maxPlayersField.getValue()),
+                        previewBytes
+                );
+        com.habitrain.core.client.cache.ClientMapIntroCache.putProfile(mapId, updatedProfile);
+
         if (pendingPreview != null && !PayloadSenders.sendMapVotePreviewUpload(
                 mapId, originalPreviewPath, pendingPreview.pngBytes())) {
             validationError = Component.translatable(
@@ -361,6 +373,16 @@ public final class MapVoteProfileScreen extends Screen {
         }
         parent.refreshVoteMapEntry(mapId);
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) return true;
+        setFocused(null);
+        for (EditBox field : fields()) {
+            if (field != null) field.setFocused(false);
+        }
+        return false;
     }
 
     @Override

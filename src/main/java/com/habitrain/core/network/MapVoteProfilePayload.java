@@ -63,6 +63,33 @@ public record MapVoteProfilePayload(Map<String, MapProfile> profiles)
         profiles = profiles == null ? Map.of() : Map.copyOf(profiles);
     }
 
+    /**
+     * Splits a full profile snapshot into packets that obey both the profile-count
+     * and aggregate-preview limits. Receivers merge fragments by map id.
+     */
+    public static List<MapVoteProfilePayload> fragment(Map<String, MapProfile> profiles) {
+        if (profiles == null || profiles.isEmpty()) return List.of();
+        List<MapVoteProfilePayload> out = new ArrayList<>();
+        Map<String, MapProfile> current = new LinkedHashMap<>();
+        int previewBytes = 0;
+        for (Map.Entry<String, MapProfile> entry : profiles.entrySet()) {
+            MapProfile profile = entry.getValue();
+            if (entry.getKey() == null || profile == null) continue;
+            int imageBytes = profile.previewBytes().length <= MAX_PREVIEW_BYTES
+                    ? profile.previewBytes().length : 0;
+            if (!current.isEmpty() && (current.size() >= MAX_PROFILES
+                    || previewBytes + imageBytes > MAX_TOTAL_PREVIEW_BYTES)) {
+                out.add(new MapVoteProfilePayload(current));
+                current = new LinkedHashMap<>();
+                previewBytes = 0;
+            }
+            current.put(entry.getKey(), profile);
+            previewBytes += imageBytes;
+        }
+        if (!current.isEmpty()) out.add(new MapVoteProfilePayload(current));
+        return List.copyOf(out);
+    }
+
     private MapVoteProfilePayload(FriendlyByteBuf buf) {
         this(readProfiles(buf));
     }

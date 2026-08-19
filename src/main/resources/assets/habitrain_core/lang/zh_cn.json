@@ -1,5 +1,6 @@
 {
     "screen.habitrain_core.task_settings": "任务点设置",
+    "screen.habitrain_core.map_settings": "地图设置",
     "screen.habitrain_core.greed_trade.title": "匿名交易",
     "screen.habitrain_core.greed_trade.confirm": "确认交易",
     "screen.habitrain_core.greed_trade.cancel": "取消",
@@ -293,5 +294,8 @@
     "gameend.habitrain_core.mvp.best_squad": "最佳小队",
     "gameend.habitrain_core.mvp.solo": "本局 MVP",
     "gameend.habitrain_core.mvp.score": "%s 分",
-    "gameend.habitrain_core.mvp.stats": "击杀 %s · 存活 %s秒 · 道具 %s"
+    "gameend.habitrain_core.mvp.stats": "击杀 %s · 存活 %s秒 · 道具 %s",
+    "map_intro.section.info": "地图介绍",
+    "map_intro.section.profile": "地图简介",
+    "map_intro.section.tags": "地图标签"
 }

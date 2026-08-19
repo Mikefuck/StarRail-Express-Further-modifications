@@ -41,6 +41,11 @@ public class ModTickHandler {
                 com.habitrain.core.game.sre.RepairModeManager.checkAbnormal(server);
             }
 
+            // 5s (100 ticks): 自动检测服务端地图定义与档案文件修改，若修改则自动重载并全量同步给客户端
+            if (voteTickCounter % 100 == 0) {
+                com.habitrain.core.vote.MapFileMonitor.checkAndSync(server);
+            }
+
             // Greed anonymous trade session timeouts
             try {
                 GreedTradeManager.tick(server);

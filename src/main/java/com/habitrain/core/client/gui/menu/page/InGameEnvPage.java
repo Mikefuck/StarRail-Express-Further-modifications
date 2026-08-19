@@ -193,6 +193,7 @@ public class InGameEnvPage implements ConfigPage {
                 }
             }
         } catch (Throwable ignored) {}
+        ids.removeIf(com.habitrain.core.config.SREIntegration::isReservedMapId);
         return new ArrayList<>(ids);
     }
 
@@ -460,6 +461,7 @@ public class InGameEnvPage implements ConfigPage {
         if (my < contentY || my >= contentY + contentH) return false;
 
         // EditBoxes first（手动边界；停靠哨兵坐标的框自然落在边界外）
+        EnvEditorShared.unfocusAll(profileTickField, profileFogEndField, goodTickField, otherTickField, minPlayersField);
         if (subTab == SUB_MATCH) {
             if (EnvEditorShared.tryFocusEditBox(mx, my, profileTickField.getX(), profileTickField.getY(),
                     profileTickField.getWidth(), profileTickField.getHeight(), profileTickField, editable)) return true;

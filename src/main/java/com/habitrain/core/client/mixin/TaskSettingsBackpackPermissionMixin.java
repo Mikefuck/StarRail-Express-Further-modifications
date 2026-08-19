@@ -36,6 +36,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value={LimitedInventoryScreen.class})
 public abstract class TaskSettingsBackpackPermissionMixin {
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
+    private static final String MAP_SETTINGS_KEY = "screen.habitrain_core.map_settings";
     @Shadow
     public ArrayList<Button> menuSelections;
     @Shadow
@@ -76,15 +77,18 @@ public abstract class TaskSettingsBackpackPermissionMixin {
     }
 
     private static void habitrain$applyPermissionLock(Button button, boolean allowed) {
-        if (button != null && TaskSettingsBackpackPermissionMixin.habitrain$isTaskSettingsButton(button)) {
+        if (button != null && TaskSettingsBackpackPermissionMixin.habitrain$isProtectedSettingButton(button)) {
             button.active = allowed;
         }
     }
 
-    private static boolean habitrain$isTaskSettingsButton(Button button) {
-        TranslatableContents contents;
-        ComponentContents componentContents;
+    private static boolean habitrain$isProtectedSettingButton(Button button) {
+        if (button == null) return false;
         Component label = button.getMessage();
-        return label != null && (componentContents = label.getContents()) instanceof TranslatableContents && TASK_SETTINGS_KEY.equals((contents = (TranslatableContents)componentContents).getKey());
+        if (label == null) return false;
+        ComponentContents componentContents = label.getContents();
+        if (!(componentContents instanceof TranslatableContents contents)) return false;
+        String key = contents.getKey();
+        return TASK_SETTINGS_KEY.equals(key) || MAP_SETTINGS_KEY.equals(key);
     }
 }

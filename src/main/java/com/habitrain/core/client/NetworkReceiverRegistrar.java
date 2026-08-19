@@ -265,7 +265,10 @@ public class NetworkReceiverRegistrar {
 
         // 14b) 地图投票档案 S2C 接收器（一次性推送，仅存状态，解码在渲染线程懒做）
         ClientPlayNetworking.registerGlobalReceiver(MapVoteProfilePayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> OptionVoteState.applyProfiles(payload)));
+                ctx.client().execute(() -> {
+                    OptionVoteState.applyProfiles(payload);
+                    com.habitrain.core.client.cache.ClientMapIntroCache.applyProfiles(payload);
+                }));
 
         // 15) 开局加载进度 — 始终写入 Session（hide 后进度不断档），屏打开时同步 UI
         ClientPlayNetworking.registerGlobalReceiver(MapVoteProgressPayload.TYPE, (payload, ctx) ->

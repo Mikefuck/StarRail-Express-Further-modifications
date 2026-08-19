@@ -92,12 +92,127 @@ public final class ModeMapVoteSettings {
 
     /** Insert missing keys only; never overwrite existing entries. */
     public void ensureDefaults(Iterable<String> modeIds, Iterable<String> mapIds) {
-        for (String id : modeIds) {
-            modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
+        if (modeIds != null) {
+            for (String id : modeIds) {
+                if (id != null && !id.isBlank()) {
+                    modes.computeIfAbsent(id, k -> ModeVoteEntry.createDefault());
+                }
+            }
         }
-        for (String id : mapIds) {
-            maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+        if (mapIds != null) {
+            for (String id : mapIds) {
+                if (id != null && !id.isBlank()) {
+                    maps.computeIfAbsent(id, k -> MapVoteEntry.createDefault());
+                }
+            }
         }
+    }
+
+    /**
+     * Ensure map defaults using discovered upstream map metadata.
+     * Missing entries are created with default metadata; existing entries preserve
+     * user configuration but inherit empty display names.
+     *
+     * @return true if any entry was inserted or updated
+     */
+    public boolean ensureMapDefaultsWithInfo(Iterable<String> modeIds,
+                                             Map<String, SREIntegration.DiscoveredMapInfo> mapInfoMap) {
+        boolean changed = false;
+        if (modeIds != null) {
+            for (String id : modeIds) {
+                if (id != null && !id.isBlank() && !modes.containsKey(id)) {
+                    modes.put(id, ModeVoteEntry.createDefault());
+                    changed = true;
+                }
+            }
+        }
+        if (mapInfoMap != null) {
+            for (Map.Entry<String, SREIntegration.DiscoveredMapInfo> entry : mapInfoMap.entrySet()) {
+                String mapId = entry.getKey();
+                SREIntegration.DiscoveredMapInfo info = entry.getValue();
+                if (mapId == null || mapId.isBlank() || info == null) continue;
+
+                MapVoteEntry cur = maps.get(mapId);
+                if (cur == null) {
+                    MapVoteEntry created = MapVoteEntry.createDefault();
+                    created.enabled = info.enabled();
+                    created.displayName = info.displayName() != null ? info.displayName() : "";
+                    created.minPlayers = info.minPlayers();
+                    created.maxPlayers = info.maxPlayers();
+                    maps.put(mapId, created);
+                    changed = true;
+                } else {
+                    // Existing entry: preserve user customizations (enabled, min/maxPlayers, profile),
+                    // but if displayName is blank, populate it from upstream metadata
+                    if ((cur.displayName == null || cur.displayName.isBlank())
+                            && info.displayName() != null && !info.displayName().isBlank()) {
+                        cur.displayName = info.displayName();
+                        changed = true;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Synchronize with active world maps and prune orphan maps that no longer exist.
+     * Also prunes invalid map IDs from each mode's allowedMaps list.
+     *
+     * @param modeIds known mode IDs
+     * @param activeMaps currently active maps discovered in the world
+     * @return true if maps were added, updated, or pruned
+     */
+    public boolean syncAndPruneMaps(Iterable<String> modeIds,
+                                     Map<String, SREIntegration.DiscoveredMapInfo> activeMaps) {
+        boolean changed = false;
+        if (activeMaps != null) {
+            // Prune maps that are no longer present in the active world
+            java.util.Set<String> toRemove = new java.util.HashSet<>();
+            for (String existingId : maps.keySet()) {
+                if (!activeMaps.containsKey(existingId)) {
+                    toRemove.add(existingId);
+                }
+            }
+            if (!toRemove.isEmpty()) {
+                maps.keySet().removeAll(toRemove);
+                changed = true;
+            }
+
+            // Prune removed map IDs from all modes' allowedMaps
+            for (ModeVoteEntry mode : modes.values()) {
+                if (mode != null && mode.allowedMaps != null && !mode.allowedMaps.isEmpty()) {
+                    if (mode.allowedMaps.removeIf(id -> !activeMaps.containsKey(id))) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if (ensureMapDefaultsWithInfo(modeIds, activeMaps)) {
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /**
+     * Remove a map entry from settings and clear its reference from all modes' allowedMaps.
+     *
+     * @param mapId the map ID to remove
+     * @return true if map was removed
+     */
+    public boolean removeMap(String mapId) {
+        if (mapId == null || mapId.isBlank()) return false;
+        boolean removed = maps.remove(mapId) != null;
+        for (ModeVoteEntry mode : modes.values()) {
+            if (mode != null && mode.allowedMaps != null) {
+                if (mode.allowedMaps.remove(mapId)) {
+                    removed = true;
+                }
+            }
+        }
+        return removed;
     }
 
     /**

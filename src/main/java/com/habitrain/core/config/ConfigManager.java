@@ -337,4 +337,44 @@ public class ConfigManager implements ConfigQueryService {
             store.markDirty();
         }
     }
+
+    public boolean ensureModeMapVoteDefaultsWithInfo(java.util.Collection<String> modeIds,
+                                                     java.util.Map<String, SREIntegration.DiscoveredMapInfo> mapInfoMap) {
+        ModeMapVoteSettings s = repository.getModeMapVote();
+        boolean changed = s.ensureMapDefaultsWithInfo(modeIds, mapInfoMap);
+        if (changed) {
+            store.markDirty();
+        }
+        return changed;
+    }
+
+    public boolean syncAndPruneMaps(java.util.Collection<String> modeIds,
+                                    java.util.Map<String, SREIntegration.DiscoveredMapInfo> activeMaps) {
+        ModeMapVoteSettings s = repository.getModeMapVote();
+        boolean changed = s.syncAndPruneMaps(modeIds, activeMaps);
+        if (changed) {
+            store.markDirty();
+        }
+        return changed;
+    }
+
+    public boolean removeMap(String mapId) {
+        ModeMapVoteSettings s = repository.getModeMapVote();
+        boolean changed = s.removeMap(mapId);
+        if (changed) {
+            store.markDirty();
+        }
+        return changed;
+    }
+
+    public boolean refreshFromUpstreamMaps(@Nullable MinecraftServer server, boolean autoSave) {
+        var discovered = SREIntegration.discoverServerMaps(server);
+        boolean changed = syncAndPruneMaps(
+                com.habitrain.core.api.GameModeRegistry.getAllIds(),
+                discovered);
+        if (changed && autoSave) {
+            save();
+        }
+        return changed;
+    }
 }

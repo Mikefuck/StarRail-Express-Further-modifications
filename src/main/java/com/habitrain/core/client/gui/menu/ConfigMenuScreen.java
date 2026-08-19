@@ -50,6 +50,12 @@ public class ConfigMenuScreen extends Screen {
         {"兼容、耐久与服务端自动行为"}
     };
 
+    public enum AccessMode {
+        FULL,
+        TASK_SETTINGS_ONLY,
+        OUT_GAME_ONLY
+    }
+
     private static final int HEADER_H = 50;
     private static final int PAD = 10;
     private static final int NAV_TOP = 56;
@@ -57,8 +63,7 @@ public class ConfigMenuScreen extends Screen {
     private static final int NAV_GAP = 4;
 
     private final Screen parent;
-    /** 从 SRE 背包任务设置入口打开时，仅暴露任务配置页。 */
-    private final boolean taskSettingsOnly;
+    private final AccessMode accessMode;
     private final boolean remoteEditable;
     private int topTab = TOP_IN_GAME;
     private int subTab;
@@ -69,13 +74,17 @@ public class ConfigMenuScreen extends Screen {
     private int subHitThisFrame = -1;
 
     public ConfigMenuScreen(Screen parent) {
-        this(parent, false);
+        this(parent, AccessMode.FULL);
     }
 
     private ConfigMenuScreen(Screen parent, boolean taskSettingsOnly) {
+        this(parent, taskSettingsOnly ? AccessMode.TASK_SETTINGS_ONLY : AccessMode.FULL);
+    }
+
+    private ConfigMenuScreen(Screen parent, AccessMode accessMode) {
         super(Component.literal("哈比列车核心 — 控制台"));
         this.parent = parent;
-        this.taskSettingsOnly = taskSettingsOnly;
+        this.accessMode = accessMode;
         this.remoteEditable = MenuPermissions.canEditRemoteConfigs();
         this.saveBar = new SaveBar(remoteEditable);
         for (int i = 0; i < SUB_LABELS.length; i++) {
@@ -93,8 +102,16 @@ public class ConfigMenuScreen extends Screen {
 
     /** SRE 背包入口：只允许访问游戏模式/任务配置页。 */
     public static ConfigMenuScreen openTaskSettings(Screen parent) {
-        ConfigMenuScreen screen = new ConfigMenuScreen(parent, true);
+        ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.TASK_SETTINGS_ONLY);
         screen.topTab = TOP_MODE;
+        screen.subTab = 0;
+        return screen;
+    }
+
+    /** SRE 背包入口：地图设置，只允许访问 02 游戏外分类（投票、大厅环境、光影白名单）。 */
+    public static ConfigMenuScreen openMapSettings(Screen parent) {
+        ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.OUT_GAME_ONLY);
+        screen.topTab = TOP_OUT_GAME;
         screen.subTab = 0;
         return screen;
     }
@@ -123,7 +140,8 @@ public class ConfigMenuScreen extends Screen {
 
     private ConfigPage currentPage() {
         ConfigPage[][] all = ensurePages();
-        if (taskSettingsOnly) return all[TOP_MODE][0];
+        if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return all[TOP_MODE][0];
+        if (accessMode == AccessMode.OUT_GAME_ONLY) return all[TOP_OUT_GAME][subTab];
         return topTab == TOP_OTHER ? all[TOP_OTHER][0] : all[topTab][subTab];
     }
 
@@ -174,7 +192,7 @@ public class ConfigMenuScreen extends Screen {
         int contentW = Math.max(1, width - contentX - PAD);
 
         if (topTab != TOP_OTHER) {
-            subHitThisFrame = taskSettingsOnly
+            subHitThisFrame = accessMode == AccessMode.TASK_SETTINGS_ONLY
                     ? renderTaskSettingsOnlySubBar(g, contentX, contentW, mx, my)
                     : subBars[topTab].render(g, font, contentX, HEADER_H, contentW, subTab, mx, my);
             contentY += SubTabBar.H + 7;
@@ -206,7 +224,14 @@ public class ConfigMenuScreen extends Screen {
 
         for (int i = 0; i < TOP_LABELS.length; i++) {
             int y = NAV_TOP + i * (NAV_ITEM_H + NAV_GAP);
-            boolean enabled = !taskSettingsOnly || i == TOP_MODE;
+            boolean enabled;
+            if (accessMode == AccessMode.TASK_SETTINGS_ONLY) {
+                enabled = (i == TOP_MODE);
+            } else if (accessMode == AccessMode.OUT_GAME_ONLY) {
+                enabled = (i == TOP_OUT_GAME);
+            } else {
+                enabled = true;
+            }
             boolean selected = enabled && i == topTab;
             boolean hover = enabled && MenuTheme.inBounds(mx, my, 7, y, navW - 14, NAV_ITEM_H);
             if (selected || hover) {
@@ -274,13 +299,14 @@ public class ConfigMenuScreen extends Screen {
     }
 
     private String activePageLabel() {
-        if (taskSettingsOnly) return "任务点设置";
+        if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "任务点设置";
         if (topTab == TOP_OTHER) return "其他设置";
         return SUB_LABELS[topTab][subTab];
     }
 
     private String activePageHint() {
-        if (taskSettingsOnly) return "仅开放任务点设置，其他设置已锁定";
+        if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "仅开放任务点设置，其他设置已锁定";
+        if (accessMode == AccessMode.OUT_GAME_ONLY) return PAGE_HINTS[TOP_OUT_GAME][subTab];
         if (topTab == TOP_OTHER) return PAGE_HINTS[TOP_OTHER][0];
         return PAGE_HINTS[topTab][subTab];
     }
@@ -316,7 +342,8 @@ public class ConfigMenuScreen extends Screen {
         for (int i = 0; i < TOP_LABELS.length; i++) {
             int y = NAV_TOP + i * (NAV_ITEM_H + NAV_GAP);
             if (MenuTheme.inBounds(mx, my, 7, y, navW - 14, NAV_ITEM_H)) {
-                if (taskSettingsOnly && i != TOP_MODE) return true;
+                if (accessMode == AccessMode.TASK_SETTINGS_ONLY && i != TOP_MODE) return true;
+                if (accessMode == AccessMode.OUT_GAME_ONLY && i != TOP_OUT_GAME) return true;
                 currentPage().flushPending();
                 boolean switched = i != topTab;
                 topTab = i;
@@ -328,7 +355,7 @@ public class ConfigMenuScreen extends Screen {
 
         if (topTab != TOP_OTHER && subHitThisFrame >= 0
                 && my >= HEADER_H && my < HEADER_H + SubTabBar.H) {
-            if (taskSettingsOnly && subHitThisFrame != 0) return true;
+            if (accessMode == AccessMode.TASK_SETTINGS_ONLY && subHitThisFrame != 0) return true;
             if (subHitThisFrame != subTab) currentPage().flushPending();
             subTab = subHitThisFrame;
             MenuSounds.playClick();
