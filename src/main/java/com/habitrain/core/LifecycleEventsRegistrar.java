@@ -113,6 +113,8 @@ public final class LifecycleEventsRegistrar {
                 ModeMapVoteOrchestrator.reset(level);
                 com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
             }
+            OptionVoteManager.resetAll();
+            ModeMapVoteOrchestrator.resetAll();
             // 清理所有跨局残留状态
             com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
             com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
@@ -259,6 +261,7 @@ public final class LifecycleEventsRegistrar {
                 SREGameModeBase.removePendingVoiceJoin(player.getUUID());
                 // 清除效果归属追踪数据
                 EffectOwnershipTracker.clearPlayer(player.getUUID());
+                SlownessReapplyManager.unregisterAllLevels(player.getUUID());
                 // 贪婪匿名交易：断线立即取消 session，避免对方卡 UI 等到超时
                 GreedTradeManager.onPlayerDisconnect(server, player.getUUID());
                 // 维修人员模式：断线自动解锁其锁定的地图并恢复参与状态/游戏模式

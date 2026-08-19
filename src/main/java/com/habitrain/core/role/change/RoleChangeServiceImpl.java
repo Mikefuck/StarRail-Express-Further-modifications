@@ -210,9 +210,28 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
 
     @Override
     public RoleChangeResult transform(ServerPlayer player, RoleKey role, RoleChangeCause cause) {
+        return transform(player, role, cause, RoleChangeOptions.defaults());
+    }
+
+    @Override
+    public RoleChangeResult transform(ServerPlayer player, RoleKey role, RoleChangeCause cause,
+                                      RoleChangeOptions options) {
         RoleKey canonical = canonicalize(role);
+        if (options == null) {
+            return new RoleChangeResult(false, "options are required", canonical, cause, "VALIDATE");
+        }
+        if (cause == RoleChangeCause.FORCED_RANDOM && player != null && canonical != null) {
+            ForcedRandomRoleChangePolicy.Assessment assessment =
+                    ForcedRandomRoleChangePolicy.assess(player);
+            if (!assessment.allowed()) {
+                ForcedRandomRoleChangePolicy.logDenial("RoleChangeApi", player, assessment);
+                return new RoleChangeResult(false, assessment.diagnosticMessage(), canonical, cause,
+                        "SAFETY_CHECK");
+            }
+        }
         RoleChangeTransaction.Result r = transaction.assign(
-                player, canonical, cause, false, true, true);
+                player, canonical, cause, options.reinitialize(),
+                options.recordTimeline(), options.addStats());
         return r.toPublic();
     }
 

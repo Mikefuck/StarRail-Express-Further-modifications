@@ -10,6 +10,8 @@ public enum RoleChangeCause {
     ASSIGN,
     /** A mid-round conversion to another role (e.g. scapegoat -> killer). */
     CONVERSION,
+    /** A forced random mid-round rewrite, guarded by conservative outgoing-role checks. */
+    FORCED_RANDOM,
     /** A sheriff elected by vote. */
     SHERIFF_ELECTION,
     /** A player revived into their previous role. */

@@ -34,6 +34,10 @@ public final class OptionVoteManager {
 
     private static final ConcurrentMap<ResourceKey<Level>, State> STATES = new ConcurrentHashMap<>();
 
+    static {
+        com.habitrain.core.task.ClearableHandlerRegistry.register(OptionVoteManager::resetAll);
+    }
+
     private OptionVoteManager() {}
 
     private static final class State {
@@ -248,7 +252,24 @@ public final class OptionVoteManager {
 
     /** 对局/维度清理：移除 state。 */
     public static void reset(ServerLevel level) {
+        if (level == null) return;
         STATES.remove(level.dimension());
+    }
+
+    /** 全局/服务器关闭/对局结束清理：移除所有维度的投票 state。 */
+    public static void resetAll() {
+        STATES.clear();
+    }
+
+    /** 全局取消所有维度的活动投票。 */
+    public static void cancelAll() {
+        for (State state : STATES.values()) {
+            state.active = false;
+            state.resolvedOptionId = "";
+            state.onResolved = null;
+            state.votesByVoter.clear();
+        }
+        STATES.clear();
     }
 
     public static boolean isActive(ServerLevel level) {

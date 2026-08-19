@@ -32,6 +32,7 @@ public final class NetworkRegistrar {
         OptionVotePayload.register(); count++;
         OptionVoteCastPayload.register(); count++;
         MapVoteProfilePayload.register(); count++;
+        MapVotePreviewUploadPayload.register(); count++;
         MapVoteLaunchTransitionPayload.register(); count++;
         MapVoteLaunchAbortPayload.register(); count++;
         MapVoteProgressPayload.register(); count++;

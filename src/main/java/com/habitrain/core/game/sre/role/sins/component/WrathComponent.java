@@ -1,7 +1,11 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.api.role.v2.RoleChangeApi;
+import com.habitrain.core.api.role.v2.RoleChangeCause;
+import com.habitrain.core.api.role.v2.RoleChangeOptions;
+import com.habitrain.core.api.role.v2.RoleChangeResult;
+import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.SinRoleRules;
 import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
@@ -220,10 +224,21 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         List<ItemStack> backup = snapshotInventory(self);
         try {
             clearInventory(self);
-            // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
-            // record=false（不写默认时间线）、addStats=true；阵营由 resolveFactionFromSreRole 推导
-            BlackoutRoleManager.reassignRole(level, self.getUUID(), next,
-                    BlackoutRoleManager.resolveFactionFromSreRole(next), false, true);
+            RoleChangeResult result = RoleChangeApi.instance().transform(
+                    self,
+                    RoleKey.of(next.identifier()),
+                    RoleChangeCause.FORCED_RANDOM,
+                    new RoleChangeOptions(false, true, false));
+            if (!result.success()) {
+                HabiTrainCore.LOGGER.warn("[Wrath] changeRole rejected for {}: {} phase={}",
+                        self.getGameProfile().getName(), result.message(), result.phase());
+                restoreInventory(self, backup);
+                transformRetryCooldown = 40;
+                self.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_wrath.transform_fail"),
+                        true);
+                return;
+            }
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Wrath] changeRole failed for {}",
                     self.getGameProfile().getName(), t);

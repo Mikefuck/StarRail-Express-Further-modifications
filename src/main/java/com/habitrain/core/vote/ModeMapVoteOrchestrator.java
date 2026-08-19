@@ -50,6 +50,10 @@ public final class ModeMapVoteOrchestrator {
 
     private static final ConcurrentMap<ResourceKey<Level>, Session> SESSIONS = new ConcurrentHashMap<>();
 
+    static {
+        com.habitrain.core.task.ClearableHandlerRegistry.register(ModeMapVoteOrchestrator::resetAll);
+    }
+
     private ModeMapVoteOrchestrator() {}
 
     private static final class Session {
@@ -295,11 +299,13 @@ public final class ModeMapVoteOrchestrator {
             copy.displayName = source.displayName;
             copy.minPlayers = source.minPlayers;
             copy.maxPlayers = source.maxPlayers;
+            copy.profile = source.profile == null ? null
+                    : com.habitrain.core.config.MapVoteProfileSettings.fromJson(source.profile.toJson());
             profileConfig.put(id, copy);
         }
         CompletableFuture.supplyAsync(() -> {
             MapVoteProfileStore.ensureProfiles(level, profileIds, profileConfig);
-            return MapVoteProfileStore.loadProfiles(level, profileIds);
+            return MapVoteProfileStore.loadProfiles(level, profileIds, profileConfig);
         }).whenComplete((profiles, error) -> level.getServer().execute(() -> {
             if (error != null) {
                 LOGGER.warn("[ModeMapVote] async profile load failed", error);
@@ -405,6 +411,10 @@ public final class ModeMapVoteOrchestrator {
     public static void reset(ServerLevel level) {
         if (level == null) return;
         SESSIONS.remove(level.dimension());
+    }
+
+    public static void resetAll() {
+        SESSIONS.clear();
     }
 
     public static void onPlayerJoin(ServerPlayer player) {

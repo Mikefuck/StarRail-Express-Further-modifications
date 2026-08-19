@@ -45,6 +45,21 @@ public interface RoleChangeApi {
     RoleChangeResult transform(ServerPlayer player, RoleKey role, RoleChangeCause cause);
 
     /**
+     * Transforms a player with explicit transaction options.
+     *
+     * <p>{@link RoleChangeCause#FORCED_RANDOM} additionally applies the core's
+     * conservative outgoing-role safety policy before any mutation occurs.
+     * Implementations predating this overload retain their original behavior
+     * through the default method.
+     *
+     * @return the transaction result
+     */
+    default RoleChangeResult transform(ServerPlayer player, RoleKey role, RoleChangeCause cause,
+                                       RoleChangeOptions options) {
+        return transform(player, role, cause);
+    }
+
+    /**
      * Removes a player's role.
      *
      * @return the transaction result

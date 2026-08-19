@@ -77,6 +77,15 @@ public final class PayloadSenders {
         ClientPlayNetworking.send(new OptionVoteCastPayload(voteId, optionId));
     }
 
+    /** Uploads a normalized map-vote PNG. Returns false when no play connection exists. */
+    public static boolean sendMapVotePreviewUpload(String mapId, String previousPreviewPath,
+                                                   byte[] pngBytes) {
+        if (Minecraft.getInstance().getConnection() == null) return false;
+        ClientPlayNetworking.send(new com.habitrain.core.network.MapVotePreviewUploadPayload(
+                mapId, previousPreviewPath, pngBytes));
+        return true;
+    }
+
     /**
      * 从客户端发送角色扩展（roleExtensionsV2）配置更新。
      * 未连接（例如从主菜单的 ModMenu 配置中心点开关）时静默跳过——裸 send 会抛

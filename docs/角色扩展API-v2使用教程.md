@@ -604,6 +604,9 @@ RoleChangeResult assigned = change.assign(
         player, PLAGUE_DOCTOR, RoleChangeOptions.defaults());
 RoleChangeResult transformed = change.transform(
         player, PLAGUE_DOCTOR, RoleChangeCause.CONVERSION);
+RoleChangeResult forcedRandom = change.transform(
+        player, RANDOM_TARGET, RoleChangeCause.FORCED_RANDOM,
+        new RoleChangeOptions(false, true, false));
 RoleChangeResult removed = change.remove(player, RoleChangeCause.REMOVE);
 
 RoleView current = change.current(player);

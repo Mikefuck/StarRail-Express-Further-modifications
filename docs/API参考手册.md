@@ -255,7 +255,9 @@ default boolean requiresClient(); // 默认 false
 
 ### 8.2 `RoleChangeApi`
 
-`assign(player, role, options)`、`transform(player, role, cause)`、`remove(player, cause)`、`current(player)`、`history(player)`。变更由事务处理 alias、旧角色清理、映射、历史、初始化、hooks 和同步。
+`assign(player, role, options)`、`transform(player, role, cause)`、`transform(player, role, cause, options)`、`remove(player, cause)`、`current(player)`、`history(player)`。变更由事务处理 alias、旧角色清理、映射、历史、初始化、hooks 和同步。
+
+强制随机转职必须使用 `RoleChangeCause.FORCED_RANDOM`。Core 会在事务写入前检查旧职业：Core 自有职业和普通、无组件、允许随机的 `NormalRole` 默认可转；未知上游的组件职业、自定义实现或禁止被其他职业随机的角色默认拒绝。只有完整审计旧职业的 CCA、药水效果、实体和全局状态清理后，才能加入 `ForcedRandomRoleChangePolicy` 的内部安全名单。不要通过直接修改角色 Map 或调用 `BlackoutRoleManager.reassignRole` 绕过保护。
 
 ### 8.3 `RoleStateApi`
 

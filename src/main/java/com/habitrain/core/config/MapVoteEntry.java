@@ -9,6 +9,8 @@ public final class MapVoteEntry {
     public int minPlayers = 0;
     /** Recommended maximum players for this map; 0 = unlimited. */
     public int maxPlayers = 0;
+    /** Optional Mod Menu-owned information sheet; null keeps world maps.json authoritative. */
+    public MapVoteProfileSettings profile;
 
     public static MapVoteEntry createDefault() {
         return new MapVoteEntry();
@@ -27,6 +29,9 @@ public final class MapVoteEntry {
         o.addProperty("displayName", displayName != null ? displayName : "");
         o.addProperty("minPlayers", Math.max(0, minPlayers));
         o.addProperty("maxPlayers", Math.max(0, maxPlayers));
+        if (profile != null) {
+            o.add("profile", profile.toJson());
+        }
         return o;
     }
 
@@ -36,6 +41,9 @@ public final class MapVoteEntry {
         if (o.has("displayName")) e.displayName = o.get("displayName").getAsString();
         if (o.has("minPlayers")) e.minPlayers = Math.max(0, o.get("minPlayers").getAsInt());
         if (o.has("maxPlayers")) e.maxPlayers = Math.max(0, o.get("maxPlayers").getAsInt());
+        if (o.has("profile") && o.get("profile").isJsonObject()) {
+            e.profile = MapVoteProfileSettings.fromJson(o.getAsJsonObject("profile"));
+        }
         return e;
     }
 }

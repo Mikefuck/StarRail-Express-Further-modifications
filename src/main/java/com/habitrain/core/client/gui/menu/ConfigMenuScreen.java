@@ -145,6 +145,14 @@ public class ConfigMenuScreen extends Screen {
         if (all[TOP_MODE][1] instanceof ModeRolesPage roles) roles.rebuildRows();
     }
 
+    /** Dedicated map profile editor changed values also shown by the inline vote page. */
+    public void refreshVoteMapEntry(String mapId) {
+        ConfigPage[][] all = ensurePages();
+        if (all[TOP_OUT_GAME][0] instanceof OutGameVotePage votePage) {
+            votePage.refreshMapEntry(mapId);
+        }
+    }
+
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g, mx, my, delta);

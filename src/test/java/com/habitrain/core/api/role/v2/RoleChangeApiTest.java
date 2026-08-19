@@ -66,9 +66,10 @@ class RoleChangeApiTest {
 
     @Test
     void causesCoverExpectedTransitions() {
-        assertEquals(6, RoleChangeCause.values().length);
+        assertEquals(7, RoleChangeCause.values().length);
         assertTrue(RoleChangeCause.valueOf("ASSIGN") != null);
         assertTrue(RoleChangeCause.valueOf("CONVERSION") != null);
+        assertTrue(RoleChangeCause.valueOf("FORCED_RANDOM") != null);
         assertTrue(RoleChangeCause.valueOf("SHERIFF_ELECTION") != null);
         assertTrue(RoleChangeCause.valueOf("REVIVE") != null);
         assertTrue(RoleChangeCause.valueOf("REMOVE") != null);

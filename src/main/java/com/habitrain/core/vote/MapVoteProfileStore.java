@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.config.MapVoteEntry;
+import com.habitrain.core.config.MapVoteProfileSettings;
 import com.habitrain.core.network.MapVoteProfilePayload;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.storage.LevelResource;
@@ -21,6 +22,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -64,6 +66,16 @@ public final class MapVoteProfileStore {
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().create();
 
     private MapVoteProfileStore() {}
+
+    public record UploadResult(boolean success, String message) {
+        private static UploadResult ok() {
+            return new UploadResult(true, "ok");
+        }
+
+        private static UploadResult error(String message) {
+            return new UploadResult(false, message);
+        }
+    }
 
     /** SRE 会把 map_vote 目录自身枚举成候选地图，这里统一剔除。 */
     public static boolean isReservedMapId(String mapId) {
@@ -110,6 +122,140 @@ public final class MapVoteProfileStore {
     }
 
     /**
+     * Stores exactly one PNG for a map. The deterministic target name plus atomic
+     * replacement means a successful upload removes the previous image, while a
+     * failed upload leaves the old image untouched.
+     */
+    public static UploadResult saveUploadedPreview(ServerLevel level, String mapId,
+                                                   String previousPreviewPath, byte[] pngBytes) {
+        if (level == null) return UploadResult.error("服务端世界不可用");
+        if (mapId == null || mapId.isBlank() || mapId.length() > 128 || isReservedMapId(mapId)) {
+            return UploadResult.error("地图 ID 无效");
+        }
+        if (pngBytes == null || pngBytes.length <= 0
+                || pngBytes.length > MapVoteProfilePayload.MAX_PREVIEW_BYTES) {
+            return UploadResult.error("图片超过 128 KiB 限制");
+        }
+        if (!isValidPng(pngBytes)) {
+            return UploadResult.error("文件不是有效的 PNG 图片");
+        }
+
+        Path base = baseDir(level);
+        Path previewDir = base.resolve(PREVIEW_DIR).normalize();
+        String fileName = escapeId(mapId) + ".png";
+        Path target = previewDir.resolve(fileName).normalize();
+        if (!target.startsWith(previewDir)) {
+            return UploadResult.error("预览图路径无效");
+        }
+        Path temp = target.resolveSibling(fileName + ".uploading");
+        try {
+            Files.createDirectories(previewDir);
+            Files.write(temp, pngBytes, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try {
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            // Config override already points to this deterministic path. Keep maps.json
+            // aligned as a fallback, but an index-write problem must not invalidate an
+            // otherwise successful atomic image replacement.
+            try {
+                pointIndexAtPreview(base, mapId, PREVIEW_DIR + "/" + fileName);
+            } catch (IOException indexError) {
+                LOGGER.warn("[MapVoteProfileStore] preview stored but maps.json update failed for '{}'",
+                        mapId, indexError);
+            }
+            deletePreviousPreviewIfUnshared(base, mapId, previousPreviewPath, target);
+            return UploadResult.ok();
+        } catch (Exception e) {
+            LOGGER.error("[MapVoteProfileStore] failed to store uploaded preview for '{}'", mapId, e);
+            return UploadResult.error("服务器写入图片失败");
+        } finally {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    static boolean isValidPng(byte[] bytes) {
+        if (bytes == null || bytes.length < 33) return false;
+        byte[] signature = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        for (int i = 0; i < signature.length; i++) {
+            if (bytes[i] != signature[i]) return false;
+        }
+        if (bytes[12] != 'I' || bytes[13] != 'H' || bytes[14] != 'D' || bytes[15] != 'R') {
+            return false;
+        }
+        int width = readIntBigEndian(bytes, 16);
+        int height = readIntBigEndian(bytes, 20);
+        return width > 0 && height > 0 && width <= 8192 && height <= 8192;
+    }
+
+    private static int readIntBigEndian(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xFF) << 24
+                | (bytes[offset + 1] & 0xFF) << 16
+                | (bytes[offset + 2] & 0xFF) << 8
+                | bytes[offset + 3] & 0xFF;
+    }
+
+    private static void pointIndexAtPreview(Path base, String mapId, String relativePath)
+            throws IOException {
+        Path index = base.resolve(INDEX_FILE);
+        JsonObject root = readIndex(index);
+        JsonObject maps = root.has("maps") && root.get("maps").isJsonObject()
+                ? root.getAsJsonObject("maps") : new JsonObject();
+        root.add("maps", maps);
+        JsonObject entry = maps.has(mapId) && maps.get(mapId).isJsonObject()
+                ? maps.getAsJsonObject(mapId) : new JsonObject();
+        maps.add(mapId, entry);
+        entry.addProperty("preview", relativePath);
+        writeIndex(index, root);
+    }
+
+    private static void deletePreviousPreviewIfUnshared(Path base, String mapId,
+                                                        String previousRelativePath, Path newTarget) {
+        if (previousRelativePath == null || previousRelativePath.isBlank()) return;
+        try {
+            Path previewDir = base.resolve(PREVIEW_DIR).normalize();
+            Path previous = base.resolve(previousRelativePath).normalize();
+            if (!previous.startsWith(previewDir) || previous.equals(newTarget)
+                    || !previous.getFileName().toString().toLowerCase(java.util.Locale.ROOT)
+                    .endsWith(".png")) {
+                return;
+            }
+            if (isPreviewReferencedByAnotherMap(base, mapId, previous)) return;
+            Files.deleteIfExists(previous);
+        } catch (Exception e) {
+            LOGGER.warn("[MapVoteProfileStore] uploaded preview saved but old preview cleanup failed for '{}'",
+                    mapId, e);
+        }
+    }
+
+    private static boolean isPreviewReferencedByAnotherMap(Path base, String mapId, Path candidate) {
+        for (Map.Entry<String, MapVoteEntry> configured
+                : com.habitrain.core.config.ConfigManager.getInstance()
+                .getModeMapVoteSettings().maps.entrySet()) {
+            if (configured.getKey().equals(mapId) || configured.getValue().profile == null) continue;
+            String path = configured.getValue().profile.previewPath;
+            if (path != null && base.resolve(path).normalize().equals(candidate)) return true;
+        }
+        JsonObject root = readIndex(base.resolve(INDEX_FILE));
+        if (!root.has("maps") || !root.get("maps").isJsonObject()) return false;
+        for (Map.Entry<String, JsonElement> indexed : root.getAsJsonObject("maps").entrySet()) {
+            if (indexed.getKey().equals(mapId) || !indexed.getValue().isJsonObject()) continue;
+            JsonObject entry = indexed.getValue().getAsJsonObject();
+            if (entry.has("preview") && entry.get("preview").isJsonPrimitive()
+                    && base.resolve(entry.get("preview").getAsString()).normalize().equals(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 投票开始前调用：对每张候选地图补齐 maps.json 条目与 previews 文件，缺则写占位。
      *
      * @param configEntries 现有投票配置（min/max 来源），可为空
@@ -133,7 +279,7 @@ public final class MapVoteProfileStore {
                 if (isReservedMapId(mapId)) {
                     continue;
                 }
-                if (!maps.has(mapId)) {
+                if (!maps.has(mapId) || !maps.get(mapId).isJsonObject()) {
                     JsonObject entry = new JsonObject();
                     MapVoteEntry cfg = configEntries == null ? null : configEntries.get(mapId);
                     entry.addProperty("description", "");
@@ -143,6 +289,12 @@ public final class MapVoteProfileStore {
                     entry.addProperty("preview", PREVIEW_DIR + "/" + escapeId(mapId) + ".png");
                     maps.add(mapId, entry);
                     changed = true;
+                }
+                JsonObject entry = maps.getAsJsonObject(mapId);
+                MapVoteEntry cfg = configEntries == null ? null : configEntries.get(mapId);
+                if (cfg != null) {
+                    changed |= replaceNumber(entry, "minPlayers", Math.max(0, cfg.minPlayers));
+                    changed |= replaceNumber(entry, "maxPlayers", Math.max(0, cfg.maxPlayers));
                 }
                 ensurePreviewFile(base, mapId);
             }
@@ -157,6 +309,16 @@ public final class MapVoteProfileStore {
     /** 读取候选地图的档案（含预览图字节）；缺条目/缺图/超限 → 占位。 */
     public static Map<String, MapVoteProfilePayload.MapProfile> loadProfiles(
             ServerLevel level, Collection<String> mapIds) {
+        return loadProfiles(level, mapIds, Map.of());
+    }
+
+    /**
+     * Loads world profiles and overlays optional Mod Menu values. Recommended player
+     * counts always come from the main vote config so the draw rule and information
+     * sheet cannot drift apart.
+     */
+    public static Map<String, MapVoteProfilePayload.MapProfile> loadProfiles(
+            ServerLevel level, Collection<String> mapIds, Map<String, MapVoteEntry> configEntries) {
         Map<String, MapVoteProfilePayload.MapProfile> result = new LinkedHashMap<>();
         if (level == null || mapIds == null || mapIds.isEmpty()) {
             return result;
@@ -206,6 +368,20 @@ public final class MapVoteProfileStore {
                         preview = readPreview(base, entry.get("preview").getAsString(), placeholder);
                     }
                 }
+                MapVoteEntry cfg = configEntries == null ? null : configEntries.get(mapId);
+                if (cfg != null) {
+                    minPlayers = Math.max(0, cfg.minPlayers);
+                    maxPlayers = Math.max(0, cfg.maxPlayers);
+                    if (cfg.profile != null) {
+                        description = cfg.profile.description == null ? "" : cfg.profile.description;
+                        tags = MapVoteProfileSettings.normalizedTags(cfg.profile.tags);
+                        String configuredPreview = cfg.profile.previewPath == null
+                                ? "" : cfg.profile.previewPath.trim();
+                        preview = configuredPreview.isEmpty()
+                                ? placeholder
+                                : readPreview(base, configuredPreview, placeholder);
+                    }
+                }
                 result.put(mapId, new MapVoteProfilePayload.MapProfile(
                         description, tags, minPlayers, maxPlayers, preview));
             }
@@ -234,6 +410,15 @@ public final class MapVoteProfileStore {
         JsonObject root = new JsonObject();
         root.addProperty("schema", 1);
         return root;
+    }
+
+    private static boolean replaceNumber(JsonObject object, String key, int value) {
+        if (object.has(key) && object.get(key).isJsonPrimitive()
+                && object.get(key).getAsInt() == value) {
+            return false;
+        }
+        object.addProperty(key, value);
+        return true;
     }
 
     private static void writeIndex(Path index, JsonObject root) throws IOException {

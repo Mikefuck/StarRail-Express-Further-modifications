@@ -101,8 +101,15 @@ public class ShaderMonitor {
             if (ClientStateHolder.getShaderPackNameMethod == null) {
                 ClientStateHolder.getShaderPackNameMethod = configClass.getMethod("getShaderPackName");
             }
-            Optional<String> packName = (Optional<String>) ClientStateHolder.getShaderPackNameMethod.invoke(irisConfig);
-            return packName.orElse("");
+            Object packNameObj = ClientStateHolder.getShaderPackNameMethod.invoke(irisConfig);
+            if (packNameObj instanceof Optional<?> opt) {
+                return opt.map(Object::toString).orElse("");
+            } else if (packNameObj instanceof String str) {
+                return str;
+            } else if (packNameObj != null) {
+                return packNameObj.toString();
+            }
+            return "";
         } catch (Exception e) {
             HabiTrainCore.LOGGER.warn("无法通过反射检测 Iris 光影包", e);
             return "";

@@ -1,12 +1,17 @@
 package com.habitrain.core.game.sre.role.skill;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
+import com.habitrain.core.api.role.v2.RoleChangeApi;
+import com.habitrain.core.api.role.v2.RoleChangeCause;
+import com.habitrain.core.api.role.v2.RoleChangeOptions;
+import com.habitrain.core.api.role.v2.RoleChangeResult;
+import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.NecromancerReviveSupport;
 import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.role.change.ForcedRandomRoleChangePolicy;
 import io.wifi.starrailexpress.SRE;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
@@ -73,6 +78,18 @@ public final class MikeCodeEditSkill {
             }
         } catch (Throwable ignored) {}
 
+        ForcedRandomRoleChangePolicy.Assessment safety =
+                ForcedRandomRoleChangePolicy.assess(target, current);
+        if (!safety.allowed()) {
+            ForcedRandomRoleChangePolicy.logDenial("MikeCodeEdit", target, safety);
+            self.displayClientMessage(
+                    Component.translatable(
+                            "message.habitrain_core.mike.target_protected",
+                            target.getName()),
+                    true);
+            return false;
+        }
+
         List<SRERole> pool = buildPool(current);
         if (pool.isEmpty()) {
             self.displayClientMessage(Component.literal("§c[代码修改] 无可用职业"), true);
@@ -90,14 +107,14 @@ public final class MikeCodeEditSkill {
         // 不在转职前清包：reassignRole 失败时物品无法恢复（catch 块仅退款），
         // 成功路径下方本就会再清一次并按新职业发初始物（review M4）。
 
+        RoleChangeResult changeResult;
         try {
-            if (target.level() instanceof ServerLevel level) {
-                // 统一转职入口（替代原 RoleUtils.changeRole + reassignRole 双调用，消除双重 ModdedRoleAssigned）：
-                // record=false：时间线不写默认「职业从 A 切换到 B」，改记自定义文案；
-                // addStats=true；faction 传 null 由 resolveFactionFromSreRole 推导，
-                // 否则独立罪/共享罪会被错误压成 GOOD/BAD。
-                BlackoutRoleManager.reassignRole(level, target.getUUID(), next, null, false, true);
-            }
+            // record=false：时间线改记下方的 Mike 自定义文案；addStats=true。
+            changeResult = RoleChangeApi.instance().transform(
+                    target,
+                    RoleKey.of(next.identifier()),
+                    RoleChangeCause.FORCED_RANDOM,
+                    new RoleChangeOptions(false, true, false));
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Mike] changeRole failed for {}", target.getName().getString(), t);
             // 尽量退款，避免吞金
@@ -105,6 +122,17 @@ public final class MikeCodeEditSkill {
                 shop.addToBalance(COST);
             } catch (Throwable ignored) {}
             self.displayClientMessage(Component.literal("§c[代码修改] 转职失败"), true);
+            return false;
+        }
+        if (!changeResult.success()) {
+            try {
+                shop.addToBalance(COST);
+            } catch (Throwable ignored) {}
+            HabiTrainCore.LOGGER.warn("[Mike] changeRole rejected for {}: {} phase={}",
+                    target.getName().getString(), changeResult.message(), changeResult.phase());
+            self.displayClientMessage(
+                    Component.translatable("message.habitrain_core.mike.transform_failed"),
+                    true);
             return false;
         }
 
@@ -116,7 +144,7 @@ public final class MikeCodeEditSkill {
             }
         }
 
-        // 统一后仅 reassignRole 触发一次 ModdedRoleAssigned（组件 init）；此处仍清一次再按目标角色发初始物
+        // 统一后仅 RoleChangeApi 触发一次 ModdedRoleAssigned（组件 init）；此处再按目标角色发初始物。
         clearAllItems(target);
         try {
             RoleInitialItems.addInitialItemsForRole(target, next);

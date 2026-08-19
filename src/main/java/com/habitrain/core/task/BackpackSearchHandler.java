@@ -47,6 +47,7 @@ public class BackpackSearchHandler {
     private static boolean blockChecked = false;
 
     public static void register() {
+        ClearableHandlerRegistry.register(BackpackSearchHandler::clearAllSearches);
         UseBlockCallback.EVENT.register(BackpackSearchHandler::onUseBlock);
 
         // 注册END_SERVER_TICK重新施加缓慢效果
@@ -63,13 +64,40 @@ public class BackpackSearchHandler {
                 var entry = it.next();
                 UUID uuid = entry.getKey();
                 SearchState state = entry.getValue();
+                ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+
+                // 离线/死亡/旁观状态异常检查：玩家已失效则立即清理
+                if (player == null || player.isRemoved() || player.isDeadOrDying() || player.isSpectator()) {
+                    if (player != null && !player.isRemoved()) {
+                        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    }
+                    SlownessReapplyManager.unregisterAllLevels(uuid);
+                    it.remove();
+
+                    TaskManager mgr = TaskManager.getInstance();
+                    TaskInstance stuckTask = mgr.getActiveTask(uuid);
+                    if (stuckTask != null
+                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
+                                    || TASK_BLACKOUT_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
+                            && !stuckTask.isFulfilled()) {
+                        if (player != null) {
+                            com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(player, stuckTask);
+                            try {
+                                stuckTask.getDefinition().onRemove(player, stuckTask);
+                            } catch (Exception ex) {
+                                HabiTrainCore.LOGGER.error("search_backpack 离线/失效清理 onRemove 失败", ex);
+                            }
+                            com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
+                        }
+                        stuckTask.markFailed();
+                        mgr.removeActiveTask(uuid);
+                    }
+                    continue;
+                }
 
                 // 超时清理：移除追踪并主动清除缓慢效果（不依赖外部 mod 每 tick 清除）
                 if (tick - state.startTick() >= state.durationTicks()) {
-                    ServerPlayer timedOut = server.getPlayerList().getPlayer(uuid);
-                    if (timedOut != null) {
-                        timedOut.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    }
+                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     SlownessReapplyManager.unregisterAllLevels(uuid);
                     it.remove();
                     // 同步清理任务实例：玩家可能因断线/切世界错过最后一 tick，
@@ -83,23 +111,18 @@ public class BackpackSearchHandler {
                             && !stuckTask.isFulfilled()) {
                         // 任务超时前回收发放的道具（虽然翻背包通常 onComplete 才发放，
                         // 但若任务以某种方式提前发放了道具，这里回收保证安全）
-                        ServerPlayer stuckPlayer = server.getPlayerList().getPlayer(uuid);
-                        if (stuckPlayer != null) {
-                            com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(stuckPlayer, stuckTask);
-                            // 走标准 onRemove（与 PerPlayerTaskTicker.handleMainTaskDone 失败分支一致），
-                            // 让任务定义有机会做自身清理。
-                            try {
-                                stuckTask.getDefinition().onRemove(stuckPlayer, stuckTask);
-                            } catch (Exception ex) {
-                                HabiTrainCore.LOGGER.error("search_backpack 超时 onRemove 失败", ex);
-                            }
+                        com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(player, stuckTask);
+                        // 走标准 onRemove（与 PerPlayerTaskTicker.handleMainTaskDone 失败分支一致），
+                        // 让任务定义有机会做自身清理。
+                        try {
+                            stuckTask.getDefinition().onRemove(player, stuckTask);
+                        } catch (Exception ex) {
+                            HabiTrainCore.LOGGER.error("search_backpack 超时 onRemove 失败", ex);
                         }
                         stuckTask.markFailed();
                         mgr.removeActiveTask(uuid);
                         // 通知客户端清除活动任务 HUD/方块高亮，避免陈旧活动任务残留到下局
-                        if (stuckPlayer != null) {
-                            com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(stuckPlayer);
-                        }
+                        com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
                     }
                     continue;
                 }

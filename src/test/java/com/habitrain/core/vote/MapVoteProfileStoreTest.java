@@ -25,4 +25,21 @@ class MapVoteProfileStoreTest {
         assertTrue(slash.matches("[a-zA-Z0-9._-]+"));
         assertTrue(underscore.matches("[a-zA-Z0-9._-]+"));
     }
+
+    @Test
+    void pngValidationAcceptsPlaceholderAndRejectsCorruptHeaders() {
+        byte[] valid = MapVoteProfileStore.placeholderBytes();
+        assertTrue(MapVoteProfileStore.isValidPng(valid));
+
+        byte[] corrupt = valid.clone();
+        corrupt[1] = 0;
+        assertFalse(MapVoteProfileStore.isValidPng(corrupt));
+
+        byte[] oversizedDimensions = valid.clone();
+        oversizedDimensions[16] = 0;
+        oversizedDimensions[17] = 0;
+        oversizedDimensions[18] = 0x20;
+        oversizedDimensions[19] = 0x01;
+        assertFalse(MapVoteProfileStore.isValidPng(oversizedDimensions));
+    }
 }

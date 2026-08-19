@@ -62,7 +62,7 @@ public class ConfigRepository {
     public float getDlcProbabilityTarget() { return dlcProbabilityTarget; }
 
     public void setDlcProbabilityTarget(float target) {
-        this.dlcProbabilityTarget = target;
+        this.dlcProbabilityTarget = Math.max(0.0f, Math.min(1.0f, target));
     }
 
     public int getSheriffCountDivisor() { return sheriffCountDivisor; }

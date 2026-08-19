@@ -41,6 +41,7 @@ public class SlownessReapplyManager {
     public static void registerTickHandler() {
         if (registered) return;
         registered = true;
+        ClearableHandlerRegistry.register(SlownessReapplyManager::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeEntries.isEmpty()) return;
             for (var levelEntry : activeEntries.entrySet()) {
@@ -60,7 +61,13 @@ public class SlownessReapplyManager {
                         it.remove();
                         continue;
                     }
-                    if (player == null) continue;
+                    if (player == null || player.isRemoved() || player.isDeadOrDying() || player.isSpectator()) {
+                        if (player != null && !player.isRemoved()) {
+                            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                        }
+                        it.remove();
+                        continue;
+                    }
                     // 已有足够剩余时长则跳过，减少每 tick new MobEffectInstance
                     MobEffectInstance existing = player.getEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     if (existing != null

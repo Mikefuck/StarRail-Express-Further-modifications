@@ -7,6 +7,7 @@ import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
+import com.habitrain.core.client.gui.menu.MapVoteProfileScreen;
 import com.habitrain.core.client.gui.menu.ModeAllowedMapsScreen;
 import com.habitrain.core.client.gui.menu.ui.SubTabBar;
 import com.habitrain.core.config.ConfigManager;
@@ -496,12 +497,22 @@ public class OutGameVotePage implements ConfigPage {
                 g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
 
                 EditBox nameBox = mapNameFields.get(id);
+                int profileW = 72;
+                int profileX = labelX + innerW - profileW - 6;
                 if (nameBox != null) {
                     nameBox.setX(labelX + 180);
                     nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(60, innerW - 200));
+                    nameBox.setWidth(Math.max(40, profileX - nameBox.getX() - 6));
                     nameBox.render(g, mx, my, delta);
                 }
+
+                boolean profileHover = MenuTheme.inBounds(mx, my, profileX, cy + 3, profileW, 16);
+                MenuTheme.button(g, font,
+                        Component.translatable("config.habitrain_core.map_profile.open").getString(),
+                        profileX, cy + 3, profileW, 16,
+                        ACCENT, editable, profileHover);
+                buttonHits.add(new ButtonHit("map_profile:" + id,
+                        profileX, cy + 3, profileW, 16));
 
                 mapHits.add(new RowHit(id, tX, tW, 0, 0, cy, ROW_H - 2, false));
                 cy += ROW_H;
@@ -658,6 +669,17 @@ public class OutGameVotePage implements ConfigPage {
     private boolean clickVoteMaps(double mx, double my, int btn) {
         for (EditBox box : mapNameFields.values()) {
             if (tryFocusEditBox(box, mx, my)) return true;
+        }
+        for (ButtonHit hit : buttonHits) {
+            if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
+            if (hit.action() != null && hit.action().startsWith("map_profile:")) {
+                MenuSounds.playClick();
+                if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
+                flushPending();
+                String id = hit.action().substring("map_profile:".length());
+                Minecraft.getInstance().setScreen(new MapVoteProfileScreen(root, id));
+                return true;
+            }
         }
         for (RowHit hit : mapHits) {
             if (my < hit.y() || my >= hit.y() + hit.h()) continue;
@@ -871,5 +893,19 @@ public class OutGameVotePage implements ConfigPage {
     private void persist() {
         ModeMapVoteSettings s = settings();
         ConfigManager.getInstance().setModeMapVoteSettings(s);
+    }
+
+    /** Refresh fields changed by the dedicated map introduction editor. */
+    public void refreshMapEntry(String id) {
+        MapVoteEntry entry = settings().maps.get(id);
+        EditBox name = mapNameFields.get(id);
+        if (name != null) {
+            name.setValue(entry != null && entry.displayName != null
+                    ? entry.displayName : id);
+        }
+        EditBox min = mapMinFields.get(id);
+        if (min != null) min.setValue(String.valueOf(entry != null ? entry.minPlayers : 0));
+        EditBox max = mapMaxFields.get(id);
+        if (max != null) max.setValue(String.valueOf(entry != null ? entry.maxPlayers : 0));
     }
 }

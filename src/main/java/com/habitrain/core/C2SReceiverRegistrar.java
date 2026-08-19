@@ -63,6 +63,36 @@ public final class C2SReceiverRegistrar {
                 FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });
+        // C2S 地图介绍预览图：OP 选择本地 PNG 后上传到服务端世界目录。
+        ServerPlayNetworking.registerGlobalReceiver(MapVotePreviewUploadPayload.TYPE, (payload, context) -> {
+            context.server().execute(() -> {
+                ServerPlayer player = context.player();
+                if (player == null) return;
+                if (!player.hasPermissions(4)) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：需要 OP 权限"));
+                    return;
+                }
+                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
+                        && !MenuGateService.isAllowed(player)) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：未获得服务器菜单授权"));
+                    return;
+                }
+                com.habitrain.core.vote.MapVoteProfileStore.UploadResult result =
+                        com.habitrain.core.vote.MapVoteProfileStore.saveUploadedPreview(
+                                player.serverLevel(), payload.mapId(),
+                                payload.previousPreviewPath(), payload.pngBytes());
+                if (result.success()) {
+                    player.sendSystemMessage(Component.literal(
+                            "§a地图 “" + payload.mapId() + "” 的预览图已上传并替换旧图"));
+                    LOGGER.info("玩家 {} 上传地图预览图 map={} bytes={}",
+                            player.getName().getString(), payload.mapId(), payload.pngBytes().length);
+                } else {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：" + result.message()));
+                    LOGGER.warn("玩家 {} 上传地图预览图失败 map={} reason={}",
+                            player.getName().getString(), payload.mapId(), result.message());
+                }
+            });
+        });
         // C2S 光影包信息接收器
         ServerPlayNetworking.registerGlobalReceiver(ShaderInfoPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
