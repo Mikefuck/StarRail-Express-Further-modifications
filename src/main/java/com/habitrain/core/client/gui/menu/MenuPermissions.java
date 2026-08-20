@@ -1,5 +1,7 @@
 package com.habitrain.core.client.gui.menu;
 
+import com.habitrain.core.client.menu.MenuAccessGuard;
+import com.habitrain.core.network.ConfigUpdateScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
@@ -8,14 +10,19 @@ public final class MenuPermissions {
     private MenuPermissions() {}
 
     public static boolean canEditRemoteConfigs() {
+        return canEditRemoteConfigs(ConfigUpdateContext.currentScope());
+    }
+
+    public static boolean canEditRemoteConfigs(ConfigUpdateScope scope) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return true;
         if (mc.getConnection() == null) return true;
         if (mc.getSingleplayerServer() != null) return true;
-        return mc.player != null && mc.player.hasPermissions(4);
+        if (mc.player == null || !mc.player.hasPermissions(2)) return false;
+        return scope != ConfigUpdateScope.FULL_MOD_MENU || MenuAccessGuard.isScreenAllowed();
     }
 
-    /** SRE 背包中的任务点设置只要求普通管理员权限。 */
+    /** SRE 背包中的受限设置只要求 OP2，不受 Mod Menu 授权名单影响。 */
     public static boolean canAccessTaskSettings() {
         Minecraft mc = Minecraft.getInstance();
         return mc != null && mc.player != null && mc.player.hasPermissions(2);
@@ -24,7 +31,7 @@ public final class MenuPermissions {
     public static void showDeniedMessage() {
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("§c只有 OP 才能修改联机服务器配置"), true);
+            mc.player.displayClientMessage(Component.literal("§c需要 OP2；完整 Mod 菜单还需服务器后台单独授权"), true);
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.habitrain.core.client.network;
 
 import com.habitrain.core.network.ConfigUpdatePayload;
+import com.habitrain.core.network.ConfigUpdateScope;
 import com.habitrain.core.network.OptionVoteCastPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
 import com.habitrain.core.network.VotePurpose;
@@ -37,11 +38,11 @@ public final class PayloadSenders {
      * 从客户端发送配置更新到服务端。
      * 单机模式（集成服务器）下配置已保存在本地文件，无需网络同步。
      */
-    public static void sendConfigUpdate(String configJson) {
+    public static void sendConfigUpdate(String configJson, ConfigUpdateScope scope) {
         var client = Minecraft.getInstance();
         if (client.getConnection() == null) return;
         if (client.getSingleplayerServer() != null) return;
-        ClientPlayNetworking.send(new ConfigUpdatePayload(configJson));
+        ClientPlayNetworking.send(new ConfigUpdatePayload(ConfigUpdateScope.attachToConfigJson(configJson, scope)));
     }
 
     /** 从客户端发送聘请警察请求到服务端。 */

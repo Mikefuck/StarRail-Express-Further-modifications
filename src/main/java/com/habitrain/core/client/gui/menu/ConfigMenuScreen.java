@@ -11,8 +11,8 @@ import com.habitrain.core.client.gui.menu.page.OutGameShaderPage;
 import com.habitrain.core.client.gui.menu.page.OutGameVotePage;
 import com.habitrain.core.client.gui.menu.ui.SaveBar;
 import com.habitrain.core.client.gui.menu.ui.SubTabBar;
-import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.network.ConfigUpdateScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -53,7 +53,7 @@ public class ConfigMenuScreen extends Screen {
     public enum AccessMode {
         FULL,
         TASK_SETTINGS_ONLY,
-        OUT_GAME_ONLY
+        MAP_VOTE_ONLY
     }
 
     private static final int HEADER_H = 50;
@@ -85,7 +85,8 @@ public class ConfigMenuScreen extends Screen {
         super(Component.literal("哈比列车核心 — 控制台"));
         this.parent = parent;
         this.accessMode = accessMode;
-        this.remoteEditable = MenuPermissions.canEditRemoteConfigs();
+        ConfigUpdateContext.setCurrentScope(configUpdateScope());
+        this.remoteEditable = MenuPermissions.canEditRemoteConfigs(configUpdateScope());
         this.saveBar = new SaveBar(remoteEditable);
         for (int i = 0; i < SUB_LABELS.length; i++) {
             if (SUB_LABELS[i].length > 0) subBars[i] = new SubTabBar(SUB_LABELS[i], TOP_ACCENTS[i]);
@@ -108,9 +109,9 @@ public class ConfigMenuScreen extends Screen {
         return screen;
     }
 
-    /** SRE 背包入口：地图设置，只允许访问 02 游戏外分类（投票、大厅环境、光影白名单）。 */
+    /** SRE 背包入口：地图设置，只允许访问地图轮换与投票。 */
     public static ConfigMenuScreen openMapSettings(Screen parent) {
-        ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.OUT_GAME_ONLY);
+        ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.MAP_VOTE_ONLY);
         screen.topTab = TOP_OUT_GAME;
         screen.subTab = 0;
         return screen;
@@ -141,7 +142,7 @@ public class ConfigMenuScreen extends Screen {
     private ConfigPage currentPage() {
         ConfigPage[][] all = ensurePages();
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return all[TOP_MODE][0];
-        if (accessMode == AccessMode.OUT_GAME_ONLY) return all[TOP_OUT_GAME][subTab];
+        if (accessMode == AccessMode.MAP_VOTE_ONLY) return all[TOP_OUT_GAME][0];
         return topTab == TOP_OTHER ? all[TOP_OTHER][0] : all[topTab][subTab];
     }
 
@@ -174,7 +175,7 @@ public class ConfigMenuScreen extends Screen {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g, mx, my, delta);
-        if (!MenuAccessGuard.isScreenAllowed()) {
+        if (!isScreenAllowed()) {
             MenuTheme.drawBackdrop(g, width, height, MenuTheme.DANGER);
             drawLockedOverlay(g);
             return;
@@ -194,7 +195,9 @@ public class ConfigMenuScreen extends Screen {
         if (topTab != TOP_OTHER) {
             subHitThisFrame = accessMode == AccessMode.TASK_SETTINGS_ONLY
                     ? renderTaskSettingsOnlySubBar(g, contentX, contentW, mx, my)
-                    : subBars[topTab].render(g, font, contentX, HEADER_H, contentW, subTab, mx, my);
+                    : accessMode == AccessMode.MAP_VOTE_ONLY
+                            ? renderMapVoteOnlySubBar(g, contentX, contentW, mx, my)
+                            : subBars[topTab].render(g, font, contentX, HEADER_H, contentW, subTab, mx, my);
             contentY += SubTabBar.H + 7;
         } else {
             subHitThisFrame = -1;
@@ -227,7 +230,7 @@ public class ConfigMenuScreen extends Screen {
             boolean enabled;
             if (accessMode == AccessMode.TASK_SETTINGS_ONLY) {
                 enabled = (i == TOP_MODE);
-            } else if (accessMode == AccessMode.OUT_GAME_ONLY) {
+            } else if (accessMode == AccessMode.MAP_VOTE_ONLY) {
                 enabled = (i == TOP_OUT_GAME);
             } else {
                 enabled = true;
@@ -265,6 +268,15 @@ public class ConfigMenuScreen extends Screen {
         MenuTheme.chip(g, font, SUB_LABELS[TOP_MODE][0], x, HEADER_H,
                 tabW, SubTabBar.H, TOP_ACCENTS[TOP_MODE], true);
         if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_MODE]);
+        return -1;
+    }
+
+    private int renderMapVoteOnlySubBar(GuiGraphics g, int x, int w, int mx, int my) {
+        int tabW = Math.max(60, Math.min(132, w));
+        boolean hover = MenuTheme.inBounds(mx, my, x, HEADER_H, tabW, SubTabBar.H);
+        MenuTheme.chip(g, font, SUB_LABELS[TOP_OUT_GAME][0], x, HEADER_H,
+                tabW, SubTabBar.H, TOP_ACCENTS[TOP_OUT_GAME], true);
+        if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_OUT_GAME]);
         return -1;
     }
 
@@ -306,7 +318,7 @@ public class ConfigMenuScreen extends Screen {
 
     private String activePageHint() {
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "仅开放任务点设置，其他设置已锁定";
-        if (accessMode == AccessMode.OUT_GAME_ONLY) return PAGE_HINTS[TOP_OUT_GAME][subTab];
+        if (accessMode == AccessMode.MAP_VOTE_ONLY) return PAGE_HINTS[TOP_OUT_GAME][0];
         if (topTab == TOP_OTHER) return PAGE_HINTS[TOP_OTHER][0];
         return PAGE_HINTS[topTab][subTab];
     }
@@ -337,13 +349,13 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
-        if (!MenuAccessGuard.isScreenAllowed()) return false;
+        if (!isScreenAllowed()) return false;
         int navW = navWidth();
         for (int i = 0; i < TOP_LABELS.length; i++) {
             int y = NAV_TOP + i * (NAV_ITEM_H + NAV_GAP);
             if (MenuTheme.inBounds(mx, my, 7, y, navW - 14, NAV_ITEM_H)) {
                 if (accessMode == AccessMode.TASK_SETTINGS_ONLY && i != TOP_MODE) return true;
-                if (accessMode == AccessMode.OUT_GAME_ONLY && i != TOP_OUT_GAME) return true;
+                if (accessMode == AccessMode.MAP_VOTE_ONLY && i != TOP_OUT_GAME) return true;
                 currentPage().flushPending();
                 boolean switched = i != topTab;
                 topTab = i;
@@ -386,20 +398,20 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy) {
-        if (!MenuAccessGuard.isScreenAllowed()) return false;
+        if (!isScreenAllowed()) return false;
         return currentPage().mouseDragged(mx, my, btn, dx, dy,
                 contentX() + 1, contentY() + 1, contentW() - 2, contentH() - 2);
     }
 
     @Override
     public boolean mouseReleased(double mx, double my, int btn) {
-        if (!MenuAccessGuard.isScreenAllowed()) return false;
+        if (!isScreenAllowed()) return false;
         return currentPage().mouseReleased(mx, my, btn);
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        if (!MenuAccessGuard.isScreenAllowed()) return false;
+        if (!isScreenAllowed()) return false;
         if (MenuTheme.inBounds(mx, my, contentX(), contentY(), contentW(), contentH())) {
             return currentPage().mouseScrolled(mx, my, sx, sy,
                     contentX() + 1, contentY() + 1, contentW() - 2, contentH() - 2);
@@ -409,7 +421,7 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
-        if (!MenuAccessGuard.isScreenAllowed()) {
+        if (!isScreenAllowed()) {
             if (key == 256) {
                 // 未授权时 ESC 只关闭菜单，不能触发 flushPending/saveConfigNow
                 Minecraft.getInstance().setScreen(parent);
@@ -427,7 +439,7 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean charTyped(char ch, int mod) {
-        if (!MenuAccessGuard.isScreenAllowed()) return false;
+        if (!isScreenAllowed()) return false;
         if (currentPage().charTyped(ch, mod)) return true;
         return super.charTyped(ch, mod);
     }
@@ -436,6 +448,19 @@ public class ConfigMenuScreen extends Screen {
     public void onClose() {
         currentPage().flushPending();
         saveConfigNow();
+        ConfigUpdateContext.setCurrentScope(ConfigUpdateScope.FULL_MOD_MENU);
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    private ConfigUpdateScope configUpdateScope() {
+        return switch (accessMode) {
+            case FULL -> ConfigUpdateScope.FULL_MOD_MENU;
+            case TASK_SETTINGS_ONLY -> ConfigUpdateScope.BACKPACK_TASKS;
+            case MAP_VOTE_ONLY -> ConfigUpdateScope.BACKPACK_MAP_VOTE;
+        };
+    }
+
+    private boolean isScreenAllowed() {
+        return accessMode != AccessMode.FULL || MenuPermissions.canEditRemoteConfigs(ConfigUpdateScope.FULL_MOD_MENU);
     }
 }

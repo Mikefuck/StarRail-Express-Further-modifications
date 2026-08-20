@@ -18,8 +18,8 @@ import net.minecraft.resources.ResourceLocation;
  * - configJson (String): ConfigManager 的完整 JSON 配置
  *   包含 "global" 和 "tasks" 两个部分，与配置文件格式相同。
  *
- * 安全：服务端会校验发送者是否为 OP（权限等级 ≥ 4），
- * 非 OP 玩家的更新请求会被拒绝。
+ * 背包入口范围作为 JSON 元数据携带，保持本包的二进制格式与旧版兼容；服务端仍会
+ * 独立校验 OP2 和 Mod Menu 授权名单，客户端声明不能扩大权限。
  */
 public class ConfigUpdatePayload implements CustomPacketPayload {
     private static final int MAX_JSON_LENGTH = 262144;

@@ -46,6 +46,12 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 生命周期事件处理（JOIN / DISCONNECT / 游戏结束 / 配置保存回调）
         new ClientLifecycleHandler(shaderMonitor);
 
+        // 加载界面纹理预注册
+        try {
+            com.habitrain.core.client.loading.HabiLoadingScreenTextures.registerTextures(net.minecraft.client.Minecraft.getInstance());
+        } catch (Throwable ignored) {
+        }
+
         // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
         //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
     }

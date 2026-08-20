@@ -10,6 +10,7 @@ import com.habitrain.core.client.gui.MapVotePreviewCache;
 import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.gui.VoteLaunchSession;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
+import com.habitrain.core.client.gui.menu.ConfigUpdateContext;
 import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
@@ -78,13 +79,14 @@ public class ClientLifecycleHandler {
                                 .refreshServer(mc.getSingleplayerServer()));
                 return;
             }
-            if (!MenuPermissions.canEditRemoteConfigs()) return;
+            var scope = ConfigUpdateContext.currentScope();
+            if (!MenuPermissions.canEditRemoteConfigs(scope)) return;
 
             // 发送当前完整配置到服务端
             // 服务端会校验 OP 权限，非 OP 的请求会被拒绝
             String configJson = ConfigManager.getInstance().toJsonString();
             InstinctColorHelper.markDirty();
-            PayloadSenders.sendConfigUpdate(configJson);
+            PayloadSenders.sendConfigUpdate(configJson, scope);
         });
 
                 // 监听 SRE 游戏结束事件 → 交还结束转场（滑出）+ 立即隐藏 HUD + 刷新游戏运行缓存
@@ -116,6 +118,7 @@ public class ClientLifecycleHandler {
 
     private static void resetState() {
         GameRunningCache.invalidate();
+        ConfigUpdateContext.reset();
         RepairModeClientState.reset();
         MenuAccessGuard.reset();
         BlackoutHudOverlay.reset();

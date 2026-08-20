@@ -24,10 +24,11 @@ public abstract class ExerciseMapScannerMixin {
             require = 1
     )
     private static boolean habitrain$matchExerciseBlocks(BlockState state, net.minecraft.world.level.block.Block block) {
-        // 原比较目标是 BLACK_CONCRETE 时：只认枯萎珊瑚，黑混凝土不再作为任务点
+        // 原比较目标是 BLACK_CONCRETE 时：兼容原版黑混凝土与枯萎珊瑚族
         if (block == Blocks.BLACK_CONCRETE) {
             var b = state.getBlock();
-            return b == Blocks.DEAD_TUBE_CORAL_BLOCK
+            return state.is(Blocks.BLACK_CONCRETE)
+                    || b == Blocks.DEAD_TUBE_CORAL_BLOCK
                     || b == Blocks.DEAD_BRAIN_CORAL_BLOCK
                     || b == Blocks.DEAD_BUBBLE_CORAL_BLOCK
                     || b == Blocks.DEAD_FIRE_CORAL_BLOCK

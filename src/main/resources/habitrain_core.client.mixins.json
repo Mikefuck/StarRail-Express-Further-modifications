@@ -27,8 +27,10 @@
         "VoteLaunchFadeBlockMixin",
         "VoteLaunchCameraBlockMixin",
         "VoteLaunchAmbientSoundBlockMixin",
-        "TaskInstinctDefaultDisableMixin",
         "MapIntroSyncPayloadMixin",
-        "MapIntroduceScreenMixin"
+        "MapIntroduceScreenMixin",
+        "StarRailLoadingOverlayMixin",
+        "SREReceivingLevelScreenMixin",
+        "TrainLoadingScreenMixin"
     ]
 }

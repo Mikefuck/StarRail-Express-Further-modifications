@@ -31,18 +31,26 @@ public final class C2SReceiverRegistrar {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
-                if (!player.hasPermissions(4)) {
-                    player.sendSystemMessage(Component.literal("§c你没有权限修改服务端配置（需要 OP 权限）"));
+                ConfigUpdateScope scope = ConfigUpdateScope.fromConfigJson(payload.getConfigJson());
+                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(scope, player.hasPermissions(2),
+                        context.server().isDedicatedServer(), MenuGateService.isEnabled(),
+                        MenuGateService.isAllowed(player));
+                if (!allowed) {
+                    String message = scope == ConfigUpdateScope.FULL_MOD_MENU
+                            ? "§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"
+                            : "§c你没有权限修改此背包设置（需要 OP2）";
+                    player.sendSystemMessage(Component.literal(message));
                     return;
                 }
-                // Mod 菜单门控：专用服务器上门控开启且未授权时，服务端权威拒绝配置写入
-                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
-                        && !MenuGateService.isAllowed(player)) {
-                    player.sendSystemMessage(Component.literal("§c当前为未授权的访问：未获得服务器授权修改配置"));
+                final String filteredJson;
+                try {
+                    filteredJson = ConfigUpdateAccessPolicy.filterConfigJson(scope, payload.getConfigJson());
+                } catch (RuntimeException e) {
+                    player.sendSystemMessage(Component.literal("§c配置更新被拒绝：JSON 根节点无效"));
                     return;
                 }
-                // merge 语义：仅覆盖 OP 客户端发送的条目；失败则不 save/不广播
-                boolean merged = ConfigManager.getInstance().mergeFromJsonString(payload.getConfigJson());
+                // 背包 scope 会先剥离无关区域，不能借由伪造完整 JSON 修改其他配置。
+                boolean merged = ConfigManager.getInstance().mergeFromJsonString(filteredJson);
                 if (!merged) {
                     player.sendSystemMessage(Component.literal(
                             "§c配置合并失败：JSON 无效或字段类型错误，服务端配置未改动"));
@@ -56,7 +64,7 @@ public final class C2SReceiverRegistrar {
                 com.habitrain.core.role.override.RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
                 com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
                         .refreshServer(context.server());
-                LOGGER.info("玩家 {} 通过 ModMenu 更新了服务端配置", player.getName().getString());
+                LOGGER.info("玩家 {} 通过 {} 更新了服务端配置", player.getName().getString(), scope);
                 // 同步最新的地图档案与预览图
                 try {
                     ServerLevel overworld = context.server().overworld();
@@ -82,18 +90,13 @@ public final class C2SReceiverRegistrar {
                 FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });
-        // C2S 地图介绍预览图：OP 选择本地 PNG 后上传到服务端世界目录。
+        // C2S 地图介绍预览图：地图轮换/投票区域内，OP2 可上传到服务端世界目录。
         ServerPlayNetworking.registerGlobalReceiver(MapVotePreviewUploadPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
-                if (!player.hasPermissions(4)) {
-                    player.sendSystemMessage(Component.literal("§c预览图上传失败：需要 OP 权限"));
-                    return;
-                }
-                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
-                        && !MenuGateService.isAllowed(player)) {
-                    player.sendSystemMessage(Component.literal("§c预览图上传失败：未获得服务器菜单授权"));
+                if (!player.hasPermissions(2)) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：需要 OP2 权限"));
                     return;
                 }
                 com.habitrain.core.vote.MapVoteProfileStore.UploadResult result =
@@ -270,20 +273,17 @@ public final class C2SReceiverRegistrar {
                     com.habitrain.core.api.role.v2.action.RoleActionApi.instance()
                             .receiveC2S(player, payload.actionId(), payload.payload(), payload.sequence());
                 }));
-        // C2S 角色扩展 v2 配置更新（§13.1）：仅 OP4 且通过菜单门控的服务端权威应用。
+        // C2S 角色扩展 v2 配置更新：完整 Mod Menu 的 OP2 + 门控授权后服务端权威应用。
         ServerPlayNetworking.registerGlobalReceiver(RoleConfigUpdatePayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null || payload == null) {
                     return;
                 }
-                if (!player.hasPermissions(4)) {
-                    player.sendSystemMessage(Component.literal("§c你没有权限修改角色扩展配置（需要 OP 权限）"));
-                    return;
-                }
-                if (context.server().isDedicatedServer() && MenuGateService.isEnabled()
-                        && !MenuGateService.isAllowed(player)) {
-                    player.sendSystemMessage(Component.literal("§c当前为未授权的访问：未获得服务器授权修改配置"));
+                if (!ConfigUpdateAccessPolicy.isAllowed(ConfigUpdateScope.FULL_MOD_MENU,
+                        player.hasPermissions(2), context.server().isDedicatedServer(),
+                        MenuGateService.isEnabled(), MenuGateService.isAllowed(player))) {
+                    player.sendSystemMessage(Component.literal("§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"));
                     return;
                 }
                 if (!com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE
