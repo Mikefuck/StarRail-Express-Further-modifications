@@ -1,0 +1,10 @@
+{
+  "name": "double_cheer", "author": "HabiTrain", "description": "Both arms rise in a rhythmic victory cheer",
+  "emote": { "isLoop": "true", "returnTick": 6, "beginTick": 0, "endTick": 54, "stopTick": 55, "degrees": true, "moves": [
+    {"tick":6,"easing":"OUTQUAD","torso":{"pitch":8},"rightArm":{"pitch":-45,"roll":25},"leftArm":{"pitch":-45,"roll":-25}},
+    {"tick":16,"easing":"OUTBACK","torso":{"pitch":-5,"y":-0.35},"rightArm":{"pitch":-168,"roll":8},"leftArm":{"pitch":-168,"roll":-8}},
+    {"tick":28,"easing":"INOUTSINE","torso":{"pitch":6,"y":0},"rightArm":{"pitch":-72,"roll":25},"leftArm":{"pitch":-72,"roll":-25}},
+    {"tick":40,"easing":"OUTBACK","torso":{"pitch":-5,"y":-0.35},"rightArm":{"pitch":-168,"roll":8},"leftArm":{"pitch":-168,"roll":-8}},
+    {"tick":54,"easing":"INOUTSINE","torso":{"pitch":8,"y":0},"rightArm":{"pitch":-45,"roll":25},"leftArm":{"pitch":-45,"roll":-25}}
+  ]}
+}

@@ -7,6 +7,7 @@ import com.habitrain.core.client.gui.menu.page.ModeRolesPage;
 import com.habitrain.core.client.gui.menu.page.ModeTasksPage;
 import com.habitrain.core.client.gui.menu.page.OtherPage;
 import com.habitrain.core.client.gui.menu.page.OutGameLobbyEnvPage;
+import com.habitrain.core.client.gui.menu.page.OutGameMvpAnimationsPage;
 import com.habitrain.core.client.gui.menu.page.OutGameShaderPage;
 import com.habitrain.core.client.gui.menu.page.OutGameVotePage;
 import com.habitrain.core.client.gui.menu.ui.SaveBar;
@@ -39,13 +40,13 @@ public class ConfigMenuScreen extends Screen {
     };
     private static final String[][] SUB_LABELS = {
         {"小游戏", "数值平衡", "环境"},
-        {"投票", "大厅环境", "光影白名单"},
+        {"投票", "大厅环境", "光影白名单", "MVP 动画"},
         {"任务配置", "角色覆盖", "角色扩展"},
         {}
     };
     private static final String[][] PAGE_HINTS = {
         {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气"},
-        {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包"},
+        {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包", "配置结算页玩家动作与随机规则"},
         {"按模式管理任务并编辑奖励与地图", "管理角色替换、调整和冲突状态", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
         {"兼容、耐久与服务端自动行为"}
     };
@@ -128,7 +129,8 @@ public class ConfigMenuScreen extends Screen {
         pages[TOP_OUT_GAME] = new ConfigPage[]{
             new OutGameVotePage(this, font, remoteEditable),
             new OutGameLobbyEnvPage(this, font, remoteEditable),
-            new OutGameShaderPage(this, font, remoteEditable)
+            new OutGameShaderPage(this, font, remoteEditable),
+            new OutGameMvpAnimationsPage(this, font, remoteEditable)
         };
         pages[TOP_MODE] = new ConfigPage[]{
             new ModeTasksPage(this, font, remoteEditable),

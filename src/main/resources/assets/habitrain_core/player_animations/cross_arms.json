@@ -1,0 +1,10 @@
+{
+  "name": "cross_arms", "author": "HabiTrain", "description": "A cool crossed-arm MVP stance",
+  "emote": { "isLoop": "true", "returnTick": 12, "beginTick": 0, "endTick": 76, "stopTick": 77, "degrees": true, "moves": [
+    {"tick":12,"easing":"OUTQUAD","head":{"pitch":-5,"yaw":-6},"torso":{"yaw":4},"rightArm":{"pitch":-58,"yaw":-38,"roll":-38},"leftArm":{"pitch":-58,"yaw":38,"roll":38}},
+    {"tick":30,"easing":"INOUTSINE","head":{"yaw":8},"torso":{"yaw":-3}},
+    {"tick":48,"easing":"INOUTSINE","head":{"yaw":-8},"torso":{"yaw":3}},
+    {"tick":66,"easing":"INOUTSINE","head":{"yaw":0},"torso":{"yaw":0}},
+    {"tick":76,"easing":"INOUTSINE","rightArm":{"pitch":-58,"yaw":-38,"roll":-38},"leftArm":{"pitch":-58,"yaw":38,"roll":38}}
+  ]}
+}

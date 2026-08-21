@@ -327,6 +327,19 @@ public class ConfigManager implements ConfigQueryService {
         com.habitrain.core.role.override.RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
     }
 
+    public MvpAnimationSettings getMvpAnimationSettings() {
+        return repository.getMvpAnimations();
+    }
+
+    public void setMvpAnimationSettings(MvpAnimationSettings settings) {
+        repository.setMvpAnimations(settings);
+        store.markDirty();
+    }
+
+    public void markMvpAnimationDirty() {
+        store.markDirty();
+    }
+
     public void ensureModeMapVoteDefaults(java.util.Collection<String> modeIds,
                                           java.util.Collection<String> mapIds) {
         ModeMapVoteSettings s = repository.getModeMapVote();

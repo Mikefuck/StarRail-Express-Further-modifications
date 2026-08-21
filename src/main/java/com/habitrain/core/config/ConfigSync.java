@@ -113,6 +113,11 @@ public class ConfigSync {
                 newRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
             }
 
+            MvpAnimationSettings newMvpAnimations = MvpAnimationSettings.createDefault();
+            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
+                newMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
+            }
+
             repo.getMutableTaskConfigs().clear();
             repo.getMutableTaskConfigs().putAll(newTasks);
             repo.getMutableGameModeConfigs().clear();
@@ -133,6 +138,7 @@ public class ConfigSync {
             if (newRoleOverrides != null) {
                 repo.setRoleOverrides(newRoleOverrides);
             }
+            repo.setMvpAnimations(newMvpAnimations);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
         }
@@ -298,6 +304,11 @@ public class ConfigSync {
                 incomingRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
             }
 
+            MvpAnimationSettings incomingMvpAnimations = null;
+            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
+                incomingMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
+            }
+
             // ---- stage 2: commit all temps to repo ----
             if (newDlcTarget != null) repo.setDlcProbabilityTarget(newDlcTarget);
             if (newShaderEnabled != null) repo.setShaderWhitelistEnabled(newShaderEnabled);
@@ -331,6 +342,15 @@ public class ConfigSync {
                 existing.setGlobalEnabled(incomingRoleOverrides.isGlobalEnabled());
                 existing.getEntries().putAll(incomingRoleOverrides.getEntries());
                 existing.getConflictResolution().putAll(incomingRoleOverrides.getConflictResolution());
+            }
+            if (incomingMvpAnimations != null) {
+                MvpAnimationSettings existing = repo.getMvpAnimations();
+                existing.enabled = incomingMvpAnimations.enabled;
+                existing.randomSelection = incomingMvpAnimations.randomSelection;
+                existing.avoidDuplicates = incomingMvpAnimations.avoidDuplicates;
+                existing.showRoleItems = incomingMvpAnimations.showRoleItems;
+                existing.speed = incomingMvpAnimations.speed;
+                existing.animations.putAll(incomingMvpAnimations.animations);
             }
             return true;
         } catch (Exception e) {

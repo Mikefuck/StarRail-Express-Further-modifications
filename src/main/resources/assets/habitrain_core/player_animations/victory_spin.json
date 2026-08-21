@@ -1,0 +1,10 @@
+{
+  "name": "victory_spin", "author": "HabiTrain", "description": "A full celebratory spin with open arms",
+  "emote": { "isLoop": "true", "returnTick": 6, "beginTick": 0, "endTick": 66, "stopTick": 67, "degrees": true, "moves": [
+    {"tick":6,"easing":"LINEAR","torso":{"yaw":0},"rightArm":{"pitch":-18,"roll":72},"leftArm":{"pitch":-18,"roll":-72}},
+    {"tick":21,"easing":"LINEAR","torso":{"yaw":90},"rightLeg":{"pitch":18},"leftLeg":{"pitch":-18}},
+    {"tick":36,"easing":"LINEAR","torso":{"yaw":180},"rightLeg":{"pitch":-18},"leftLeg":{"pitch":18}},
+    {"tick":51,"easing":"LINEAR","torso":{"yaw":270},"rightLeg":{"pitch":18},"leftLeg":{"pitch":-18}},
+    {"tick":66,"easing":"LINEAR","torso":{"yaw":360},"rightLeg":{"pitch":0},"leftLeg":{"pitch":0},"rightArm":{"pitch":-18,"roll":72},"leftArm":{"pitch":-18,"roll":-72}}
+  ]}
+}

@@ -22,14 +22,18 @@ public class SubTabBar {
 
     /** 返回悬停下标（-1 表示无），调用方据此处理点击切换。 */
     public int render(GuiGraphics g, Font font, int x, int y, int w, int selected, int mx, int my) {
-        int tabW = Math.max(60, Math.min(132, (w - (labels.length - 1) * 5) / labels.length));
+        if (labels.length == 0 || w <= 0) return -1;
+        int gap = w < labels.length * 70 ? 2 : 5;
+        int available = Math.max(labels.length, w - (labels.length - 1) * gap);
+        int tabW = Math.max(1, Math.min(132, available / labels.length));
         int hit = -1;
         for (int i = 0; i < labels.length; i++) {
-            int tx = x + i * (tabW + 5);
+            int tx = x + i * (tabW + gap);
             boolean sel = i == selected;
             boolean hover = MenuTheme.inBounds(mx, my, tx, y, tabW, H);
             if (hover) hit = i;
-            MenuTheme.chip(g, font, labels[i], tx, y, tabW, H, accents[i], sel);
+            String visibleLabel = font.plainSubstrByWidth(labels[i], Math.max(1, tabW - 8));
+            MenuTheme.chip(g, font, visibleLabel, tx, y, tabW, H, accents[i], sel);
             if (hover && !sel) MenuTheme.outline(g, tx, y, tabW, H, MenuTheme.TEXT_DIM);
         }
         return hit;

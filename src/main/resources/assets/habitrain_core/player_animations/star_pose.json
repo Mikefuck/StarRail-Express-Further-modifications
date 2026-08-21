@@ -1,0 +1,10 @@
+{
+  "name": "star_pose", "author": "HabiTrain", "description": "A bright five-point champion pose",
+  "emote": { "isLoop": "true", "returnTick": 10, "beginTick": 0, "endTick": 68, "stopTick": 69, "degrees": true, "moves": [
+    {"tick":10,"easing":"OUTBACK","head":{"pitch":-8},"rightArm":{"pitch":-12,"yaw":-12,"roll":88},"leftArm":{"pitch":-12,"yaw":12,"roll":-88},"rightLeg":{"roll":17},"leftLeg":{"roll":-17}},
+    {"tick":28,"easing":"INOUTSINE","torso":{"y":-0.2,"roll":2},"head":{"roll":-3}},
+    {"tick":46,"easing":"INOUTSINE","torso":{"y":0.15,"roll":-2},"head":{"roll":3}},
+    {"tick":60,"easing":"INOUTSINE","torso":{"y":0,"roll":0},"head":{"roll":0}},
+    {"tick":68,"easing":"INOUTSINE","rightArm":{"pitch":-12,"yaw":-12,"roll":88},"leftArm":{"pitch":-12,"yaw":12,"roll":-88},"rightLeg":{"roll":17},"leftLeg":{"roll":-17}}
+  ]}
+}

@@ -1,0 +1,10 @@
+{
+  "name": "hero_landing", "author": "HabiTrain", "description": "A dramatic one-knee hero landing pose",
+  "emote": { "isLoop": "true", "returnTick": 12, "beginTick": 0, "endTick": 82, "stopTick": 83, "degrees": true, "moves": [
+    {"tick":12,"easing":"INQUAD","torso":{"pitch":18,"yaw":-8,"y":1.2},"head":{"pitch":-12},"rightArm":{"pitch":-75,"roll":28},"leftArm":{"pitch":20,"roll":-40},"rightLeg":{"pitch":65},"leftLeg":{"pitch":-35}},
+    {"tick":24,"easing":"OUTBACK","torso":{"pitch":38,"yaw":-12,"y":2.0},"head":{"pitch":-30},"rightArm":{"pitch":-112,"roll":36},"leftArm":{"pitch":42,"roll":-55},"rightLeg":{"pitch":88},"leftLeg":{"pitch":-52}},
+    {"tick":50,"easing":"INOUTSINE","head":{"pitch":-18,"yaw":8},"torso":{"pitch":34,"y":1.8}},
+    {"tick":68,"easing":"INOUTSINE","head":{"pitch":-30,"yaw":0},"torso":{"pitch":38,"y":2.0}},
+    {"tick":82,"easing":"INOUTSINE","torso":{"pitch":18,"yaw":-8,"y":1.2},"rightLeg":{"pitch":65},"leftLeg":{"pitch":-35}}
+  ]}
+}

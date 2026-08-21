@@ -20,6 +20,7 @@ public class ConfigRepository {
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
     private RoleOverrideConfigSection roleOverrides = RoleOverrideConfigSection.createDefault();
+    private MvpAnimationSettings mvpAnimations = MvpAnimationSettings.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -178,6 +179,14 @@ public class ConfigRepository {
 
     public void setRoleOverrides(RoleOverrideConfigSection s) {
         this.roleOverrides = s != null ? s : RoleOverrideConfigSection.createDefault();
+    }
+
+    public MvpAnimationSettings getMvpAnimations() {
+        return mvpAnimations != null ? mvpAnimations : MvpAnimationSettings.createDefault();
+    }
+
+    public void setMvpAnimations(MvpAnimationSettings s) {
+        this.mvpAnimations = s != null ? s : MvpAnimationSettings.createDefault();
     }
 
     @Nullable

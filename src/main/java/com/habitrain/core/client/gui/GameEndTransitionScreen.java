@@ -43,14 +43,21 @@ import com.google.common.collect.Multimap;
 import com.habitrain.core.client.gui.GameEndOverlayState;
 import com.habitrain.core.client.gui.OptionVoteTexts;
 import com.habitrain.core.client.gui.VoteLaunchOverlayState;
+import com.habitrain.core.client.mvp.MvpAnimationController;
+import com.habitrain.core.client.mvp.MvpAnimationDefinition;
+import com.habitrain.core.client.mvp.MvpAnimationSelector;
+import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.config.MvpAnimationSettings;
 import com.habitrain.core.network.GameEndTransitionPayload;
 import com.mojang.authlib.GameProfile;
 import com.mojang.math.Axis;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
@@ -127,6 +134,9 @@ extends Screen {
     private final Map<UUID, AbstractClientPlayer> previewPlayers = new LinkedHashMap<UUID, AbstractClientPlayer>();
     private ClientLevel previewLevel;
     private final Map<Integer, ItemStack> victoryWeaponTemplates = new LinkedHashMap<Integer, ItemStack>();
+    private final MvpAnimationController mvpAnimations = new MvpAnimationController();
+    private final Map<UUID, MvpAnimationDefinition> selectedMvpAnimations = new LinkedHashMap<UUID, MvpAnimationDefinition>();
+    private final Set<UUID> mvpAnimationStarted = new HashSet<UUID>();
     private boolean environmentReady;
     private boolean exitStarted;
     private long exitStartAtMillis;
@@ -184,6 +194,7 @@ extends Screen {
     }
 
     public void tick() {
+        this.mvpAnimations.tick();
         long now = Util.getMillis();
         if (!this.exitStarted) {
             boolean hardRelease;
@@ -441,6 +452,7 @@ extends Screen {
         if (count <= 0) {
             return;
         }
+        MvpAnimationSettings animSettings = ConfigManager.getInstance().getMvpAnimationSettings();
         float stageWidth = Math.min(Math.max(220.0f, (float)this.width - 24.0f), 560.0f);
         float cellWidth = stageWidth / 4.0f;
         float left = ((float)this.width - stageWidth) * 0.5f;
@@ -476,9 +488,23 @@ extends Screen {
             this.renderEntranceDust(g, x, slotBottom, scale, moving * entranceAlpha, mvpElapsed, i, entersFromLeft);
             AbstractClientPlayer player = this.previewPlayer(entry.playerId(), entry.playerName());
             float lookOffset = (entersFromLeft ? 1.0f : -1.0f) * scale * 0.52f * moving;
-            ItemStack heldItem = this.victoryWeapon(entry.roleType());
-            boolean raiseKnife = entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
-            this.renderPlayerModel(g, player, x, slotBottom + bob, Math.round(scale), moving, walkLinear * 10.0f + (float)i * 1.3f, false, lookOffset, heldItem, raiseKnife);
+
+            final int rankIndex = i;
+            MvpAnimationDefinition animDef = this.selectedMvpAnimations.computeIfAbsent(entry.playerId(),
+                    uid -> MvpAnimationSelector.select(animSettings, uid, rankIndex, count, this.startedAtMillis, true));
+            if (animDef != null && walkLinear >= 0.88f && !this.mvpAnimationStarted.contains(entry.playerId())) {
+                this.mvpAnimationStarted.add(entry.playerId());
+                this.mvpAnimations.play(player, animDef, animSettings.speed);
+            }
+
+            boolean customAnim = this.mvpAnimations.isPlaying(entry.playerId());
+            MvpAnimationDefinition activeDef = customAnim ? this.mvpAnimations.getPlayingDefinition(entry.playerId()) : null;
+            boolean showWeapon = customAnim ? (animSettings.showRoleItems && (activeDef == null || !activeDef.prefersHiddenItem())) : true;
+            ItemStack heldItem = showWeapon ? this.victoryWeapon(entry.roleType()) : ItemStack.EMPTY;
+            boolean raiseKnife = !customAnim && entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
+            float effectiveMoving = customAnim && walkLinear >= 0.88f ? 0.0f : moving;
+
+            this.renderPlayerModel(g, player, x, slotBottom + bob, Math.round(scale), effectiveMoving, walkLinear * 10.0f + (float)i * 1.3f, false, lookOffset, heldItem, raiseKnife);
             float nameT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((walkLinear - 0.52f) / 0.28f), (float)0.0f, (float)1.0f)) * stageT;
             if (!(nameT > 0.01f)) continue;
             float nameY = slotBottom - scale * 2.42f - 26.0f;
@@ -487,6 +513,7 @@ extends Screen {
     }
 
     private void renderSoloMvp(GuiGraphics g, long mvpElapsed, float stageT) {
+        MvpAnimationSettings animSettings = ConfigManager.getInstance().getMvpAnimationSettings();
         GameEndTransitionPayload.MvpPlayer entry = this.mvpPlayers.get(0);
         float walkLinear = Mth.clamp((float)((float)mvpElapsed / 2500.0f), (float)0.0f, (float)1.0f);
         float walk = GameEndTransitionScreen.easeOutCubic(walkLinear);
@@ -509,9 +536,23 @@ extends Screen {
         }
         AbstractClientPlayer hero = this.previewPlayer(entry.playerId(), entry.playerName());
         float lookOffset = scale * 0.58f * moving;
-        ItemStack heldItem = this.victoryWeapon(entry.roleType());
-        boolean raiseKnife = entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
-        this.renderPlayerModel(g, hero, heroX, bottom + bob, Math.round(scale), moving, walkLinear * 11.0f, sit > 0.38f, lookOffset, heldItem, raiseKnife);
+
+        MvpAnimationDefinition animDef = this.selectedMvpAnimations.computeIfAbsent(entry.playerId(),
+                uid -> MvpAnimationSelector.select(animSettings, uid, 0, 1, this.startedAtMillis, false));
+        if (animDef != null && walkLinear >= 0.88f && !this.mvpAnimationStarted.contains(entry.playerId())) {
+            this.mvpAnimationStarted.add(entry.playerId());
+            this.mvpAnimations.play(hero, animDef, animSettings.speed);
+        }
+
+        boolean customAnim = this.mvpAnimations.isPlaying(entry.playerId());
+        MvpAnimationDefinition activeDef = customAnim ? this.mvpAnimations.getPlayingDefinition(entry.playerId()) : null;
+        boolean showWeapon = customAnim ? (animSettings.showRoleItems && (activeDef == null || !activeDef.prefersHiddenItem())) : true;
+        ItemStack heldItem = showWeapon ? this.victoryWeapon(entry.roleType()) : ItemStack.EMPTY;
+        boolean raiseKnife = !customAnim && entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
+        boolean legacyCrouch = !customAnim && sit > 0.38f;
+        float effectiveMoving = customAnim && walkLinear >= 0.88f ? 0.0f : moving;
+
+        this.renderPlayerModel(g, hero, heroX, bottom + bob, Math.round(scale), effectiveMoving, walkLinear * 11.0f, legacyCrouch, lookOffset, heldItem, raiseKnife);
         float cardT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sitLinear - 0.35f) / 0.5f), (float)0.0f, (float)1.0f)) * stageT;
         if (cardT > 0.01f) {
             this.renderSoloNameCard(g, entry, cardT);
@@ -719,6 +760,9 @@ extends Screen {
             return null;
         }
         if (this.previewLevel != mc.level) {
+            this.mvpAnimations.clear();
+            this.selectedMvpAnimations.clear();
+            this.mvpAnimationStarted.clear();
             this.previewPlayers.clear();
             this.previewLevel = mc.level;
         }
@@ -737,6 +781,7 @@ extends Screen {
                 return true;
             }
         };
+        this.mvpAnimations.attach(created);
         this.previewPlayers.put(id, (AbstractClientPlayer)created);
         return created;
     }
@@ -975,6 +1020,9 @@ extends Screen {
         if (!this.completed && GameEndOverlayState.isActive()) {
             GameEndOverlayState.scheduleGrace((long)0L);
         }
+        this.mvpAnimations.clear();
+        this.selectedMvpAnimations.clear();
+        this.mvpAnimationStarted.clear();
         this.previewPlayers.clear();
         this.previewLevel = null;
     }

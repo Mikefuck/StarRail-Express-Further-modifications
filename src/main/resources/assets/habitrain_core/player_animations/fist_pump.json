@@ -1,0 +1,11 @@
+{
+  "name": "fist_pump", "author": "HabiTrain", "description": "An energetic repeated victory fist pump",
+  "emote": { "isLoop": "true", "returnTick": 8, "beginTick": 0, "endTick": 56, "stopTick": 57, "degrees": true, "moves": [
+    {"tick":8,"easing":"OUTQUAD","torso":{"pitch":8,"roll":-3},"rightArm":{"pitch":-65,"yaw":-12,"roll":15},"leftArm":{"pitch":18}},
+    {"tick":18,"easing":"OUTBACK","torso":{"pitch":-6,"y":-0.4},"rightArm":{"pitch":-170,"yaw":-8,"roll":8},"leftArm":{"pitch":28}},
+    {"tick":28,"easing":"INOUTSINE","torso":{"pitch":5,"y":0},"rightArm":{"pitch":-92,"yaw":-12,"roll":15}},
+    {"tick":38,"easing":"OUTBACK","torso":{"pitch":-6,"y":-0.4},"rightArm":{"pitch":-170,"yaw":-8,"roll":8}},
+    {"tick":48,"easing":"INOUTSINE","torso":{"pitch":5,"y":0},"rightArm":{"pitch":-92,"yaw":-12,"roll":15}},
+    {"tick":56,"easing":"INOUTSINE","torso":{"pitch":8,"roll":-3},"rightArm":{"pitch":-65,"yaw":-12,"roll":15}}
+  ]}
+}

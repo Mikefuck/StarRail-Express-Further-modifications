@@ -18,6 +18,10 @@ repositories {
     maven { url = "https://maven.terraformersmc.com/releases/" }
     maven { url = "https://maven.uuid.gg/releases" }
     maven { url = "https://maven.bawnorton.com/releases" }
+    maven {
+        name = "KosmX Maven"
+        url = "https://maven.kosmx.dev/"
+    }
     flatDir { dirs "libs" }
 }
 
@@ -29,6 +33,7 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     modImplementation "com.terraformersmc:modmenu:11.0.3"
+    include modImplementation("dev.kosmx.player-anim:player-animation-lib-fabric:2.0.4+1.21.1")
     // 开发环境必须使用上游的 named dev JAR；成品 intermediary JAR 在 Loom 中会漏映射
     // 继承的静态方法调用（例如 Block.simpleCodec），导致 runClient NoSuchMethodError。
     implementation files("libs/star_rail_express-4.3.0-dev.jar")
@@ -110,6 +115,9 @@ processResources {
     inputs.property "version", version
     filesMatching("fabric.mod.json") {
         expand "version": version
+    }
+    from("THIRD_PARTY_LICENSES") {
+        into("META-INF/LICENSES/habitrain_core")
     }
 }
 

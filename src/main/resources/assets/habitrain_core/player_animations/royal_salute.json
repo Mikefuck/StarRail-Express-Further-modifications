@@ -1,0 +1,10 @@
+{
+  "name": "royal_salute", "author": "HabiTrain", "description": "A formal royal victory salute",
+  "emote": { "isLoop": "true", "returnTick": 10, "beginTick": 0, "endTick": 70, "stopTick": 71, "degrees": true, "moves": [
+    {"tick":10,"easing":"INOUTSINE","head":{"yaw":-5},"torso":{"yaw":-4},"rightArm":{"pitch":-45,"yaw":-18,"roll":35}},
+    {"tick":24,"easing":"OUTQUAD","head":{"yaw":0},"torso":{"yaw":0},"rightArm":{"pitch":-105,"yaw":-12,"roll":-78}},
+    {"tick":46,"easing":"INOUTSINE","head":{"pitch":-4},"rightArm":{"pitch":-105,"yaw":-12,"roll":-78}},
+    {"tick":58,"easing":"INOUTSINE","head":{"pitch":0},"rightArm":{"pitch":-98,"yaw":-8,"roll":-72}},
+    {"tick":70,"easing":"INOUTSINE","rightArm":{"pitch":-45,"yaw":-18,"roll":35}}
+  ]}
+}

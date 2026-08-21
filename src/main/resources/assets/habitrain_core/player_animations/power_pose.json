@@ -1,0 +1,10 @@
+{
+  "name": "power_pose", "author": "HabiTrain", "description": "A broad and confident champion stance",
+  "emote": { "isLoop": "true", "returnTick": 12, "beginTick": 0, "endTick": 72, "stopTick": 73, "degrees": true, "moves": [
+    {"tick":12,"easing":"OUTBACK","head":{"pitch":-7},"torso":{"pitch":-5},"rightArm":{"pitch":-25,"yaw":-18,"roll":42},"leftArm":{"pitch":-25,"yaw":18,"roll":-42},"rightLeg":{"roll":5},"leftLeg":{"roll":-5}},
+    {"tick":30,"easing":"INOUTSINE","head":{"yaw":7},"torso":{"yaw":3,"y":-0.15}},
+    {"tick":48,"easing":"INOUTSINE","head":{"yaw":-7},"torso":{"yaw":-3,"y":0.1}},
+    {"tick":64,"easing":"INOUTSINE","head":{"yaw":0},"torso":{"yaw":0,"y":0}},
+    {"tick":72,"easing":"INOUTSINE","head":{"pitch":-7},"torso":{"pitch":-5},"rightArm":{"pitch":-25,"yaw":-18,"roll":42},"leftArm":{"pitch":-25,"yaw":18,"roll":-42}}
+  ]}
+}

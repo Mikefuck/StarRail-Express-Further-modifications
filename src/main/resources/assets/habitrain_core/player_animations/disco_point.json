@@ -1,0 +1,10 @@
+{
+  "name": "disco_point", "author": "HabiTrain", "description": "Alternating disco points for a stylish victory",
+  "emote": { "isLoop": "true", "returnTick": 8, "beginTick": 0, "endTick": 64, "stopTick": 65, "degrees": true, "moves": [
+    {"tick":8,"easing":"OUTBACK","torso":{"roll":-8,"yaw":-8},"head":{"yaw":-15},"rightArm":{"pitch":-145,"yaw":-12,"roll":-35},"leftArm":{"pitch":20,"roll":-20},"rightLeg":{"roll":5}},
+    {"tick":24,"easing":"INOUTSINE","torso":{"roll":8,"yaw":8},"head":{"yaw":15},"rightArm":{"pitch":20,"roll":20},"leftArm":{"pitch":-145,"yaw":12,"roll":35},"rightLeg":{"roll":0},"leftLeg":{"roll":-5}},
+    {"tick":40,"easing":"INOUTSINE","torso":{"roll":-8,"yaw":-8},"head":{"yaw":-15},"rightArm":{"pitch":-145,"yaw":-12,"roll":-35},"leftArm":{"pitch":20,"roll":-20},"rightLeg":{"roll":5},"leftLeg":{"roll":0}},
+    {"tick":56,"easing":"INOUTSINE","torso":{"roll":8,"yaw":8},"head":{"yaw":15},"rightArm":{"pitch":20,"roll":20},"leftArm":{"pitch":-145,"yaw":12,"roll":35},"rightLeg":{"roll":0},"leftLeg":{"roll":-5}},
+    {"tick":64,"easing":"INOUTSINE","torso":{"roll":-8,"yaw":-8},"head":{"yaw":-15}}
+  ]}
+}

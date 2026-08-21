@@ -50,7 +50,8 @@
         "java": ">=21",
         "fabric-api": "*",
         "starrailexpress": "*",
-        "betel-nut-mod": "*"
+        "betel-nut-mod": "*",
+        "playeranimator": ">=2.0.4"
     },
     "suggests": {
         "modmenu": "*"

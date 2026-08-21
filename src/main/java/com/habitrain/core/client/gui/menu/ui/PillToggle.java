@@ -19,7 +19,8 @@ public final class PillToggle {
         int knob = trackH - 4;
         int knobX = on ? x + trackW - knob - 2 : x + 2;
         g.fill(knobX, trackY + 2, knobX + knob, trackY + trackH - 2, color);
-        String text = on ? onText : offText;
+        String text = font.plainSubstrByWidth(on ? onText : offText,
+                Math.max(1, w - trackW - 6));
         int textX = x + trackW + 6;
         g.drawString(font, text, textX, y + (h - font.lineHeight) / 2,
                 on ? MenuTheme.TEXT_PRIMARY : MenuTheme.TEXT_SECONDARY, false);

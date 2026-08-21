@@ -1,0 +1,10 @@
+{
+  "name": "shoulder_dance", "author": "HabiTrain", "description": "A compact shoulder-sway victory dance",
+  "emote": { "isLoop": "true", "returnTick": 6, "beginTick": 0, "endTick": 58, "stopTick": 59, "degrees": true, "moves": [
+    {"tick":6,"easing":"INOUTSINE","torso":{"roll":-8,"y":-0.15},"head":{"roll":6},"rightArm":{"pitch":-55,"roll":28},"leftArm":{"pitch":-25,"roll":-12}},
+    {"tick":19,"easing":"INOUTSINE","torso":{"roll":8,"y":0.12},"head":{"roll":-6},"rightArm":{"pitch":-25,"roll":12},"leftArm":{"pitch":-55,"roll":-28}},
+    {"tick":32,"easing":"INOUTSINE","torso":{"roll":-8,"y":-0.15},"head":{"roll":6},"rightArm":{"pitch":-55,"roll":28},"leftArm":{"pitch":-25,"roll":-12}},
+    {"tick":45,"easing":"INOUTSINE","torso":{"roll":8,"y":0.12},"head":{"roll":-6},"rightArm":{"pitch":-25,"roll":12},"leftArm":{"pitch":-55,"roll":-28}},
+    {"tick":58,"easing":"INOUTSINE","torso":{"roll":-8,"y":-0.15},"head":{"roll":6}}
+  ]}
+}

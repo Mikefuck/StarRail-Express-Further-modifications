@@ -1,0 +1,10 @@
+{
+  "name": "sky_punch", "author": "HabiTrain", "description": "Alternating punches toward the sky",
+  "emote": { "isLoop": "true", "returnTick": 6, "beginTick": 0, "endTick": 58, "stopTick": 59, "degrees": true, "moves": [
+    {"tick":6,"easing":"OUTQUAD","torso":{"roll":-5},"rightArm":{"pitch":-155,"yaw":-8,"roll":-8},"leftArm":{"pitch":-55,"roll":-18}},
+    {"tick":19,"easing":"INOUTSINE","torso":{"roll":5},"rightArm":{"pitch":-55,"roll":18},"leftArm":{"pitch":-155,"yaw":8,"roll":8}},
+    {"tick":32,"easing":"INOUTSINE","torso":{"roll":-5},"rightArm":{"pitch":-155,"yaw":-8,"roll":-8},"leftArm":{"pitch":-55,"roll":-18}},
+    {"tick":45,"easing":"INOUTSINE","torso":{"roll":5},"rightArm":{"pitch":-55,"roll":18},"leftArm":{"pitch":-155,"yaw":8,"roll":8}},
+    {"tick":58,"easing":"INOUTSINE","torso":{"roll":-5},"rightArm":{"pitch":-155,"yaw":-8,"roll":-8}}
+  ]}
+}

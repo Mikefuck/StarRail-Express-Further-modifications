@@ -180,6 +180,12 @@ public class ConfigStore {
                 repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
             }
 
+            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
+                repo.setMvpAnimations(MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations")));
+            } else {
+                repo.setMvpAnimations(MvpAnimationSettings.createDefault());
+            }
+
             LOGGER.info("任务配置已加载: {} 个任务, {} 个GameMode, {} 个小游戏",
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
@@ -214,6 +220,7 @@ public class ConfigStore {
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
         repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
+        repo.setMvpAnimations(MvpAnimationSettings.createDefault());
     }
 
     /**
@@ -325,6 +332,8 @@ public class ConfigStore {
 
         root.add("roleOverrides", repo.getRoleOverrides().toJson());
 
+        root.add("mvpAnimations", repo.getMvpAnimations().toJson());
+
         return root;
     }
 
@@ -345,6 +354,8 @@ public class ConfigStore {
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
+        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
+        repo.setMvpAnimations(MvpAnimationSettings.createDefault());
     }
 
     public String toJsonString(ConfigRepository repo) {
