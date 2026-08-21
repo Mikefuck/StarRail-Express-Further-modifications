@@ -52,6 +52,16 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         } catch (Throwable ignored) {
         }
 
+        // 确保 SREClient 的本能高亮缓存为线程安全的 ConcurrentHashMap
+        try {
+            if (!(io.wifi.starrailexpress.client.SREClient.cachedHighLightMap instanceof java.util.concurrent.ConcurrentHashMap)) {
+                io.wifi.starrailexpress.client.SREClient.cachedHighLightMap = new java.util.concurrent.ConcurrentHashMap<>(
+                        io.wifi.starrailexpress.client.SREClient.cachedHighLightMap != null ? io.wifi.starrailexpress.client.SREClient.cachedHighLightMap : java.util.Map.of()
+                );
+            }
+        } catch (Throwable ignored) {
+        }
+
         // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
         //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
     }
