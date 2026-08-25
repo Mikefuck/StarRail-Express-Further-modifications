@@ -4,8 +4,11 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.WinResult;
+import com.habitrain.core.api.role.v2.behavior.WinPatch;
+import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopService;
 import com.habitrain.core.game.blackout.shop.BlackoutTaskShopState;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
@@ -18,6 +21,7 @@ import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 import java.util.UUID;
@@ -77,27 +81,17 @@ public class BlackoutVictoryChecker {
             return;
         }
 
-        // 3) MODIFY win-condition hooks from role override API.
-        WinResult hookResult = RoleOverrideWinHook.check(level);
-        if (hookResult != null) {
-            mode.setLastWinningFaction(level, null);
-            endGame(level, hookResult, hookResult.getReason());
-            return;
-        }
-
-        // 3b) v2 win hooks. One unified fold for gate + winner patch (shared with
-        // the standard SRE murder chain). evaluateWin can still declare a custom
-        // winner; allowGameEnd DENY is pride-style and may only block "killers
-        // wiped → GOOD win". BAD wipe / timer must still resolve, otherwise pride
-        // coexisting with killers freezes the match.
+        // 3) Unified fold (v2 allowGameEnd → v2 evaluateWin → v1/RolePatch overlay).
+        // BLACKOUT is the DENY gate (pride). Do not treat sin DECLARE_CUSTOM from
+        // this probe as a round end — sloth used to settle as NO_PLAYER. Non-sin
+        // DECLARE_CUSTOM is the v1 overlay hijack, consumed here instead of a
+        // second RoleOverrideWinHook.check authority.
         WinFoldResult v2Fold = RoleEventDispatcher.INSTANCE.foldWin(level, "BLACKOUT", false);
-        WinResult v2Win = v2Fold.toWinResult();
-        if (v2Win != null) {
-            mode.setLastWinningFaction(level, null);
-            endGame(level, v2Win, v2Win.getReason());
-            return;
-        }
         boolean v2BlocksGoodWin = v2Fold.denied();
+        // BLACKOUT is DENY-only. DECLARE_CUSTOM from this per-second probe
+        // (sloth, third-party overlay, v1 hijack) must wait for a real
+        // KILLERS/PASSENGERS/TIME proposal — otherwise a living sloth ends
+        // the round in ~1s as NO_PLAYER.
 
         int goodRemaining = BlackoutRoleManager.getRemainingGood(level);
         int badRemaining = BlackoutRoleManager.getRemainingBad(level);
@@ -110,7 +104,9 @@ public class BlackoutVictoryChecker {
             if (prideBlocking) {
                 return;
             }
-            // Sloth still alive among independents → sloth custom win.
+            if (endFromFactionOrTimerProposal(level, "KILLERS")) {
+                return;
+            }
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
                 return;
@@ -123,6 +119,9 @@ public class BlackoutVictoryChecker {
         // prideBlocking 只能阻止“杀手全灭”的 GOOD 结算，不能把已经成立的 BAD 胜拖到
         // timer 分支反判为 GOOD 胜。
         if (goodRemaining <= 0 && badRemaining > 0) {
+            if (endFromFactionOrTimerProposal(level, "KILLERS")) {
+                return;
+            }
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
                 return;
@@ -135,6 +134,9 @@ public class BlackoutVictoryChecker {
             if (prideBlocking || v2BlocksGoodWin) {
                 return;
             }
+            if (endFromFactionOrTimerProposal(level, "PASSENGERS")) {
+                return;
+            }
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
                 return;
@@ -145,12 +147,88 @@ public class BlackoutVictoryChecker {
         }
         // Timer can still end if pride is alive, but only after wipe outcomes above.
         if (BlackoutTimerSystem.isTimeUp(level)) {
+            if (endFromFactionOrTimerProposal(level, "TIME")) {
+                return;
+            }
             if (SinVictoryHooks.isSlothAlive(level)) {
                 endGameSlothCustom(level);
                 return;
             }
             mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("时间归零"), "§a好人阵营获胜！时间归零，好人成功存活！");
+        }
+    }
+
+    /**
+     * Real faction/timer ends may be stolen by a DECLARE_CUSTOM sin patch.
+     * The per-second BLACKOUT probe is never accepted as a custom end.
+     */
+    private boolean endFromFactionOrTimerProposal(ServerLevel level, String proposed) {
+        if (!acceptCustomWinFromProposal(proposed)) {
+            return false;
+        }
+        WinFoldResult fold = RoleEventDispatcher.INSTANCE.foldWin(level, proposed, false);
+        WinPatch patch = fold.patch();
+        if (patch == null || patch.op() != WinPatchOp.DECLARE_CUSTOM) {
+            return false;
+        }
+        ResourceLocation sinId = resolveCustomSinId(patch.customId());
+        if (sinId == null) {
+            return false;
+        }
+        endGameCustomSin(level, sinId);
+        return true;
+    }
+
+    static boolean acceptCustomWinFromProposal(@Nullable String proposed) {
+        return "KILLERS".equals(proposed) || "PASSENGERS".equals(proposed) || "TIME".equals(proposed);
+    }
+
+    @Nullable
+    static ResourceLocation resolveCustomSinId(@Nullable String customId) {
+        if (customId == null || customId.isBlank()) {
+            return null;
+        }
+        String path = customId.trim();
+        int colon = path.indexOf(':');
+        if (colon >= 0) {
+            path = path.substring(colon + 1);
+        }
+        return switch (path) {
+            case "sin_sloth", "sin_pride", "sin_lust", "sin_greed" ->
+                    ResourceLocation.fromNamespaceAndPath("habitrain_core", path);
+            default -> null;
+        };
+    }
+
+    private void endGameCustomSin(ServerLevel level, ResourceLocation sinId) {
+        if (SevenSins.PRIDE_ID.equals(sinId)) {
+            endGamePrideCustom(level);
+        } else if (SevenSins.SLOTH_ID.equals(sinId)) {
+            endGameSlothCustom(level);
+        } else if (SevenSins.GREED_ID.equals(sinId)) {
+            endGameGreedCustomInstance(level, SinVictoryHooks.findAliveGreedPlayer(level));
+        } else if (SevenSins.LUST_ID.equals(sinId)) {
+            endGameLustCustom(level);
+        }
+    }
+
+    private void endGameLustCustom(ServerLevel level) {
+        if (mode.isGameEnded(level)) return;
+        mode.setLastWinningFaction(level, null);
+        mode.setGameEnded(level, true);
+        String message = "§d色欲·阿斯蒙蒂斯获胜！夺走了恋人的胜利。";
+        mode.setPendingEndMessage(level, message);
+        mode.setPendingWinResult(level, WinResult.noWinner("色欲独立胜"));
+        if (level == null) return;
+        try {
+            populateRoundEndDataCustomSin(level, SevenSins.LUST_ID);
+            mode.setPendingEndMessage(level, null);
+            HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
+            stopSreMatch(level);
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.error("endGameLustCustom failed", e);
+            com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("色欲独立胜"));
         }
     }
 
@@ -163,13 +241,10 @@ public class BlackoutVictoryChecker {
         mode.setPendingWinResult(level, WinResult.noWinner("傲慢独立胜"));
         if (level == null) return;
         try {
-            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.PRIDE_ID);
+            populateRoundEndDataCustomSin(level, SevenSins.PRIDE_ID);
             mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
-            var sreGame = SREGameWorldComponent.KEY.get(level);
-            if (sreGame != null) {
-                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
-            }
+            stopSreMatch(level);
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("endGamePrideCustom failed", e);
             com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("傲慢独立胜"));
@@ -185,13 +260,10 @@ public class BlackoutVictoryChecker {
         mode.setPendingWinResult(level, WinResult.noWinner("懒惰独立胜"));
         if (level == null) return;
         try {
-            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID);
+            populateRoundEndDataCustomSin(level, SevenSins.SLOTH_ID);
             mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
-            var sreGame = SREGameWorldComponent.KEY.get(level);
-            if (sreGame != null) {
-                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
-            }
+            stopSreMatch(level);
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("endGameSlothCustom failed", e);
             com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("懒惰独立胜"));
@@ -207,14 +279,11 @@ public class BlackoutVictoryChecker {
         mode.setPendingWinResult(level, WinResult.noWinner("贪婪独立胜"));
         if (level == null) return;
         try {
-            populateRoundEndDataCustomSin(level, com.habitrain.core.game.sre.role.sins.SevenSins.GREED_ID);
+            populateRoundEndDataCustomSin(level, SevenSins.GREED_ID);
             mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {} winner={}",
                     message, winner != null ? winner.getUUID() : null);
-            var sreGame = SREGameWorldComponent.KEY.get(level);
-            if (sreGame != null) {
-                sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
-            }
+            stopSreMatch(level);
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("endGameGreedCustom failed", e);
             com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("贪婪独立胜"));
@@ -266,11 +335,11 @@ public class BlackoutVictoryChecker {
                 // Public fields on SREGameRoundEndComponent (SRE 4.3).
                 roundEnd.CustomWinnerID = sinRoleId.getPath();
                 // Pride red / Sloth slate / Lust pink default by id.
-                if (com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH_ID.equals(sinRoleId)) {
+                if (SevenSins.SLOTH_ID.equals(sinRoleId)) {
                     roundEnd.CustomWinnerColor = 0x64648C;
-                } else if (com.habitrain.core.game.sre.role.sins.SevenSins.LUST_ID.equals(sinRoleId)) {
+                } else if (SevenSins.LUST_ID.equals(sinRoleId)) {
                     roundEnd.CustomWinnerColor = 0xC83296;
-                } else if (com.habitrain.core.game.sre.role.sins.SevenSins.GREED_ID.equals(sinRoleId)) {
+                } else if (SevenSins.GREED_ID.equals(sinRoleId)) {
                     roundEnd.CustomWinnerColor = 0xC8A014;
                 } else {
                     roundEnd.CustomWinnerColor = 0xB42828;
@@ -334,23 +403,35 @@ public class BlackoutVictoryChecker {
                 // 不要立刻 GameModeRegistry.stop：finalize 仍需 lastWinningFaction。
                 populateRoundEndData(level, mode.getLastWinningFaction(level));
 
-                // 不发 habitrain 胜利 TOP 补充弹窗；SRE 结算 UI 由 populateRoundEndData + STOPPING 驱动。
+                // 不发 habitrain 胜利 TOP 补充弹窗；SRE 结算 UI 由 populateRoundEndData + stopGame 驱动。
                 if (message != null && !message.isEmpty()) {
                     mode.setPendingEndMessage(level, null);
                     HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
                 }
 
-                var sreGame = SREGameWorldComponent.KEY.get(level);
-
-                if (sreGame != null) {
-                    sreGame.setGameStatus(SREGameWorldComponent.GameStatus.STOPPING);
-                }
+                stopSreMatch(level);
             } catch (Exception e) {
                 HabiTrainCore.LOGGER.error("endGame: failed to stop SRE game", e);
                 // 回退：至少把 habitrain 模式停掉，避免卡死
                 com.habitrain.core.api.GameModeRegistry.stop(level, result);
             }
         }
+    }
+
+    /**
+     * Align with murder: {@link GameUtils#stopGame} applies invuln/item-ban then STOPPING.
+     * Skip if already STOPPING/INACTIVE. Does not call {@code GameModeRegistry.stop}.
+     */
+    private static void stopSreMatch(ServerLevel level) {
+        if (level == null) return;
+        var sreGame = SREGameWorldComponent.KEY.get(level);
+        if (sreGame == null) return;
+        var status = sreGame.getGameStatus();
+        if (status == SREGameWorldComponent.GameStatus.STOPPING
+                || status == SREGameWorldComponent.GameStatus.INACTIVE) {
+            return;
+        }
+        GameUtils.stopGame(level);
     }
 
     /**

@@ -6,6 +6,7 @@ import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.api.role.RoleOverrideEntry;
 import com.habitrain.core.api.role.RoleOverrideKind;
 import com.habitrain.core.config.RoleOverrideConfigSection;
+import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.resources.ResourceLocation;
@@ -93,10 +94,8 @@ public final class RoleOverrideEngine {
         for (ResourceLocation target : targets) {
             List<ReplaceRoleDefinition> replaces = replaceByTarget.getOrDefault(target, List.of());
             List<ModifyRoleDefinition> modifies = modifyByTarget.getOrDefault(target, List.of());
-            boolean v2Owns = com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isActiveReplaced(target)
-                    || com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.isActiveModified(target);
-            if (v2Owns && (!replaces.isEmpty() || !modifies.isEmpty())) {
-                String message = "v1 override conflicts with a v2 REPLACE/MODIFY on " + target;
+            if (v2OwnsTarget(target) && (!replaces.isEmpty() || !modifies.isEmpty())) {
+                String message = "v1 override conflicts with a v2 REPLACE/MODIFY/ADD on " + target;
                 replaces.forEach(def -> statuses.put(def,
                         new StatusInfo(OverrideStatus.CONFLICT, message)));
                 modifies.forEach(def -> statuses.put(def,
@@ -270,6 +269,25 @@ public final class RoleOverrideEngine {
 
     public @Nullable ModifyRoleDefinition getActiveModify(ResourceLocation targetId) {
         return snapshot.getActiveModifies().get(targetId);
+    }
+
+    /**
+     * Gameplay-facing v1 MODIFY (shop / tick). Round-frozen while a round is
+     * in progress; {@link #getActiveModify} stays live for diagnostics.
+     */
+    public @Nullable ModifyRoleDefinition getGameplayModify(ResourceLocation targetId) {
+        return RoleOverrideTickApplier.gameplayModifies().get(targetId);
+    }
+
+    /**
+     * Whether a config-enabled v2 REPLACE, MODIFY, or ADD owns {@code target}
+     * and therefore suppresses any v1 override on the same id.
+     */
+    public static boolean v2OwnsTarget(ResourceLocation target) {
+        RoleExtensionRegistry registry = RoleExtensionRegistry.INSTANCE;
+        return registry.isActiveReplaced(target)
+                || registry.isActiveModified(target)
+                || registry.isAddedActive(target);
     }
 
     /**

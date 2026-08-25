@@ -4,6 +4,7 @@ import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -29,7 +30,7 @@ public class SRERoleNameMixin {
             cir.setReturnValue(overlay.namePatch().getName(self, server));
             return;
         }
-        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());
+        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getGameplayModify(self.identifier());
         if (def != null && def.namePatch().isPresent()) {
             MinecraftServer server = getServer();
             cir.setReturnValue(def.namePatch().get().getName(self, server));
@@ -39,7 +40,7 @@ public class SRERoleNameMixin {
     @Inject(method = {"getColor()I", "color()I"}, at = @At("HEAD"), cancellable = true)
     private void patchedColor(CallbackInfoReturnable<Integer> cir) {
         SRERole self = (SRERole) (Object) this;
-        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());
+        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getGameplayModify(self.identifier());
         if (def != null && def.colorPatch().isPresent()) {
             MinecraftServer server = getServer();
             cir.setReturnValue(def.colorPatch().get().getColor(self, server));
@@ -47,13 +48,6 @@ public class SRERoleNameMixin {
     }
 
     private static MinecraftServer getServer() {
-        net.fabricmc.loader.api.ModContainer container = net.fabricmc.loader.api.FabricLoader.getInstance()
-                .getModContainer("habitrain_core").orElse(null);
-        if (container == null) return null;
-        Object gameInstance = net.fabricmc.loader.api.FabricLoader.getInstance().getGameInstance();
-        if (gameInstance instanceof MinecraftServer server) {
-            return server;
-        }
-        return null;
+        return RuntimeRoleServer.INSTANCE.server();
     }
 }

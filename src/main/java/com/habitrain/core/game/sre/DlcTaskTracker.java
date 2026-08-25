@@ -76,6 +76,33 @@ public final class DlcTaskTracker {
         }
     }
 
+    /**
+     * 从 SRE {@code tasks} map 摘掉包装了该 {@link TaskInstance} 的 wrapper。
+     * 必须在 HEAD ticker 返回前调用，避免上游 {@code serverTick} 再 {@code callOnFinishQuest}。
+     */
+    public static void stripSreWrapper(ServerPlayer player, TaskInstance instance) {
+        if (player == null || instance == null) return;
+        try {
+            SREPlayerTaskComponent comp = SREPlayerTaskComponent.KEY.get(player);
+            if (comp == null || comp.tasks == null || comp.tasks.isEmpty()) return;
+            boolean removed = false;
+            var it = comp.tasks.entrySet().iterator();
+            while (it.hasNext()) {
+                var entry = it.next();
+                if (entry.getValue() instanceof SRETrainTaskWrapper wrapper
+                        && wrapper.unwrap() == instance) {
+                    it.remove();
+                    removed = true;
+                }
+            }
+            if (removed) {
+                comp.sync();
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("stripSreWrapper failed for {}", instance.getFullId(), t);
+        }
+    }
+
     /** 对齐 SRE 原版 subtitle.task.new 的 TOP 报幕，避免只闪中间 ActiveTask。 */
     private static void sendNewTaskTop(ServerPlayer player, TaskDefinition def) {
         String name = def.getDisplayName();

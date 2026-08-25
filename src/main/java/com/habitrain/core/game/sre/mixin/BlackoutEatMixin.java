@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -26,6 +27,7 @@ public class BlackoutEatMixin {
                                  CallbackInfoReturnable<ItemStack> cir) {
         if (world.isClientSide()) return;
         if (!((Object) this instanceof ServerPlayer serverPlayer)) return;
+        if (!CustomTaskTickGate.allow(serverPlayer)) return;
 
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
         if (task == null) return;

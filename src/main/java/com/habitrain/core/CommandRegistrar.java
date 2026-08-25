@@ -19,6 +19,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -41,29 +42,37 @@ public final class CommandRegistrar {
 
     public static void init() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(Commands.literal("instantgroup")
-                    .requires(source -> source.hasPermission(2))
-                    .executes(ctx -> VoiceGroupService.executeInstantGroup(ctx, 128))
-                    .then(Commands.argument("range", IntegerArgumentType.integer(1, 512))
-                            .executes(ctx -> VoiceGroupService.executeInstantGroup(ctx,
-                                    IntegerArgumentType.getInteger(ctx, "range")))
-                    )
-            );
+            if (FabricLoader.getInstance().isModLoaded("voicechat")) {
+                dispatcher.register(Commands.literal("instantgroup")
+                        .requires(source -> source.hasPermission(2))
+                        .executes(ctx -> VoiceGroupService.executeInstantGroup(ctx, 128))
+                        .then(Commands.argument("range", IntegerArgumentType.integer(1, 512))
+                                .executes(ctx -> VoiceGroupService.executeInstantGroup(ctx,
+                                        IntegerArgumentType.getInteger(ctx, "range")))
+                        )
+                );
+            }
             // /habi_api 命令族（OP：blackout/list/vote；玩家：greed_trade 兼容回退）
             dispatcher.register(Commands.literal("habi_api")
                     .then(Commands.literal("blackout")
                             .requires(source -> source.hasPermission(2))
                             .executes(ctx -> {
                                 ServerLevel level = ctx.getSource().getLevel();
+                                if (SREModeStartAdapter.isSreGameBlocking(level)) {
+                                    ctx.getSource().sendFailure(
+                                            Component.literal("§c无法启动停电模式：当前维度已有 SRE 对局正在进行或启动中"));
+                                    return 0;
+                                }
                                 try {
                                     GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
                                     ctx.getSource().sendSuccess(
                                             () -> Component.literal("§a✅ 停电模式已启动！"), true);
+                                    return 1;
                                 } catch (Exception e) {
                                     ctx.getSource().sendFailure(
                                             Component.literal("§c启动失败: " + e.getMessage()));
+                                    return 0;
                                 }
-                                return 1;
                             })
                     )
                     .then(Commands.literal("list")
@@ -261,7 +270,10 @@ public final class CommandRegistrar {
                             .requires(source -> source.hasPermission(4) && !source.isPlayer())
                             .then(Commands.literal("enable")
                                     .executes(ctx -> {
-                                        MenuGateService.setEnabled(true);
+                                        if (!MenuGateService.setEnabled(true)) {
+                                            ctx.getSource().sendFailure(Component.literal("§c保存 Mod 菜单门控失败"));
+                                            return 0;
+                                        }
                                         MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
                                         ctx.getSource().sendSuccess(
                                                 () -> Component.literal("§a已启用 Mod 菜单访问门控：未授权玩家页面将被锁定"), true);
@@ -269,7 +281,10 @@ public final class CommandRegistrar {
                                     }))
                             .then(Commands.literal("disable")
                                     .executes(ctx -> {
-                                        MenuGateService.setEnabled(false);
+                                        if (!MenuGateService.setEnabled(false)) {
+                                            ctx.getSource().sendFailure(Component.literal("§c保存 Mod 菜单门控失败"));
+                                            return 0;
+                                        }
                                         MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
                                         ctx.getSource().sendSuccess(
                                                 () -> Component.literal("§e已关闭 Mod 菜单访问门控：所有玩家可访问"), true);
@@ -305,40 +320,65 @@ public final class CommandRegistrar {
                                             .suggests(onlinePlayerNames())
                                             .executes(ctx -> {
                                                 String name = StringArgumentType.getString(ctx, "player");
-                                                String uuid = "";
-                                                ServerPlayer target = findPlayer(ctx.getSource().getServer(), name);
+                                                MinecraftServer server = ctx.getSource().getServer();
+                                                ServerPlayer target = findPlayer(server, name);
+                                                String uuid;
                                                 if (target != null) {
                                                     name = target.getGameProfile().getName();
                                                     uuid = target.getUUID().toString();
+                                                } else {
+                                                    java.util.UUID lookedUp = lookupOfflineUuid(server, name);
+                                                    if (lookedUp == null) {
+                                                        ctx.getSource().sendFailure(Component.literal(
+                                                                "§c离线添加必须能解析 UUID，无法将 " + name + " 加入允许列表"));
+                                                        return 0;
+                                                    }
+                                                    uuid = lookedUp.toString();
+                                                    String cachedName = lookupOfflineName(server, lookedUp);
+                                                    if (cachedName != null && !cachedName.isBlank()) {
+                                                        name = cachedName;
+                                                    }
                                                 }
                                                 final String resolvedName = name;
-                                                final String resolvedUuid = uuid;
-                                                boolean added = MenuGateService.add(resolvedName, resolvedUuid);
-                                                MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
+                                                boolean added = MenuGateService.add(resolvedName, uuid);
                                                 if (added) {
+                                                    MenuGatePayload.broadcastToAll(server);
                                                     ctx.getSource().sendSuccess(() -> Component.literal(
-                                                            "§a已将 " + resolvedName + " 加入允许列表"
-                                                                    + (resolvedUuid.isEmpty() ? "（离线，按名字匹配）" : "")), true);
-                                                } else {
+                                                            "§a已将 " + resolvedName + " 加入允许列表"), true);
+                                                    return 1;
+                                                }
+                                                boolean inList = MenuGateService.isAllowed(
+                                                        java.util.UUID.fromString(uuid), resolvedName);
+                                                if (inList) {
+                                                    MenuGatePayload.broadcastToAll(server);
                                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                                             "§e" + resolvedName + " 已在允许列表中"), false);
+                                                    return 1;
                                                 }
-                                                return 1;
+                                                ctx.getSource().sendFailure(Component.literal(
+                                                        "§c无法将 " + resolvedName + " 加入允许列表（保存失败）"));
+                                                return 0;
                                             })))
                             .then(Commands.literal("remove")
                                     .then(Commands.argument("player", StringArgumentType.string())
                                             .suggests(onlinePlayerNames())
                                             .executes(ctx -> {
                                                 String name = StringArgumentType.getString(ctx, "player");
+                                                boolean existed = menugateContains(name);
                                                 boolean removed = MenuGateService.remove(name);
-                                                MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
                                                 if (removed) {
+                                                    MenuGatePayload.broadcastToAll(ctx.getSource().getServer());
                                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                                             "§a已将 " + name + " 移出允许列表"), true);
-                                                } else {
-                                                    ctx.getSource().sendSuccess(() -> Component.literal(
-                                                            "§c未找到 " + name + "（允许列表中无此玩家）"), false);
+                                                    return 1;
                                                 }
+                                                if (existed) {
+                                                    ctx.getSource().sendFailure(Component.literal(
+                                                            "§c保存 Mod 菜单门控失败，未移除 " + name));
+                                                    return 0;
+                                                }
+                                                ctx.getSource().sendSuccess(() -> Component.literal(
+                                                        "§c未找到 " + name + "（允许列表中无此玩家）"), false);
                                                 return 1;
                                             })))
                     )
@@ -393,7 +433,120 @@ public final class CommandRegistrar {
         };
     }
 
-    /** 按名字解析在线玩家：先精确匹配，再忽略大小写匹配。 */
+    private static boolean menugateContains(String nameOrUuid) {
+        if (nameOrUuid == null || nameOrUuid.isBlank()) {
+            return false;
+        }
+        String s = nameOrUuid.trim();
+        java.util.UUID parsed = MenuGateService.parseUuid(s);
+        for (MenuGateService.AllowedPlayer ap : MenuGateService.getAllowed()) {
+            if (parsed != null && ap.getUuid().equalsIgnoreCase(parsed.toString())) {
+                return true;
+            }
+            if (ap.getName().equalsIgnoreCase(s) || ap.getUuid().equalsIgnoreCase(s)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 离线 menugate add 必须解析到正式 UUID：在线玩家、UUID 字面量、或 profile cache。
+     * 禁止回退 {@code OfflinePlayer:} 名字哈希。
+     */
+    private static java.util.UUID lookupOfflineUuid(MinecraftServer server, String nameOrUuid) {
+        if (nameOrUuid == null || nameOrUuid.isBlank()) {
+            return null;
+        }
+        String s = nameOrUuid.trim();
+        java.util.UUID parsed = MenuGateService.parseUuid(s);
+        if (parsed != null) {
+            return parsed;
+        }
+        if (server == null) {
+            return null;
+        }
+        try {
+            var cache = server.getProfileCache();
+            if (cache == null) {
+                return null;
+            }
+            var opt = cache.get(s);
+            if (opt == null || opt.isEmpty()) {
+                return null;
+            }
+            return extractProfileUuid(opt.get());
+        } catch (Exception e) {
+            LOGGER.debug("menugate offline uuid lookup failed for {}", s, e);
+            return null;
+        }
+    }
+
+    private static String lookupOfflineName(MinecraftServer server, java.util.UUID id) {
+        if (server == null || id == null) {
+            return null;
+        }
+        try {
+            var cache = server.getProfileCache();
+            if (cache == null) {
+                return null;
+            }
+            var opt = cache.get(id);
+            if (opt == null || opt.isEmpty()) {
+                return null;
+            }
+            Object profile = opt.get();
+            if (profile instanceof com.mojang.authlib.GameProfile gp && gp.getName() != null) {
+                return gp.getName();
+            }
+            try {
+                var m = profile.getClass().getMethod("name");
+                Object name = m.invoke(profile);
+                if (name instanceof String str && !str.isBlank()) {
+                    return str;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+            try {
+                var m = profile.getClass().getMethod("getName");
+                Object name = m.invoke(profile);
+                if (name instanceof String str && !str.isBlank()) {
+                    return str;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        } catch (Exception e) {
+            LOGGER.debug("menugate offline name lookup failed for {}", id, e);
+        }
+        return null;
+    }
+
+    private static java.util.UUID extractProfileUuid(Object profile) {
+        if (profile == null) {
+            return null;
+        }
+        if (profile instanceof com.mojang.authlib.GameProfile gp) {
+            return gp.getId();
+        }
+        try {
+            var m = profile.getClass().getMethod("id");
+            Object id = m.invoke(profile);
+            if (id instanceof java.util.UUID u) {
+                return u;
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            var m = profile.getClass().getMethod("getId");
+            Object id = m.invoke(profile);
+            if (id instanceof java.util.UUID u) {
+                return u;
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        return null;
+    }
+
     private static int sendLines(CommandSourceStack source, List<String> lines) {
         for (String line : lines) {
             source.sendSuccess(() -> Component.literal(line), false);
@@ -401,6 +554,7 @@ public final class CommandRegistrar {
         return 1;
     }
 
+    /** 按名字解析在线玩家：先精确匹配，再忽略大小写匹配。 */
     private static ServerPlayer findPlayer(MinecraftServer server, String name) {
         if (server == null || name == null) return null;
         ServerPlayer exact = server.getPlayerList().getPlayerByName(name);
@@ -558,7 +712,7 @@ public final class CommandRegistrar {
                                         .executes(ctx -> sendLines(ctx.getSource(),
                                                 RoleConfigCommands.status())))
                                 .then(Commands.literal("set")
-                                        .requires(source -> source.hasPermission(4))
+                                        .requires(CommandRegistrar::canWriteRoleApiConfig)
                                         .then(Commands.literal("provider")
                                                 .then(Commands.argument("id", StringArgumentType.word())
                                                         .then(Commands.argument("on", StringArgumentType.word())
@@ -609,7 +763,7 @@ public final class CommandRegistrar {
                                                             return 1;
                                                         }))))
                                 .then(Commands.literal("winner")
-                                        .requires(source -> source.hasPermission(4))
+                                        .requires(CommandRegistrar::canWriteRoleApiConfig)
                                         .then(Commands.argument("targetField", StringArgumentType.string())
                                                 .then(Commands.argument("winnerEntry", StringArgumentType.string())
                                                         .executes(ctx -> {
@@ -628,5 +782,28 @@ public final class CommandRegistrar {
                                 .requires(source -> source.hasPermission(2))
                                 .executes(ctx -> sendLines(ctx.getSource(), RoleConfigCommands.manifest())))
                 ));
+    }
+
+    /**
+     * {@code /habitrain roleapi config set|winner}: OP4. In-game players on a
+     * dedicated server also need MenuGate when it is enabled. Console and
+     * command blocks stay OP4 break-glass.
+     */
+    private static boolean canWriteRoleApiConfig(CommandSourceStack source) {
+        if (!source.hasPermission(4)) {
+            return false;
+        }
+        if (!source.isPlayer()) {
+            return true;
+        }
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            return true;
+        }
+        MinecraftServer server = source.getServer();
+        if (server == null || !server.isDedicatedServer() || !MenuGateService.isEnabled()) {
+            return true;
+        }
+        return MenuGateService.isAllowed(player);
     }
 }

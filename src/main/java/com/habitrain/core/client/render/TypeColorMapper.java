@@ -5,6 +5,7 @@ import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.InstinctColorHelper;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.config.TaskInstinctColor;
 
 import java.awt.Color;
 import java.util.HashMap;
@@ -41,11 +42,7 @@ public final class TypeColorMapper {
             if (bt < 12) continue;
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-            if (cfg != null) {
-                map.put(bt, new Color(cfg.getColor(), true));
-            } else {
-                map.put(bt, new Color(def.getInstinctColorRGB(), true));
-            }
+            map.put(bt, new Color(TaskInstinctColor.resolveArgb(cfg, def), true));
         }
         cachedTypeColorMap = map;
         cachedColorVersion = InstinctColorHelper.getColorVersion();

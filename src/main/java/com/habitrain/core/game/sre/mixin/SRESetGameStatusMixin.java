@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.GameEndTransitionCoordinator;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.server.level.ServerLevel;
@@ -44,7 +45,9 @@ public abstract class SRESetGameStatusMixin {
                 GameEndTransitionCoordinator.onStatusLeavingStopping(serverLevel);
             }
         } catch (Throwable t) {
-            // 不因 mixin 失败阻断 SRE 状态机。
+            // Do not abort the SRE state machine from this mixin.
+            HabiTrainCore.LOGGER.error(
+                    "[SRESetGameStatusMixin] game-end transition notify failed for status={}", status, t);
         }
     }
 }

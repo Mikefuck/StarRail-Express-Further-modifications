@@ -44,6 +44,8 @@ class RoleCatalogApiTest {
     @AfterEach
     void resetEngineSnapshot() throws Exception {
         RoleSnapshotManager.INSTANCE.clear();
+        com.habitrain.core.role.snapshot.RoleSnapshotArchive.INSTANCE.clear();
+        com.habitrain.core.role.snapshot.RoleSnapshotVersions.resetForTests();
         setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
     }
 

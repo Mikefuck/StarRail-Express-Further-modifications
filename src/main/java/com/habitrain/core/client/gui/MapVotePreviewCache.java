@@ -115,11 +115,11 @@ public final class MapVotePreviewCache {
     /** 释放全部动态纹理（跨局/换世界）。 */
     public static void clearAll() {
         for (Decoded entry : CACHE.values()) {
-            entry.dynamic().close();
+            entry.close();
         }
         CACHE.clear();
         for (Decoded entry : PENDING_CLOSE) {
-            entry.dynamic().close();
+            entry.close();
         }
         PENDING_CLOSE.clear();
         deferCounter = 0;
@@ -133,7 +133,7 @@ public final class MapVotePreviewCache {
         }
         if (++deferCounter >= CLOSE_DEFER_FRAMES) {
             for (Decoded entry : PENDING_CLOSE) {
-                entry.dynamic().close();
+                entry.close();
             }
             PENDING_CLOSE.clear();
             deferCounter = 0;
@@ -152,20 +152,37 @@ public final class MapVotePreviewCache {
 
     @Nullable
     private static Decoded decode(String mapId, byte[] bytes) {
+        DynamicTexture texture = null;
         try {
             NativeImage image = NativeImage.read(new ByteArrayInputStream(bytes));
             int width = image.getWidth();
             int height = image.getHeight();
-            DynamicTexture texture = new DynamicTexture(image);
+            texture = new DynamicTexture(image);
             ResourceLocation id = Minecraft.getInstance().getTextureManager()
                     .register("map_vote_preview/" + sanitizePathSegment(mapId), texture);
             return new Decoded(id, texture, width, height);
         } catch (Exception e) {
+            if (texture != null) {
+                texture.close();
+            }
             HabiTrainCore.LOGGER.warn("[MapVotePreviewCache] failed to decode preview for '{}'", mapId, e);
             return null;
         }
     }
 
     /** 解码后的纹理及其原始像素尺寸（绘制 UV 需要）。 */
-    public record Decoded(ResourceLocation texture, DynamicTexture dynamic, int width, int height) {}
+    public record Decoded(ResourceLocation texture, DynamicTexture dynamic, int width, int height) {
+        public void close() {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && texture != null) {
+                try {
+                    mc.getTextureManager().release(texture);
+                } catch (Exception ignored) {
+                }
+            }
+            if (dynamic != null) {
+                dynamic.close();
+            }
+        }
+    }
 }

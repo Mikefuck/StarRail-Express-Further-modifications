@@ -21,7 +21,9 @@ import com.habitrain.core.api.role.v2.behavior.WinPatch;
 import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import com.habitrain.core.api.role.v2.state.ResetCause;
 import com.habitrain.core.api.role.v2.state.RoleStateApi;
+import com.habitrain.core.game.blackout.RoleOverrideWinHook;
 import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.content.entity.PlayerBodyEntity;
@@ -61,6 +63,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import org.agmas.harpymodloader.events.ModdedRoleAssigned;
 import org.agmas.harpymodloader.events.OnGamePlayerRolesConfirm;
+import org.agmas.noellesroles.utils.RoleUtils;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -131,7 +134,8 @@ public final class RoleEventDispatcher {
             }
             RoleHookContext ctx = ctx(e.role(), player);
             acc = Decision.merge(acc, invokeDecision(e, "allowDeath",
-                    () -> ((RoleCombatHooks) e.callback()).allowDeath(player, deathReason, ctx)));
+                    () -> ((RoleCombatHooks) e.callback()).allowDeath(player, deathReason, ctx),
+                    Decision.DENY));
         }
         return acc;
     }
@@ -186,7 +190,8 @@ public final class RoleEventDispatcher {
             RoleHookContext ctx = ctxCombat(e.role(), victim, killer, victim, null);
             acc = Decision.merge(acc, invokeDecision(e, "allowDeathByKiller",
                     () -> ((RoleCombatHooks) e.callback())
-                            .allowDeathByKiller(victim, killer, deathReason, ctx)));
+                            .allowDeathByKiller(victim, killer, deathReason, ctx),
+                    Decision.DENY));
         }
         return acc;
     }
@@ -209,7 +214,8 @@ public final class RoleEventDispatcher {
                     killer, victim, null);
             acc = Decision.merge(acc, invokeDecision(e, "allowKillByKiller",
                     () -> ((RoleCombatHooks) e.callback())
-                            .allowKillByKiller(victim, killer, deathReason, ctx)));
+                            .allowKillByKiller(victim, killer, deathReason, ctx),
+                    Decision.DENY));
         }
         return acc;
     }
@@ -385,7 +391,8 @@ public final class RoleEventDispatcher {
             }
             RoleHookContext ctx = ctx(e.role(), buyer);
             acc = Decision.merge(acc, invokeDecision(e, "allowBuy",
-                    () -> ((RoleShopHooks) e.callback()).allowBuy(buyer, entry, index, price, ctx)));
+                    () -> ((RoleShopHooks) e.callback()).allowBuy(buyer, entry, index, price, ctx),
+                    Decision.PASS));
         }
         return acc;
     }
@@ -509,7 +516,8 @@ public final class RoleEventDispatcher {
             }
             RoleHookContext ctx = ctx(e.role(), voted);
             acc = Decision.merge(acc, invokeDecision(e, "allowVoteOut",
-                    () -> ((RoleMeetingHooks) e.callback()).allowVoteOut(voted, ctx)));
+                    () -> ((RoleMeetingHooks) e.callback()).allowVoteOut(voted, ctx),
+                    Decision.DENY));
         }
         return acc;
     }
@@ -527,7 +535,8 @@ public final class RoleEventDispatcher {
             }
             RoleHookContext ctx = ctxWin(e.role(), level, proposed, loose, null);
             Decision next = invokeDecision(e, "allowGameEnd",
-                    () -> ((RoleWinHooks) e.callback()).allowGameEnd(level, proposed, loose, ctx));
+                    () -> ((RoleWinHooks) e.callback()).allowGameEnd(level, proposed, loose, ctx),
+                    Decision.DENY);
             acc = Decision.merge(acc, next);
         }
         return acc;
@@ -568,14 +577,19 @@ public final class RoleEventDispatcher {
 
     /**
      * The unified victory fold used by BOTH the standard SRE murder chain and the
-     * blackout chain: gate ({@code allowGameEnd}) then winner patch
-     * ({@code evaluateWin}). Callers read {@link WinFoldResult#denied()} and
+     * blackout chain. Order: v2 {@code allowGameEnd}, v2 {@code evaluateWin}, then
+     * (when the gate is not DENY and v2 did not declare winners) the v1 /
+     * RolePatch win-hook overlay. Callers read {@link WinFoldResult#denied()} and
      * {@link WinFoldResult#hasPatch()} according to their chain's semantics.
      */
     public WinFoldResult foldWin(@Nullable ServerLevel level, @Nullable String proposed, boolean loose) {
         Decision gate = dispatchAllowGameEnd(level, proposed, loose);
         WinPatch patch = dispatchEvaluateWin(level, proposed, loose);
-        return new WinFoldResult(gate, patch);
+        WinPatch overlay = WinPatch.noChange();
+        if (gate != Decision.DENY && (patch == null || patch.op() == WinPatchOp.NO_CHANGE)) {
+            overlay = RoleOverrideWinHook.evaluateAsPatch(level);
+        }
+        return new WinFoldResult(gate, WinFoldResult.overlayV1(gate, patch, overlay));
     }
 
     /**
@@ -709,9 +723,14 @@ public final class RoleEventDispatcher {
 
     /** Broadcasts a server-tick notification to every in-scope tick entry. */
     public void dispatchServerTickAll(MinecraftServer server) {
+        flushPendingSnapshotActivation(server);
+        java.util.List<ManagedHookEntry> entries = registry.allEntries(HookType.TICK_ON_SERVER_TICK);
+        if (entries.isEmpty()) {
+            return;
+        }
         ServerLevel level = anyLevel(server);
         long tick = server == null ? 0L : server.getTickCount();
-        for (ManagedHookEntry e : registry.allEntries(HookType.TICK_ON_SERVER_TICK)) {
+        for (ManagedHookEntry e : entries) {
             if (!inScope(e, level)) {
                 continue;
             }
@@ -746,23 +765,32 @@ public final class RoleEventDispatcher {
         listenersRegistered = true;
 
         AllowPlayerDeath.EVENT.register((player, deathReason) -> {
-            RoleKey role = currentRole(player);
-            if (role == null) {
+            CurrentRoleLookup lookup = lookupCurrentRole(player);
+            if (lookup.failed()) {
+                return false;
+            }
+            if (lookup.role() == null) {
                 return true;
             }
-            return dispatchAllowDeath(role, asServer(player), deathReason) != Decision.DENY;
+            return dispatchAllowDeath(lookup.role(), asServer(player), deathReason) != Decision.DENY;
         });
 
         AllowPlayerDeathWithKiller.EVENT.register((player, killer, deathReason) -> {
-            RoleKey victimRole = currentRole(player);
-            if (victimRole != null
-                    && dispatchAllowDeathByKiller(victimRole, asServer(player), asServer(killer), deathReason)
+            CurrentRoleLookup victimLookup = lookupCurrentRole(player);
+            if (victimLookup.failed()) {
+                return false;
+            }
+            if (victimLookup.role() != null
+                    && dispatchAllowDeathByKiller(victimLookup.role(), asServer(player), asServer(killer), deathReason)
                     == Decision.DENY) {
                 return false;
             }
-            RoleKey killerRole = currentRole(killer);
-            if (killerRole != null
-                    && dispatchAllowKillByKiller(killerRole, asServer(player), asServer(killer), deathReason)
+            CurrentRoleLookup killerLookup = lookupCurrentRole(killer);
+            if (killerLookup.failed()) {
+                return false;
+            }
+            if (killerLookup.role() != null
+                    && dispatchAllowKillByKiller(killerLookup.role(), asServer(player), asServer(killer), deathReason)
                     == Decision.DENY) {
                 return false;
             }
@@ -891,6 +919,7 @@ public final class RoleEventDispatcher {
             com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.beginRound();
             resetState(null, null, ResetCause.ROUND_START);
             dispatchOnGameStartAll(level);
+            broadcastRoleSnapshots(level == null ? null : level.getServer());
         });
 
         OnGameTrueStarted.EVENT.register(this::dispatchOnGameTrueStartAll);
@@ -906,11 +935,12 @@ public final class RoleEventDispatcher {
             dispatchAfterWinnersFinalized(level, readWinOutcome(level));
             resetState(null, null, ResetCause.ROUND_END);
             com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.endRound();
-            com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.activatePending();
+            com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.scheduleActivatePendingNextTick();
         });
 
-        // Registered after SinVictoryHooks (which prepends itself) so pride/sloth/lust
-        // still win the first-non-NOT_MODIFY race. DENY maps to NONE (do not end).
+        // Sole habitrain AllowGameEnd listener. v1/RolePatch overlay is input to
+        // foldWin; DENY maps to NONE (do not end). applyWinPatch is the only SRE
+        // writer of SREGameRoundEndComponent on this chain.
         AllowGameEnd.EVENT.register((level, proposed, loose) -> {
             String name = proposed == null ? null : proposed.name();
             WinFoldResult fold = foldWin(level, name, loose);
@@ -923,11 +953,14 @@ public final class RoleEventDispatcher {
         MeetingStartEvent.EVENT.register((level, reporter) -> dispatchOnMeetingStart(level, reporter));
         MeetingEndEvent.EVENT.register(this::dispatchOnMeetingEnd);
         MeetingVoteOutEvent.EVENT.register((level, player) -> {
-            RoleKey role = currentRole(player);
-            if (role == null) {
+            CurrentRoleLookup lookup = lookupCurrentRole(player);
+            if (lookup.failed()) {
+                return false;
+            }
+            if (lookup.role() == null) {
                 return true;
             }
-            return dispatchAllowVoteOut(role, asServer(player)) != Decision.DENY;
+            return dispatchAllowVoteOut(lookup.role(), asServer(player)) != Decision.DENY;
         });
 
         ModdedRoleAssigned.EVENT.register((player, role) -> {
@@ -945,22 +978,39 @@ public final class RoleEventDispatcher {
         return player instanceof ServerPlayer sp ? sp : null;
     }
 
+    /** Distinguishes CCA lookup failure from "player has no role". */
+    record CurrentRoleLookup(@Nullable RoleKey role, boolean failed) {
+        static CurrentRoleLookup ok(@Nullable RoleKey role) {
+            return new CurrentRoleLookup(role, false);
+        }
+
+        static CurrentRoleLookup failure() {
+            return new CurrentRoleLookup(null, true);
+        }
+    }
+
     private static @Nullable RoleKey currentRole(Player player) {
+        CurrentRoleLookup lookup = lookupCurrentRole(player);
+        return lookup.failed() ? null : lookup.role();
+    }
+
+    static CurrentRoleLookup lookupCurrentRole(Player player) {
         if (player == null || player.level() == null) {
-            return null;
+            return CurrentRoleLookup.ok(null);
         }
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.level());
             if (game == null) {
-                return null;
+                return CurrentRoleLookup.ok(null);
             }
             SRERole role = game.getRole(player);
             if (role == null || role.identifier() == null) {
-                return null;
+                return CurrentRoleLookup.ok(null);
             }
-            return RoleKey.of(role.identifier());
+            return CurrentRoleLookup.ok(RoleKey.of(role.identifier()));
         } catch (Throwable t) {
-            return null;
+            LOGGER.warn("currentRole lookup failed for {}", player.getUUID(), t);
+            return CurrentRoleLookup.failure();
         }
     }
 
@@ -1037,7 +1087,9 @@ public final class RoleEventDispatcher {
 
     /**
      * Translates a folded {@link WinPatch} into an upstream {@link GameUtils.WinStatus}.
-     * Writes custom winners onto the round-end component when the patch is custom.
+     * Writes custom winners onto the round-end component when the patch is custom,
+     * including {@code RoleUtils.customWinnerWin} / {@code CustomWinnerID} for SRE
+     * roles that resolve from {@link WinPatch#customId()}.
      */
     private static GameUtils.WinStatus applyWinPatch(@Nullable ServerLevel level, @Nullable WinPatch patch) {
         if (patch == null || patch.op() == WinPatchOp.NO_CHANGE) {
@@ -1045,7 +1097,9 @@ public final class RoleEventDispatcher {
         }
         return switch (patch.op()) {
             case DECLARE_CUSTOM, REPLACE_WINNERS, ADD_WINNER, REMOVE_WINNER -> {
-                applyCustomWinners(level, patch);
+                if (!applyCustomWinners(level, patch)) {
+                    yield GameUtils.WinStatus.NONE;
+                }
                 yield GameUtils.WinStatus.CUSTOM;
             }
             case DECLARE_FACTION_WIN -> factionStatus(patch.faction());
@@ -1073,14 +1127,15 @@ public final class RoleEventDispatcher {
         };
     }
 
-    private static void applyCustomWinners(@Nullable ServerLevel level, WinPatch patch) {
+    /** @return false when level/roundEnd is missing or the write throws */
+    public static boolean applyCustomWinners(@Nullable ServerLevel level, WinPatch patch) {
         if (level == null || patch == null) {
-            return;
+            return false;
         }
         try {
             SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
             if (roundEnd == null) {
-                return;
+                return false;
             }
             if (roundEnd.CustomWinnerPlayers == null) {
                 roundEnd.CustomWinnerPlayers = new ArrayList<>();
@@ -1094,8 +1149,62 @@ public final class RoleEventDispatcher {
             if (patch.reason() != null && !patch.reason().isBlank()) {
                 roundEnd.CustomWinnerSubtitle = Component.literal(patch.reason());
             }
+            for (UUID id : patch.winners()) {
+                if (id != null) {
+                    roundEnd.setPlayerWin(id, true);
+                }
+            }
+            applySreCustomWinnerHelper(level, roundEnd, patch);
+            return true;
         } catch (Throwable t) {
             LOGGER.warn("failed to apply custom winners from WinPatch", t);
+            return false;
+        }
+    }
+
+    /**
+     * Relocated from {@code SreRoleOverrideWinBridge}: {@code RoleUtils.customWinnerWin}
+     * plus restoring the full role identifier as {@code CustomWinnerID}. Only runs
+     * when {@code customId} resolves to a TMM role (v1 / RolePatch overlay). v2
+     * sin ids such as {@code sin_pride} are left to {@code CustomWinnerRole.win()}.
+     */
+    private static void applySreCustomWinnerHelper(ServerLevel level, SREGameRoundEndComponent roundEnd,
+                                                   WinPatch patch) {
+        if (patch.customId() == null || patch.customId().isBlank()) {
+            return;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(patch.customId());
+        if (id == null) {
+            return;
+        }
+        try {
+            SRERole role = TMMRoles.getRole(id);
+            if (role == null || role.identifier() == null) {
+                return;
+            }
+            RoleUtils.customWinnerWin(level, role.identifier().getPath(), role.getColor());
+            roundEnd.CustomWinnerID = role.identifier().toString();
+        } catch (Throwable t) {
+            LOGGER.warn("failed to invoke RoleUtils.customWinnerWin for {}", id, t);
+        }
+    }
+
+    private static void flushPendingSnapshotActivation(@Nullable MinecraftServer server) {
+        if (!RoleSnapshotManager.INSTANCE.tickActivatePendingIfDue()) {
+            return;
+        }
+        broadcastRoleSnapshots(server);
+    }
+
+    private static void broadcastRoleSnapshots(@Nullable MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        try {
+            com.habitrain.core.network.RoleSnapshotPayload.broadcastToAll(server);
+            com.habitrain.core.network.RoleManifestPayload.broadcastToAll(server);
+        } catch (Throwable t) {
+            LOGGER.warn("failed to broadcast role snapshot/manifest", t);
         }
     }
 
@@ -1173,21 +1282,26 @@ public final class RoleEventDispatcher {
     }
 
     private Decision invokeDecision(ManagedHookEntry e, String hookName, Supplier<Decision> action) {
+        return invokeDecision(e, hookName, action, Decision.PASS);
+    }
+
+    private Decision invokeDecision(ManagedHookEntry e, String hookName, Supplier<Decision> action,
+                                    Decision fallback) {
         refreshCircuits();
         HookCircuit circuit = circuit(e);
         if (circuit.isBroken()) {
-            return Decision.PASS;
+            return fallback;
         }
         long start = System.nanoTime();
         try {
             Decision d = action.get();
             circuit.recordSuccess(System.nanoTime() - start);
-            return d;
+            return d == null ? fallback : d;
         } catch (Throwable t) {
             circuit.recordFailure(System.nanoTime() - start);
             LOGGER.error("Hook {} for {} failed (provider={}, entry={})",
                     hookName, e.role(), e.providerId(), e.entryId(), t);
-            return Decision.PASS;
+            return fallback;
         }
     }
 

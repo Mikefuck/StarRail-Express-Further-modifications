@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = PlayerBodyEntity.class, remap = false)
 public class PlayerBodyEntityTickMixin {
 
-    @Inject(method = "tick", at = @At("TAIL"), remap = false, require = 0)
+    @Inject(method = "tick", at = @At("TAIL"))
     private void habitrain$keepMimeHiddenBodyInvisible(CallbackInfo ci) {
         PlayerBodyEntity self = (PlayerBodyEntity) (Object) this;
         if (self.level().isClientSide) return;

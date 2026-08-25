@@ -31,14 +31,12 @@ import java.util.List;
 public class SREBlackoutGameMode extends SREMurderGameMode {
     private static final Logger LOGGER = LoggerFactory.getLogger("SREBlackoutGameMode");
     public static final ResourceLocation MODE_ID = ResourceLocation.fromNamespaceAndPath("sre", "blackout");
-    /** 最少玩家数 */
+    /** 最少玩家数（构造器第三参；勿与 defaultStartTime 对调） */
     private static final int MIN_PLAYERS = 10;
-    /** 初始杀手数 */
-    private static final int KILLER_COUNT = 1;
     private static boolean registered = false;
 
     public SREBlackoutGameMode() {
-        super(MODE_ID, MIN_PLAYERS, KILLER_COUNT);
+        super(MODE_ID, io.wifi.starrailexpress.SREConfig.instance().defaultStartTimeForMurder, MIN_PLAYERS);
     }
 
     @Override

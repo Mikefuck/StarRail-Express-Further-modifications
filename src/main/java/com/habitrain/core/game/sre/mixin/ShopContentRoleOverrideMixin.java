@@ -4,11 +4,11 @@ import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.game.ShopContent;
 import io.wifi.starrailexpress.util.ShopEntry;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -28,7 +28,7 @@ public class ShopContentRoleOverrideMixin {
             ResourceLocation roleId,
             CallbackInfoReturnable<List<ShopEntry>> cir) {
         ModifyRoleDefinition definition =
-                RoleOverrideEngine.getInstance().getActiveModify(roleId);
+                RoleOverrideEngine.getInstance().getGameplayModify(roleId);
         if (definition == null || definition.shopTransform().isEmpty()) {
             SRERole role = TMMRoles.getRole(roleId);
             if (role == null) {
@@ -68,7 +68,6 @@ public class ShopContentRoleOverrideMixin {
     }
 
     private static MinecraftServer getServer() {
-        Object gameInstance = FabricLoader.getInstance().getGameInstance();
-        return gameInstance instanceof MinecraftServer server ? server : null;
+        return RuntimeRoleServer.INSTANCE.server();
     }
 }

@@ -47,12 +47,12 @@ public final class RoleManifestService {
     public static RoleManifest build() {
         String coreApi = RoleExtensionApi.instance().apiVersion();
         List<RoleProviderManifest> providers = providers();
-        RoleSnapshot snapshot = RoleSnapshotManager.INSTANCE.current();
-        String lobby = snapshot == null ? "none" : snapshot.id().toString();
+        RoleSnapshot lobbySnap = RoleSnapshotManager.INSTANCE.lobby();
+        String lobby = lobbySnap == null ? "none" : lobbySnap.id().toString();
         RoleSnapshot round = RoleSnapshotManager.INSTANCE.round();
         String roundId = round == null ? null : round.id().toString();
         String definitionHash = RoleManifestHashes.definitionHash();
-        String presentationHash = RoleManifestHashes.presentationHash(snapshot);
+        String presentationHash = RoleManifestHashes.presentationHash(RoleSnapshotManager.INSTANCE.current());
         String configJson = RoleExtensionConfigService.INSTANCE.toJsonString();
         return new RoleManifest(coreApi, providers, CAPABILITIES,
                 definitionHash, lobby, roundId, presentationHash, configJson,

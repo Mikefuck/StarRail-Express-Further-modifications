@@ -21,7 +21,9 @@ import java.util.Set;
  *
  * <p><b>Reserved / partial dimensions:</b> {@link QuerySide} currently resolves
  * to the same shared role set for every value (no side-scoped roles exist yet);
- * {@link #mode} drives only the "other-mode role" exclusion described below.
+ * {@link #mode} participates in the "other-mode role" exclusion described below
+ * ({@link QueryPurpose#LOTTERY_CARD}/{@link QueryPurpose#SELF_SELECT} exclude
+ * even without a mode).
  * These are part of the contract for forward compatibility and are documented
  * as such rather than silently doing nothing.
  */
@@ -95,8 +97,19 @@ public final class RoleQuery {
     public int playerCount() { return playerCount; }
     public RoleOrdering ordering() { return ordering; }
 
-    /** Whether other-mode roles should be excluded when a mode is present. */
+    /**
+     * Whether other-mode roles should be excluded.
+     *
+     * <p>{@link QueryPurpose#LOTTERY_CARD} and {@link QueryPurpose#SELF_SELECT}
+     * always exclude them so lottery/self-select pools are usable without a
+     * {@link GameMode}. Other excluding purposes still require {@link #mode()}
+     * to be set. {@link QueryPurpose#GENERIC} and {@link QueryPurpose#ROTATION}
+     * never exclude.
+     */
     public boolean excludesOtherModeRoles() {
+        if (purpose.excludesOtherModeRolesWithoutMode()) {
+            return true;
+        }
         return mode != null && purpose.excludesOtherModeRoles();
     }
 

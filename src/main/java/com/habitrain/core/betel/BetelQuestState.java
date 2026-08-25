@@ -2,6 +2,7 @@ package com.habitrain.core.betel;
 
 import betel.nut.component.BetelNutEntityComponents;
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.role.state.RuntimeRoleServer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
 
@@ -76,13 +77,7 @@ public class BetelQuestState {
     }
 
     private static MinecraftServer getCurrentServer() {
-        try {
-            var gameInstance = net.fabricmc.loader.api.FabricLoader.getInstance().getGameInstance();
-            if (gameInstance instanceof MinecraftServer server) {
-                return server;
-            }
-        } catch (Exception ignored) {}
-        return null;
+        return RuntimeRoleServer.INSTANCE.server();
     }
 
     private static String getPlayerName(UUID uuid) {

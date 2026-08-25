@@ -42,8 +42,6 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
-import java.awt.Color;
-
 /**
  * Core's own v2 {@code role_extensions} provider.
  *
@@ -53,11 +51,15 @@ import java.awt.Color;
  */
 public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint {
 
+    private static int rgb(int r, int g, int b) {
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
     @Override
     public void register(RoleExtensionRegistrar registrar) {
         HabiRoles.CRIME_SCAPEGOAT = registrar.add(RoleDefinition.builder(HabiRoles.CRIME_SCAPEGOAT_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(120, 90, 60).getRGB())
+                        .color(rgb(120, 90, 60))
                         .build())
                 .faction(RoleFactionProfile.builder()
                         .innocent()
@@ -76,7 +78,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         HabiRoles.FLOWER_GIRL = registrar.add(RoleDefinition.builder(HabiRoles.FLOWER_GIRL_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(255, 105, 180).getRGB())
+                        .color(rgb(255, 105, 180))
                         .build())
                 .faction(RoleFactionProfile.builder()
                         .innocent()
@@ -102,7 +104,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         HabiRoles.SWIFT_WIND = registrar.add(RoleDefinition.builder(HabiRoles.SWIFT_WIND_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(70, 200, 230).getRGB())
+                        .color(rgb(70, 200, 230))
                         .moodType(SRERole.MoodType.FAKE)
                         .build())
                 .faction(RoleFactionProfile.builder()
@@ -132,7 +134,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         HabiRoles.MIME_KILLER = registrar.add(RoleDefinition.builder(HabiRoles.MIME_KILLER_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(40, 40, 40).getRGB())
+                        .color(rgb(40, 40, 40))
                         .moodType(SRERole.MoodType.FAKE)
                         .build())
                 .faction(RoleFactionProfile.builder()
@@ -160,7 +162,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         HabiRoles.MIKE = registrar.add(RoleDefinition.builder(HabiRoles.MIKE_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(78, 201, 176).getRGB())
+                        .color(rgb(78, 201, 176))
                         .build())
                 .faction(RoleFactionProfile.builder()
                         .innocent()
@@ -195,7 +197,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
     private static void registerSins(RoleExtensionRegistrar registrar) {
         SevenSins.PRIDE = registrar.add(RoleDefinition.builder(SevenSins.PRIDE_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(180, 40, 40).getRGB())
+                        .color(rgb(180, 40, 40))
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
@@ -212,7 +214,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.ENVY = registrar.add(RoleDefinition.builder(SevenSins.ENVY_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(40, 160, 60).getRGB())
+                        .color(rgb(40, 160, 60))
                         .moodType(SRERole.MoodType.FAKE)
                         .build())
                 .faction(RoleFactionProfile.builder().killer().build())
@@ -241,7 +243,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.WRATH = registrar.add(RoleDefinition.builder(SevenSins.WRATH_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(200, 30, 30).getRGB())
+                        .color(rgb(200, 30, 30))
                         .moodType(SRERole.MoodType.FAKE)
                         .build())
                 .faction(RoleFactionProfile.builder()
@@ -272,7 +274,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.GREED = registrar.add(RoleDefinition.builder(SevenSins.GREED_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(200, 160, 20).getRGB())
+                        .color(rgb(200, 160, 20))
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder()
@@ -299,7 +301,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.GLUTTONY = registrar.add(RoleDefinition.builder(SevenSins.GLUTTONY_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(140, 90, 50).getRGB())
+                        .color(rgb(140, 90, 50))
                         .build())
                 .faction(RoleFactionProfile.builder().innocent().build())
                 .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
@@ -326,7 +328,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.LUST = registrar.add(RoleDefinition.builder(SevenSins.LUST_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(200, 50, 150).getRGB())
+                        .color(rgb(200, 50, 150))
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
@@ -354,7 +356,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
 
         SevenSins.SLOTH = registrar.add(RoleDefinition.builder(SevenSins.SLOTH_ID)
                 .presentation(RolePresentation.builder()
-                        .color(new Color(100, 100, 140).getRGB())
+                        .color(rgb(100, 100, 140))
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder().defaultMax(1).build())

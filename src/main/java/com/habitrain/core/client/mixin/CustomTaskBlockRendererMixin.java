@@ -29,54 +29,58 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.awt.Color;
-import java.util.Set;
 
 /**
  * Injects custom DLC task block ESP into {@link TaskBlockOverlayRenderer#render}.
  *
  * <p>All drawing lives in {@link TaskOverlayDrawer} — mixin classes must not expose
  * non-private methods (Mixin InvalidMixinException previously killed this entire inject).
+ *
+ * <p>Color and outline width come from Mod Menu {@link TaskConfigEntry}, then task defaults.
  */
 @Environment(EnvType.CLIENT)
-@Mixin(TaskBlockOverlayRenderer.class)
+@Mixin(value = TaskBlockOverlayRenderer.class, remap = false)
 public class CustomTaskBlockRendererMixin {
 
     @Inject(method = "render", at = @At("TAIL"), remap = false)
     private static void habitrain$renderCustomTaskBlocks(WorldRenderContext renderContext, CallbackInfo ci) {
-        var instance = Minecraft.getInstance();
-        if (instance == null || instance.player == null || instance.level == null) return;
-        if (CustomTaskBlockCache.isEmpty()) return;
-        if (!GameRunningCache.isGameRunning()) return;
+        try {
+            var instance = Minecraft.getInstance();
+            if (instance == null || instance.player == null || instance.level == null) return;
+            if (CustomTaskBlockCache.isEmpty()) return;
+            if (!GameRunningCache.isGameRunning()) return;
 
-        if (SREClient.isPlayerSpectatingOrCreative()) {
-            ViewModeDispatcher.renderAll(renderContext);
-            PhoneOverlayRenderer.render(renderContext);
-            return;
-        }
+            if (SREClient.isPlayerSpectatingOrCreative()) {
+                ViewModeDispatcher.renderAll(renderContext);
+                return;
+            }
 
-        // Survival: ActiveTaskCache only (never client TaskManager singleton).
-        String taskName = ActiveTaskCache.getActiveTaskFullId();
-        if (taskName == null) {
-            // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
-            taskName = ActiveTaskCache.getFakeTaskFullId();
+            // Survival: ActiveTaskCache only (never client TaskManager singleton).
+            String taskName = ActiveTaskCache.getActiveTaskFullId();
             if (taskName == null) {
+                // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
+                taskName = ActiveTaskCache.getFakeTaskFullId();
+                if (taskName == null) {
+                    PhoneOverlayRenderer.render(renderContext);
+                    return;
+                }
+                renderTaskBlocks(renderContext, instance, taskName, true);
                 PhoneOverlayRenderer.render(renderContext);
                 return;
             }
-            renderTaskBlocks(renderContext, instance, taskName, true);
+
+            renderTaskBlocks(renderContext, instance, taskName, false);
+
+            // Also outline fake task blocks when both are active and distinct.
+            String fakeName = ActiveTaskCache.getFakeTaskFullId();
+            if (fakeName != null && !fakeName.equals(taskName)) {
+                renderTaskBlocks(renderContext, instance, fakeName, true);
+            }
+
             PhoneOverlayRenderer.render(renderContext);
-            return;
+        } finally {
+            TaskOverlayDrawer.endOverlayPass();
         }
-
-        renderTaskBlocks(renderContext, instance, taskName, false);
-
-        // Also outline fake task blocks when both are active and distinct.
-        String fakeName = ActiveTaskCache.getFakeTaskFullId();
-        if (fakeName != null && !fakeName.equals(taskName)) {
-            renderTaskBlocks(renderContext, instance, fakeName, true);
-        }
-
-        PhoneOverlayRenderer.render(renderContext);
     }
 
     private static void renderTaskBlocks(
@@ -85,7 +89,7 @@ public class CustomTaskBlockRendererMixin {
             String taskName,
             boolean fake) {
         int blockTypeId = resolveBlockTypeId(taskName);
-        if (blockTypeId <= 12) return;
+        if (blockTypeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) return;
 
         Color taskColor = resolveColor(taskName);
         float lineWidth = resolveOutlineWidth(taskName);
@@ -96,21 +100,10 @@ public class CustomTaskBlockRendererMixin {
         boolean isFurnaceExplosionTask = com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION.equals(taskName);
         boolean hasTorch = isFurnaceExplosionTask && BlockStageScanner.hasPlayerRedstoneTorch(instance.player);
 
-        boolean shouldRenderPhone = com.habitrain.core.client.gui.ClientBlackoutState.isBlackoutModeActive();
-
         int renderedCount = 0;
         var level = renderContext.world();
-        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
-            Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
-            if (typeIds == null) continue;
-
-            // Phone constant overlay is handled by PhoneOverlayRenderer; skip here to avoid double-draw.
-            if (shouldRenderPhone && typeIds.contains(BlackoutOverlayTypes.STREET_PHONE)
-                    && !typeIds.contains(blockTypeId)) {
-                continue;
-            }
-
-            if (!typeIds.contains(blockTypeId)) continue;
+        for (BlockPos pos : CustomTaskBlockCache.positionsForType(blockTypeId)) {
+            if (!TaskOverlayDrawer.isInOverlayRange(renderContext, pos)) continue;
 
             Block cachedBlock = CustomTaskBlockCache.getBlockAt(pos);
             Block block = cachedBlock;
@@ -156,19 +149,25 @@ public class CustomTaskBlockRendererMixin {
         return def != null ? def.getBlockTypeId() : -1;
     }
 
+    private static String cachedColorTaskId;
+    private static int cachedColorVersion = Integer.MIN_VALUE;
+    private static Color cachedResolvedColor = FALLBACK_COLOR;
+
     private static Color resolveColor(String taskFullId) {
-        Color resolved;
-        TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
-        if (cfg != null) {
-            resolved = new Color(cfg.getColor(), true);
-        } else {
-            TaskDefinition def = TaskRegistry.get(taskFullId);
-            if (def != null) {
-                resolved = new Color(def.getInstinctColorRGB(), true);
-            } else {
-                return FALLBACK_COLOR;
-            }
+        int version = com.habitrain.core.client.InstinctColorHelper.getColorVersion();
+        if (taskFullId != null && taskFullId.equals(cachedColorTaskId) && version == cachedColorVersion) {
+            return cachedResolvedColor;
         }
+        TaskDefinition def = TaskRegistry.get(taskFullId);
+        TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
+        Color resolved = def != null
+                ? new Color(com.habitrain.core.config.TaskInstinctColor.resolveArgb(cfg, def), true)
+                : (cfg != null && cfg.hasInstinctColor
+                ? new Color(cfg.getColor(), true)
+                : FALLBACK_COLOR);
+        cachedColorTaskId = taskFullId;
+        cachedColorVersion = version;
+        cachedResolvedColor = resolved;
         return resolved;
     }
 

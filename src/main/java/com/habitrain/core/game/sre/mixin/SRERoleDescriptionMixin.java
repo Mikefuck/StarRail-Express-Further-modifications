@@ -72,6 +72,6 @@ public class SRERoleDescriptionMixin {
     private static ModifyRoleDefinition active(SRERole role) {
         return role.identifier() == null
                 ? null
-                : RoleOverrideEngine.getInstance().getActiveModify(role.identifier());
+                : RoleOverrideEngine.getInstance().getGameplayModify(role.identifier());
     }
 }

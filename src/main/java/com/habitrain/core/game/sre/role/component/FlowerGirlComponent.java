@@ -12,6 +12,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -266,8 +268,47 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     public void readFromSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {}
 
     @Override
-    public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {}
+    public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        ListTag still = new ListTag();
+        for (Map.Entry<UUID, Integer> e : stillTicks.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            CompoundTag line = new CompoundTag();
+            line.putUUID("Id", e.getKey());
+            line.putInt("Ticks", e.getValue());
+            still.add(line);
+        }
+        tag.put("StillTicks", still);
+        ListTag rewardedTag = new ListTag();
+        for (Map.Entry<UUID, Boolean> e : rewarded.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            CompoundTag line = new CompoundTag();
+            line.putUUID("Id", e.getKey());
+            line.putBoolean("Rewarded", e.getValue());
+            rewardedTag.add(line);
+        }
+        tag.put("Rewarded", rewardedTag);
+    }
 
     @Override
-    public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {}
+    public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        stillTicks.clear();
+        lastPos.clear();
+        rewarded.clear();
+        if (tag.contains("StillTicks", Tag.TAG_LIST)) {
+            ListTag still = tag.getList("StillTicks", Tag.TAG_COMPOUND);
+            for (int i = 0; i < still.size(); i++) {
+                CompoundTag line = still.getCompound(i);
+                if (!line.hasUUID("Id")) continue;
+                stillTicks.put(line.getUUID("Id"), line.getInt("Ticks"));
+            }
+        }
+        if (tag.contains("Rewarded", Tag.TAG_LIST)) {
+            ListTag rewardedTag = tag.getList("Rewarded", Tag.TAG_COMPOUND);
+            for (int i = 0; i < rewardedTag.size(); i++) {
+                CompoundTag line = rewardedTag.getCompound(i);
+                if (!line.hasUUID("Id")) continue;
+                rewarded.put(line.getUUID("Id"), line.getBoolean("Rewarded"));
+            }
+        }
+    }
 }

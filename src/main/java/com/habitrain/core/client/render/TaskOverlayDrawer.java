@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.habitrain.core.client.mixin.FrustumAccessor;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -12,6 +13,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -49,6 +51,15 @@ public final class TaskOverlayDrawer {
 
     /** Default SRE-style line width (matches {@code ALWAYS_VISIBLE_THICK_LINES}). */
     public static final float DEFAULT_LINE_WIDTH = 4.0f;
+    public static final double SURVIVAL_OVERLAY_DISTANCE = 32.0;
+    public static final double SPECTATOR_OVERLAY_DISTANCE = 24.0;
+    public static final double SURVIVAL_OVERLAY_DISTANCE_SQ = SURVIVAL_OVERLAY_DISTANCE * SURVIVAL_OVERLAY_DISTANCE;
+    public static final double SPECTATOR_OVERLAY_DISTANCE_SQ = SPECTATOR_OVERLAY_DISTANCE * SPECTATOR_OVERLAY_DISTANCE;
+    /**
+     * Spectator sparse custom points (cats, phones, backpacks): frustum only,
+     * matching vanilla SRE task ESP which has no distance gate.
+     */
+    public static final double SPECTATOR_SPARSE_OVERLAY_DISTANCE_SQ = Double.POSITIVE_INFINITY;
 
     private TaskOverlayDrawer() {}
 
@@ -118,8 +129,44 @@ public final class TaskOverlayDrawer {
 
         LevelRenderer.renderLineBox(matrices, vertexConsumer, localAABB, red, green, blue, alpha);
         matrices.popPose();
+    }
 
-        bufferSource.endBatch(type);
+    /** Flush every overlay RenderType once per world-render pass. */
+    public static void endOverlayPass() {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null) return;
+        MultiBufferSource.BufferSource source = client.renderBuffers().bufferSource();
+        for (RenderType type : RENDER_TYPE_CACHE.values()) {
+            source.endBatch(type);
+        }
+    }
+
+    public static boolean isInOverlayRange(WorldRenderContext context, BlockPos pos) {
+        return isInOverlayRange(context, pos, SURVIVAL_OVERLAY_DISTANCE_SQ);
+    }
+
+    public static boolean isInOverlayRange(WorldRenderContext context, BlockPos pos, double maxDistanceSq) {
+        if (context == null || pos == null || context.camera() == null) return false;
+        Vec3 cameraPos = context.camera().getPosition();
+        double minX = pos.getX();
+        double minY = pos.getY();
+        double minZ = pos.getZ();
+        double maxX = minX + 1.0;
+        double maxY = minY + 1.0;
+        double maxZ = minZ + 1.0;
+        double dx = (minX + 0.5) - cameraPos.x;
+        double dy = (minY + 0.5) - cameraPos.y;
+        double dz = (minZ + 0.5) - cameraPos.z;
+        if (dx * dx + dy * dy + dz * dz > maxDistanceSq) {
+            return false;
+        }
+        Frustum frustum = context.frustum();
+        // 1.21 AABB fields are final (no AABB.set); invoke cubeInFrustum with primitives.
+        if (frustum != null
+                && !((FrustumAccessor) frustum).habitrain$cubeInFrustum(minX, minY, minZ, maxX, maxY, maxZ)) {
+            return false;
+        }
+        return true;
     }
 
     /**

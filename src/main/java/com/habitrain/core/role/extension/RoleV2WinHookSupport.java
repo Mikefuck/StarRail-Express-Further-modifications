@@ -12,10 +12,11 @@ import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Bridge for v2 {@code RolePatch#winConditionHook()} into the existing SRE /
- * blackout win paths. The v2 MODIFY overlay is applied onto the original role
- * object; this support scans currently overlaid roles and evaluates their
- * declarative win hook, matching the v1 bridge semantics.
+ * Bridge for v2 {@code RolePatch#winConditionHook()} as overlay input to
+ * {@link com.habitrain.core.role.behavior.RoleEventDispatcher#foldWin}.
+ * The v2 MODIFY overlay is applied onto the original role object; this
+ * support scans currently overlaid roles and evaluates their declarative
+ * win hook. It is not a second Fabric {@code AllowGameEnd} listener.
  */
 public final class RoleV2WinHookSupport {
 

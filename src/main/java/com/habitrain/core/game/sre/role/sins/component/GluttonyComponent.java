@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
@@ -115,9 +116,7 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
         if (target == null || target.level() == null) return false;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(target.level());
-            return game != null
-                    && SevenSins.GLUTTONY != null
-                    && game.isRole(target, SevenSins.GLUTTONY);
+            return HabiRoles.isHabiRole(target, SevenSins.GLUTTONY);
         } catch (Throwable t) {
             return false;
         }
@@ -412,12 +411,12 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 
     public static final class BuffEntry {

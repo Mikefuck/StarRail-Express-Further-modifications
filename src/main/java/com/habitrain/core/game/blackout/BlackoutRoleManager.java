@@ -61,7 +61,7 @@ public class BlackoutRoleManager {
         final Set<UUID> sheriffs = new HashSet<>();
         final Map<UUID, ResourceLocation> roleHistory = new HashMap<>();
         /**
-         * 断线但仍在存活表内的玩家（宽限期内计存活，不可互动/不可被雇警抽中）。
+         * 断线但仍在存活表内的玩家（宽限期内不可互动/不可被雇警抽中，也不计入胜负人数）。
          * 真正死亡/超时淘汰走 {@link #eliminate}，不走此集合。
          */
         final Set<UUID> offlinePlayers = ConcurrentHashMap.newKeySet();
@@ -113,7 +113,7 @@ public class BlackoutRoleManager {
     }
 
     /**
-     * 断线标记：仍计存活（胜负人数），但不可互动、不作为雇警/放逐目标。
+     * 断线标记：仍留在存活表，但不可互动、不作为雇警/放逐目标，也不计入胜负人数。
      * 与 {@link #eliminate}（真正淘汰）分离，避免瞬断被当死亡。
      */
     public static void markDisconnected(ServerLevel level, UUID playerId) {
@@ -140,9 +140,70 @@ public class BlackoutRoleManager {
         return getOrCreate(level).offlinePlayers.contains(playerId);
     }
 
-    /** 在线且存活：电话/商店/放逐发起等互动门控。 */
+    /** 在线且存活：电话/商店/放逐发起等互动门控。创造/旁观 OP 不可互动。 */
     public static boolean isInteractable(ServerLevel level, UUID playerId) {
-        return isAlive(level, playerId) && !isDisconnected(level, playerId);
+        if (level == null || playerId == null) return false;
+        if (!isAlive(level, playerId) || isDisconnected(level, playerId)) return false;
+        ServerPlayer online = findOnlinePlayer(level, playerId);
+        if (online != null && (online.isCreative() || online.isSpectator())) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 胜负人数：已分配则计存活。断线宽限仍计（否则最后杀手瞬断会立刻阵营胜）。
+     * 在线创造/旁观不计（P1.2 创造 OP）。
+     */
+    public static boolean countsAsAliveForVictory(ServerLevel level, UUID uuid) {
+        if (level == null || uuid == null) return false;
+        boolean creativeOrSpectator = false;
+        ServerPlayer online = findOnlinePlayer(level, uuid);
+        if (online != null) {
+            creativeOrSpectator = online.isCreative() || online.isSpectator();
+        }
+        return countsAsAliveForVictory(isAlive(level, uuid), isDisconnected(level, uuid), creativeOrSpectator);
+    }
+
+    /**
+     * Policy without a live player. Creative/spectator never count.
+     * Disconnected assigned players still count (60s grace).
+     */
+    public static boolean countsAsAliveForVictory(boolean assignedAlive, boolean disconnected,
+                                                  boolean creativeOrSpectator) {
+        return assignedAlive && !creativeOrSpectator;
+    }
+
+    /** True if this UUID is in any loaded world's blackout alive table. */
+    public static boolean isAliveOnServer(net.minecraft.server.MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) return false;
+        for (ServerLevel level : server.getAllLevels()) {
+            if (isAlive(level, uuid)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Match world that still has this UUID in the alive table or role history. */
+    public static ServerLevel findRoundLevel(net.minecraft.server.MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) return null;
+        ServerLevel history = null;
+        for (ServerLevel level : server.getAllLevels()) {
+            if (isAlive(level, uuid)) {
+                return level;
+            }
+            if (history == null && getRoleHistoryEntry(level, uuid) != null) {
+                history = level;
+            }
+        }
+        return history;
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static ServerPlayer findOnlinePlayer(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null || level.getServer() == null) return null;
+        return level.getServer().getPlayerList().getPlayer(playerId);
     }
 
     public static void eliminate(ServerLevel level, UUID playerId) {
@@ -503,9 +564,14 @@ public class BlackoutRoleManager {
     }
 
     public static int getRemainingCount(ServerLevel level, Faction faction) {
-        return (int) getOrCreate(level).factions.values().stream()
-                .filter(current -> current == faction)
-                .count();
+        RoleState state = getOrCreate(level);
+        int n = 0;
+        for (Map.Entry<UUID, Faction> e : state.factions.entrySet()) {
+            if (e.getValue() != faction) continue;
+            if (!countsAsAliveForVictory(level, e.getKey())) continue;
+            n++;
+        }
+        return n;
     }
 
     public static int getRemainingGood(ServerLevel level) {
@@ -551,7 +617,7 @@ public class BlackoutRoleManager {
         List<UUID> candidates = new ArrayList<>();
         for (UUID id : state.roles.keySet()) {
             if (excludeId != null && excludeId.equals(id)) continue;
-            if (state.offlinePlayers.contains(id)) continue; // 断线宽限内不可被抽中
+            if (!isInteractable(level, id)) continue;
             if (killersOnly && state.factions.get(id) != Faction.BAD) continue;
             if (!state.sheriffs.contains(id)) {
                 candidates.add(id);

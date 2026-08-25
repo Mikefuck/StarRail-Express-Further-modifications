@@ -42,12 +42,20 @@ public final class RoleHandshakeGate {
     private final Map<UUID, ClientManifest> reports = new ConcurrentHashMap<>();
     /** Server-manifest source; injectable so unit tests avoid FabricLoader. */
     private volatile java.util.function.Supplier<RoleManifest> manifestSupplier = RoleManifestService::build;
+    /** Current server manifest, shared across all per-packet handshake checks. */
+    private volatile @Nullable RoleManifest cachedManifest;
 
     private RoleHandshakeGate() {}
 
     /** Test seam: replaces the server-manifest source (production = {@link RoleManifestService#build}). */
     public void setManifestSupplier(java.util.function.Supplier<RoleManifest> supplier) {
         this.manifestSupplier = supplier == null ? RoleManifestService::build : supplier;
+        this.cachedManifest = null;
+    }
+
+    /** Publishes the exact manifest sent to clients and invalidates stale cache state. */
+    public void publishServerManifest(RoleManifest manifest) {
+        this.cachedManifest = manifest;
     }
 
     /** Records the client's reported local manifest (C2S receiver). */
@@ -87,7 +95,7 @@ public final class RoleHandshakeGate {
                             + "否则缺少必需的角色扩展 provider，无法执行角色动作。");
         }
         try {
-            return RoleHandshakeMatcher.match(manifestSupplier.get(), local);
+            return RoleHandshakeMatcher.match(serverManifest(), local);
         } catch (Throwable t) {
             LOGGER.warn("Handshake match failed for {}; failing closed", playerId, t);
             return RoleHandshakeResult.hashMismatch("握手计算失败，禁止角色动作");
@@ -97,15 +105,35 @@ public final class RoleHandshakeGate {
     /** Whether the player may execute role actions under the current handshake. */
     public boolean isActionAllowed(UUID playerId) {
         RoleHandshakeStatus status = resultFor(playerId).status();
-        return status == RoleHandshakeStatus.OK
-                || status == RoleHandshakeStatus.DEGRADED_CLIENT_EXTENSION;
+        return allowsActions(status);
     }
 
     /** Human-readable reason when actions are blocked, or {@code null} when allowed. */
     public @Nullable String blockReason(UUID playerId) {
-        if (isActionAllowed(playerId)) {
+        RoleHandshakeResult result = resultFor(playerId);
+        if (allowsActions(result.status())) {
             return null;
         }
-        return resultFor(playerId).message();
+        return result.message();
+    }
+
+    private RoleManifest serverManifest() {
+        RoleManifest current = cachedManifest;
+        if (current != null) {
+            return current;
+        }
+        synchronized (this) {
+            current = cachedManifest;
+            if (current == null) {
+                current = manifestSupplier.get();
+                cachedManifest = current;
+            }
+            return current;
+        }
+    }
+
+    private static boolean allowsActions(RoleHandshakeStatus status) {
+        return status == RoleHandshakeStatus.OK
+                || status == RoleHandshakeStatus.DEGRADED_CLIENT_EXTENSION;
     }
 }

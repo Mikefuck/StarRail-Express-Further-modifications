@@ -1,10 +1,15 @@
 package com.habitrain.core.api;
 
-import net.minecraft.core.component.DataComponentType;
+import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 任务道具回收辅助类。
@@ -16,7 +21,7 @@ import net.minecraft.world.item.ItemStack;
  * 机制：
  *   1. 发放时：给 ItemStack 打 CUSTOM_DATA NBT 标签 habitrain_grant = 任务 fullId
  *      （见 {@link #tagGrantedItem}）。不维护 TaskInstance 列表。
- *   2. 回收时：扫描玩家背包 + 副手，移除所有带匹配标签的 ItemStack。
+ *   2. 回收时：扫描主背包 + 盔甲 + 副手 + 鼠标携带 + ExtraSlot，移除所有带匹配标签的 ItemStack。
  *
  * 注意：成功完成的任务不回收（玩家保留道具作为奖励）。
  *       仅在取消/隐藏路径（init/clear/forceReplace/timeout/fail）调用 reclaim。
@@ -44,7 +49,18 @@ public final class ItemReclaimHelper {
     }
 
     /**
-     * 回收玩家背包 + 副手中所有带匹配 habitrain_grant 标签的 ItemStack。
+     * 打标后放入背包；装不下则掉落同一份已打标堆。
+     */
+    public static void giveTaggedItem(Player player, ItemStack stack, String fullId) {
+        if (player == null || stack == null || stack.isEmpty()) return;
+        ItemStack tagged = tagGrantedItem(stack, fullId);
+        if (!player.getInventory().add(tagged)) {
+            player.drop(tagged, false);
+        }
+    }
+
+    /**
+     * 回收主背包 + 盔甲 + 副手 + 鼠标携带 + ExtraSlot 中所有带匹配 habitrain_grant 标签的 ItemStack。
      */
     public static void reclaim(Player player, String fullId) {
         if (player == null || fullId == null) return;
@@ -71,7 +87,52 @@ public final class ItemReclaimHelper {
                 stack.setCount(0);
             }
         }
+        boolean carriedChanged = reclaimMenuCarried(player.containerMenu, fullId);
+        if (player.inventoryMenu != player.containerMenu) {
+            carriedChanged |= reclaimMenuCarried(player.inventoryMenu, fullId);
+        }
+        reclaimExtraSlots(player, fullId);
         player.getInventory().setChanged();
+        if (carriedChanged) {
+            if (player.containerMenu != null) {
+                player.containerMenu.broadcastChanges();
+            }
+            if (player.inventoryMenu != null && player.inventoryMenu != player.containerMenu) {
+                player.inventoryMenu.broadcastChanges();
+            }
+        }
+    }
+
+    /** 1.21：鼠标携带栈在菜单上，不在 Inventory.carried。 */
+    private static boolean reclaimMenuCarried(AbstractContainerMenu menu, String fullId) {
+        if (menu == null) {
+            return false;
+        }
+        ItemStack carried = menu.getCarried();
+        if (!matchesGrant(carried, fullId)) {
+            return false;
+        }
+        carried.setCount(0);
+        menu.setCarried(ItemStack.EMPTY);
+        return true;
+    }
+
+    private static void reclaimExtraSlots(Player player, String fullId) {
+        try {
+            ExtraSlotComponent.KEY.maybeGet(player).ifPresent(extra -> {
+                if (extra.SLOTS == null || extra.SLOTS.isEmpty()) return;
+                List<ResourceLocation> toRemove = new ArrayList<>();
+                for (var entry : extra.SLOTS.entrySet()) {
+                    if (matchesGrant(entry.getValue(), fullId)) {
+                        toRemove.add(entry.getKey());
+                    }
+                }
+                for (ResourceLocation slot : toRemove) {
+                    extra.removeSlot(slot);
+                }
+            });
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 检查 ItemStack 是否带匹配的 habitrain_grant 标签 */

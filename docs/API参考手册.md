@@ -87,13 +87,33 @@ boolean isActive(ServerLevel level);
 
 | 方法 | 契约 |
 |---|---|
-| `register(modId, modeId, mode)` | 注册键为 `modId:modeId` |
-| `start(fullId, level)` | 每个世界仅一个主动模式 |
+| `register(modId, modeId, mode)` | 注册键为 `modId:modeId`，与 `GameMode.getId()` 不是同一字符串 |
+| `start(fullId, level)` | 必须传注册键；每个世界仅一个主动模式 |
 | `stop(level, result)` | `onEnd` 后 finally `onCleanup` |
 | `tickAll(server)` | 只 tick 主动表中的模式 |
 | `getActiveForLevel(level)` | 主动表优先，否则检查被动 `isActive` |
 
-`WinResult` 提供 `singleWinner`、`noWinner`、`forceEnd`。
+核心谋杀模式的注册键是 `habitrain_core:sre:murder`（`GameModeRegistry.register("habitrain_core", "sre:murder", ...)`），而 `GameMode.getId()` 是逻辑短 ID `sre:murder`。不要 `start(mode.getId())`。
+
+`WinResult` 提供 `singleWinner`、`noWinner`、`forceEnd`。`singleWinner` 的 playerId 不可为 null；无人获胜用 `noWinner`。
+
+### 3.3 `GameModeIds` / `MatchStateApi` / `MatchEvents`
+
+| 入口 | 契约 |
+|---|---|
+| `GameModeIds.BLACKOUT` / `MURDER` / `REPAIR` | 短 id：`habitrain:blackout`、`sre:murder`、`sre:repair` |
+| `GameModeIds.canonical(raw)` | 把 registry 全 id、`sre:blackout`、类名猜测映射到短 id |
+| `MatchStateApi.phase(level)` | 对齐 SRE `GameStatus`（含 `INITIATING`）；读失败为 `UNKNOWN` |
+| `MatchStateApi.hasLeftLobby(level)` | `phase != INACTIVE`（含 `UNKNOWN`，卡片应拒绝） |
+| `MatchStateApi.modeId(level)` | 优先 `GameModeRegistry.getActiveForLevel`，否则 SRE `identifier` |
+| `MatchEvents.STARTED` / `ROUND_ENDED` | 对局开始 / 结算。抽奖发次只订 `ROUND_ENDED`，不要再读 RoundEnd CCA |
+| `RoleForceApi` | 下局强制：`queueExact` / `queueFaction` / `queueRoleType` / `isQueued` / `clear`。不要调用 Harpy / `ForcePlayerTeam` |
+
+`GameMode.isActive` **不能**用来判断大厅：大厅残留 mode 也会 true。
+
+### 3.4 `MenuGateApi`
+
+服务端：`MenuGateApi.isBlocked(player)`（专用服 + 门控开启 + 未授权 → true）。客户端：`MenuGateClientApi.isScreenAllowed()`。附属 mod 不要反射 `MenuGateService` / `MenuAccessGuard`。
 
 ## 4. 投票与道具
 
@@ -103,7 +123,7 @@ boolean isActive(ServerLevel level);
 boolean start(ServerLevel level, String voteId,
               List<VoteOption> options, int durationSeconds,
               Consumer<VoteResult> onResolved);
-boolean cast(ServerLevel level, ServerPlayer voter, @Nullable String optionId);
+boolean cast(ServerLevel level, UUID voter, @Nullable String optionId);
 boolean isActive(ServerLevel level);
 void cancel(ServerLevel level);
 ```
@@ -230,7 +250,7 @@ default boolean requiresClient(); // 默认 false
 
 `HOLDER`、`KILLER`、`VICTIM`、`TARGET`、`ANY_ACTIVE_HOLDER`、`ROUND_PRESENT`、`GLOBAL_WHILE_ENABLED`。
 
-广播类事件需要按语义选择作用域。`GLOBAL_WHILE_ENABLED` 只有配置 `allowGlobalHooks=true` 才应使用。
+广播类事件需要按语义选择作用域。`GLOBAL_WHILE_ENABLED` 注册时不会被拒绝，但运行时仍要求 `presentInRound && allowGlobalHooks`（round snapshot 的门控；无 snapshot 时读 live 配置）。不要把它当成「条目启用即无条件开火」。
 
 ### 7.3 `WinPatch`
 
@@ -255,19 +275,23 @@ default boolean requiresClient(); // 默认 false
 
 ### 8.2 `RoleChangeApi`
 
-`assign(player, role, options)`、`transform(player, role, cause)`、`transform(player, role, cause, options)`、`remove(player, cause)`、`current(player)`、`history(player)`。变更由事务处理 alias、旧角色清理、映射、历史、初始化、hooks 和同步。
+`assign(player, role, options)`、`transform(player, role, cause)`、`transform(player, role, cause, options)`、`remove(player, cause)`、`current(player)`、`history(player)`。变更由事务处理 alias、旧角色清理、映射、历史、初始化、hooks 和同步。四参数 `transform(..., options)` 必须由实现覆盖，默认抛 `UnsupportedOperationException`，不会悄悄丢掉 options。
+
+`OnGamePlayerRolesConfirm` / `RoleLifecycleHooks.onRolesConfirm` **可以**在开局确认阶段改写分配 Map（抽奖自选、职业卡、七宗罪互斥等）。这是**开局确认**，不是局中转职。局中转换必须走 `RoleChangeApi`。
 
 强制随机转职必须使用 `RoleChangeCause.FORCED_RANDOM`。Core 会在事务写入前检查旧职业：Core 自有职业和普通、无组件、允许随机的 `NormalRole` 默认可转；未知上游的组件职业、自定义实现或禁止被其他职业随机的角色默认拒绝。只有完整审计旧职业的 CCA、药水效果、实体和全局状态清理后，才能加入 `ForcedRandomRoleChangePolicy` 的内部安全名单。不要通过直接修改角色 Map 或调用 `BlackoutRoleManager.reassignRole` 绕过保护。
 
 ### 8.3 `RoleStateApi`
 
-注册返回 `RoleStateKey<T>`；运行时使用 `get/set/reset`。状态 scope：PLAYER/WORLD/ROUND；sync：NONE/OWNER/OWNER_AND_TRACKING/ALL/SERVER_ONLY；reset cause：ROLE_LOST/ROLE_ASSIGNED/ROUND_END/ROUND_START/MANUAL。
+注册返回 `RoleStateKey<T>`；运行时使用 `get(key, player)` / `set(key, player, value)` / `reset`。状态 scope：PLAYER/WORLD/ROUND；persistence：NONE/ROUND/WORLD/PERMANENT；sync：NONE/OWNER/OWNER_AND_TRACKING/ALL/SERVER_ONLY；reset cause：ROLE_LOST/ROLE_ASSIGNED/ROUND_END/ROUND_START/MANUAL。
+
+生产存储：`Persistence.WORLD` / `PERMANENT` 经 `CcaRoleStateStore` 写入 CCA（PLAYER → 玩家组件，WORLD → 世界组件）；`ROUND` / `NONE` 走内存。`StateScope.ROUND` 一律进局内内存袋，**ROUND+PERMANENT 也不会写入世界 NBT**。
 
 WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `dataVersion > 1` 时迁移链必须从 v1 连续覆盖到当前版本。
 
 ### 8.4 `RoleActionApi` / `RoleActionClientApi`
 
-服务端：`spec/specs/specsFor`、`dispatch/receiveC2S`、`sendTo`。客户端：`send`、`add/removePushListener`；结果按 `(actionId, sequence)` 关联，并处理 timeout/disconnect。
+服务端：`spec/specs/specsFor`、`dispatch/receiveC2S`、`sendTo`。客户端：`send`、`add/removePushListener`；结果按 `(actionId, sequence)` 关联，并处理 timeout/disconnect。`RoleActionClientApi.instance()` **只允许客户端**调用，main/server 入口调用会让专用服解析失败。
 
 动作方向：C2S/S2C/BIDIRECTIONAL。目标 codec：NONE、PLAYER_UUID、BLOCK_POS、ENTITY_ID。只有 PLAYER_UUID 支持平台级 alive/distance/line-of-sight 条件。
 
@@ -301,8 +325,11 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 配置文件：`config/habitrain_role_v2.json`。门控顺序：全局 → provider → entry。
 
 - 大厅修改：立即成为 lobby snapshot。
-- 对局中修改：编译为 pending，下一局边界激活。
-- 当前 round snapshot 对局中不变。
+- 对局中 v2 配置修改：编译为 pending；下一局边界提升为 lobby 并激活。本局 gameplay（hooks、受管 action、HUD/直觉/皮肤）继续使用 round snapshot，不跟 pending。
+- Mod Menu 与 `/habitrain roleapi snapshot` 诊断可以同时显示 pending 与 live。
+- v1 flags/spawn/shop 的 live 写入由 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND）；局中 rebuild 不会立刻改当前对局的 flags/spawn/shop。
+- 不要把「对局中修改绝不破坏当前对局」写成覆盖全部 API 的保证。
+- 同一 `RoleKey` 双注册 v1+v2 MODIFY/REPLACE → Engine 标 v1 CONFLICT 并跳过（v1 胜负 hook / 商店 overlay 丢弃）。v1 不弃用。
 
 常用命令：
 
@@ -333,7 +360,7 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 
 1. 不用 `TMMRoles.registerRole()` 注册 v2 ADD/REPLACE；让 Core 管理一次性编译与可见性。
 2. 不直接遍历 `TMMRoles.ROLES`；使用 `RoleCatalogApi`。
-3. 不直接修改角色 Map 转职；使用 `RoleChangeApi`。
+3. 不直接修改角色 Map 转职；局中转换使用 `RoleChangeApi`。`OnGamePlayerRolesConfirm` 只用于开局确认阶段的分配改写（抽奖自选 / 职业卡），不是局中 transform。
 4. 不为可由 hooks 表达的行为注册永久全局监听器。
 5. 不直接调用只读 `registrar()` 或客户端全局写形方法。
 6. 不在 action handler 里重新解析已声明的结构化目标；使用 `RoleActionContext.target()`。

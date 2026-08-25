@@ -24,6 +24,7 @@ import java.util.UUID;
 public class GameLifecycleHandler {
     /** 记录上一tick是否处于游戏中（全局，不受多世界影响） */
     private static boolean wasGameActive = false;
+    private static volatile MinecraftServer lastServer;
 
     /**
      * 每tick检测游戏状态，当游戏从活跃变为非活跃时清理效果
@@ -34,11 +35,17 @@ public class GameLifecycleHandler {
      * @param server MinecraftServer 实例（用于 handleGameEnd 遍历玩家）
      */
     public static void tickGameEndCheck(boolean anyGameActive, MinecraftServer server) {
+        lastServer = server;
         // 检测下降沿：上一tick游戏活跃 → 当前tick游戏非活跃
         if (wasGameActive && !anyGameActive) {
             handleGameEnd(server);
         }
         wasGameActive = anyGameActive;
+    }
+
+    /** 供按维度清任务时找回在线玩家（休息区可能不在对局维）。 */
+    public static MinecraftServer peekServer() {
+        return lastServer;
     }
 
     public static void resetGameState() {
@@ -52,6 +59,7 @@ public class GameLifecycleHandler {
                 // per-player try-catch：单个玩家清理失败不应跳过后续玩家
                 // 和全局清理（BetelQuestState.resetAll 等），避免跨局状态泄漏。
                 try {
+                    TaskManager.getInstance().cancelAllTrackedTasks(player);
                     // 使用归属追踪器释放游戏中的槟榔效果
                     // 只移除本模组的"betel_quest"来源效果，不影响其他模组
                     if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SPEED, "betel_quest")) {
@@ -79,7 +87,7 @@ public class GameLifecycleHandler {
                         addiction.clearAddiction(player);
                     } catch (Exception ignored) {}
 
-                    // 七宗罪 + 既有角色 CCA 局终清空（含 pride/envy/wrath/greed/gluttony/lust/sloth）
+                    // 七宗罪 + 既有角色 CCA 局终清空（仅在线玩家；离线残留由 JOIN 再清）。
                     try {
                         HabiComponents.clearAll(player);
                     } catch (Throwable ignored) {}

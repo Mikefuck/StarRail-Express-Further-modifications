@@ -42,7 +42,7 @@ class RoleHandshakeMatcherTest {
     void identicalManifestsAreOk() {
         RoleManifest server = manifest(List.of(required("habitrain_dlc", "1.2.0")), "hashA", "presA");
         ClientManifest local = new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), true,
-                null, null, Set.of("habitrain_dlc"));
+                "hashA", null, Set.of("habitrain_dlc"));
         RoleHandshakeResult result = RoleHandshakeMatcher.match(server, local);
         assertEquals(RoleHandshakeStatus.OK, result.status());
     }
@@ -83,7 +83,7 @@ class RoleHandshakeMatcherTest {
     @Test
     void optionalProviderMissingDoesNotReject() {
         RoleManifest server = manifest(List.of(optional("presentation_mod", "1.0.0")), "hashA", "presA");
-        ClientManifest local = new ClientManifest(API, Map.of(), true);
+        ClientManifest local = new ClientManifest(API, Map.of(), true, "hashA", null);
         assertEquals(RoleHandshakeStatus.OK, RoleHandshakeMatcher.match(server, local).status());
     }
 
@@ -98,7 +98,7 @@ class RoleHandshakeMatcherTest {
     @Test
     void apiVersionPatchDriftIsAccepted() {
         RoleManifest server = manifest(List.of(), "hashA", "presA");
-        ClientManifest local = new ClientManifest("2.0.3", Map.of(), true);
+        ClientManifest local = new ClientManifest("2.0.3", Map.of(), true, "hashA", null);
         assertEquals(RoleHandshakeStatus.OK, RoleHandshakeMatcher.match(server, local).status());
     }
 
@@ -112,16 +112,17 @@ class RoleHandshakeMatcherTest {
     }
 
     @Test
-    void trustServerWhenClientHasNoLocalHash() {
+    void missingClientDefinitionHashFailsClosed() {
         RoleManifest server = manifest(List.of(), "serverHash", "presA");
         ClientManifest local = new ClientManifest(API, Map.of(), true, null, null);
-        assertEquals(RoleHandshakeStatus.OK, RoleHandshakeMatcher.match(server, local).status());
+        assertEquals(RoleHandshakeStatus.HASH_MISMATCH,
+                RoleHandshakeMatcher.match(server, local).status());
     }
 
     @Test
     void presentationMismatchWithoutResourcesDegrades() {
         RoleManifest server = manifest(List.of(), "hashA", "serverPres");
-        ClientManifest local = new ClientManifest(API, Map.of(), false, null, "clientPres");
+        ClientManifest local = new ClientManifest(API, Map.of(), false, "hashA", "clientPres");
         RoleHandshakeResult result = RoleHandshakeMatcher.match(server, local);
         assertEquals(RoleHandshakeStatus.DEGRADED_CLIENT_EXTENSION, result.status());
     }
@@ -129,7 +130,15 @@ class RoleHandshakeMatcherTest {
     @Test
     void presentationMismatchWithResourcesIsOk() {
         RoleManifest server = manifest(List.of(), "hashA", "serverPres");
-        ClientManifest local = new ClientManifest(API, Map.of(), true, null, "clientPres");
+        ClientManifest local = new ClientManifest(API, Map.of(), true, "hashA", "clientPres");
+        assertEquals(RoleHandshakeStatus.OK, RoleHandshakeMatcher.match(server, local).status());
+    }
+
+    @Test
+    void emptyManifestConfigJsonDoesNotChangeHandshake() {
+        RoleManifest server = new RoleManifest(API, List.of(), Set.of("add", "state"),
+                "hashA", "role-snapshot-v1", null, "presA", "");
+        ClientManifest local = new ClientManifest(API, Map.of(), true, "hashA", null);
         assertEquals(RoleHandshakeStatus.OK, RoleHandshakeMatcher.match(server, local).status());
     }
 

@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre;
 
+import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ParticipationComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -20,7 +21,8 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>维修员进入维修模式后：把自己标记为「不参与 SRE 对局」（{@link ParticipationComponent}），
  * 从而不计入人数统计、不进开局名单、不分配任务/角色；同时切换为创造模式以便修图。其锁定的
- * 地图将从 {@code ModeMapVoteOrchestrator} 的投票候选池中排除（见 {@link #isMapLocked}）。
+ * 地图将从 {@code ModeMapVoteOrchestrator} 的投票候选池中排除（见 {@link #isMapLocked}）；
+ * 进入时还会删除维修员已投的票，并从进行中的地图投票候选里拿掉该图。
  *
  * <p>退出/断线/停服时恢复原参与状态与游戏模式，并释放对地图的锁。一张地图可被多位玩家同时
  * 锁定；当某地图不再有任何负责玩家时，它自动回到投票池（满足「强制要求有一名玩家为当前锁定的
@@ -51,7 +53,11 @@ public final class RepairModeManager {
         }
     }
 
-    /** 玩家进入维修模式并锁定一张地图。 */
+    /**
+     * 玩家进入维修模式并锁定一张地图。
+     * prior 读取 / setParticipating(false) / 创造模式任一步失败则整段 abort，不登记维修员。
+     * （需 ServerPlayer，纯单测无法覆盖完整 enter 路径。）
+     */
     public static boolean enter(ServerPlayer player, String mapId) {
         if (player == null || mapId == null || mapId.isBlank()) return false;
         UUID uuid = player.getUUID();
@@ -63,7 +69,8 @@ public final class RepairModeManager {
             ParticipationComponent participation = ParticipationComponent.KEY.get(level);
             priorParticipating = participation.isParticipating(uuid);
         } catch (Throwable t) {
-            priorParticipating = true;
+            LOGGER.error("[RepairMode] read prior participating failed for {}; refuse enter", uuid, t);
+            return false;
         }
         GameType priorGameType = player.gameMode.getGameModeForPlayer();
 
@@ -71,20 +78,48 @@ public final class RepairModeManager {
         try {
             ParticipationComponent.KEY.get(level).setParticipating(uuid, false);
         } catch (Throwable t) {
-            LOGGER.warn("[RepairMode] setParticipating(false) failed for {}", uuid, t);
+            LOGGER.error("[RepairMode] setParticipating(false) failed for {}; refuse enter", uuid, t);
+            return false;
         }
-        // 创造模式便于修图
+        // 创造模式便于修图；失败则恢复参与状态，不登记维修员
         try {
             player.setGameMode(GameType.CREATIVE);
         } catch (Throwable t) {
-            LOGGER.warn("[RepairMode] setGameMode(CREATIVE) failed for {}", uuid, t);
+            LOGGER.error("[RepairMode] setGameMode(CREATIVE) failed for {}; abort enter", uuid, t);
+            try {
+                ParticipationComponent.KEY.get(level).setParticipating(uuid, priorParticipating);
+            } catch (Throwable restore) {
+                LOGGER.error("[RepairMode] restore participating after creative failure failed for {}",
+                        uuid, restore);
+            }
+            return false;
         }
 
         REPAIRS.put(uuid, new RepairEntry(player.getGameProfile().getName(), mapId, priorParticipating, priorGameType));
         LOGGER.info("[RepairMode] {} entered repair mode, locking map={}", uuid, mapId);
+        dropRepairerVoteAndLockedMap(player, mapId);
         // 同步到本机客户端：屏蔽开局黑场/转场与结尾动画
         com.habitrain.core.network.RepairModeSyncPayload.sendToPlayer(player, true);
         return true;
+    }
+
+    /** 进维修后已投票作废，并把被锁图从进行中的地图投票候选里拿掉。 */
+    private static void dropRepairerVoteAndLockedMap(ServerPlayer player, String mapId) {
+        UUID uuid = player.getUUID();
+        try {
+            MinecraftServer server = player.getServer();
+            if (server != null) {
+                for (ServerLevel sl : server.getAllLevels()) {
+                    OptionVoteManager.onVoterRemoved(sl, uuid);
+                    OptionVoteManager.invalidateMapOption(sl, mapId);
+                }
+            } else if (player.serverLevel() != null) {
+                OptionVoteManager.onVoterRemoved(player.serverLevel(), uuid);
+                OptionVoteManager.invalidateMapOption(player.serverLevel(), mapId);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[RepairMode] failed to drop vote/map option for {} map={}", uuid, mapId, t);
+        }
     }
 
     /** 玩家退出维修模式（cancel / remove 共用）。 */

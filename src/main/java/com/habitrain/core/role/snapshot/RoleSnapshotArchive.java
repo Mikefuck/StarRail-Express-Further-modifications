@@ -55,17 +55,15 @@ public final class RoleSnapshotArchive {
     }
 
     /**
-     * Resolves {@code key} against an archived snapshot, falling back to
-     * the live manager current snapshot.
+     * Resolves {@code key} against an archived snapshot. Empty on an unknown
+     * id or a key that is not in that generation; never falls back to the
+     * live manager current snapshot.
      */
     public Optional<EffectiveRole> restore(@Nullable RoleSnapshotId id, RoleKey key) {
         if (key == null) {
             return Optional.empty();
         }
         RoleSnapshot snap = get(id);
-        if (snap == null) {
-            snap = RoleSnapshotManager.INSTANCE.current();
-        }
         if (snap == null) {
             return Optional.empty();
         }

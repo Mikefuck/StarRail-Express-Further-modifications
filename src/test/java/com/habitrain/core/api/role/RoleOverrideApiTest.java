@@ -3,19 +3,37 @@ package com.habitrain.core.api.role;
 import com.habitrain.core.config.RoleOverrideConfigSection;
 import com.habitrain.core.api.role.book.RoleBookContent;
 import com.habitrain.core.api.role.book.RoleBookPage;
+import com.habitrain.core.game.sre.role.HabiRoles;
+import com.habitrain.core.role.override.EffectiveSnapshot;
+import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.role.override.RoleOverrideTickApplier;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RoleOverrideApiTest {
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:killer");
+
+    @Test
+    void sameRoleMatchesByIdentifierNotInstance() {
+        SRERole first = role("habitrain_core:sin_envy");
+        SRERole replacement = role("habitrain_core:sin_envy");
+        assertTrue(HabiRoles.sameRole(first, replacement));
+        assertFalse(HabiRoles.sameRole(first, role("habitrain_core:sin_pride")));
+        assertFalse(HabiRoles.sameRole(first, null));
+    }
 
     @Test
     void coreBuildsCanonicalProviderRoleId() {
@@ -128,6 +146,27 @@ class RoleOverrideApiTest {
                 () -> RoleBookContent.of((RoleBookPage) null));
         assertThrows(NullPointerException.class,
                 () -> RoleBookPage.of(Component.literal("空段落"), (Component) null));
+    }
+
+    @Test
+    void getActiveModifyStaysLiveWhileGameplayModifyIsRoundFrozen() throws Exception {
+        ModifyRoleDefinition captured = modify("captured");
+        ModifyRoleDefinition live = modify("live");
+        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
+        field.setAccessible(true);
+        RoleOverrideEngine engine = RoleOverrideEngine.getInstance();
+        Object previous = field.get(engine);
+        try {
+            field.set(engine, new EffectiveSnapshot(Map.of(), Map.of(TARGET, captured), List.of()));
+            RoleOverrideTickApplier.captureRound();
+            field.set(engine, new EffectiveSnapshot(Map.of(), Map.of(TARGET, live), List.of()));
+
+            assertEquals(live, RoleOverrideApi.getActiveModify(TARGET));
+            assertEquals(captured, engine.getGameplayModify(TARGET));
+        } finally {
+            RoleOverrideTickApplier.discardRoundFreeze();
+            field.set(engine, previous);
+        }
     }
 
     private static ModifyRoleDefinition modify(String entryKey) {

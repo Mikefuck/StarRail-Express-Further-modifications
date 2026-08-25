@@ -17,12 +17,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *   at PlayerBodyEntity.method_5476(PlayerBodyEntity.java:80)
  *   at class_761.handler$beo000$entityculling$renderEntity
  *
- * 根因：SRE PlayerBodyEntity.getCustomName 在 line 96 调用 this.getServer()
+ * 根因：SRE PlayerBodyEntity.getCustomName 调用 this.getServer()
  * （method_5682 = getServer），客户端级别实体 getServer() 返回 null，
  * 仍调用 .getPlayerList() → NPE。entityculling 渲染时触发此方法。
  *
  * 这是 SRE 原版 bug，应反馈给 SRE 作者修。本 mixin 仅作治标缓解，
  * 在 getServer()==null 时直接返回 null，避免崩溃。
+ *
+ * 注入点是原版覆写 Entity.getCustomName（intermediary method_5476），
+ * injector 必须 remap：生产环境 Yarn 名 remap 到 method_5476，
+ * 开发环境 Yarn 名也能打上。类级 remap=false 只作用于 SRE 目标类本身。
  *
  * required:false 防 SRE 改名 PlayerBodyEntity 导致启动崩溃。
  */
@@ -30,13 +34,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class PlayerBodyEntityMixin {
 
     @Inject(
-            method = "getCustomName",  // SRE 用 Mojang 官方映射，非 yarn。PlayerBodyEntity 重写 Entity.getCustomName()。
+            method = "getCustomName",
             at = @At("HEAD"),
-            cancellable = true,
-            remap = false
+            cancellable = true
     )
     private void habitrain$nullGuardGetCustomName(CallbackInfoReturnable<Object> cir) {
-        // 若 getServer() 为 null（客户端级别），直接返回 null 避免后续 NPE
         PlayerBodyEntity self = (PlayerBodyEntity) (Object) this;
         MinecraftServer server = self.getServer();
         if (server == null) {

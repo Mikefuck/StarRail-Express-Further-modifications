@@ -20,8 +20,8 @@ import java.util.UUID;
  * rotation resolve to the current replacement snapshot, and exposes
  * live-structure normalization for the game-mode override refresh.
  *
- * <p>Soft (require = 0): if SRE later removes or renames these reads, the
- * override just degrades to the vanilla civilian.
+ * <p>Lambda targets are the verified SRE 4.3.0 bytecode names so Loom can
+ * validate them during build.
  */
 @Mixin(value = SingleSelectDraftState.class, remap = false)
 public abstract class SingleSelectDraftStateRoleOverrideMixin implements RoleRotationDraftStateAccess {
@@ -48,19 +48,25 @@ public abstract class SingleSelectDraftStateRoleOverrideMixin implements RoleRot
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
             ),
-            require = 0
+            require = 1
     )
     private static SRERole habitrain$resolveCivilianDirect() {
         return SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
     }
 
     @Redirect(
-            method = "lambda$initializeRolePool$*",
+            method = {
+                    "lambda$initializeRolePool$0",
+                    "lambda$initializeRolePool$1",
+                    "lambda$initializeRolePool$2",
+                    "lambda$initializeRolePool$3"
+            },
             at = @At(
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
             ),
-            require = 0
+            require = 0,
+            remap = false
     )
     private static SRERole habitrain$resolveCivilianInLambda() {
         return SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);

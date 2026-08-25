@@ -18,13 +18,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 目标不是玩家（如怪物）不拦截。此拦截是动作层的保险，伤害层由
  * {@link RestAreaAttackMixin}（{@code LivingEntity#hurt}）兜底。
  *
- * <p>已用 {@code require = 0} 软化：上游对 {@code Player#attack} 的
- * {@code @WrapMethod} 重写方式变化时，本注入缺失也不阻断启动。
+ * <p>注入点 miss 必须启动失败，不再静默跳过。
  */
 @Mixin(Player.class)
 public class RestAreaAttackActionMixin {
 
-    @Inject(method = "attack", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "attack", at = @At("HEAD"), cancellable = true)
     private void habitrain$restingPlayersCannotAttackPlayers(Entity target, CallbackInfo ci) {
         if (!(target instanceof Player)) {
             return;

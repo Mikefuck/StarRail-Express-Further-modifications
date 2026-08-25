@@ -2,6 +2,7 @@ package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
@@ -29,22 +30,30 @@ public class BlackoutBeAloneTask {
                 task.setMaxProgress(REQUIRED_TICKS);
             })
             .onTick((player, task) -> {
+                if (!CustomTaskTickGate.allow(player)) return;
                 if (task.getProgress() >= task.getMaxProgress()) return;
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
+                if (serverPlayer.tickCount % 5 != 0) return;
 
                 AABB box = serverPlayer.getBoundingBox().inflate(HORIZONTAL_RADIUS, VERTICAL_RADIUS, HORIZONTAL_RADIUS);
-                boolean alone = serverPlayer.level().getEntitiesOfClass(Player.class, box,
-                        other -> other != serverPlayer && other.isAlive() && !other.isSpectator()).isEmpty();
+                boolean alone = true;
+                for (Player other : serverPlayer.serverLevel().players()) {
+                    if (other == serverPlayer || !other.isAlive() || other.isSpectator()) continue;
+                    if (box.intersects(other.getBoundingBox())) {
+                        alone = false;
+                        break;
+                    }
+                }
 
                 if (alone) {
-                    int newProgress = Math.min(task.getProgress() + 1, task.getMaxProgress());
+                    int newProgress = Math.min(task.getProgress() + 5, task.getMaxProgress());
                     if (newProgress != task.getProgress()) {
                         task.setProgress(newProgress);
                     }
                 }
             })
             .completionChecker((player, task) ->
-                task.getProgress() >= task.getMaxProgress())
+                CustomTaskTickGate.allow(player) && task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     BlackoutTaskHelper.grantRewards(serverPlayer, "habitrain_core:blackout_be_alone");

@@ -159,7 +159,7 @@
 └──────────────┴──────────────────┴──────────────────────────────────────────────────────┘
 ```
 
-> **提示**：大厅阶段修改配置会立即生效；对局进行中修改时会自动生成待定快照（Pending Snapshot），并在下一局开始时平滑生效，绝不破坏当前对局。
+> **提示**：大厅阶段修改 v2 配置会立即成为 lobby snapshot。对局中的 v2 修改编译为 pending，本局 gameplay（hooks、受管动作、HUD/直觉/皮肤）继续使用 round snapshot；Mod Menu 诊断可能同时显示 pending 与 live。v1 flags/spawn/shop 的 live 写入由 TickApplier 在 round start 冻结（NEXT_ROUND）。这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
 
 ---
 
@@ -264,9 +264,11 @@ public final class MyRoleProvider implements RoleExtensionEntrypoint {
 | `/habitrain roleapi perf` | OP 2 | 查看受管事件分发耗时与性能指标 |
 | `/habitrain roleapi state [p] [role]` | OP 2 | 查看玩家或角色的受管状态数据 |
 | `/habitrain roleapi config status` | OP 2 | 查看角色扩展 v2 独立配置文件状态 |
-| `/habitrain roleapi config set ...` | OP 4 | 热启用/禁用 Provider、Entry 或全局 Hooks |
-| `/habitrain roleapi config winner ...`| OP 4 | 手动设置字段补丁冲突的获胜条目 |
+| `/habitrain roleapi config set ...` | OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 热启用/禁用 Provider、Entry 或全局 Hooks |
+| `/habitrain roleapi config winner ...`| OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 手动设置字段补丁冲突的获胜条目 |
 | `/habitrain roleapi manifest` | OP 2 | 生成当前所有角色条目的只读清单摘要 |
+
+C2S `role_config_update`（Mod 菜单保存角色扩展配置）需要 **OP2 + MenuGate**。`/habitrain roleapi config set|winner` 需要 **OP4**；专用服且门控开启时，游戏内玩家还须在 MenuGate 允许名单中；控制台 / 命令方块仅需 OP4（break-glass）。
 
 ---
 

@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.trade;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
@@ -321,8 +322,10 @@ public final class GreedTradeManager {
             forceClose(s);
             return;
         }
-        // Re-check TRADE_RANGE at commit so parties cannot walk away after open and still settle.
-        if (greed.distanceToSqr(partner) > TRADE_RANGE * TRADE_RANGE) {
+        ResourceLocation greedDim = greed.level().dimension().location();
+        ResourceLocation partnerDim = partner.level().dimension().location();
+        if (!s.levelDim.equals(greedDim) || !s.levelDim.equals(partnerDim)
+                || greed.distanceToSqr(partner) > TRADE_RANGE * TRADE_RANGE) {
             notifyBoth(server, s, Component.translatable("message.habitrain_core.sin_greed.trade_no_target"));
             forceClose(s);
             return;
@@ -580,7 +583,7 @@ public final class GreedTradeManager {
     private static boolean isGreedRole(ServerLevel level, ServerPlayer player) {
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game != null && SevenSins.GREED != null && game.isRole(player, SevenSins.GREED)) {
+            if (HabiRoles.isHabiRole(player, SevenSins.GREED)) {
                 return true;
             }
         } catch (Throwable ignored) {

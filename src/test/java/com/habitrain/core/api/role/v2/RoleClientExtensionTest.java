@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,6 +44,7 @@ class RoleClientExtensionTest {
     @AfterEach
     void tearDown() {
         ((RoleClientExtensionRegistry) RoleClientExtensionApi.instance()).clear();
+        com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
     }
 
     @Test
@@ -66,6 +68,7 @@ class RoleClientExtensionTest {
             r.instinct(RoleInstinctRule.of("habitrain_core", "lust_pink")
                     .viewerRole(VIEWER).targetRole(TARGET).color(0xFF66AA).build());
         });
+        store.setActiveProviders(java.util.Set.of("habitrain_core"), null);
         assertEquals(1, store.hudsFor(VIEWER).size());
         assertEquals(1, store.instinctsFor(VIEWER).size());
         assertTrue(store.hudsFor(TARGET).isEmpty());
@@ -85,6 +88,47 @@ class RoleClientExtensionTest {
         UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class,
                 () -> store.hud(RoleHudSpec.of("habitrain_core", "b").role(VIEWER).build()));
         assertTrue(error.getMessage().contains("role_client_extensions"));
+    }
+
+    @Test
+    void nullActiveProvidersFailClosed() {
+        register(r -> r.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build()));
+        assertTrue(store.hudsFor(VIEWER).isEmpty(),
+                "no snapshot yet must hide extensions (fail-closed)");
+        store.setActiveProviders(null, null);
+        assertTrue(store.hudsFor(VIEWER).isEmpty(),
+                "null provider set must hide extensions (fail-closed)");
+        store.setActiveProviders(java.util.Set.of(), java.util.Set.of());
+        assertTrue(store.hudsFor(VIEWER).isEmpty(),
+                "empty provider set must hide extensions (fail-closed)");
+    }
+
+    @Test
+    void nullEntriesWithActiveProviderShowsAllProviderEntries() {
+        register(r -> r.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build()));
+        store.setActiveProviders(java.util.Set.of("habitrain_core"), null);
+        assertEquals(1, store.hudsFor(VIEWER).size(),
+                "null entry set still shows every entry of an active provider");
+        store.setActiveProviders(java.util.Set.of("othermod"), null);
+        assertTrue(store.hudsFor(VIEWER).isEmpty(),
+                "another provider's null entry set must not leak this HUD");
+    }
+
+    @Test
+    void snapshotResetFailClosedUntilAccept() {
+        RoleClientExtensionRegistry global =
+                (RoleClientExtensionRegistry) RoleClientExtensionApi.instance();
+        ScopedRoleClientExtensionRegistrar registrar =
+                new ScopedRoleClientExtensionRegistrar("habitrain_core", global);
+        registrar.hud(RoleHudSpec.of("habitrain_core", "a").role(VIEWER).build());
+        registrar.commit();
+        global.setActiveProviders(java.util.Set.of("habitrain_core"), null);
+        assertEquals(1, global.hudsFor(VIEWER).size());
+
+        com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
+        assertTrue(global.hudsFor(VIEWER).isEmpty(),
+                "JOIN reset must hide extensions until the snapshot arrives");
+        assertNull(com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.get());
     }
 
     @Test
@@ -218,6 +262,7 @@ class RoleClientExtensionTest {
             r.hudWidget(net.minecraft.resources.ResourceLocation.parse("habitrain_core:lust_widget"),
                     "lust", VIEWER, (w, h, t) -> draws.incrementAndGet());
         });
+        store.setActiveProviders(java.util.Set.of("habitrain_core"), null);
         assertEquals(1, store.skinsFor(VIEWER).size());
         assertEquals(RoleSkinKind.NORMAL, store.skinFor(VIEWER, RoleSkinKind.NORMAL).kind());
         assertEquals(1, store.screensFor(VIEWER).size());

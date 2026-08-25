@@ -9,7 +9,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 /**
  * C2S payload carrying an OP-authored {@code roleExtensionsV2} config section
  * from the Mod Menu page (fix-doc §13.1). The server re-validates the sender
- * (OP4 + menu gate), applies, persists, recompiles the entry statuses and queues
+ * (OP2 + menu gate), applies, persists, recompiles the entry statuses and queues
  * a pending snapshot for the next round.
  */
 public record RoleConfigUpdatePayload(String configJson) implements CustomPacketPayload {

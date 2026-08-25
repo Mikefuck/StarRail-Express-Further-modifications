@@ -63,6 +63,10 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
         if (loaded) {
             return;
         }
+        if (!com.habitrain.core.internal.CoreBootstrap.isInBootstrap()) {
+            LOGGER.warn("RoleExtensionApi.loadProviders() ignored: only habitrain_core bootstrap may load providers");
+            return;
+        }
         loaded = true;
         for (EntrypointContainer<RoleExtensionEntrypoint> container : FabricLoader.getInstance()
                 .getEntrypointContainers(ENTRYPOINT_KEY, RoleExtensionEntrypoint.class)) {

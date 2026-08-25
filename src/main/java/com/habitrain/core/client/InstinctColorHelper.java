@@ -4,6 +4,7 @@ import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.config.TaskInstinctColor;
 
 import java.awt.Color;
 import java.util.Collections;
@@ -42,9 +43,7 @@ public class InstinctColorHelper {
             if (bt < 1) continue;
 
             TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-            if (cfg != null) {
-                overrideColors.put(bt, new Color(cfg.getColor(), true));
-            }
+            overrideColors.put(bt, new Color(TaskInstinctColor.resolveArgb(cfg, def), true));
         }
     }
 }

@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * SRE 原版杀手/警察角色）再渲染一份原版时间显示，导致两套时间 HUD 重叠。
  * 这里在黑夜模式激活时直接取消 {@code renderHud}，避免重叠；非黑夜模式不受影响。
  */
-@Mixin(TimeRenderer.class)
+@Mixin(value = TimeRenderer.class, remap = false)
 public class BlackoutTimeRendererMixin {
 
     @Inject(

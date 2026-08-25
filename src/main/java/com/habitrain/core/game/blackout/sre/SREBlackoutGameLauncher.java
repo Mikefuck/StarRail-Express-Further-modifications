@@ -26,14 +26,21 @@ public final class SREBlackoutGameLauncher implements SREGameLauncher {
     public void startBlackoutGame(ServerLevel level) {
         var sreMode = SREGameModes.GAME_MODES.get(BLACKOUT_MODE_ID);
         if (sreMode == null) {
-            com.habitrain.core.HabiTrainCore.LOGGER.error("SREBlackoutGameMode not found!");
-            return;
+            throw new IllegalStateException("SREBlackoutGameMode not registered (sre:blackout)");
+        }
+        if (GameUtils.isStartingGame) {
+            throw new IllegalStateException("SRE game is already starting");
         }
         var sreGame = SREGameWorldComponent.KEY.get(level);
-        if (sreGame != null && !sreGame.isRunning()) {
-            GameUtils.startGame(level, sreMode,
-                    GameConstants.getInTicks(
-                            ((io.wifi.starrailexpress.api.GameMode) sreMode).defaultStartTime, 0));
+        if (sreGame == null) {
+            throw new IllegalStateException("SREGameWorldComponent missing");
         }
+        if (sreGame.isRunning()) {
+            throw new IllegalStateException(
+                    "SRE game already running in " + level.dimension().location());
+        }
+        GameUtils.startGame(level, sreMode,
+                GameConstants.getInTicks(
+                        ((io.wifi.starrailexpress.api.GameMode) sreMode).defaultStartTime, 0));
     }
 }

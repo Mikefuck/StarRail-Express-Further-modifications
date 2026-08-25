@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.role.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoleItems;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
@@ -167,6 +168,10 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
     public void serverTick() {
         if (!(player instanceof ServerPlayer self) || self.level().isClientSide) return;
         if (converted) return;
+        if (!HabiRoles.isHabiRole(self, HabiRoles.CRIME_SCAPEGOAT)) {
+            knifeWindowTicks = 0;
+            return;
+        }
 
         if (mechanismCooldownTicks > 0) {
             mechanismCooldownTicks--;
@@ -314,11 +319,11 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 }

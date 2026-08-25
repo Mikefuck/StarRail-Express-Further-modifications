@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.config.ConfigManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
+import io.netty.handler.codec.EncoderException;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -53,6 +54,9 @@ public class FullConfigSyncPayload implements CustomPacketPayload {
         @Override
         public void encode(ByteBuf buf, FullConfigSyncPayload payload) {
             byte[] bytes = payload.configJson.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_JSON_LENGTH) {
+                throw new EncoderException("FullConfigSync payload 过大: " + bytes.length + " > " + MAX_JSON_LENGTH);
+            }
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);

@@ -92,17 +92,40 @@ public interface RoleCatalogApi {
     RoleSnapshotId snapshot();
 
     /**
-     * The frozen {@link RoleSnapshot} currently in effect (the round snapshot
-     * while a round is live, otherwise the lobby snapshot), if one has been
-     * compiled.
+     * The frozen {@link RoleSnapshot} currently in effect: the in-progress
+     * round snapshot while a round is live, otherwise the just-ended settlement
+     * snapshot until pending is promoted, otherwise the lobby snapshot.
+     *
+     * <p>During other mods' {@code OnGameEnd} (after core's dispatcher), this is
+     * still the just-ended catalog until the next server tick promotes pending.
+     * Downstream settlement code should prefer {@link #lastEndedSnapshot()} or
+     * {@code currentSnapshot()}, never assume the live lobby overlay.
      */
     default Optional<RoleSnapshot> currentSnapshot() {
         return Optional.empty();
     }
 
     /**
+     * The in-progress round snapshot only. Empty in lobby and after
+     * {@code endRound()} has cleared the round slot.
+     */
+    default Optional<RoleSnapshot> roundSnapshot() {
+        return Optional.empty();
+    }
+
+    /**
+     * The just-ended settlement snapshot held until pending is promoted.
+     * Empty when no settlement is held (lobby, live round, or after
+     * {@code activatePending()}).
+     */
+    default Optional<RoleSnapshot> lastEndedSnapshot() {
+        return Optional.empty();
+    }
+
+    /**
      * Restores an effective role from an archived snapshot (replay / history).
-     * Falls back to the live current snapshot when the archive miss.
+     * Empty when the snapshot id is unknown or the key is not in that
+     * generation. Does not fall back to the live current snapshot.
      */
     Optional<EffectiveRole> restore(RoleSnapshotId snapshot, RoleKey key);
 }

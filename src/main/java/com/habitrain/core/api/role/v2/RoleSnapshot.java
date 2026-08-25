@@ -120,6 +120,11 @@ public final class RoleSnapshot {
         return enabledBehaviorEntries.contains(new BehaviorEntry(providerId, entryId));
     }
 
+    /** The provider/entry pairs that were enabled when this snapshot was compiled. */
+    public Set<BehaviorEntry> enabledBehaviorEntries() {
+        return enabledBehaviorEntries;
+    }
+
     /** The immutable gate for {@code GLOBAL_WHILE_ENABLED} hooks. */
     public boolean allowGlobalHooks() {
         return allowGlobalHooks;

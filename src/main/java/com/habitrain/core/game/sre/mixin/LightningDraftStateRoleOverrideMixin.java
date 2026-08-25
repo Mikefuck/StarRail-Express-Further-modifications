@@ -26,9 +26,8 @@ import java.util.UUID;
  *
  * <p>New SRE holds rotation state in {@link LightningDraftState} instead of the
  * removed {@code cca.gamemode.RoleRotationWorldComponent}. Direct reads and
- * pool-predicate lambda reads are both redirected (wildcard lambda targets,
- * soft require = 0: if SRE later removes or renames them, the override just
- * degrades to the vanilla civilian).
+ * pool-predicate lambda reads are both redirected. Lambda targets are the
+ * verified SRE 4.3.0 bytecode names so Loom can validate them during build.
  */
 @Mixin(value = LightningDraftState.class, remap = false)
 public abstract class LightningDraftStateRoleOverrideMixin implements RoleRotationDraftStateAccess {
@@ -59,19 +58,26 @@ public abstract class LightningDraftStateRoleOverrideMixin implements RoleRotati
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
             ),
-            require = 0
+            require = 1
     )
     private static SRERole habitrain$resolveCivilianDirect() {
         return SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
     }
 
     @Redirect(
-            method = "lambda$initializeRolePool$*",
+            method = {
+                    "lambda$initializeRolePool$1",
+                    "lambda$initializeRolePool$2",
+                    "lambda$initializeRolePool$3",
+                    "lambda$initializeRolePool$4",
+                    "lambda$initializeRolePool$5"
+            },
             at = @At(
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
             ),
-            require = 0
+            require = 0,
+            remap = false
     )
     private static SRERole habitrain$resolveCivilianInLambda() {
         return SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);

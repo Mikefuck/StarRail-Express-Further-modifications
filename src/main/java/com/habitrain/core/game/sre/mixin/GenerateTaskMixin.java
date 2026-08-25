@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.*;
 
-@Mixin(SREPlayerTaskComponent.class)
+@Mixin(value = SREPlayerTaskComponent.class, remap = false)
 public abstract class GenerateTaskMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GenerateTaskMixin");

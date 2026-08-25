@@ -14,6 +14,7 @@ import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerProgressionComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.GameConstants;
+import io.wifi.starrailexpress.progression.ProgressionDataManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
@@ -24,7 +25,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(RoleMethodDispatcher.class)
+@Mixin(value = RoleMethodDispatcher.class, remap = false)
 public class RoleMethodDispatcherMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleMethodDispatcherMixin");
@@ -170,13 +171,15 @@ public class RoleMethodDispatcherMixin {
                 try {
                     MimeKillerComponent.KEY.maybeGet(player).ifPresent(MimeKillerComponent::onTaskComplete);
                 } catch (Throwable ignored) {}
-                LOGGER.debug("[Reward] 默剧杀手无 player_progression，跳过 onRoundQuestFinished: {}",
+                LOGGER.debug("[Reward] 默剧杀手无 player_progression，仍记 ProgressionDataManager: {}",
                         player.getName().getString());
+                ProgressionDataManager.onRoundQuestFinished(player, quest);
                 habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
                 return;
             }
             try {
                 ci.cancel();
+                ProgressionDataManager.onRoundQuestFinished(player, quest);
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
                 if (role != null) {
@@ -208,6 +211,7 @@ public class RoleMethodDispatcherMixin {
             }
             try {
                 ci.cancel();
+                ProgressionDataManager.onRoundQuestFinished(player, quest);
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
 
@@ -242,6 +246,7 @@ public class RoleMethodDispatcherMixin {
             }
             try {
                 ci.cancel();
+                ProgressionDataManager.onRoundQuestFinished(player, quest);
                 progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
                 if (role != null) {

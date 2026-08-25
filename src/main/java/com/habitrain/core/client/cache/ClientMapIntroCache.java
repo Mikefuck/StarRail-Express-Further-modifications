@@ -11,6 +11,7 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.Util;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,6 +43,8 @@ public final class ClientMapIntroCache {
     private static MapIntroSyncPayload latestPayload;
     private static boolean hasData = false;
     private static long lastRequestMillis = 0L;
+    /** Guards against mixin re-entry when reconstructing {@link #latestPayload}. */
+    private static boolean applying = false;
 
     private ClientMapIntroCache() {}
 
@@ -73,19 +76,44 @@ public final class ClientMapIntroCache {
     }
 
     /**
-     * 更新并解析服务端下发的地图介绍载荷。
+     * 更新并解析服务端下发的地图介绍载荷。JOIN/全量替换；带 merge marker 的热更走 merge。
      */
     public static synchronized void update(MapIntroSyncPayload payload) {
         if (payload == null) {
             return;
         }
-        latestPayload = payload;
-        updateRaw(payload.maps(), payload.voteMaps(), payload.bagMaps(), payload.policeMaps(),
-                payload.underwaterMaps(), payload.airMaps(), payload.trapMaps(), payload.horseMaps());
+        update(payload, stripMergeMarker(payload.maps()));
     }
 
     /**
-     * 直接通过数据列表更新缓存（便于测试与低阶数据源注入）。
+     * @param merge {@code true} 时只 upsert 地图 JSON，不清空已有条目（热更脏地图）。
+     */
+    public static synchronized void update(MapIntroSyncPayload payload, boolean merge) {
+        if (payload == null) {
+            return;
+        }
+        if (applying) {
+            latestPayload = payload;
+            return;
+        }
+        applying = true;
+        try {
+            if (merge) {
+                updateRawMerge(payload.maps(), payload.voteMaps(), payload.bagMaps(), payload.policeMaps(),
+                        payload.underwaterMaps(), payload.airMaps(), payload.trapMaps(), payload.horseMaps());
+                latestPayload = reconstructLatestPayload();
+            } else {
+                updateRaw(payload.maps(), payload.voteMaps(), payload.bagMaps(), payload.policeMaps(),
+                        payload.underwaterMaps(), payload.airMaps(), payload.trapMaps(), payload.horseMaps());
+                latestPayload = payload;
+            }
+        } finally {
+            applying = false;
+        }
+    }
+
+    /**
+     * 直接通过数据列表更新缓存（便于测试与低阶数据源注入）。全量替换。
      */
     public static synchronized void updateRaw(List<MapIntroSyncPayload.MapJson> maps,
                                               List<MapIntroSyncPayload.VoteMap> voteMaps,
@@ -96,6 +124,32 @@ public final class ClientMapIntroCache {
                                               List<String> trapMaps,
                                               List<String> horseMaps) {
         MAP_JSONS.clear();
+        applyLists(maps, voteMaps, bagMaps, policeMaps, underwaterMaps, airMaps, trapMaps, horseMaps, false);
+    }
+
+    /**
+     * 热更路径：upsert 地图 JSON，不丢弃缓存里其它地图。voteMaps / 特殊集合仍按本次列表替换。
+     */
+    public static synchronized void updateRawMerge(List<MapIntroSyncPayload.MapJson> maps,
+                                                   List<MapIntroSyncPayload.VoteMap> voteMaps,
+                                                   List<String> bagMaps,
+                                                   List<String> policeMaps,
+                                                   List<String> underwaterMaps,
+                                                   List<String> airMaps,
+                                                   List<String> trapMaps,
+                                                   List<String> horseMaps) {
+        applyLists(maps, voteMaps, bagMaps, policeMaps, underwaterMaps, airMaps, trapMaps, horseMaps, true);
+    }
+
+    private static void applyLists(List<MapIntroSyncPayload.MapJson> maps,
+                                   List<MapIntroSyncPayload.VoteMap> voteMaps,
+                                   List<String> bagMaps,
+                                   List<String> policeMaps,
+                                   List<String> underwaterMaps,
+                                   List<String> airMaps,
+                                   List<String> trapMaps,
+                                   List<String> horseMaps,
+                                   boolean mergeMaps) {
         VOTE_MAPS.clear();
         BAG_MAPS.clear();
         POLICE_MAPS.clear();
@@ -113,7 +167,8 @@ public final class ClientMapIntroCache {
 
         if (voteMaps != null) {
             for (MapIntroSyncPayload.VoteMap map : voteMaps) {
-                if (map != null && map.id() != null && !map.id().isBlank()) {
+                if (map != null && map.id() != null && !map.id().isBlank()
+                        && !com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
                     VOTE_MAPS.put(map.id(), map);
                 }
             }
@@ -122,6 +177,9 @@ public final class ClientMapIntroCache {
         if (maps != null) {
             for (MapIntroSyncPayload.MapJson map : maps) {
                 if (map == null || map.id() == null || map.id().isBlank()) {
+                    continue;
+                }
+                if (com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
                     continue;
                 }
                 try {
@@ -134,8 +192,52 @@ public final class ClientMapIntroCache {
         }
 
         hasData = !MAP_JSONS.isEmpty() || !VOTE_MAPS.isEmpty();
-        HabiTrainCore.LOGGER.debug("ClientMapIntroCache updated: {} maps, {} voteConfigs",
-                MAP_JSONS.size(), VOTE_MAPS.size());
+        HabiTrainCore.LOGGER.debug("ClientMapIntroCache updated: {} maps, {} voteConfigs (merge={})",
+                MAP_JSONS.size(), VOTE_MAPS.size(), mergeMaps);
+    }
+
+    /** @return {@code true} if this payload is a partial hot-reload. */
+    private static boolean stripMergeMarker(List<MapIntroSyncPayload.MapJson> maps) {
+        if (maps == null || maps.isEmpty()) {
+            return false;
+        }
+        boolean merge = false;
+        try {
+            var it = maps.iterator();
+            while (it.hasNext()) {
+                MapIntroSyncPayload.MapJson map = it.next();
+                if (map != null && com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
+                    merge = true;
+                    it.remove();
+                }
+            }
+        } catch (UnsupportedOperationException ignored) {
+            for (MapIntroSyncPayload.MapJson map : maps) {
+                if (map != null && com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
+                    merge = true;
+                    break;
+                }
+            }
+        }
+        return merge;
+    }
+
+    private static MapIntroSyncPayload reconstructLatestPayload() {
+        ArrayList<MapIntroSyncPayload.MapJson> maps = new ArrayList<>(MAP_JSONS.size());
+        for (var entry : MAP_JSONS.entrySet()) {
+            maps.add(new MapIntroSyncPayload.MapJson(entry.getKey(),
+                    entry.getValue() == null ? "{}" : entry.getValue().toString()));
+        }
+        ArrayList<MapIntroSyncPayload.VoteMap> voteMaps = new ArrayList<>(VOTE_MAPS.values());
+        return new MapIntroSyncPayload(
+                maps,
+                voteMaps,
+                new ArrayList<>(BAG_MAPS),
+                new ArrayList<>(POLICE_MAPS),
+                new ArrayList<>(UNDERWATER_MAPS),
+                new ArrayList<>(AIR_MAPS),
+                new ArrayList<>(TRAP_MAPS),
+                new ArrayList<>(HORSE_MAPS));
     }
 
     /**

@@ -147,6 +147,11 @@ public final class EnvironmentController {
     public static void applyWeatherOnly(ServerLevel level, EnvProfile.Weather weather) {
         if (level == null || weather == null) return;
         try {
+            boolean wantRain = weather == EnvProfile.Weather.RAIN || weather == EnvProfile.Weather.THUNDER;
+            boolean wantThunder = weather == EnvProfile.Weather.THUNDER;
+            if (level.isRaining() == wantRain && level.isThundering() == wantThunder) {
+                return;
+            }
             switch (weather) {
                 case RAIN -> level.setWeatherParameters(0, WEATHER_DURATION, true, false);
                 case THUNDER -> level.setWeatherParameters(0, WEATHER_DURATION, true, true);
@@ -176,22 +181,28 @@ public final class EnvironmentController {
         if (time == null) time = EnvTimeSpec.createDefault();
         long dayTime = time.resolveDayTime();
         try {
-            level.setDayTime(dayTime);
+            if (level.getDayTime() != dayTime) {
+                level.setDayTime(dayTime);
+            }
         } catch (Throwable t) {
             LOGGER.debug("setDayTime failed", t);
         }
         try {
             SRETrainWorldComponent train = SRETrainWorldComponent.KEY.get(level);
             if (train != null) {
+                SRETrainWorldComponent.TimeOfDay next = null;
                 if (time.mode == EnvTimeSpec.Mode.PRESET) {
-                    train.setTimeOfDay(toSre(time.preset));
+                    next = toSre(time.preset);
                 } else {
                     for (EnvTimeSpec.Preset p : EnvTimeSpec.Preset.values()) {
                         if (p.time == dayTime) {
-                            train.setTimeOfDay(toSre(p));
+                            next = toSre(p);
                             break;
                         }
                     }
+                }
+                if (next != null && train.getTimeOfDay() != next) {
+                    train.setTimeOfDay(next);
                 }
             }
         } catch (Throwable t) {

@@ -27,7 +27,7 @@ public class SaveBar {
         MenuTheme.button(g, font, enabled ? "保存更改" : "只读模式",
                 btnX, btnY, BTN_W, BTN_H, accent, enabled, hover);
 
-        g.drawString(font, enabled ? "修改即时生效 · 保存后写入配置文件" : "联机服务器中仅 OP 可以修改",
+        g.drawString(font, enabled ? "保存后写入配置并同步服务器 · 单机透视颜色立即刷新" : "联机服务器中仅 OP 可以修改",
                 x + 2, btnY + 7, enabled ? MenuTheme.TEXT_SECONDARY : MenuTheme.DANGER, false);
     }
 

@@ -238,7 +238,10 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             transientValues.put(slot, value == null ? NULL : value);
         } else {
             byte[] encoded = value == null ? null : encode(spec, value);
-            store.write(slot, new StoredState(spec.dataVersion(), encoded));
+            if (!store.write(slot, new StoredState(spec.dataVersion(), encoded))) {
+                LOGGER.error("role state persist failed for {} (offline player or unloaded world)", slot);
+                return;
+            }
         }
         notifySync(spec, slot, value);
     }
@@ -534,7 +537,9 @@ public final class RoleStateServiceImpl implements RoleStateApi {
                     return spec.produceDefault();
                 }
                 migrationRequired.remove(slot);
-                store.write(slot, new StoredState(spec.dataVersion(), encode(spec, migrated)));
+                if (!store.write(slot, new StoredState(spec.dataVersion(), encode(spec, migrated)))) {
+                    LOGGER.error("role state migration persist failed for {} (offline player or unloaded world)", slot);
+                }
                 return migrated;
             }
             migrationRequired.remove(slot);

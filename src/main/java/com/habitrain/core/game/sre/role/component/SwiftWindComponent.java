@@ -191,11 +191,11 @@ public final class SwiftWindComponent implements RoleComponent {
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 }

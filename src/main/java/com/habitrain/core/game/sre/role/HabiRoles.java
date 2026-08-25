@@ -1,10 +1,13 @@
 package com.habitrain.core.game.sre.role;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * habitrain_core 投稿职业注册入口。
@@ -38,10 +41,70 @@ public final class HabiRoles {
         HabiTrainCore.LOGGER.info("[HabiRoles] v2 ADD fields ready: crime_scapegoat, flower_girl, swift_wind, mime_killer, mike");
     }
 
+    /**
+     * Assigned-role check that survives v1/v2 {@code REPLACE}. Upstream
+     * {@code game.isRole} is instance {@code ==}; after a replacement the
+     * player holds a different object with the same (or aliased) identifier.
+     */
     public static boolean isHabiRole(Player player, SRERole role) {
-        if (player == null || role == null || player.level() == null) return false;
-        var game = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(player.level());
-        return game != null && game.isRole(player, role);
+        if (player == null || role == null || player.level() == null) {
+            return false;
+        }
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.level());
+        if (game == null) {
+            return false;
+        }
+        return sameRole(game.getRole(player), role);
+    }
+
+    /** Same as {@link #isHabiRole(Player, SRERole)} against a stored identifier. */
+    public static boolean isHabiRole(Player player, ResourceLocation roleId) {
+        if (player == null || roleId == null || player.level() == null) {
+            return false;
+        }
+        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.level());
+        if (game == null) {
+            return false;
+        }
+        SRERole have = game.getRole(player);
+        if (have == null) {
+            return false;
+        }
+        ResourceLocation haveId = have.identifier();
+        if (roleId.equals(haveId)) {
+            return true;
+        }
+        return sameIdentifier(haveId, roleId);
+    }
+
+    /**
+     * True when two role objects represent the same catalog identity
+     * (identifier equality, then {@link RoleCatalogApi#canonicalize} for
+     * {@code REPLACE}/{@code ALIAS}).
+     */
+    public static boolean sameRole(@Nullable SRERole have, @Nullable SRERole want) {
+        if (have == null || want == null) {
+            return false;
+        }
+        if (have == want) {
+            return true;
+        }
+        return sameIdentifier(have.identifier(), want.identifier());
+    }
+
+    private static boolean sameIdentifier(@Nullable ResourceLocation have, @Nullable ResourceLocation want) {
+        if (have == null || want == null) {
+            return false;
+        }
+        if (have.equals(want)) {
+            return true;
+        }
+        try {
+            return RoleCatalogApi.instance().canonicalize(have)
+                    .equals(RoleCatalogApi.instance().canonicalize(want));
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
 }

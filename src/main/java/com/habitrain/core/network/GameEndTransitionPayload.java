@@ -38,7 +38,7 @@ public record GameEndTransitionPayload(String winStatusName, String modeId, Stri
         winStatusName = GameEndTransitionPayload.bounded(winStatusName, 32);
         modeId = GameEndTransitionPayload.bounded(modeId, 64);
         customWinnerId = GameEndTransitionPayload.bounded(customWinnerId, 128);
-        customTitleJson = customTitleJson == null || customTitleJson.length() > 4096 ? "" : customTitleJson;
+        customTitleJson = GameEndTransitionPayload.bounded(customTitleJson, 4096);
         mvpPlayers = mvpPlayers == null || mvpPlayers.isEmpty() ? List.of() : List.copyOf(mvpPlayers.subList(0, Math.min(4, mvpPlayers.size())));
     }
 

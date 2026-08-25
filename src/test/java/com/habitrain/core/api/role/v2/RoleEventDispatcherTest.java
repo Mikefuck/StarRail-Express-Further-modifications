@@ -16,10 +16,12 @@ import com.habitrain.core.api.role.v2.behavior.WinOutcome;
 import com.habitrain.core.api.role.v2.behavior.WinPatch;
 import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import com.habitrain.core.api.role.v2.definition.PatchPriority;
+import com.habitrain.core.game.sre.role.sins.win.SlothWinPolicy;
 import io.wifi.starrailexpress.util.ShopEntry;
 import com.habitrain.core.role.behavior.HookType;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
+import com.habitrain.core.role.behavior.WinFoldResult;
 import com.habitrain.core.role.behavior.RoleScopeEvaluator;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
 import net.minecraft.resources.ResourceLocation;
@@ -152,7 +154,7 @@ class RoleEventDispatcherTest {
     }
 
     @Test
-    void throwingHookIsIsolatedAndFallsBackToPass() {
+    void throwingAllowDeathIsIsolatedAndFallsBackToDeny() {
         RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
                 .combat(new RoleCombatHooks() {
                     @Override
@@ -161,9 +163,29 @@ class RoleEventDispatcherTest {
                         throw new IllegalStateException("boom");
                     }
                 }).build());
-        assertEquals(Decision.PASS,
+        assertEquals(Decision.DENY,
                 RoleEventDispatcher.INSTANCE.dispatchAllowDeath(ROLE, null, DEATH),
-                "a throwing hook must not propagate and must fall back to PASS");
+                "a throwing allowDeath must not propagate and must fail-closed to DENY");
+    }
+
+    @Test
+    void throwingAllowGameEndFoldsAsDenied() {
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
+                .win(new RoleWinHooks() {
+                    @Override
+                    public Decision allowGameEnd(net.minecraft.server.level.ServerLevel level,
+                                                 String proposed, boolean loose, RoleHookContext ctx) {
+                        throw new IllegalStateException("boom");
+                    }
+                }).build());
+        WinFoldResult fold = RoleEventDispatcher.INSTANCE.foldWin(null, "KILLERS", false);
+        assertTrue(fold.denied(), "throwing allowGameEnd must fold as denied");
+    }
+
+    @Test
+    void applyCustomWinnersRejectsNullLevel() {
+        assertFalse(RoleEventDispatcher.applyCustomWinners(null,
+                WinPatch.declareCustom("habitrain_core:test", List.of(), "x")));
     }
 
     @Test
@@ -750,6 +772,52 @@ class RoleEventDispatcherTest {
             RoleEventDispatcher.INSTANCE.dispatchOnDeath(ROLE, null, DEATH);
         }
         assertEquals(20, calls.get(), "success must reset the consecutive-failure counter");
+    }
+
+    @Test
+    void foldWinDenyKeepsTheCustomPatchForTheCaller() {
+        UUID winner = UUID.fromString("00000000-0000-0000-0000-00000000000a");
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
+                .win(new RoleWinHooks() {
+                    @Override
+                    public Decision allowGameEnd(net.minecraft.server.level.ServerLevel level,
+                                                 String proposed, boolean loose, RoleHookContext ctx) {
+                        return Decision.DENY;
+                    }
+
+                    @Override
+                    public WinPatch evaluateWin(net.minecraft.server.level.ServerLevel level,
+                                                String proposed, boolean loose, RoleHookContext ctx) {
+                        return WinPatch.declareCustom("habitrain_core:blocked",
+                                List.of(winner), "blocked by gate");
+                    }
+                }).build());
+        WinFoldResult fold = RoleEventDispatcher.INSTANCE.foldWin(null, "PASSENGERS", false);
+        assertTrue(fold.denied(), "pride-style DENY must surface");
+        assertEquals(WinPatchOp.DECLARE_CUSTOM, fold.patch().op());
+        assertEquals(List.of(winner), fold.patch().winners());
+    }
+
+    @Test
+    void foldWinBlackoutDoesNotInstantEndViaSlothPolicy() {
+        UUID winner = UUID.fromString("00000000-0000-0000-0000-0000000000b1");
+        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
+                .win(new RoleWinHooks() {
+                    @Override
+                    public WinPatch evaluateWin(net.minecraft.server.level.ServerLevel level,
+                                                String proposed, boolean loose, RoleHookContext ctx) {
+                        if (!SlothWinPolicy.shouldDeclare(proposed, true, false, false)) {
+                            return WinPatch.noChange();
+                        }
+                        return WinPatch.declareCustom("sin_sloth", List.of(winner), "懒惰劫持了结算");
+                    }
+                }).build());
+        WinFoldResult blackout = RoleEventDispatcher.INSTANCE.foldWin(null, "BLACKOUT", false);
+        assertFalse(blackout.hasPatch(), "foldWin(BLACKOUT) must not DECLARE_CUSTOM via sloth");
+        assertNull(blackout.toWinResult());
+        WinFoldResult killers = RoleEventDispatcher.INSTANCE.foldWin(null, "KILLERS", false);
+        assertEquals(WinPatchOp.DECLARE_CUSTOM, killers.patch().op());
+        assertEquals("sin_sloth", killers.patch().customId());
     }
 
     // ------------------------------------------------------------------

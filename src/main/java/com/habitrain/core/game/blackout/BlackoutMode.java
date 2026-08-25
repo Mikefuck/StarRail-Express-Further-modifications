@@ -11,6 +11,7 @@ import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -44,6 +45,12 @@ public class BlackoutMode implements GameMode {
     /**
      * 断线宽限（tick）。宽限期内仍计存活（避免瞬断终局），超时未重连再 eliminate。
      * 设为 0 可恢复「掉线即死」旧行为。
+     *
+     * <p>上游 {@code PlayerDiscard} 在 {@code PlayerList.remove} 会对局中存活者
+     * {@code forceKillPlayer(DISCONNECT)}。core 的 {@code GameUtilsDisconnectKillMixin}
+     * 在本值 > 0 且仍在停电存活表时跳过该击杀；谋杀模式存活表为空，不跳过。
+     * 宽限倒计时仍由 {@link #tickOfflineGrace} 在 60s 后 eliminate
+     * （超时击杀用 {@code offline_timeout}，不是 {@code DISCONNECT}）。</p>
      */
     public static final int DISCONNECT_GRACE_TICKS = 20 * 60;
 
@@ -75,6 +82,34 @@ public class BlackoutMode implements GameMode {
 
     private RoundState state(ServerLevel level) {
         return level == null ? null : rounds.get(level.dimension());
+    }
+
+    /**
+     * Rest/reconnect may be in overworld while round state is keyed by MATCH.
+     * Prefer the world where this UUID is still alive or has role history.
+     */
+    private ServerLevel resolveRoundLevel(ServerPlayer player) {
+        if (player == null) {
+            return null;
+        }
+        UUID id = player.getUUID();
+        MinecraftServer server = player.getServer();
+        ServerLevel fromTables = BlackoutRoleManager.findRoundLevel(server, id);
+        if (fromTables != null && state(fromTables) != null) {
+            return fromTables;
+        }
+        ServerLevel current = player.serverLevel();
+        if (state(current) != null) {
+            return current;
+        }
+        if (server != null && rounds.size() == 1) {
+            ResourceKey<Level> only = rounds.keySet().iterator().next();
+            ServerLevel unique = server.getLevel(only);
+            if (unique != null) {
+                return unique;
+            }
+        }
+        return current;
     }
 
     boolean hasRound(ServerLevel level) {
@@ -222,23 +257,33 @@ public class BlackoutMode implements GameMode {
     @Override
     public void onPlayerJoin(ServerPlayer player) {
         if (player == null) return;
-        ServerLevel level = player.serverLevel();
+        ServerLevel level = resolveRoundLevel(player);
         RoundState s = state(level);
         if (s == null) return;
         UUID id = player.getUUID();
-        // 宽限期内重连：恢复互动，不复活已 eliminate 的玩家
+        // 宽限期内重连：DISCONNECT 击杀已由 mixin 跳过，登出位置/游戏模式保留。
+        // 此处恢复互动并点对点补发 HUD；不复活已 eliminate 的玩家。
         if (BlackoutRoleManager.isAlive(level, id)) {
             BlackoutRoleManager.clearDisconnected(level, id);
             s.offlineSince.remove(id);
+            if (BlackoutExileVoteManager.isVoteActive(level)) {
+                BlackoutExileVoteManager.restoreCandidate(level, id);
+            }
+            s.syncManager.syncTo(player);
+            if (BlackoutExileVoteManager.isVoteActive(level)) {
+                BlackoutExileVoteManager.sendTo(player);
+            }
             HabiTrainCore.LOGGER.info("[Blackout] {} reconnected during grace, interactable again",
                     player.getName().getString());
+            return;
         }
+        BlackoutDeathHandler.applyEliminatedReconnect(player);
     }
 
     @Override
     public void onPlayerLeave(ServerPlayer player) {
         if (player == null) return;
-        ServerLevel level = player.serverLevel();
+        ServerLevel level = resolveRoundLevel(player);
         RoundState s = state(level);
         if (s == null) return;
         UUID id = player.getUUID();
@@ -250,11 +295,14 @@ public class BlackoutMode implements GameMode {
             // 兼容：宽限 0 = 掉线即死
             BlackoutRoleManager.eliminate(level, id);
             s.offlineSince.remove(id);
+            com.habitrain.core.game.sre.EliminatedRestAreaService.markEliminated(level, id);
+            BlackoutDeathHandler.forceKillIfLiving(player, BlackoutDeathHandler.OFFLINE_TIMEOUT_REASON);
             s.victoryChecker.checkVictory(level);
             return;
         }
 
-        // 断线宽限：仍计存活，标记 offline，超时由 tickOfflineGrace 淘汰
+        // 断线宽限：mixin 跳过 PlayerDiscard 的 DISCONNECT 击杀；此处仍计存活，
+        // 标记 offline，超时由 tickOfflineGrace 淘汰（60s）。
         BlackoutRoleManager.markDisconnected(level, id);
         s.offlineSince.put(id, level.getGameTime());
         HabiTrainCore.LOGGER.info("[Blackout] {} disconnected — grace {}s before eliminate",
@@ -264,6 +312,7 @@ public class BlackoutMode implements GameMode {
 
     /**
      * 每秒由 {@link BlackoutTickCoordinator} 调用：超时未重连的 offline 玩家 eliminate 并检查胜负。
+     * mixin 只跳过 DISCONNECT 击杀；本方法才是 60s 后的权威淘汰。
      */
     void tickOfflineGrace(ServerLevel level) {
         RoundState s = state(level);
@@ -289,9 +338,13 @@ public class BlackoutMode implements GameMode {
                     ? level.getServer().getPlayerList().getPlayer(id) : null;
             if (online != null) {
                 BlackoutRoleManager.clearDisconnected(level, id);
+                if (BlackoutExileVoteManager.isVoteActive(level)) {
+                    BlackoutExileVoteManager.restoreCandidate(level, id);
+                }
                 continue;
             }
             BlackoutRoleManager.eliminate(level, id);
+            com.habitrain.core.game.sre.EliminatedRestAreaService.markEliminated(level, id);
             any = true;
             HabiTrainCore.LOGGER.info("[Blackout] offline grace expired for {} — eliminated", id);
         }
@@ -328,7 +381,10 @@ public class BlackoutMode implements GameMode {
             TaskManager.getInstance().clearActiveTasksForLevel(level.dimension());
         }
         if (level != null) {
-            for (ServerPlayer p : level.players()) {
+            Iterable<ServerPlayer> online = level.getServer() != null
+                    ? level.getServer().getPlayerList().getPlayers()
+                    : level.players();
+            for (ServerPlayer p : online) {
                 ActiveTaskPayload.clearForPlayer(p);
                 ActiveTaskPayload.clearForPlayer(p, true);
                 ExclusiveTaskHudSync.clear(p);

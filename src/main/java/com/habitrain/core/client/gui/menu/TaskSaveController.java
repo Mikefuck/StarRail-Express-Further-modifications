@@ -60,7 +60,9 @@ public class TaskSaveController {
         cfg.enabled = true;
         cfg.enabledMaps.clear();
         cfg.mapFilterMode = 0;
-        cfg.instinctColor = 0xB4C8C8C8;
+        cfg.hasInstinctColor = false;
+        cfg.instinctColorFromLegacyJson = false;
+        cfg.instinctColor = def.getInstinctColorRGB();
         cfg.outlineWidth = 4.0f;
         cfg.hasGoldReward = false;
         cfg.goldReward = 0;
@@ -76,6 +78,8 @@ public class TaskSaveController {
     public void saveCurrent() {
         if (!canEditNow()) return;
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), cfg);
+        com.habitrain.core.client.InstinctColorHelper.markDirty();
+        ConfigManager.getInstance().save();
     }
 
     private boolean canEditNow() {

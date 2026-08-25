@@ -19,7 +19,12 @@ public interface RoleStateStore {
 
     @Nullable StoredState read(StateSlotKey key);
 
-    void write(StateSlotKey key, StoredState state);
+    /**
+     * Persists {@code state} for {@code key}. Returns {@code false} when the
+     * slot cannot be written (offline player, unloaded world, or a null
+     * argument). Callers must not treat a failed write as committed.
+     */
+    boolean write(StateSlotKey key, StoredState state);
 
     void remove(StateSlotKey key);
 

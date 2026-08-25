@@ -2,10 +2,14 @@ package com.habitrain.core.game.blackout;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.game.sre.EliminatedRestAreaService;
 import io.wifi.starrailexpress.event.OnPlayerDeath;
+import io.wifi.starrailexpress.game.GameUtils;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
 
 /**
  * 停电模式死亡 → 黑名单 eliminate。
@@ -16,6 +20,8 @@ import net.minecraft.world.entity.player.Player;
  */
 public final class BlackoutDeathHandler {
     private static boolean registered = false;
+    static final ResourceLocation OFFLINE_TIMEOUT_REASON =
+            ResourceLocation.fromNamespaceAndPath("habitrain_core", "offline_timeout");
 
     private BlackoutDeathHandler() {}
 
@@ -46,5 +52,42 @@ public final class BlackoutDeathHandler {
         HabiTrainCore.LOGGER.info("[BlackoutDeath] eliminated {} reason={}",
                 serverPlayer.getName().getString(),
                 deathReason != null ? deathReason : "null");
+    }
+
+    /**
+     * JOIN：本局已淘汰但实体仍是生存/冒险活体时走强制死亡，并写入休息区资格。
+     */
+    public static void applyEliminatedReconnect(ServerPlayer player) {
+        if (player == null) return;
+        ServerLevel level = player.serverLevel();
+        if (level == null) return;
+        ServerLevel match = BlackoutRoleManager.findRoundLevel(player.getServer(), player.getUUID());
+        if (match == null) {
+            match = level;
+        }
+        if (BlackoutRoleManager.isAlive(match, player.getUUID())) return;
+        if (BlackoutRoleManager.getRoleHistoryEntry(match, player.getUUID()) == null) return;
+        EliminatedRestAreaService.markEliminated(match, player.getUUID());
+        forceKillIfLiving(player, OFFLINE_TIMEOUT_REASON);
+    }
+
+    static void forceKillIfLiving(ServerPlayer player, ResourceLocation reason) {
+        if (player == null) return;
+        ServerLevel match = BlackoutRoleManager.findRoundLevel(player.getServer(), player.getUUID());
+        EliminatedRestAreaService.markEliminated(match != null ? match : player.serverLevel(), player.getUUID());
+        if (player.isSpectator() || player.isCreative()) return;
+        if (!player.isAlive()) {
+            player.setGameMode(GameType.SPECTATOR);
+            return;
+        }
+        try {
+            GameUtils.forceKillPlayer(player, true, null,
+                    reason != null ? reason : OFFLINE_TIMEOUT_REASON);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[BlackoutDeath] forceKill failed for {}", player.getUUID(), t);
+        }
+        if (player.isAlive() && !player.isSpectator() && !player.isCreative()) {
+            player.setGameMode(GameType.SPECTATOR);
+        }
     }
 }

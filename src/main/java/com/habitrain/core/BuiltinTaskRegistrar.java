@@ -32,9 +32,22 @@ public class BuiltinTaskRegistrar {
     private static final int BACKPACK_TYPE_ID = 15;
     private static final int NO_BLOCK_TYPE_ID = -1;
 
+    /**
+     * Yuushya Townscape 2.3.0 {@code DecoBlock} cats from
+     * {@code data/yuushya/register/block_living_being.json}.
+     * These are named blocks ({@code yuushya:british_shorthair}), not numeric
+     * {@code yuushya:442} IDs from older wiki pages.
+     */
     public static final String[] CAT_BLOCK_IDS = {
-        "yuushya:british_shorthair", "yuushya:white_cat", "yuushya:black_cat",
-        "yuushya:ragdoll", "yuushya:calico", "yuushya:siamese", "yuushya:tabby"
+        "yuushya:british_shorthair",
+        "yuushya:orange_cat",
+        "yuushya:white_cat",
+        "yuushya:black_cat",
+        "yuushya:ragdoll",
+        "yuushya:calico",
+        "yuushya:jellie",
+        "yuushya:siamese",
+        "yuushya:tabby"
     };
 
     private static Set<Block> cachedCatBlocks = null;
@@ -54,6 +67,7 @@ public class BuiltinTaskRegistrar {
             })
             .onTick((player, task) -> {
                 if (task.getProgress() >= task.getMaxProgress()) return;
+                if (player.tickCount % 2 != 0) return;
 
                 Set<Block> currentCatBlocks = resolveCatBlocks();
 
@@ -78,13 +92,13 @@ public class BuiltinTaskRegistrar {
                 if (hitResult.getType() == HitResult.Type.BLOCK) {
                     Block lookedBlock = player.level().getBlockState(hitResult.getBlockPos()).getBlock();
                     if (currentCatBlocks.contains(lookedBlock)) {
-                        task.setProgress(Math.min(task.getProgress() + 1, task.getMaxProgress()));
+                        task.setProgress(Math.min(task.getProgress() + 2, task.getMaxProgress()));
                         return;
                     }
                 }
 
                 if (task.getProgress() > 0) {
-                    task.setProgress(Math.max(0, task.getProgress() - 2));
+                    task.setProgress(Math.max(0, task.getProgress() - 4));
                 }
             })
             .completionChecker((player, task) ->
@@ -195,7 +209,8 @@ public class BuiltinTaskRegistrar {
             .filter(block -> block != Blocks.AIR)
             .collect(Collectors.toSet());
         if (blocks.isEmpty()) {
-            LOGGER.warn("yuushya mod not installed, cat task will have no scan blocks");
+            LOGGER.warn("yuushya mod not installed or cat block ids unresolved, cat task will have no scan blocks");
+            return blocks;
         }
         cachedCatBlocks = blocks;
         return blocks;

@@ -29,7 +29,8 @@
 
 | 需求 | 选择 |
 |---|---|
-| 稳定替换或修改一个既有 SRE 角色 | v1 `RoleOverrideApi` |
+| 稳定的单角色 REPLACE / MODIFY（兼容层，不弃用） | v1 `RoleOverrideApi` |
+| 新活体工作：名称、描述、商店、初始物品、胜负钩子、职业书 | 优先 v2 `RolePatch` / `RoleDefinition`（与 v1 字段等价） |
 | 保留原 ID、对象、CCA、上游事件与私有兼容路径 | MODIFY（v1 或 v2） |
 | 新增全新角色 | v2 ADD |
 | 多 provider 对同一字段有确定合并顺序 | v2 MODIFY |
@@ -430,9 +431,9 @@ registrar.hooks(PLAGUE_DOCTOR, RoleScope.HOLDER, RoleHooks.builder()
 | `KILLER` / `VICTIM` / `TARGET` | 对应事件侧持有该角色 |
 | `ANY_ACTIVE_HOLDER` | 任一在线/存活 holder 存在 |
 | `ROUND_PRESENT` | 角色存在于本局快照/历史 |
-| `GLOBAL_WHILE_ENABLED` | 条目启用即运行，高风险 |
+| `GLOBAL_WHILE_ENABLED` | 条目启用即可声明；运行时仍要求 `presentInRound && allowGlobalHooks`。注册不拒绝该 scope |
 
-广播事件（any death、any buy、meeting、game start/end、tick、win）要显式选择 scope。GLOBAL 还受 `allowGlobalHooks` 配置门控。
+广播事件（any death、any buy、meeting、game start/end、tick、win）要显式选择 scope。GLOBAL 注册不会被拒绝，但 dispatcher 仍要求 round 在场且 `allowGlobalHooks`。
 
 ### 7.3 胜利
 
@@ -478,7 +479,7 @@ SOULS = registrar.state(RoleStateSpec.of("example_mod", "souls", Integer.class)
         .build());
 ```
 
-需要 WORLD/PERMANENT persistence 或任何非 NONE sync 时，`codec(...)` 必填。生产环境使用 Core 的固定 CCA 容器存储；provider 不需要为每个状态注册新 component key。
+需要 WORLD/PERMANENT persistence 或任何非 NONE sync 时，`codec(...)` 必填。生产环境：`WORLD`/`PERMANENT` 写入 CCA（PLAYER/WORLD scope）；`ROUND`/`NONE` 走内存。`StateScope.ROUND` + `PERMANENT` 仍是局内内存袋，不写世界 NBT。provider 不需要为每个状态注册新 component key。
 
 ### 8.2 读写
 
@@ -556,6 +557,8 @@ RoleActionClientApi.instance().send(BITE, payload, (actionId, result) -> {
 });
 ```
 
+`RoleActionClientApi.instance()` **只允许客户端**调用（`ClientModInitializer` 或其它客户端代码）。main/server 入口调用会让专用服解析失败。
+
 每个请求按 `(actionId, sequence)` 匹配权威结果；无响应和断线会得到 TIMEOUT / DISCONNECTED。不要依赖“最后一个包”的共享状态。
 
 ### 9.3 服务端推送
@@ -613,7 +616,9 @@ RoleView current = change.current(player);
 List<RoleHistoryEntry> history = change.history(player);
 ```
 
-Options：`defaults()`、`silent()`、`forceReinitialize()`、`withReinitialize()`。失败时检查 `message()` 与 `phase()`。
+Options：`defaults()`、`silent()`、`forceReinitialize()`、`withReinitialize()`。失败时检查 `message()` 与 `phase()`。四参数 `transform(..., options)` 由实现覆盖；不要依赖会丢掉 options 的默认方法。
+
+`OnGamePlayerRolesConfirm` / `onRolesConfirm` 可以在开局确认时改写分配 Map（抽奖自选、职业卡、七宗罪互斥）。这是开局确认，不是局中转职。局中转换必须走 `RoleChangeApi`。
 
 ## 11. 客户端扩展
 
@@ -731,12 +736,15 @@ registrar.chat(RoleChatPolicy.of("example_mod", "plague_chat")
 
 ```text
 大厅修改 → 新 lobby snapshot 立即激活
-对局中修改 → 新 pending snapshot
-本局继续使用固定 round snapshot
+对局中 v2 修改 → 新 pending snapshot
+本局 gameplay（hooks、受管 action、HUD/直觉/皮肤）继续使用 round snapshot
 下一局边界 → pending 提升为 lobby 并激活
+v1 flags/spawn/shop live 写入 → RoleOverrideTickApplier 在 round start 冻结（NEXT_ROUND）
 ```
 
-因此禁用 provider 后，本局玩家不会被中途替换；新配置从下一局完整生效。
+Mod Menu 与 `/habitrain roleapi snapshot` 诊断可以同时显示 pending 与 live。禁用 provider 后，本局玩家不会被 v2 目录/hooks 中途替换；这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
+
+v1 flags/spawn/shop 的 live 写入由 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND），局中 rebuild 不会立刻改当前对局。同一 `RoleKey` 同时挂 v1 与 v2 MODIFY/REPLACE 时，Engine 将 v1 标 CONFLICT 并跳过。v1 API 本身不弃用。
 
 ### 13.2 握手
 
@@ -896,7 +904,7 @@ public final class ExampleRoleProvider implements RoleExtensionEntrypoint {
 8. 每种 hook 在正确 scope 触发，disabled/pending 时不越界。
 9. 状态 reset、重连全量同步、删除同步、换维度/观战跟踪符合策略。
 10. Action 测试 wrong role、dead、rate、cooldown、oversize、replay、target、range、LOS、timeout、disconnect 和 handshake。
-11. 对局中改配置只生成 pending，当前局行为不变，下一局激活。
+11. 对局中改 v2 配置只生成 pending，本局 hooks/action/HUD 仍用 round snapshot；v1 flags/spawn/shop 由 TickApplier 冻结。不要写成覆盖全部 API 的「绝不破坏当前对局」。
 12. 客户端缺资源/扩展时按 `requiresClient()` 设计 fail-closed 或降级。
 
 遇到问题先看 `list invalid/conflict`，再用 `inspect` 和 `trace`，最后核对真实目标 ID、provider namespace、entryKey、快照状态和客户端握手。

@@ -20,13 +20,19 @@ public final class RoleConfigApplyService {
     public static void applyAndBroadcast(MinecraftServer server) {
         RoleExtensionRegistry.INSTANCE.recomputeCompiledEntries();
         RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
-        if (server != null) {
-            // The client reports the definition hash from its latest snapshot.
-            // Publish that snapshot first so a config change cannot make the
-            // manifest receiver report the previous hash and fail-close role
-            // actions until the next reconnect.
-            RoleSnapshotPayload.broadcastToAll(server);
-            RoleManifestPayload.broadcastToAll(server);
+        if (server == null) {
+            return;
         }
+        if (com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.round() != null) {
+            // Mid-round: pending is next-round only. Do not replace the client's
+            // round snapshot used by HUD / instinct / handshake.
+            return;
+        }
+        // The client reports the definition hash from its latest snapshot.
+        // Publish that snapshot first so a config change cannot make the
+        // manifest receiver report the previous hash and fail-close role
+        // actions until the next reconnect.
+        RoleSnapshotPayload.broadcastToAll(server);
+        RoleManifestPayload.broadcastToAll(server);
     }
 }

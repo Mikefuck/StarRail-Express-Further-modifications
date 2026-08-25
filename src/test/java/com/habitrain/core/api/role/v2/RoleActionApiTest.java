@@ -10,6 +10,7 @@ import com.habitrain.core.api.role.v2.action.RoleActionTarget;
 import com.habitrain.core.role.action.RoleActionServiceImpl;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
+import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -53,11 +56,14 @@ class RoleActionApiTest {
         store.setClock(now::get);
         ((RoleActionServiceImpl) RoleActionApi.instance()).clear(true);
         RoleExtensionConfigService.INSTANCE.resetForTests();
+        RoleSnapshotManager.INSTANCE.clear();
     }
 
     @AfterEach
     void tearDown() {
         ((RoleActionServiceImpl) RoleActionApi.instance()).clear(true);
+        RoleSnapshotManager.INSTANCE.clear();
+        RoleExtensionConfigService.INSTANCE.resetForTests();
     }
 
     @Test
@@ -162,6 +168,35 @@ class RoleActionApiTest {
                 store.dispatch(PICK, PLAYER, ROLE, new byte[0], 2).reasonKey());
         RoleExtensionConfigService.INSTANCE.setEntryEnabled("habitrain_core:pick", true);
         assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 3).ok());
+    }
+
+    @Test
+    void publishedSnapshotKeepsEnabledActionAfterLiveDisable() {
+        store.registerManaged("gate_provider", "habitrain_core:pick",
+                RoleActionSpec.of(PICK).role(ROLE)
+                        .handler(ctx -> RoleActionResult.success()).build());
+        RoleSnapshot snap = new RoleSnapshot(
+                new RoleSnapshotId(1),
+                Map.of(), Map.of(), Set.of(),
+                Set.of(new RoleSnapshot.BehaviorEntry("gate_provider", "habitrain_core:pick")),
+                true);
+        RoleSnapshotManager.INSTANCE.setLobby(snap);
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("gate_provider", false);
+        RoleExtensionConfigService.INSTANCE.setEntryEnabled("habitrain_core:pick", false);
+        assertTrue(store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1).ok(),
+                "live config disable must not CONFIG_DISABLED a snapshot-enabled action");
+    }
+
+    @Test
+    void liveDisableRejectsWhenNoSnapshotPublished() {
+        store.registerManaged("gate_provider", "habitrain_core:pick",
+                RoleActionSpec.of(PICK).role(ROLE)
+                        .handler(ctx -> RoleActionResult.success()).build());
+        RoleSnapshotManager.INSTANCE.clear();
+        RoleExtensionConfigService.INSTANCE.setEntryEnabled("habitrain_core:pick", false);
+        assertEquals(RoleActionResult.CONFIG_DISABLED,
+                store.dispatch(PICK, PLAYER, ROLE, new byte[0], 1).reasonKey(),
+                "with no gameplay snapshot the live config gate still applies");
     }
 
     @Test
@@ -309,6 +344,29 @@ class RoleActionApiTest {
         RoleActionResult result = store.dispatch(id, PLAYER, ROLE, payload, 1);
         assertTrue(result.ok());
         assertEquals(new RoleActionTarget.Block(new BlockPos(1, 2, 3)), seen.get());
+    }
+
+    @Test
+    void blockPosMayUseMaxDistanceButNotLosOrTargetAlive() {
+        RoleActionSpec spec = RoleActionSpec.of("habitrain_core", "blockrange")
+                .role(ROLE)
+                .targetDecoder(ActionTargetCodec.BLOCK_POS)
+                .maxDistance(16)
+                .handler(ctx -> RoleActionResult.success())
+                .build();
+        assertEquals(16.0, spec.maxDistance());
+        assertThrows(IllegalStateException.class, () -> RoleActionSpec.of("habitrain_core", "blocklos")
+                .role(ROLE)
+                .targetDecoder(ActionTargetCodec.BLOCK_POS)
+                .requireLineOfSight(true)
+                .handler(ctx -> RoleActionResult.success())
+                .build());
+        assertThrows(IllegalStateException.class, () -> RoleActionSpec.of("habitrain_core", "blockalive")
+                .role(ROLE)
+                .targetDecoder(ActionTargetCodec.BLOCK_POS)
+                .requireTargetAlive(true)
+                .handler(ctx -> RoleActionResult.success())
+                .build());
     }
 
     @Test

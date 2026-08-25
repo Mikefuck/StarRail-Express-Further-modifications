@@ -69,6 +69,10 @@ public final class OptionVoteTexts {
         return Component.translatable("vote.habitrain_core.ui.map_hint");
     }
 
+    public static Component randomSelecting() {
+        return Component.translatable("vote.habitrain_core.ui.random_selecting");
+    }
+
     /** 加载页等仅支持 ESC 隐藏时的提示。 */
     public static Component hideHint() {
         return Component.translatable("vote.habitrain_core.ui.hide_hint");

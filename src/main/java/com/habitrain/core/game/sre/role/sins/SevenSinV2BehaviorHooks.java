@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.api.role.v2.RoleExtensionRegistrar;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.behavior.Decision;
@@ -178,7 +179,7 @@ public final class SevenSinV2BehaviorHooks {
                 }
                 boolean changed = false;
                 for (ServerPlayer player : level.players()) {
-                    if (!game.isRole(player, SevenSins.LUST)) {
+                    if (!HabiRoles.isHabiRole(player, SevenSins.LUST)) {
                         continue;
                     }
                     if (SevenSinsMutex.isForcedSinPlayer(player, SevenSins.LUST)) {
@@ -241,7 +242,7 @@ public final class SevenSinV2BehaviorHooks {
             }
             try {
                 SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-                if (game == null || SevenSins.ENVY == null || !game.isRole(player, SevenSins.ENVY)) {
+                if (game == null || !HabiRoles.isHabiRole(player, SevenSins.ENVY)) {
                     return InteractionResult.PASS;
                 }
                 EnvyComponent envy = EnvyComponent.KEY.get(player);
@@ -419,7 +420,7 @@ public final class SevenSinV2BehaviorHooks {
                 return Decision.PASS;
             }
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !game.isRole(victim, SevenSins.PRIDE)) {
+            if (game == null || !HabiRoles.isHabiRole(victim, SevenSins.PRIDE)) {
                 return Decision.PASS;
             }
             if (!SinDeathReasons.isForcePath(deathReason)
@@ -463,7 +464,7 @@ public final class SevenSinV2BehaviorHooks {
                 return Decision.PASS;
             }
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !game.isRole(killer, SevenSins.ENVY)) {
+            if (game == null || !HabiRoles.isHabiRole(killer, SevenSins.ENVY)) {
                 return Decision.PASS;
             }
             try {
@@ -531,7 +532,7 @@ public final class SevenSinV2BehaviorHooks {
                 return Decision.PASS;
             }
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !game.isRole(victim, SevenSins.WRATH)) {
+            if (game == null || !HabiRoles.isHabiRole(victim, SevenSins.WRATH)) {
                 return Decision.PASS;
             }
             if (SinDeathReasons.isForcePath(deathReason) || !(killer instanceof ServerPlayer killerSp)) {
@@ -558,7 +559,7 @@ public final class SevenSinV2BehaviorHooks {
                 return Decision.PASS;
             }
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !game.isRole(victim, SevenSins.SLOTH)) {
+            if (game == null || !HabiRoles.isHabiRole(victim, SevenSins.SLOTH)) {
                 return Decision.PASS;
             }
             if (!SinDeathReasons.isForcePath(deathReason)
@@ -587,7 +588,7 @@ public final class SevenSinV2BehaviorHooks {
                 return Decision.PASS;
             }
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !game.isRole(killer, SevenSins.SLOTH)) {
+            if (game == null || !HabiRoles.isHabiRole(killer, SevenSins.SLOTH)) {
                 return Decision.PASS;
             }
             try {

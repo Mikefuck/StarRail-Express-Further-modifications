@@ -36,7 +36,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value={LimitedInventoryScreen.class})
 public abstract class TaskSettingsBackpackPermissionMixin {
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
-    private static final String MAP_SETTINGS_KEY = "screen.habitrain_core.map_settings";
     @Shadow
     public ArrayList<Button> menuSelections;
     @Shadow
@@ -88,7 +87,6 @@ public abstract class TaskSettingsBackpackPermissionMixin {
         if (label == null) return false;
         ComponentContents componentContents = label.getContents();
         if (!(componentContents instanceof TranslatableContents contents)) return false;
-        String key = contents.getKey();
-        return TASK_SETTINGS_KEY.equals(key) || MAP_SETTINGS_KEY.equals(key);
+        return TASK_SETTINGS_KEY.equals(contents.getKey());
     }
 }

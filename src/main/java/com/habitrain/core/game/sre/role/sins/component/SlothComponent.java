@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
@@ -236,7 +237,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         if (!(self.level() instanceof ServerLevel level)) return false;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || SevenSins.SLOTH == null || !game.isRole(self, SevenSins.SLOTH)) {
+        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.SLOTH)) {
             return false;
         }
 
@@ -341,7 +342,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
         for (ServerPlayer p : level.players()) {
             if (p == null || p.isSpectator()) continue;
-            if (!game.isRole(p, SevenSins.SLOTH)) continue;
+            if (!HabiRoles.isHabiRole(p, SevenSins.SLOTH)) continue;
             try {
                 SlothComponent c = KEY.get(p);
                 if (c == null) continue;
@@ -393,7 +394,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         if (level == null || p == null || SevenSins.SLOTH == null) return false;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            return game != null && game.isRole(p, SevenSins.SLOTH);
+            return HabiRoles.isHabiRole(p, SevenSins.SLOTH);
         } catch (Throwable t) {
             return false;
         }
@@ -425,7 +426,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         if (!(self.level() instanceof ServerLevel level)) return;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        boolean isSloth = game != null && SevenSins.SLOTH != null && game.isRole(self, SevenSins.SLOTH);
+        boolean isSloth = HabiRoles.isHabiRole(self, SevenSins.SLOTH);
         if (!isSloth || self.isSpectator()) {
             if (sleeping) {
                 sleeping = false;
@@ -509,12 +510,12 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 
     private void captureSleepAnchor(ServerPlayer self) {

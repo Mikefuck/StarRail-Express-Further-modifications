@@ -127,6 +127,12 @@ public final class RoleActionSpec {
             return this;
         }
 
+        /**
+         * Whether dispatch requires the player's current role to match
+         * {@link RoleActionSpec#role()}. Default {@code true}. Setting
+         * {@code false} means the platform will not check current role —
+         * downstream must not use this to skip role gates; it is a footgun.
+         */
         public Builder requireCurrentRole(boolean requireCurrentRole) {
             this.requireCurrentRole = requireCurrentRole;
             return this;
@@ -160,10 +166,11 @@ public final class RoleActionSpec {
         }
 
         /**
-         * Declares the structured target scheme (fix-doc §12.3). Distance /
-         * line-of-sight checks are only allowed with
-         * {@link ActionTargetCodec#PLAYER_UUID}; the platform decodes a
-         * verified target into the {@link RoleActionContext}.
+         * Declares the structured target scheme (fix-doc §12.3). Line-of-sight
+         * and require-target-alive checks are only allowed with
+         * {@link ActionTargetCodec#PLAYER_UUID}. {@code maxDistance} is allowed
+         * with PLAYER_UUID and BLOCK_POS. The platform decodes a verified
+         * target into the {@link RoleActionContext}.
          */
         public Builder targetDecoder(ActionTargetCodec targetDecoder) {
             this.targetDecoder = Objects.requireNonNull(targetDecoder, "targetDecoder");
@@ -185,11 +192,18 @@ public final class RoleActionSpec {
             if (direction != RoleActionDirection.S2C && handler == null) {
                 throw new IllegalStateException("C2S/BIDIRECTIONAL RoleActionSpec requires a handler");
             }
-            if ((maxDistance > 0 || requireLineOfSight || requireTargetAlive)
+            if ((requireLineOfSight || requireTargetAlive)
                     && targetDecoder != ActionTargetCodec.PLAYER_UUID) {
                 throw new IllegalStateException(
-                        "RoleActionSpec " + id + " uses distance/line-of-sight/target-alive but declares targetDecoder "
+                        "RoleActionSpec " + id + " uses line-of-sight/target-alive but declares targetDecoder "
                                 + targetDecoder + "; only PLAYER_UUID targets may use those checks");
+            }
+            if (maxDistance > 0
+                    && targetDecoder != ActionTargetCodec.PLAYER_UUID
+                    && targetDecoder != ActionTargetCodec.BLOCK_POS) {
+                throw new IllegalStateException(
+                        "RoleActionSpec " + id + " uses maxDistance but declares targetDecoder "
+                                + targetDecoder + "; only PLAYER_UUID and BLOCK_POS targets may use distance");
             }
             return new RoleActionSpec(this);
         }

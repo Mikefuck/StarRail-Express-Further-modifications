@@ -48,6 +48,13 @@ public record RoleManifestPayload(
     public static final StreamCodec<FriendlyByteBuf, RoleManifestPayload> CODEC =
             StreamCodec.ofMember(RoleManifestPayload::write, RoleManifestPayload::new);
 
+    /**
+     * Wire copy of a live manifest. Handshake uses hashes/providers/capabilities,
+     * and the Mod Menu page reads {@code roleExtensionsV2} from
+     * {@link RoleSnapshotPayload#configJson()} — so the duplicate config body is
+     * omitted here to keep JOIN packets smaller. {@link #toManifest()} still
+     * round-trips the (empty) field so the codec stays valid.
+     */
     public static RoleManifestPayload fromManifest(RoleManifest manifest) {
         List<ProviderRow> rows = new ArrayList<>();
         for (RoleProviderManifest p : manifest.providers()) {
@@ -61,7 +68,7 @@ public record RoleManifestPayload(
                 manifest.lobbySnapshotId(),
                 manifest.roundSnapshotId(),
                 manifest.presentationHash(),
-                manifest.configJson(),
+                "",
                 new ArrayList<>(manifest.experimentalCapabilities()));
     }
 
@@ -158,11 +165,15 @@ public record RoleManifestPayload(
     }
 
     public static void sendTo(ServerPlayer player) {
-        ServerPlayNetworking.send(player, fromManifest(com.habitrain.core.role.config.RoleManifestService.build()));
+        RoleManifest manifest = com.habitrain.core.role.config.RoleManifestService.build();
+        com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE.publishServerManifest(manifest);
+        ServerPlayNetworking.send(player, fromManifest(manifest));
     }
 
     public static void broadcastToAll(net.minecraft.server.MinecraftServer server) {
-        RoleManifestPayload payload = fromManifest(com.habitrain.core.role.config.RoleManifestService.build());
+        RoleManifest manifest = com.habitrain.core.role.config.RoleManifestService.build();
+        com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE.publishServerManifest(manifest);
+        RoleManifestPayload payload = fromManifest(manifest);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ServerPlayNetworking.send(player, payload);
         }

@@ -30,8 +30,8 @@ public abstract class RestAreaServerPlayerMixin {
         }
     }
 
-    // RETURN also covers the early-return path used when the player is already
-    // physically in Adventure mode, as is the case for rest-area players.
+    // RETURN also covers the already-adventure early return. finishUpstreamRevival
+    // is a no-op unless prepareUpstreamRevival marked REVIVING for this UUID.
     @Inject(method = "setGameMode", at = @At("RETURN"))
     private void habitrain$completeUpstreamRevival(GameType gameType, CallbackInfoReturnable<Boolean> cir) {
         if (gameType == GameType.ADVENTURE) {

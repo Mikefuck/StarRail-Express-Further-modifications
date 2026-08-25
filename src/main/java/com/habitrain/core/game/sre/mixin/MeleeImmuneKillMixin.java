@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * 防狼喷雾近战免疫 + 傲慢人群常规武器免疫（forceDeath=false 路径）。
  * 主路径仍是 AllowPlayerDeathWithKiller；此处兜底 cancel killPlayer HEAD。
+ * 签名 miss 必须启动失败，不再静默跳过。
  */
 @Mixin(value = GameUtils.class, remap = false)
 public class MeleeImmuneKillMixin {
@@ -22,8 +23,7 @@ public class MeleeImmuneKillMixin {
             method = "killPlayer(Lnet/minecraft/world/entity/player/Player;ZLnet/minecraft/world/entity/player/Player;Lnet/minecraft/resources/ResourceLocation;Z)V",
             at = @At("HEAD"),
             cancellable = true,
-            remap = false,
-            require = 0
+            remap = false
     )
     private static void habitrain$meleeImmune(Player victim, boolean spawnBody, Player killer,
                                               ResourceLocation deathReason, boolean forceDeath,

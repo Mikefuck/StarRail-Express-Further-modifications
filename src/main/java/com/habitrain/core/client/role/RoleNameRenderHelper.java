@@ -25,10 +25,24 @@ public final class RoleNameRenderHelper {
     private RoleNameRenderHelper() {}
 
     /** The first NAMEPLATE rule declared for the target player's role, if any. */
+    private static Player cachedPlayer;
+    private static RoleNameRenderRule cachedRule;
+
     public static @Nullable RoleNameRenderRule findNameplateRule(Player player) {
         if (player == null || player.level() == null || !player.level().isClientSide) {
+            cachedPlayer = null;
+            cachedRule = null;
             return null;
         }
+        if (cachedPlayer == player) {
+            return cachedRule;
+        }
+        cachedPlayer = player;
+        cachedRule = computeNameplateRule(player);
+        return cachedRule;
+    }
+
+    private static @Nullable RoleNameRenderRule computeNameplateRule(Player player) {
         RoleKey role = RoleClientExtensionHooks.currentRole(player);
         if (role == null) {
             return null;

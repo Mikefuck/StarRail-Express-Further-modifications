@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout.task;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
@@ -73,10 +74,8 @@ public class AddCoalHandler {
                         sp.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
                     }
                     if (!state.phaseProgressed && isAddCoalTask && task.getProgress() == COAL_PHASE) {
-                        boolean added = sp.getInventory().add(new ItemStack(Items.COAL, 1));
-                        if (!added) {
-                            sp.drop(new ItemStack(Items.COAL, 1), false);
-                        }
+                        ItemReclaimHelper.giveTaggedItem(
+                                sp, new ItemStack(Items.COAL, 1), HabiTrainCore.TASK_ADD_COAL);
                         task.setProgress(GENERATOR_PHASE);
                         state.phaseProgressed = true;
                         sp.serverLevel().playSound(null, sp.blockPosition(),

@@ -1,6 +1,7 @@
 package com.habitrain.core.game.blackout;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +26,7 @@ public final class BlackoutPhoneSessionGate {
     /** 打开 GUI 后会话有效时长（tick）。 */
     public static final int MAX_AGE_TICKS = 20 * 120;
 
-    private record Session(BlockPos pos, long openGameTime) {}
+    private record Session(BlockPos pos, long openGameTime, ResourceLocation dimension) {}
 
     private static final ConcurrentMap<UUID, Session> HIRE_SESSIONS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<UUID, Session> SHOP_SESSIONS = new ConcurrentHashMap<>();
@@ -34,7 +35,8 @@ public final class BlackoutPhoneSessionGate {
 
     public static void markOpen(Kind kind, ServerPlayer player, BlockPos pos) {
         if (player == null || pos == null || !(player.level() instanceof ServerLevel level)) return;
-        map(kind).put(player.getUUID(), new Session(pos.immutable(), level.getGameTime()));
+        map(kind).put(player.getUUID(), new Session(
+                pos.immutable(), level.getGameTime(), level.dimension().location()));
     }
 
     /**
@@ -45,6 +47,9 @@ public final class BlackoutPhoneSessionGate {
         Session session = map(kind).get(player.getUUID());
         if (session == null) {
             return kind == Kind.HIRE ? "请先使用路边电话" : "请先使用红色电话打开商店";
+        }
+        if (!level.dimension().location().equals(session.dimension())) {
+            return "电话会话维度不匹配，请重新打开";
         }
         long age = level.getGameTime() - session.openGameTime();
         if (age < 0 || age > MAX_AGE_TICKS) {
@@ -65,7 +70,7 @@ public final class BlackoutPhoneSessionGate {
     public static void touch(Kind kind, ServerPlayer player) {
         if (player == null || !(player.level() instanceof ServerLevel level)) return;
         map(kind).computeIfPresent(player.getUUID(), (id, old) ->
-                new Session(old.pos(), level.getGameTime()));
+                new Session(old.pos(), level.getGameTime(), old.dimension()));
     }
 
     public static void clearPlayer(ServerPlayer player) {

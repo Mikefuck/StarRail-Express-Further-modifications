@@ -260,7 +260,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private void drawTaskRow(GuiGraphics g, TaskDefinition def, int x, int y, int w, int mx, int my) {
         TaskConfigEntry cfg = configSnapshot.getTaskConfig(def.getFullId());
         boolean enabled = cfg == null || cfg.enabled;
-        int color = cfg != null ? cfg.instinctColor : MenuTheme.accentFor(def.getFullId());
+        int color = com.habitrain.core.config.TaskInstinctColor.resolveArgb(cfg, def);
         MenuTheme.row(g, x, y, w - 5, ROW_H - 1,
                 MenuTheme.inBounds(mx, my, x, y, w - 5, ROW_H), false);
         // 色条
@@ -423,7 +423,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private void toggleTask(TaskDefinition def) {
         if (!editable) { MenuPermissions.showDeniedMessage(); return; }
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-        if (cfg == null) cfg = TaskConfigEntry.createDefault();
+        if (cfg == null) cfg = com.habitrain.core.config.TaskInstinctColor.seedFromDefinition(def);
         cfg.enabled = !cfg.enabled;
         ConfigManager.getInstance().putTaskConfig(def.getFullId(), cfg);
     }
@@ -431,7 +431,11 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private void openTaskEditor(TaskDefinition def) {
         if (!editable) { MenuPermissions.showDeniedMessage(); return; }
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(def.getFullId());
-        if (cfg == null) cfg = TaskConfigEntry.createDefault();
+        if (cfg == null) {
+            cfg = com.habitrain.core.config.TaskInstinctColor.seedFromDefinition(def);
+        } else {
+            com.habitrain.core.config.TaskInstinctColor.normalizeLoadedEntry(cfg, def);
+        }
         ConfigManager.getInstance().putTaskConfig(def.getFullId(), cfg);
         ModeSection section = sections.get(groupKeyFor(def));
         String modeName = section != null ? section.title() : def.getGameModeId();

@@ -26,9 +26,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value={LimitedInventoryScreen.WaitingMenuCellButton.class}, remap=false)
 public abstract class TaskSettingsWaitingButtonMixin {
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
-    private static final String MAP_SETTINGS_KEY = "screen.habitrain_core.map_settings";
 
-    @Inject(method={"renderWidget"}, at={@At(value="TAIL")}, remap=false)
+    @Inject(method={"renderWidget"}, at={@At(value="TAIL")})
     private void habitrain$renderDisabledState(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         Button button = (Button) (Object) this;
         if (!button.visible || button.active || !habitrain$isProtectedSettingButton(button)) {
@@ -48,6 +47,6 @@ public abstract class TaskSettingsWaitingButtonMixin {
             return false;
         }
         String key = translatable.getKey();
-        return TASK_SETTINGS_KEY.equals(key) || MAP_SETTINGS_KEY.equals(key);
+        return TASK_SETTINGS_KEY.equals(key);
     }
 }

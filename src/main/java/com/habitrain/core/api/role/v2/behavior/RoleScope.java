@@ -22,6 +22,14 @@ public enum RoleScope {
     ANY_ACTIVE_HOLDER,
     /** The role is present in this round's pool/history. */
     ROUND_PRESENT,
-    /** Runs whenever the definition is enabled, regardless of holders. High risk. */
+    /**
+     * Runs whenever the definition is enabled, regardless of current holders.
+     * High risk.
+     *
+     * <p>Registration does not reject this scope. At runtime the dispatcher
+     * still requires {@code presentInRound && allowGlobalHooks} (the round
+     * snapshot's {@code allowGlobalHooks} gate, or the live config when no
+     * snapshot is bound). Declaring GLOBAL does not bypass those gates.
+     */
     GLOBAL_WHILE_ENABLED
 }

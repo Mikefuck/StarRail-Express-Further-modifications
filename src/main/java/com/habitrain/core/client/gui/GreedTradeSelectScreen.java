@@ -1,5 +1,6 @@
 package com.habitrain.core.client.gui;
 
+import com.habitrain.core.client.EliminatedRestPromptState;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -29,6 +30,11 @@ public final class GreedTradeSelectScreen extends Screen {
 
     @Override
     protected void init() {
+        if (EliminatedRestPromptState.isVisible()) {
+            candidates = List.of();
+            visibleCandidates = List.of();
+            return;
+        }
         candidates = minecraft == null || minecraft.level == null || minecraft.player == null
                 ? List.of()
                 : minecraft.level.players().stream()
@@ -67,6 +73,9 @@ public final class GreedTradeSelectScreen extends Screen {
         int y = height / 2 - 54;
         for (AbstractClientPlayer player : new ArrayList<>(visibleCandidates.subList(from, to))) {
             addRenderableWidget(Button.builder(Component.literal(player.getGameProfile().getName()), button -> {
+                if (EliminatedRestPromptState.isVisible()) {
+                    return;
+                }
                 // 未连接时 PayloadSenders 内部静默跳过（review M9）。
                 com.habitrain.core.client.network.PayloadSenders.sendGreedTradeSelect(player.getUUID());
                 if (minecraft != null) minecraft.setScreen(parent);
@@ -87,6 +96,14 @@ public final class GreedTradeSelectScreen extends Screen {
         }
         addRenderableWidget(Button.builder(Component.translatable("gui.back"), button -> onClose())
                 .bounds(width / 2 - 50, height / 2 + 104, 100, 20).build());
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (EliminatedRestPromptState.isVisible()) {
+            onClose();
+        }
     }
 
     @Override

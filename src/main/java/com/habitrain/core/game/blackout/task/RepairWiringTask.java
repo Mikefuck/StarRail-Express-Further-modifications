@@ -1,5 +1,6 @@
 package com.habitrain.core.game.blackout.task;
 
+import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
@@ -32,10 +33,8 @@ public class RepairWiringTask {
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
                 if (player instanceof ServerPlayer serverPlayer) {
-                    boolean added = serverPlayer.getInventory().add(new ItemStack(Items.REDSTONE, 1));
-                    if (!added) {
-                        serverPlayer.drop(new ItemStack(Items.REDSTONE, 1), false);
-                    }
+                    ItemReclaimHelper.giveTaggedItem(
+                            serverPlayer, new ItemStack(Items.REDSTONE, 1), task.getFullId());
                 }
             })
             .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())

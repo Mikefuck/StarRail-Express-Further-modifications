@@ -215,14 +215,14 @@ public class TaskEditScreen extends Screen {
             g.fill(sx, thumbY, sx + SCROLLBAR_W, thumbY + thumbH, modeAccentColor);
         }
 
-        String tip = "修改后请保存；返回时不会丢失已即时提交的开关";
+        String tip = "颜色/开关会立即写入；联机需 OP，保存后才会改服务端任务池";
         g.drawString(font, tip, PAD, bodyBot + 9, MenuTheme.TEXT_SECONDARY, false);
     }
 
     private void renderControlPanel(GuiGraphics g, int mx, int my, float delta,
                                     int x, int y, int w, int h) {
         MenuTheme.panel(g, x, y, w, h);
-        g.fill(x, y, x + 3, y + h, cfg.getColor());
+        g.fill(x, y, x + 3, y + h, com.habitrain.core.config.TaskInstinctColor.resolveArgb(cfg, def));
         g.drawString(font, "任务控制", x + 14, y + 13, MenuTheme.TEXT_PRIMARY, false);
         g.drawString(font, "状态、视觉与来源", x + 14, y + 28, MenuTheme.TEXT_SECONDARY, false);
 

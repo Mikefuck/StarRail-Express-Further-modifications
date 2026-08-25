@@ -127,11 +127,16 @@ public class BetelTickEngine {
 
         boolean detectedEating = false;
         long currentLastEatTime = addiction.getLastEatTime();
+        int currentAddictionStage = addiction.getAddictionStage();
 
         if (currentLastEatTime > 0 && currentLastEatTime != data.lastDetectedEatTime) {
             data.hasEatenBetelNut = true;
             detectedEating = true;
             data.lastDetectedEatTime = currentLastEatTime;
+        }
+
+        if (!data.hasEatenBetelNut && currentLastEatTime <= 0 && currentAddictionStage == 0) {
+            return;
         }
 
         long currentGameTime = player.level().getGameTime();

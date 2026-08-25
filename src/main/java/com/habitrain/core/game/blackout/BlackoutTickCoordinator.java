@@ -1,7 +1,12 @@
 package com.habitrain.core.game.blackout;
 
+import com.habitrain.core.game.sre.EliminatedRestAreaService;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.GameType;
+
+import java.util.UUID;
 
 class BlackoutTickCoordinator {
     private final BlackoutMode mode;
@@ -56,6 +61,8 @@ class BlackoutTickCoordinator {
             // Auto sheriff vote removed — police hire and exile vote ticked separately.
             BlackoutExileVoteManager.tickSecond(level);
 
+            eliminateCreativeAssigned(level);
+
             // 断线宽限超时 → eliminate（与死亡路径分离）
             mode.tickOfflineGrace(level);
 
@@ -69,6 +76,18 @@ class BlackoutTickCoordinator {
             if (tickAccumulator % 40 == 0 && BlackoutTimerSystem.isPermanentBlackoutActive(level)) {
                 victoryChecker.reapplyPermanentBlackout(level);
             }
+        }
+    }
+
+    /** Creative OP still in the assigned table is eliminated so they cannot block wipe. */
+    private void eliminateCreativeAssigned(ServerLevel level) {
+        if (level == null || level.getServer() == null) return;
+        for (UUID id : BlackoutRoleManager.getAllAlive(level)) {
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(id);
+            if (player == null || player.gameMode == null) continue;
+            if (player.gameMode.getGameModeForPlayer() != GameType.CREATIVE) continue;
+            BlackoutRoleManager.eliminate(level, id);
+            EliminatedRestAreaService.markEliminated(level, id);
         }
     }
 }

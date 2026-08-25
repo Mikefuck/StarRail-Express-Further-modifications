@@ -3,16 +3,15 @@ package com.habitrain.core.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
+import com.habitrain.core.persist.AtomicJsonFiles;
 import com.habitrain.core.task.TaskBalancer;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -25,10 +24,14 @@ public class ConfigStore {
     private boolean dirty = false;
 
     public ConfigStore() {
-        this.configFile = new File(
+        this(new File(
                 FabricLoader.getInstance().getConfigDir().toFile(),
                 "habitrain_core.json"
-        );
+        ));
+    }
+
+    ConfigStore(File configFile) {
+        this.configFile = Objects.requireNonNull(configFile, "configFile");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
     }
 
@@ -57,14 +60,23 @@ public class ConfigStore {
         this.dirty = false;
         applyDefaults(repo);
 
-        if (!configFile.exists()) {
+        AtomicJsonFiles.JsonLoad<JsonObject> loaded = AtomicJsonFiles.readJson(
+                configFile.toPath(), JsonObject.class, gson);
+        if (loaded.isMissing()) {
+            createDefaultConfig(repo);
+            save(repo);
+            return;
+        }
+        if (!loaded.ok()) {
+            LOGGER.error("加载任务配置失败：主文件与备份均不可读，重建默认配置");
+            applyDefaults(repo);
             createDefaultConfig(repo);
             save(repo);
             return;
         }
 
-        try (InputStreamReader reader = new InputStreamReader(new FileInputStream(configFile), StandardCharsets.UTF_8)) {
-            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+        try {
+            JsonObject root = loaded.value();
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
@@ -190,6 +202,13 @@ public class ConfigStore {
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
                     repo.getMutableMinigameConfigs().size());
+            if (loaded.usedBackup()) {
+                if (save(repo)) {
+                    LOGGER.warn("主配置损坏或缺失，已从 .bak 恢复");
+                } else {
+                    LOGGER.error("已从 .bak 加载主配置，但恢复主文件失败");
+                }
+            }
         } catch (Exception e) {
             LOGGER.error("加载任务配置失败，备份损坏文件后重建默认配置", e);
             quarantineCorruptConfig();
@@ -251,32 +270,11 @@ public class ConfigStore {
             }
 
             JsonObject root = buildJsonRoot(repo, true);
-            Path target = configFile.toPath();
-            Path temp = target.resolveSibling(configFile.getName() + ".tmp");
-
-            // Write to temp, then atomic replace — avoids half-written JSON on crash.
-            try (OutputStreamWriter writer = new OutputStreamWriter(
-                    new FileOutputStream(temp.toFile()), StandardCharsets.UTF_8)) {
-                gson.toJson(root, writer);
-                writer.flush();
-            }
-            try {
-                Files.move(temp, target,
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return true;
+            return AtomicJsonFiles.writeJson(configFile.toPath(), root, gson, true);
         } catch (Exception e) {
             // 同时捕获 IOException 与 buildJsonRoot 抛出的 RuntimeException，
             // 避免非 IO 异常传出后 commit 已清 dirty 导致改动永久丢失。
             LOGGER.error("保存配置失败", e);
-            try {
-                Path temp = configFile.toPath().resolveSibling(configFile.getName() + ".tmp");
-                Files.deleteIfExists(temp);
-            } catch (Exception ignored) {
-            }
             return false;
         }
     }
@@ -304,8 +302,14 @@ public class ConfigStore {
         for (TaskDefinition def : TaskRegistry.getAll()) {
             String fullId = def.getFullId();
             TaskConfigEntry entry = repo.getTaskConfig(fullId);
-            if (entry == null) entry = new TaskConfigEntry(true);
-            tasks.add(fullId, entry.toJson());
+            if (entry == null) entry = TaskInstinctColor.seedFromDefinition(def);
+            JsonObject taskJson = entry.toJson();
+            if (!entry.hasInstinctColor) {
+                // Old clients ignore hasInstinctColor; persist the definition color so they
+                // do not render the default gray placeholder.
+                taskJson.addProperty("instinctColor", def.getInstinctColorRGB());
+            }
+            tasks.add(fullId, taskJson);
         }
         root.add("tasks", tasks);
 

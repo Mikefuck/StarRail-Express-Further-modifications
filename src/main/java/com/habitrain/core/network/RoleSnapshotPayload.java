@@ -19,6 +19,11 @@ import io.netty.handler.codec.DecoderException;
  * enablement source, conflict fields) plus the current snapshot ids and config,
  * so the Mod Menu role-extension page can render the same rich list the server
  * diagnostics show (fix-doc §13.2). Broadcast at join and after config changes.
+ *
+ * <p>{@link #entries()} is the live diagnostic set (Mod Menu). {@link #gameplayEntryIds()}
+ * / {@link #gameplayProviderIds()} are the frozen HUD/instinct/skin set for the
+ * current round or settlement; {@code null} means “not sent” (pre-split callers
+ * fall back to live {@code ACTIVE} rows).
  */
 public record RoleSnapshotPayload(
         List<EntryRow> entries,
@@ -26,13 +31,29 @@ public record RoleSnapshotPayload(
         @Nullable String roundSnapshotId,
         @Nullable String pendingSnapshotId,
         String definitionHash,
-        String configJson) implements CustomPacketPayload {
+        String configJson,
+        @Nullable List<String> gameplayEntryIds,
+        @Nullable List<String> gameplayProviderIds) implements CustomPacketPayload {
+
+    public RoleSnapshotPayload {
+        entries = entries == null ? List.of() : List.copyOf(entries);
+        gameplayEntryIds = gameplayEntryIds == null ? null : List.copyOf(gameplayEntryIds);
+        gameplayProviderIds = gameplayProviderIds == null ? null : List.copyOf(gameplayProviderIds);
+    }
 
     /** Compatibility constructor retained for code compiled before pending snapshots. */
     public RoleSnapshotPayload(List<EntryRow> entries, String lobbySnapshotId,
                                @Nullable String roundSnapshotId, String definitionHash,
                                String configJson) {
-        this(entries, lobbySnapshotId, roundSnapshotId, null, definitionHash, configJson);
+        this(entries, lobbySnapshotId, roundSnapshotId, null, definitionHash, configJson, null, null);
+    }
+
+    /** Compatibility constructor retained for code compiled before the gameplay set. */
+    public RoleSnapshotPayload(List<EntryRow> entries, String lobbySnapshotId,
+                               @Nullable String roundSnapshotId, @Nullable String pendingSnapshotId,
+                               String definitionHash, String configJson) {
+        this(entries, lobbySnapshotId, roundSnapshotId, pendingSnapshotId, definitionHash, configJson,
+                null, null);
     }
 
     /** One compiled entry row over the wire. */
@@ -62,7 +83,9 @@ public record RoleSnapshotPayload(
                 buf.readBoolean() ? buf.readUtf(128) : null,
                 buf.readBoolean() ? buf.readUtf(128) : null,
                 buf.readUtf(128),
-                buf.readUtf(1 << 20));
+                buf.readUtf(1 << 20),
+                readStrings(buf, 256),
+                readStrings(buf, 128));
     }
 
     private void write(FriendlyByteBuf buf) {
@@ -91,6 +114,8 @@ public record RoleSnapshotPayload(
         }
         buf.writeUtf(definitionHash == null ? "" : definitionHash, 128);
         buf.writeUtf(configJson == null ? "" : configJson, 1 << 20);
+        writeStrings(buf, gameplayEntryIds, 256);
+        writeStrings(buf, gameplayProviderIds, 128);
     }
 
     private static List<EntryRow> readEntries(FriendlyByteBuf buf) {
@@ -123,6 +148,27 @@ public record RoleSnapshotPayload(
 
     private static @Nullable String readOpt(FriendlyByteBuf buf) {
         return buf.readBoolean() ? buf.readUtf(256) : null;
+    }
+
+    private static void writeStrings(FriendlyByteBuf buf, @Nullable List<String> values, int maxLen) {
+        buf.writeVarInt(values == null ? 0 : values.size());
+        if (values != null) {
+            for (String value : values) {
+                buf.writeUtf(value == null ? "" : value, maxLen);
+            }
+        }
+    }
+
+    private static List<String> readStrings(FriendlyByteBuf buf, int maxLen) {
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_ENTRIES) {
+            throw new DecoderException("Invalid gameplay id count: " + n);
+        }
+        List<String> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(buf.readUtf(maxLen));
+        }
+        return out;
     }
 
     @Override

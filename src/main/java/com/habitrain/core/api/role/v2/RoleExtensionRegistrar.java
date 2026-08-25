@@ -79,13 +79,19 @@ public interface RoleExtensionRegistrar {
      * The scope gates broadcast events (any-death, any-buy, meeting, game start/end,
      * tick, win): {@code HOLDER}/{@code ANY_ACTIVE_HOLDER} only fire when someone
      * currently holds the role, {@code ROUND_PRESENT} when the role is in the
-     * current round snapshot, and {@code GLOBAL_WHILE_ENABLED} whenever the entry is
-     * enabled. Defaults to {@link RoleScope#HOLDER}.
+     * current round snapshot. {@code GLOBAL_WHILE_ENABLED} still requires
+     * {@code presentInRound && allowGlobalHooks} at dispatch time; registration
+     * does not reject the scope. The two-arg {@link #hooks(RoleKey, RoleHooks)}
+     * convenience is {@link RoleScope#HOLDER}.
      *
+     * <p>Implementations must override this overload. The default throws so a
+     * broken implementor cannot silently drop {@code scope}.
+     *
+     * @throws UnsupportedOperationException if not overridden
      * @throws IllegalArgumentException on validation violations
      */
     default void hooks(RoleKey role, RoleScope scope, RoleHooks hooks) {
-        hooks(role, hooks);
+        throw new UnsupportedOperationException("implement hooks(role, scope, hooks)");
     }
 
     /**

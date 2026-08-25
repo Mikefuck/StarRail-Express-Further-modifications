@@ -1,6 +1,7 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.GreedTradeSelectScreen;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.client.gui.screen.ingame.LimitedInventoryScreen;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Adds Greed's anonymous player selector to the standard backpack screen. */
-@Mixin(LimitedInventoryScreen.class)
+@Mixin(value = LimitedInventoryScreen.class, remap = false)
 public abstract class GreedBackpackTradeMixin {
     @Inject(method = "init", at = @At("TAIL"))
     private void habitrain$addGreedTradeButton(CallbackInfo ci) {
@@ -22,7 +23,7 @@ public abstract class GreedBackpackTradeMixin {
         if (self.player == null) return;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(self.player.level());
-            if (game == null || SevenSins.GREED == null || !game.isRole(self.player, SevenSins.GREED)) return;
+            if (game == null || !HabiRoles.isHabiRole(self.player, SevenSins.GREED)) return;
         } catch (Throwable ignored) {
             return;
         }

@@ -18,8 +18,8 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.*;
 
 /**
- * 配置中心「游戏模式 · 角色覆盖」页 — 管理角色替换/调整的启用/停用（移植自旧 RoleOverrideTabScreen）。
- * 显示所有已注册的 REPLACE 和 MODIFY 条目，支持全局开关和逐条目切换；切换后立即写入配置。
+ * 配置中心「游戏模式 · 角色覆盖」页 — 管理 v1 角色替换/调整的启用/停用（移植自旧 RoleOverrideTabScreen）。
+ * 只扫 {@link RoleOverrideRegistry}，看不到 v2 ADD 角色；v2 请用「角色扩展」页。
  */
 public class ModeRolesPage implements ConfigPage {
     private final ConfigMenuScreen root;
@@ -126,7 +126,7 @@ public class ModeRolesPage implements ConfigPage {
         RoleOverrideConfigSection cfg = ConfigManager.getInstance().getRoleOverrides();
         boolean globalEnabled = cfg.isGlobalEnabled();
         int headerY = y + 4;
-        g.drawString(font, Component.literal("§l角色覆盖总开关"), x + 6, headerY + 2, 0xFFFFFF);
+        g.drawString(font, Component.literal("§l角色覆盖总开关（v1，看不到 v2 ADD）"), x + 6, headerY + 2, 0xFFFFFF);
         PillToggle.render(g, font, x + w - 72, headerY, 64, 14, globalEnabled, "已启用", "已停用");
 
         // Conflict banner

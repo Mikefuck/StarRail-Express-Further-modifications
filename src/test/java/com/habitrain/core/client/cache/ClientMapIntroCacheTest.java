@@ -78,4 +78,51 @@ class ClientMapIntroCacheTest {
         assertEquals(Set.of("trapper"), sets.trap());
         assertEquals(Set.of("knight"), sets.horse());
     }
+
+    @Test
+    void mergeAddingMapBDoesNotDropMapA() {
+        MapIntroSyncPayload.MapJson mapA = new MapIntroSyncPayload.MapJson(
+                "map_a", "{\"roomCount\": 1}");
+        MapIntroSyncPayload.VoteMap voteA = new MapIntroSyncPayload.VoteMap(
+                "map_a", "A", 1, 8, true, List.of("classic"));
+        ClientMapIntroCache.updateRaw(
+                List.of(mapA),
+                List.of(voteA),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        assertNotNull(ClientMapIntroCache.getMapJson("map_a"));
+
+        MapIntroSyncPayload.MapJson mapB = new MapIntroSyncPayload.MapJson(
+                "map_b", "{\"roomCount\": 2}");
+        MapIntroSyncPayload.VoteMap voteB = new MapIntroSyncPayload.VoteMap(
+                "map_b", "B", 1, 8, true, List.of("classic"));
+        ClientMapIntroCache.updateRawMerge(
+                List.of(mapB),
+                List.of(voteA, voteB),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        JsonObject keptA = ClientMapIntroCache.getMapJson("map_a");
+        JsonObject addedB = ClientMapIntroCache.getMapJson("map_b");
+        assertNotNull(keptA, "partial merge must not drop map A");
+        assertEquals(1, keptA.get("roomCount").getAsInt());
+        assertNotNull(addedB);
+        assertEquals(2, addedB.get("roomCount").getAsInt());
+        assertNotNull(ClientMapIntroCache.getVoteMap("map_a"));
+        assertNotNull(ClientMapIntroCache.getVoteMap("map_b"));
+    }
+
+    @Test
+    void fullReplaceStillDropsMapsAbsentFromPayload() {
+        ClientMapIntroCache.updateRaw(
+                List.of(new MapIntroSyncPayload.MapJson("map_a", "{}")),
+                List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        ClientMapIntroCache.updateRaw(
+                List.of(new MapIntroSyncPayload.MapJson("map_b", "{}")),
+                List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        assertNull(ClientMapIntroCache.getMapJson("map_a"));
+        assertNotNull(ClientMapIntroCache.getMapJson("map_b"));
+    }
 }

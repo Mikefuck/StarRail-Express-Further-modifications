@@ -5,6 +5,7 @@ import com.habitrain.core.network.OptionVotePayload;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntUnaryOperator;
 
 /**
  * 客户端通用选项投票状态（模式/地图等）。
@@ -19,6 +20,7 @@ public final class OptionVoteState {
     private static String description = "";
     private static List<OptionVotePayload.Entry> candidates = List.of();
     private static String selectedOptionId = null;
+    private static String autoPickedOptionId = null;
     private static Map<String, MapVoteProfilePayload.MapProfile> profiles = Map.of();
     /**
      * 玩家在本轮大厅投票（模式→地图）中主动隐藏了投票 UI。
@@ -60,6 +62,7 @@ public final class OptionVoteState {
         // 投票结束或 voteId 切换时清空本地选择（勿用 remaining==total 判断新投票）
         if (!active || voteIdChanged) {
             selectedOptionId = null;
+            autoPickedOptionId = null;
         }
         // voteId 切换时清空档案，避免 mode 阶段残留上一局 map 档案
         if (voteIdChanged) {
@@ -104,6 +107,7 @@ public final class OptionVoteState {
         remainingSeconds = 0;
         candidates = List.of();
         selectedOptionId = null;
+        autoPickedOptionId = null;
         title = "";
         description = "";
         profiles = Map.of();
@@ -175,7 +179,47 @@ public final class OptionVoteState {
         return optionId != null && optionId.equals(selectedOptionId);
     }
 
+    public static String getSelectedOptionId() {
+        return selectedOptionId;
+    }
+
+    public static String getAutoPickedOptionId() {
+        return autoPickedOptionId;
+    }
+
+    /** The final three seconds are reserved for a visible client-side roulette. */
+    public static boolean isAutoPickAnimating() {
+        return active
+                && "map".equals(voteId)
+                && selectedOptionId == null
+                && !candidates.isEmpty()
+                && remainingSeconds <= 3;
+    }
+
+    /** Explicit player choice. This permanently suppresses auto-pick for this phase. */
+    public static void select(String optionId) {
+        selectedOptionId = optionId;
+        autoPickedOptionId = null;
+    }
+
+    /**
+     * At one second remaining, choose exactly once and return the option id that must be sent C2S.
+     * Returning the id (rather than sending here) keeps this state class network-independent.
+     */
+    public static String autoPickRandomMapIfNeeded(IntUnaryOperator randomIndex) {
+        if (!active || !"map".equals(voteId) || remainingSeconds > 1
+                || selectedOptionId != null || candidates.isEmpty()) {
+            return null;
+        }
+        int rawIndex = randomIndex == null ? 0 : randomIndex.applyAsInt(candidates.size());
+        int index = Math.floorMod(rawIndex, candidates.size());
+        selectedOptionId = candidates.get(index).optionId();
+        autoPickedOptionId = selectedOptionId;
+        return selectedOptionId;
+    }
+
     public static void toggleSelection(String optionId) {
+        autoPickedOptionId = null;
         if (selectedOptionId != null && selectedOptionId.equals(optionId)) {
             selectedOptionId = null;
         } else {

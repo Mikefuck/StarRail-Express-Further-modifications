@@ -1,6 +1,8 @@
 package com.habitrain.core.game.sre;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.api.WinResult;
 import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
 import com.habitrain.core.network.MapVoteProgressPayload;
@@ -138,6 +140,9 @@ public final class MapVoteLoadCoordinator {
                     level.dimension().location());
             MapVoteLaunchAbortPayload.broadcastToLevel(level);
             LOADS.remove(level.dimension());
+            if (GameModeRegistry.isActiveInLevel(level)) {
+                GameModeRegistry.stop(level, WinResult.forceEnd("开局中止"));
+            }
         }
     }
 
@@ -160,6 +165,11 @@ public final class MapVoteLoadCoordinator {
     public static void reset(ServerLevel level) {
         if (level == null) return;
         LOADS.remove(level.dimension());
+    }
+
+    /** 清空所有维度的加载态（集成服同 JVM 重启残留）。 */
+    public static void resetAll() {
+        LOADS.clear();
     }
 
     public static boolean isLoading(ServerLevel level) {
@@ -190,7 +200,9 @@ public final class MapVoteLoadCoordinator {
                 }
             }
         } catch (Throwable t) {
-            // ignore
+            // Lookup failure: treat as not loading so tickSecond can abort hung UI.
+            LOGGER.debug("[MapVoteLoad] isSreLoading CCA lookup failed; treating as not loading", t);
+            return false;
         }
         // LOADS present, not settled, not confirmed, not ACTIVE:
         // map-reset queue phase before STARTING — still loading for this dim.

@@ -43,6 +43,11 @@ public class TaskInstance {
         this.progressUpdatePlayer = player;
     }
 
+    public void unbindOwner() {
+        this.ownerPlayer = null;
+        this.progressUpdatePlayer = null;
+    }
+
     public void setProgress(int progress) {
         int old = this.progress;
         this.progress = progress;

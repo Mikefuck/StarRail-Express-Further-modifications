@@ -51,9 +51,16 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     private volatile boolean loaded;
     /** Providers whose client-extension registration committed (audit P1-4). */
     private final Set<String> loadedProviders = new LinkedHashSet<>();
-    /** Null means no server snapshot has arrived yet; all registered extensions are visible. */
+    /**
+     * Server-synced active provider ids. {@code null} or an empty set is
+     * fail-closed: no client extensions are visible until a snapshot arrives.
+     */
     private volatile @Nullable Set<String> activeProviders;
-    /** Active server entry ids from {@code RoleSnapshotPayload.EntryRow#entryId()}. */
+    /**
+     * Active server entry ids from {@code RoleSnapshotPayload.EntryRow#entryId()}.
+     * {@code null} with a non-null provider set means every entry of those
+     * providers is visible; an empty set hides every entry.
+     */
     private volatile @Nullable Set<String> activeEntryKeys;
 
     public RoleClientExtensionRegistry() {}
@@ -61,6 +68,10 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     @Override
     public synchronized void loadProviders() {
         if (loaded) {
+            return;
+        }
+        if (!com.habitrain.core.internal.CoreBootstrap.isInBootstrap()) {
+            LOGGER.warn("RoleClientExtensionApi.loadProviders() ignored: only habitrain_core bootstrap may load providers");
             return;
         }
         loaded = true;
@@ -247,7 +258,11 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
         return List.copyOf(out);
     }
 
-    /** Binds the server-synced active provider and entry sets. */
+    /**
+     * Binds the server-synced active provider and entry sets. A {@code null}
+     * provider set is fail-closed (same as empty). A {@code null} entry set is
+     * only “all entries of an active provider” when the provider set is non-null.
+     */
     public synchronized void setActiveProviders(@Nullable Set<String> providers,
                                                 @Nullable Set<String> entryKeys) {
         this.activeProviders = providers == null ? null : Set.copyOf(providers);
@@ -451,7 +466,7 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     private boolean isActive(@Nullable String provider, RoleKey role, @Nullable String entryKey) {
         Set<String> active = activeProviders;
         if (active == null) {
-            return true;
+            return false;
         }
         if (provider == null || !active.contains(provider)) {
             return false;

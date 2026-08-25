@@ -3,12 +3,10 @@ package com.habitrain.core.game.blackout;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.network.BlackoutTimerPayload;
 import com.habitrain.core.util.SubtitleNotifier;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-
-import java.util.List;
 
 class BlackoutSyncManager {
     private BlackoutTimerSnapshot lastTimerSnapshot;
@@ -18,20 +16,7 @@ class BlackoutSyncManager {
                                           boolean isPermanent, int phaseOrdinal) {}
 
     void tickSecond(ServerLevel level) {
-        var phase = BlackoutTimerSystem.getPhase(level);
-        // Use world gameTime (same clock client uses via level.getGameTime()), NOT server process tickCount.
-        long serverTick = level.getGameTime();
-        long endTimeTick = phase == BlackoutTimerSystem.Phase.NORMAL
-                ? serverTick + (long) BlackoutTimerSystem.getBlackoutCountdown(level) * 20L
-                : (phase == BlackoutTimerSystem.Phase.MAINTENANCE
-                    ? serverTick + (long) BlackoutTimerSystem.getMaintenanceTime(level) * 20L
-                    : 0L);
-
-        BlackoutTimerSnapshot current = new BlackoutTimerSnapshot(
-                BlackoutTimerSystem.getTotalTimeRemaining(level),
-                endTimeTick,
-                BlackoutTimerSystem.isPermanentBlackoutActive(level),
-                phase.ordinal());
+        BlackoutTimerSnapshot current = capture(level);
 
         calibrationCounter++;
         boolean forceCalibration = (calibrationCounter % 10 == 0);
@@ -70,5 +55,36 @@ class BlackoutSyncManager {
     void onPreStart() {
         lastTimerSnapshot = null;
         calibrationCounter = 0;
+    }
+
+    /** Point-to-point timer HUD for a living reconnect. Does not update the broadcast snapshot. */
+    void syncTo(ServerPlayer player) {
+        if (player == null) return;
+        ServerLevel level = player.serverLevel();
+        if (level == null) return;
+        try {
+            BlackoutTimerSnapshot current = capture(level);
+            ServerPlayNetworking.send(player, new BlackoutTimerPayload(
+                    current.totalTimeRemaining, current.endTimeTick,
+                    current.isPermanent, current.phaseOrdinal));
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.debug("[Blackout] timer syncTo failed for {}", player.getUUID(), t);
+        }
+    }
+
+    private static BlackoutTimerSnapshot capture(ServerLevel level) {
+        var phase = BlackoutTimerSystem.getPhase(level);
+        // Use world gameTime (same clock client uses via level.getGameTime()), NOT server process tickCount.
+        long serverTick = level.getGameTime();
+        long endTimeTick = phase == BlackoutTimerSystem.Phase.NORMAL
+                ? serverTick + (long) BlackoutTimerSystem.getBlackoutCountdown(level) * 20L
+                : (phase == BlackoutTimerSystem.Phase.MAINTENANCE
+                    ? serverTick + (long) BlackoutTimerSystem.getMaintenanceTime(level) * 20L
+                    : 0L);
+        return new BlackoutTimerSnapshot(
+                BlackoutTimerSystem.getTotalTimeRemaining(level),
+                endTimeTick,
+                BlackoutTimerSystem.isPermanentBlackoutActive(level),
+                phase.ordinal());
     }
 }

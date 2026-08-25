@@ -28,6 +28,9 @@ public final class SlothRole extends CustomWinnerRole {
         if (player == null || !(player.level() instanceof ServerLevel level)) {
             return WinStatus.NOT_MODIFY;
         }
+        if (SinVictoryHooks.isPrideBlocking(level)) {
+            return WinStatus.NOT_MODIFY;
+        }
         if (SinVictoryHooks.isSlothAlive(level)
                 && (winStatus == WinStatus.PASSENGERS
                 || winStatus == WinStatus.KILLERS)) {

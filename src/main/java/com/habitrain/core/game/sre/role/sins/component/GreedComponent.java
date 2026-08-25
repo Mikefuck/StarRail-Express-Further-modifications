@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
 import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
@@ -67,6 +68,8 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     private int graceTicks = 40; // 2s after assign before lost-pouch death
     /** 上次袋子 NBT 重算的游戏刻（review L7：解析昂贵，5 tick 一次足够）。 */
     private long lastPouchResyncTick = Long.MIN_VALUE;
+    private long lastPouchPresenceTick = Long.MIN_VALUE;
+    private boolean lastPouchPresent = true;
 
     public GreedComponent(Player player) {
         this.player = player;
@@ -193,6 +196,9 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         collectionComplete = false;
         lostPouchKilled = false;
         graceTicks = 40;
+        lastPouchResyncTick = Long.MIN_VALUE;
+        lastPouchPresenceTick = Long.MIN_VALUE;
+        lastPouchPresent = true;
     }
 
     /**
@@ -210,7 +216,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         if (!(self.level() instanceof ServerLevel level)) return false;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || SevenSins.GREED == null || !game.isRole(self, SevenSins.GREED)) {
+        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.GREED)) {
             return false;
         }
         GreedComponent greed = KEY.get(self);
@@ -434,7 +440,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         boolean isGreed = false;
         try {
-            if (game != null && SevenSins.GREED != null && game.isRole(sp, SevenSins.GREED)) {
+            if (HabiRoles.isHabiRole(sp, SevenSins.GREED)) {
                 isGreed = true;
             }
         } catch (Throwable ignored) {
@@ -462,7 +468,11 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             return;
         }
 
-        if (!GreedPouchItem.playerHasOwnPouch(sp)) {
+        if (level.getGameTime() - lastPouchPresenceTick >= 5) {
+            lastPouchPresenceTick = level.getGameTime();
+            lastPouchPresent = GreedPouchItem.playerHasOwnPouch(sp);
+        }
+        if (!lastPouchPresent) {
             lostPouchKilled = true;
             KEY.sync(sp);
             sp.displayClientMessage(
@@ -662,16 +672,12 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
-        tag.putInt("Grace", graceTicks);
+        // 局内 StoredItems 不得进入 playerdata；同步仍走 writeToSyncNbt。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
-        if (tag.contains("Grace")) {
-            graceTicks = tag.getInt("Grace");
-        }
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 
     private void rebuildCollectedTypes() {

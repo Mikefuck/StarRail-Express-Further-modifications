@@ -49,14 +49,15 @@ public interface RoleChangeApi {
      *
      * <p>{@link RoleChangeCause#FORCED_RANDOM} additionally applies the core's
      * conservative outgoing-role safety policy before any mutation occurs.
-     * Implementations predating this overload retain their original behavior
-     * through the default method.
+     * Implementations must override this overload. The default throws so
+     * {@code options} cannot be silently dropped.
      *
      * @return the transaction result
+     * @throws UnsupportedOperationException if not overridden
      */
     default RoleChangeResult transform(ServerPlayer player, RoleKey role, RoleChangeCause cause,
                                        RoleChangeOptions options) {
-        return transform(player, role, cause);
+        throw new UnsupportedOperationException("implement transform(player, role, cause, options)");
     }
 
     /**

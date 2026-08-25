@@ -1,5 +1,6 @@
 package com.habitrain.core.game.blackout.task;
 
+import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.task.ClearableHandlerRegistry;
@@ -20,6 +21,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -51,6 +53,7 @@ public class FurnaceExplosionHandler {
         UseBlockCallback.EVENT.register(FurnaceExplosionHandler::onUseBlock);
         ClearableHandlerRegistry.register(FurnaceExplosionHandler::clearAll);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (activeStates.isEmpty() && pendingExplosions.isEmpty()) return;
             long tick = server.overworld().getGameTime();
 
             if (!activeStates.isEmpty()) {
@@ -71,30 +74,39 @@ public class FurnaceExplosionHandler {
                 }
             }
 
-            // 检查延迟点燃 TNT 队列
+            // 检查延迟点燃 TNT 队列（用爆炸所在维的 gameTime，不跟主城钟）
             if (!pendingExplosions.isEmpty()) {
                 for (Iterator<Map.Entry<UUID, PendingExplosion>> it =
                      pendingExplosions.entrySet().iterator(); it.hasNext(); ) {
                     var entry = it.next();
                     PendingExplosion pe = entry.getValue();
-                    if (tick >= pe.triggerTick) {
-                        // 按玩家点燃 TNT 时所在维度执行爆炸，避免炸错世界（P0-2）
-                        ServerLevel level = server.getLevel(pe.dimension);
-                        if (level == null) {
-                            // 维度已卸载：放弃本次爆炸，清理条目
-                            it.remove();
-                            continue;
-                        }
-                        BlockPos pos = pe.targetPos;
-                        if (level.getBlockState(pos).is(Blocks.TNT)) {
-                            level.destroyBlock(pos, false);
-                        }
-                        level.explode(null,
-                                pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-                                4.0f, Level.ExplosionInteraction.BLOCK);
-                        BlackoutMode.broadcast(level, "§c⚡ 发电机被摧毁！");
+                    ServerLevel level = server.getLevel(pe.dimension);
+                    if (level == null) {
                         it.remove();
+                        continue;
                     }
+                    if (level.getGameTime() < pe.triggerTick) {
+                        continue;
+                    }
+                    it.remove();
+                    boolean gameActive = false;
+                    try {
+                        SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
+                        gameActive = gw != null
+                                && gw.getGameStatus() == SREGameWorldComponent.GameStatus.ACTIVE;
+                    } catch (Throwable ignored) {
+                    }
+                    if (!gameActive) {
+                        continue;
+                    }
+                    BlockPos pos = pe.targetPos;
+                    if (level.getBlockState(pos).is(Blocks.TNT)) {
+                        level.destroyBlock(pos, false);
+                    }
+                    level.explode(null,
+                            pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                            4.0f, Level.ExplosionInteraction.BLOCK);
+                    BlackoutMode.broadcast(level, "§c⚡ 发电机被摧毁！");
                 }
             }
         });
@@ -102,9 +114,13 @@ public class FurnaceExplosionHandler {
 
     public static void clearState(UUID uuid) {
         activeStates.remove(uuid);
-        // 不在此移除 pendingExplosions：TNT 已点燃、任务已判完成后，玩家掉线/淘汰
-        // 不应取消 2 秒后必然发生的爆炸。clearAll() 仍会在整局清理时清空队列。
+        pendingExplosions.remove(uuid);
         SlownessReapplyManager.unregisterAllLevels(uuid);
+    }
+
+    public static void clearPendingForDimension(ResourceKey<Level> dimension) {
+        if (dimension == null) return;
+        pendingExplosions.entrySet().removeIf(e -> dimension.equals(e.getValue().dimension));
     }
 
     public static void clearAll() {
@@ -140,11 +156,8 @@ public class FurnaceExplosionHandler {
             }
 
             giveSlow(serverPlayer, uuid, SLOW_TICKS_LONG, true);
-            // 发放 1 个红石火把
-            boolean added = serverPlayer.getInventory().add(new ItemStack(Items.REDSTONE_TORCH, 1));
-            if (!added) {
-                serverPlayer.drop(new ItemStack(Items.REDSTONE_TORCH, 1), false);
-            }
+            ItemReclaimHelper.giveTaggedItem(
+                    serverPlayer, new ItemStack(Items.REDSTONE_TORCH, 1), task.getFullId());
             // 推进任务进度到阶段1
             task.setProgress(FurnaceExplosionTask.TNT_PHASE);
 
@@ -184,9 +197,9 @@ public class FurnaceExplosionHandler {
             // 推进任务完成 → 触发 onComplete（立刻永久停电 + 派发拉闸 + 奖励）
             task.setProgress(FurnaceExplosionTask.PROGRESS_DONE);
 
-            // 调度延迟 2 秒点燃 TNT（不提示倒计时文案）
-            long triggerTick = serverPlayer.serverLevel().getServer().overworld().getGameTime() + FUSE_DELAY_TICKS;
-            pendingExplosions.put(uuid, new PendingExplosion(pos, triggerTick, serverPlayer.serverLevel().dimension()));
+            ServerLevel explosionLevel = serverPlayer.serverLevel();
+            long triggerTick = explosionLevel.getGameTime() + FUSE_DELAY_TICKS;
+            pendingExplosions.put(uuid, new PendingExplosion(pos, triggerTick, explosionLevel.dimension()));
             return InteractionResult.FAIL;
         }
 

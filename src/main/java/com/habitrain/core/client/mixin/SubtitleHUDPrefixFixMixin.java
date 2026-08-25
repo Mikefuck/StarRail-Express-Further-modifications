@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(SubtitleHUD.class)
+@Mixin(value = SubtitleHUD.class, remap = false)
 public abstract class SubtitleHUDPrefixFixMixin {
     private static final int SUBTITLE_OFFSET_X = 12;
     private static final int SUBTITLE_OFFSET_Y = 18;

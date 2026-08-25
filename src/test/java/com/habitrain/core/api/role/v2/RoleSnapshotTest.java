@@ -60,10 +60,9 @@ class RoleSnapshotTest {
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "registeredEntryIds", new LinkedHashSet<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "frozen", false);
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "tmmAccessible", false);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "lobby", null);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "round", null);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "pending", null);
+        RoleSnapshotManager.INSTANCE.clear();
         com.habitrain.core.role.snapshot.RoleSnapshotArchive.INSTANCE.clear();
+        com.habitrain.core.role.snapshot.RoleSnapshotVersions.resetForTests();
         RoleRuntimeOverlayApplier.clear();
     }
 
@@ -218,10 +217,34 @@ class RoleSnapshotTest {
                 "pending must not affect the live round");
 
         RoleSnapshotManager.INSTANCE.endRound();
+        assertEquals(lobby, RoleSnapshotManager.INSTANCE.current(),
+                "endRound keeps the just-ended catalog until pending activates");
+        assertEquals(lobby, RoleSnapshotManager.INSTANCE.lastEnded(),
+                "settlement slot holds the ended round until pending activates");
+        assertNull(RoleSnapshotManager.INSTANCE.round());
         RoleSnapshotManager.INSTANCE.activatePending();
         assertEquals(pending, RoleSnapshotManager.INSTANCE.current(),
                 "pending activates as the new lobby after the round");
         assertNull(RoleSnapshotManager.INSTANCE.pending());
+        assertNull(RoleSnapshotManager.INSTANCE.lastEnded(),
+                "activatePending clears the settlement slot");
+    }
+
+    @Test
+    void scheduleActivatePendingRunsOnceOnNextTick() {
+        RoleSnapshot lobby = new RoleSnapshot(new RoleSnapshotId(1), Map.of(), Map.of(), Set.of());
+        RoleSnapshot pending = new RoleSnapshot(new RoleSnapshotId(2), Map.of(), Map.of(), Set.of());
+        RoleSnapshotManager.INSTANCE.setLobby(lobby);
+        RoleSnapshotManager.INSTANCE.beginRound();
+        RoleSnapshotManager.INSTANCE.queuePending(pending);
+        RoleSnapshotManager.INSTANCE.endRound();
+        RoleSnapshotManager.INSTANCE.scheduleActivatePendingNextTick();
+        assertEquals(lobby, RoleSnapshotManager.INSTANCE.current(),
+                "scheduled pending must not activate in the same OnGameEnd callback");
+        assertTrue(RoleSnapshotManager.INSTANCE.tickActivatePendingIfDue());
+        assertEquals(pending, RoleSnapshotManager.INSTANCE.current());
+        assertFalse(RoleSnapshotManager.INSTANCE.tickActivatePendingIfDue(),
+                "activation is one-shot");
     }
 
     @Test
@@ -229,6 +252,37 @@ class RoleSnapshotTest {
         RoleSnapshot lobby = new RoleSnapshot(new RoleSnapshotId(1), Map.of(), Map.of(), Set.of());
         RoleSnapshotManager.INSTANCE.setLobby(lobby);
         assertEquals(lobby, RoleSnapshotManager.INSTANCE.current());
+    }
+
+    @Test
+    void snapshotServiceLobbyIdIsLobbySlotNotCurrent() {
+        RoleSnapshot lobby = new RoleSnapshot(new RoleSnapshotId(1), Map.of(), Map.of(), Set.of());
+        RoleSnapshot nextLobby = new RoleSnapshot(new RoleSnapshotId(3), Map.of(), Map.of(), Set.of());
+        RoleSnapshot pending = new RoleSnapshot(new RoleSnapshotId(2), Map.of(), Map.of(), Set.of());
+
+        RoleSnapshotManager.INSTANCE.setLobby(lobby);
+        RoleSnapshotManager.INSTANCE.beginRound();
+        RoleSnapshotManager.INSTANCE.queuePending(pending);
+        RoleSnapshotManager.INSTANCE.setLobby(nextLobby);
+
+        assertEquals(lobby, RoleSnapshotManager.INSTANCE.current(),
+                "round stays frozen; current() is the live round");
+        assertEquals(nextLobby, RoleSnapshotManager.INSTANCE.lobby());
+
+        var payload = com.habitrain.core.role.config.RoleSnapshotService.build();
+        assertEquals(nextLobby.id().toString(), payload.lobbySnapshotId(),
+                "lobbySnapshotId must be lobby(), never current()");
+        assertEquals(lobby.id().toString(), payload.roundSnapshotId(),
+                "roundSnapshotId still identifies the frozen round");
+        assertEquals(pending.id().toString(), payload.pendingSnapshotId());
+    }
+
+    @Test
+    void snapshotServiceLobbyIdIsNoneWhenLobbyMissing() {
+        var payload = com.habitrain.core.role.config.RoleSnapshotService.build();
+        assertEquals("none", payload.lobbySnapshotId());
+        assertNull(payload.roundSnapshotId());
+        assertNull(payload.pendingSnapshotId());
     }
 
     // ------------------------------------------------------------------
@@ -247,10 +301,10 @@ class RoleSnapshotTest {
     }
 
     @Test
-    void catalogSnapshotFallsBackToEngineVersionWhenNoManagerSnapshot() {
+    void catalogSnapshotUsesTempIdWhenNoManagerSnapshot() {
         RoleCatalogImpl api = new RoleCatalogImpl(Map.of());
         assertFalse(api.currentSnapshot().isPresent());
-        assertTrue(api.snapshot() != null);
+        assertEquals(com.habitrain.core.role.snapshot.RoleSnapshotVersions.TEMP, api.snapshot());
     }
 
     @Test
@@ -289,6 +343,9 @@ class RoleSnapshotTest {
         assertEquals(lobby.id(), archived.id());
         assertTrue(com.habitrain.core.role.snapshot.RoleSnapshotArchive.INSTANCE
                 .restore(new RoleSnapshotId(9), RoleKey.of(snapId)).isPresent());
+        assertTrue(com.habitrain.core.role.snapshot.RoleSnapshotArchive.INSTANCE
+                .restore(new RoleSnapshotId(404), RoleKey.of(snapId)).isEmpty(),
+                "unknown snapshot id must not fall back to current()");
         assertTrue(com.habitrain.core.role.diag.RoleDiagnosticsCommands.archive()
                 .stream().anyMatch(l -> l.contains("role-snapshot-v9")));
     }

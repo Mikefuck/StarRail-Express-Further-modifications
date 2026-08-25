@@ -17,16 +17,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 同时作用于 SRE 的两个内部 TaskRenderer 宿主类，归一化其显示文本。
- * <p>
- * 脆弱性说明：两个目标类都必须存在且都声明 {@code private Component text} 字段，
- * 任一类被 SRE 重命名或字段签名变更都会导致 mixin 应用失败。
- * 若 SRE 后续移除其中一个渲染器，需同步从这里删掉对应 target。
+ * 归一化左上角任务 HUD 文本。SRE 4.3.0 只有
+ * {@code HudMoodRenderer$TaskRenderer}；不存在的 {@code MoodRenderer$TaskRenderer}
+ * 不能列入 {@code @Mixin(targets)}（多 target 必须全部解析，缺一类则整类跳过）。
  */
-@Mixin(targets = {
-    "io.wifi.starrailexpress.client.gui.HudMoodRenderer$TaskRenderer",
-    "io.wifi.starrailexpress.client.gui.MoodRenderer$TaskRenderer"
-})
+@Mixin(targets = "io.wifi.starrailexpress.client.gui.HudMoodRenderer$TaskRenderer")
 public class FixTaskRendererMixin {
 
     @Shadow(remap = false)

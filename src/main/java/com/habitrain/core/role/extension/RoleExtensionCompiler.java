@@ -421,9 +421,24 @@ public final class RoleExtensionCompiler {
             List<RoleKey> occupation, List<RoleKey> opposing, List<RoleKey> related,
             List<RoleSkillSpec> skills, boolean skillsSpecified) {}
 
-    /** Compiles a replacement definition into a {@link ManagedSRERole}. */
+    /**
+     * Compiles a replacement definition into a {@link ManagedSRERole}.
+     *
+     * <p>Goes through {@link ManagedSRERole#compile} so a {@code RoleFactory} is
+     * invoked and the returned id is validated against the definition key.
+     * The compiled instance must be a {@code ManagedSRERole}: custom factory
+     * subclasses belong on the ADD path, while REPLACE caches are typed as
+     * {@code ManagedSRERole}.
+     */
     public static ManagedSRERole compileReplacement(RoleReplacement replacement) {
-        return ManagedSRERole.from(replacement.replacement());
+        SRERole compiled = ManagedSRERole.compile(replacement.replacement());
+        if (compiled instanceof ManagedSRERole managed) {
+            return managed;
+        }
+        throw new IllegalStateException(
+                "REPLACE RoleFactory must return a ManagedSRERole (or omit roleFactory); got "
+                        + (compiled == null ? "null" : compiled.getClass().getName())
+                        + " for " + replacement.replacement().key());
     }
 
     /**

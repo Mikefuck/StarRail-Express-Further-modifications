@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
 import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
@@ -25,6 +24,14 @@ public class PerPlayerTaskTicker {
         TaskManager mgr = TaskManager.getInstance();
         TaskInstance customTask = mgr.getActiveTask(player.getUUID());
         TaskInstance fakeTask = mgr.getFakeTask(player.getUUID());
+        if (customTask == null && fakeTask == null) {
+            return;
+        }
+        if (!canTickCustomTasks(player)) {
+            // 非 ACTIVE / 死亡 / 休息区 / 旁观 / 创造：回收并卸任务，避免 STOPPING 改胜负。
+            mgr.cancelAllTrackedTasks(player);
+            return;
+        }
 
         if (customTask != null) {
             customTask.tick(player);
@@ -41,30 +48,47 @@ public class PerPlayerTaskTicker {
         }
     }
 
+    /**
+     * 仅 SRE ACTIVE 且存活、非旁观/创造、非休息区才推进自定义任务。
+     * STOPPING / STARTING / INACTIVE 都不 tick，避免结算淡出改胜负或休息区完成。
+     */
+    static boolean canTickCustomTasks(Player player) {
+        if (!(player instanceof ServerPlayer sp)) {
+            return false;
+        }
+        if (!player.isAlive() || player.isSpectator() || player.isCreative()) {
+            return false;
+        }
+        if (EliminatedRestAreaService.isResting(sp)) {
+            return false;
+        }
+        try {
+            if (player.level() == null) {
+                return false;
+            }
+            var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(player.level());
+            return gw != null
+                    && gw.getGameStatus() == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static void handleMainTaskDone(TaskManager mgr, TaskInstance customTask, Player player) {
         boolean exclusive = BlackoutExclusiveTasks.isExclusive(customTask.getFullId());
         if (customTask.isFailed()) {
             LOGGER.debug("[HabiDebug] Custom task {} failed, removing tracking without completion reward",
                     customTask.getFullId());
-            try {
-                customTask.getDefinition().onRemove(player, customTask);
-            } catch (Throwable t) {
-                LOGGER.error("onRemove callback failed: {}", customTask.getFullId(), t);
-            }
-            ItemReclaimHelper.reclaimForTask(player, customTask);
-            mgr.removeActiveTask(player.getUUID());
-            if (player instanceof ServerPlayer sp) {
-                ActiveTaskPayload.clearForPlayer(sp);
-                if (exclusive) {
-                    // 立刻恢复原版派发，避免左上角空白后再闪
-                    ExclusiveTaskHudSync.resumeVanillaDispatch(sp);
-                } else {
-                    ExclusiveTaskHudSync.clear(sp);
-                }
+            mgr.cancelTrackedTask(player, customTask, false);
+            if (exclusive && player instanceof ServerPlayer sp) {
+                // 立刻恢复原版派发，避免左上角空白后再闪
+                ExclusiveTaskHudSync.resumeVanillaDispatch(sp);
             }
         } else {
             LOGGER.debug("[HabiDebug] Custom task {} fulfilled, removing tracking", customTask.getFullId());
             if (player instanceof ServerPlayer sp) {
+                // 先摘 SRE wrapper，避免本方法返回后上游 serverTick 再 callOnFinishQuest。
+                DlcTaskTracker.stripSreWrapper(sp, customTask);
                 mgr.handleTaskCompletion(sp, customTask);
                 ActiveTaskPayload.clearForPlayer(sp);
                 if (exclusive) {
@@ -80,15 +104,12 @@ public class PerPlayerTaskTicker {
         if (fakeTask.isFailed()) {
             LOGGER.info("[KillerDualTask] fake task {} failed for {}",
                     fakeTask.getFullId(), player.getName().getString());
-            mgr.removeFakeTask(player.getUUID());
-            if (player instanceof ServerPlayer sp) {
-                ActiveTaskPayload.clearForPlayer(sp, true);
-            }
+            mgr.cancelTrackedTask(player, fakeTask, true);
         } else {
-            LOGGER.info("[KillerDualTask] fake task {} fulfilled for {}, granting rewards",
+            LOGGER.info("[KillerDualTask] fake task {} fulfilled for {}, clearing slot without true completion",
                     fakeTask.getFullId(), player.getName().getString());
             if (player instanceof ServerPlayer sp) {
-                mgr.handleTaskCompletion(sp, fakeTask);
+                DlcTaskTracker.stripSreWrapper(sp, fakeTask);
                 ActiveTaskPayload.clearForPlayer(sp, true);
             }
             mgr.removeFakeTask(player.getUUID());

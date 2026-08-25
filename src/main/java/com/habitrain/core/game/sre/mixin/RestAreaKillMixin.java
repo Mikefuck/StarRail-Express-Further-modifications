@@ -28,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * </ul>
  *
  * <p>与 {@link OutOfGameKillMixin}/{@link MeleeImmuneKillMixin} 同为对
- * {@code GameUtils.killPlayer} 的 HEAD 软拦截（require=0，签名变化不阻断启动）。
+ * {@code GameUtils.killPlayer} 的 HEAD 拦截。签名 miss 必须启动失败，不再静默跳过。
  */
 @Mixin(value = GameUtils.class, remap = false)
 public class RestAreaKillMixin {
@@ -37,8 +37,7 @@ public class RestAreaKillMixin {
             method = "killPlayer(Lnet/minecraft/world/entity/player/Player;ZLnet/minecraft/world/entity/player/Player;Lnet/minecraft/resources/ResourceLocation;Z)V",
             at = @At("HEAD"),
             cancellable = true,
-            remap = false,
-            require = 0
+            remap = false
     )
     private static void habitrain$restAreaKillIsNotMatchJudgment(Player victim, boolean spawnBody, Player killer,
                                                                  ResourceLocation deathReason, boolean forceDeath,

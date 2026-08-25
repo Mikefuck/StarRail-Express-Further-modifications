@@ -24,8 +24,9 @@ import java.util.List;
  * P1-1: no process-global write path).
  *
  * <p>Helpers stay on {@link SinVictoryHooks}. {@code CustomWinnerRole.checkWin}
- * remains as the SRE framework fallback. Blackout still has its explicit
- * pride/sloth/greed path; these hooks also answer {@code proposed=BLACKOUT}.
+ * remains as the SRE framework fallback. Pride {@code allowGameEnd} still
+ * gates {@code proposed=BLACKOUT}; sloth {@code evaluateWin} does not steal
+ * that probe (only {@code KILLERS}/{@code PASSENGERS}/{@code TIME}).
  */
 public final class SevenSinV2Hooks {
 
@@ -43,7 +44,8 @@ public final class SevenSinV2Hooks {
         HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/sloth/lust/greed)");
     }
 
-    private static boolean factionProposal(@Nullable String proposed) {
+    /** Pride DENY/last-survivor still see the blackout per-second probe. */
+    private static boolean prideGateProposal(@Nullable String proposed) {
         return "KILLERS".equals(proposed) || "PASSENGERS".equals(proposed) || "BLACKOUT".equals(proposed);
     }
 
@@ -51,7 +53,7 @@ public final class SevenSinV2Hooks {
         @Override
         public Decision allowGameEnd(@Nullable ServerLevel level, @Nullable String proposed,
                                      boolean loose, RoleHookContext ctx) {
-            if (level == null || !factionProposal(proposed)) {
+            if (level == null || !prideGateProposal(proposed)) {
                 return Decision.PASS;
             }
             if (SinVictoryHooks.isPrideBlocking(level) && !SinVictoryHooks.isOnlyPrideAlive(level)) {
@@ -66,7 +68,7 @@ public final class SevenSinV2Hooks {
             if (level == null || !SinVictoryHooks.isOnlyPrideAlive(level)) {
                 return WinPatch.noChange();
             }
-            if (!factionProposal(proposed) && !"TIME".equals(proposed)) {
+            if (!prideGateProposal(proposed) && !"TIME".equals(proposed)) {
                 return WinPatch.noChange();
             }
             ServerPlayer pride = SinVictoryHooks.findAlivePridePlayer(level);
@@ -80,13 +82,13 @@ public final class SevenSinV2Hooks {
         @Override
         public WinPatch evaluateWin(@Nullable ServerLevel level, @Nullable String proposed,
                                     boolean loose, RoleHookContext ctx) {
-            if (level == null || !SinVictoryHooks.isSlothAlive(level)) {
+            if (level == null) {
                 return WinPatch.noChange();
             }
-            if (SinVictoryHooks.isPrideBlocking(level) || SinVictoryHooks.isOnlyPrideAlive(level)) {
-                return WinPatch.noChange();
-            }
-            if (!factionProposal(proposed) && !"TIME".equals(proposed)) {
+            if (!SlothWinPolicy.shouldDeclare(proposed,
+                    SinVictoryHooks.isSlothAlive(level),
+                    SinVictoryHooks.isPrideBlocking(level),
+                    SinVictoryHooks.isOnlyPrideAlive(level))) {
                 return WinPatch.noChange();
             }
             ServerPlayer sloth = SinVictoryHooks.findAliveSlothPlayer(level);

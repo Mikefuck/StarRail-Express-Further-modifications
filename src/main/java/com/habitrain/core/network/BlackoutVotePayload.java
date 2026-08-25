@@ -112,4 +112,15 @@ public record BlackoutVotePayload(
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
         }
     }
+
+    public static void sendTo(net.minecraft.server.level.ServerPlayer player,
+                              VotePurpose purpose, boolean active, int remainingSeconds,
+                              int totalSeconds, int maxSelections,
+                              String title, String description,
+                              List<Entry> candidates) {
+        if (player == null) return;
+        var payload = new BlackoutVotePayload(purpose, active, remainingSeconds,
+                totalSeconds, maxSelections, title, description, candidates);
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, payload);
+    }
 }

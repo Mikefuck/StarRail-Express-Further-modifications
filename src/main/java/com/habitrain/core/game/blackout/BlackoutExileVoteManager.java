@@ -73,8 +73,49 @@ public final class BlackoutExileVoteManager {
 
     /** 当前是否有 active 的放逐投票 */
     public static boolean isVoteActive(ServerLevel level) {
+        if (level == null) return false;
         VoteState state = STATES.get(level.dimension());
         return state != null && state.active;
+    }
+
+    /** Point-to-point exile UI for a reconnect. Does not change votes or the broadcast hash. */
+    public static void sendTo(ServerPlayer player) {
+        if (player == null) return;
+        ServerLevel level = player.serverLevel();
+        if (level == null) return;
+        VoteState state = STATES.get(level.dimension());
+        if (state == null || !state.active) return;
+        try {
+            List<BlackoutVotePayload.Entry> entries = buildEntryList(level, state);
+            BlackoutVotePayload.sendTo(
+                    player,
+                    VotePurpose.EXILE,
+                    state.active,
+                    state.remainingSeconds,
+                    VOTE_DURATION_SECONDS,
+                    1,
+                    "放逐投票",
+                    "选择一名玩家放逐",
+                    entries
+            );
+        } catch (Throwable t) {
+            LOGGER.debug("[ExileVote] sendTo failed for {}", player.getUUID(), t);
+        }
+    }
+
+    /**
+     * 宽限内重连：把仍存活的玩家插回本轮 {@code candidateOrder}，不重启投票。
+     */
+    public static void restoreCandidate(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return;
+        VoteState state = STATES.get(level.dimension());
+        if (state == null || !state.active) return;
+        if (!BlackoutRoleManager.isAlive(level, playerId)) return;
+        if (BlackoutRoleManager.isDisconnected(level, playerId)) return;
+        if (state.candidateOrder.contains(playerId)) return;
+        state.candidateOrder.add(playerId);
+        LOGGER.info("[ExileVote] restored candidate {} into active vote", playerId);
+        broadcastState(level);
     }
 
     /**

@@ -37,10 +37,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -260,6 +262,50 @@ class RoleConfigFilteringTest {
         RoleSnapshot enabled = RoleSnapshotCompiler.compile(new RoleSnapshotId(2), raw);
         assertFalse(enabled.isActive(TARGET), "enabled replacement hides the target");
         assertTrue(enabled.isActive(compiled.identifier()));
+    }
+
+    @Test
+    void compileReplacementHonorsRoleFactoryAndValidatesId() {
+        AtomicBoolean factoryCalled = new AtomicBoolean();
+        RoleDefinition def = RoleDefinition.builder(PROVIDER, "shadow_killer")
+                .presentation(RolePresentation.builder().color(0xFFAA0000).build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().build())
+                .compatibility(RoleCompatibilityProfile.builder().build())
+                .maxSprintTime(20)
+                .roleFactory(d -> {
+                    factoryCalled.set(true);
+                    return ManagedSRERole.from(d);
+                })
+                .build();
+        RoleReplacement replacement = RoleReplacement.builder(RoleKey.of(TARGET), def)
+                .entryKey("factory_repl")
+                .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS)
+                .build();
+
+        ManagedSRERole compiled = RoleExtensionCompiler.compileReplacement(replacement);
+        assertTrue(factoryCalled.get(), "REPLACE must invoke RoleDefinition.roleFactory");
+        assertEquals(def.key().location(), compiled.identifier());
+    }
+
+    @Test
+    void compileReplacementRejectsRoleFactoryIdMismatch() {
+        RoleDefinition def = RoleDefinition.builder(PROVIDER, "shadow_killer")
+                .presentation(RolePresentation.builder().color(0xFFAA0000).build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().build())
+                .compatibility(RoleCompatibilityProfile.builder().build())
+                .maxSprintTime(20)
+                .roleFactory(d -> role(ResourceLocation.parse("wrong:id")))
+                .build();
+        RoleReplacement replacement = RoleReplacement.builder(RoleKey.of(TARGET), def)
+                .entryKey("bad_id")
+                .identity(ReplacementIdentity.NEW_ID_WITH_ALIAS)
+                .build();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> RoleExtensionCompiler.compileReplacement(replacement));
+        assertTrue(ex.getMessage().contains("wrong:id") || ex.getMessage().contains("requires"));
     }
 
     @Test

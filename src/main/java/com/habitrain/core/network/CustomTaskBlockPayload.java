@@ -12,6 +12,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -19,7 +22,8 @@ import java.util.Set;
 
 public class CustomTaskBlockPayload implements CustomPacketPayload {
 
-    private static final int MAX_ENTRIES = 65_536;
+    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|CustomTaskBlock");
+    private static final int MAX_ENTRIES = CustomTaskBlockCache.MAX_ENTRIES;
     private static final int MAX_TYPE_IDS_PER_ENTRY = 64;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "custom_task_blocks");
@@ -63,16 +67,28 @@ public class CustomTaskBlockPayload implements CustomPacketPayload {
 
         @Override
         public void encode(ByteBuf buf, CustomTaskBlockPayload payload) {
-            buf.writeInt(payload.blockTypeIds.size());
+            int total = payload.blockTypeIds.size();
+            if (total > MAX_ENTRIES) {
+                LOGGER.warn("Custom task block snapshot has {} entries, truncating to {}", total, MAX_ENTRIES);
+                total = MAX_ENTRIES;
+            }
+            buf.writeInt(total);
+            int written = 0;
             for (var entry : payload.blockTypeIds.entrySet()) {
+                if (written >= total) break;
                 BlockPos pos = entry.getKey();
                 buf.writeInt(pos.getX());
                 buf.writeInt(pos.getY());
                 buf.writeInt(pos.getZ());
-                buf.writeInt(entry.getValue().size());
+                int setCount = Math.min(entry.getValue().size(), MAX_TYPE_IDS_PER_ENTRY);
+                buf.writeInt(setCount);
+                int ids = 0;
                 for (int typeId : entry.getValue()) {
+                    if (ids >= setCount) break;
                     buf.writeInt(typeId);
+                    ids++;
                 }
+                written++;
             }
         }
     };

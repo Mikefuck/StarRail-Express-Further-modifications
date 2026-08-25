@@ -38,20 +38,18 @@ public final class PhoneOverlayRenderer {
         int fakeType = taskType(ActiveTaskCache.getFakeTaskFullId());
 
         int rendered = 0;
-        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
+        for (BlockPos pos : CustomTaskBlockCache.positionsForTypes(
+                BlackoutOverlayTypes.STREET_PHONE, BlackoutOverlayTypes.ROTARY_PHONE_RED)) {
+            if (!TaskOverlayDrawer.isInOverlayRange(context, pos)) continue;
             Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
             if (typeIds == null) continue;
-            if ((activeType > 12 && typeIds.contains(activeType))
-                    || (fakeType > 12 && typeIds.contains(fakeType))) {
+            if ((activeType >= BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID && typeIds.contains(activeType))
+                    || (fakeType >= BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID && typeIds.contains(fakeType))) {
                 continue;
             }
-            // 常驻透视：street_phone（警察聘请）+ rotary_phone_red（任务商店）
-            if (typeIds.contains(BlackoutOverlayTypes.STREET_PHONE)
-                    || typeIds.contains(BlackoutOverlayTypes.ROTARY_PHONE_RED)) {
-                TaskOverlayDrawer.renderOverlay(
-                        context, pos, PHONE_OVERLAY_COLOR, PHONE_OVERLAY_LINE_WIDTH);
-                rendered++;
-            }
+            TaskOverlayDrawer.renderOverlay(
+                    context, pos, PHONE_OVERLAY_COLOR, PHONE_OVERLAY_LINE_WIDTH);
+            rendered++;
         }
         if (rendered > 0) {
             HabiTrainCore.LOGGER.debug("[PhoneOverlayRenderer] rendered {} constant overlay blocks", rendered);

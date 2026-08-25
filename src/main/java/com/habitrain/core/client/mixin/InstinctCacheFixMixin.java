@@ -2,6 +2,7 @@ package com.habitrain.core.client.mixin;
 
 import io.wifi.starrailexpress.client.SREClient;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -25,11 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 2. 在 updateInstinctCache 中安全重定向 entrySet()：对于 ConcurrentHashMap 直接使用其弱一致迭代器（天然防 CME 并发安全），
  *    非并发 Map 时加锁克隆快照。
  */
-@Mixin(SREClient.class)
+@Mixin(value = SREClient.class, remap = false)
 public class InstinctCacheFixMixin {
 
     @Inject(method = "<clinit>", at = @At("TAIL"))
-    private static void habitrain_core$replaceWithConcurrentHashMap(CallbackInfo ci) {
+    private static void habitrain$replaceWithConcurrentHashMap(CallbackInfo ci) {
         if (!(SREClient.cachedHighLightMap instanceof ConcurrentHashMap)) {
             SREClient.cachedHighLightMap = new ConcurrentHashMap<>(SREClient.cachedHighLightMap != null ? SREClient.cachedHighLightMap : Map.of());
         }
@@ -48,7 +49,8 @@ public class InstinctCacheFixMixin {
             ),
             remap = false
     )
-    private static Set snapshotEntrySet(Map map) {
+    @Unique
+    private static Set habitrain$snapshotEntrySet(Map map) {
         if (map instanceof ConcurrentHashMap) {
             return map.entrySet();
         }

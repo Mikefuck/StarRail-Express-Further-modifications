@@ -2,6 +2,7 @@ package com.habitrain.core.api;
 
 import com.habitrain.core.network.GameEndTransitionPayload;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -53,6 +54,7 @@ class ApiValueObjectTest {
     @Test
     void voteApisRejectMissingLevel() {
         assertFalse(OptionVoteApi.cast(null, UUID.randomUUID(), "arena"));
+        assertFalse(OptionVoteApi.cast(null, (ServerPlayer) null, "arena"));
         assertFalse(ModeMapVoteApi.cancel(null));
         assertTrue(ModeMapVoteApi.getSnapshot(null).isEmpty());
     }

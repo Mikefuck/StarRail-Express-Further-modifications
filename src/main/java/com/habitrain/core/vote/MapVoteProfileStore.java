@@ -148,17 +148,8 @@ public final class MapVoteProfileStore {
         if (!target.startsWith(previewDir)) {
             return UploadResult.error("预览图路径无效");
         }
-        Path temp = target.resolveSibling(fileName + ".uploading");
         try {
-            Files.createDirectories(previewDir);
-            Files.write(temp, pngBytes, StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            try {
-                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
+            writePreviewAtomically(target, pngBytes);
             // Config override already points to this deterministic path. Keep maps.json
             // aligned as a fallback, but an index-write problem must not invalidate an
             // otherwise successful atomic image replacement.
@@ -173,11 +164,6 @@ public final class MapVoteProfileStore {
         } catch (Exception e) {
             LOGGER.error("[MapVoteProfileStore] failed to store uploaded preview for '{}'", mapId, e);
             return UploadResult.error("服务器写入图片失败");
-        } finally {
-            try {
-                Files.deleteIfExists(temp);
-            } catch (IOException ignored) {
-            }
         }
     }
 
@@ -192,7 +178,7 @@ public final class MapVoteProfileStore {
         }
         int width = readIntBigEndian(bytes, 16);
         int height = readIntBigEndian(bytes, 20);
-        return width > 0 && height > 0 && width <= 8192 && height <= 8192;
+        return width > 0 && height > 0 && width <= 1024 && height <= 1024;
     }
 
     private static int readIntBigEndian(byte[] bytes, int offset) {
@@ -266,8 +252,16 @@ public final class MapVoteProfileStore {
         if (level == null || mapIds == null || mapIds.isEmpty()) {
             return;
         }
+        ensureProfiles(baseDir(level), mapIds, configEntries);
+    }
+
+    /** Path-only IO used by async loaders that must not touch {@code ServerLevel}. */
+    public static void ensureProfiles(Path base, Collection<String> mapIds,
+                                      Map<String, MapVoteEntry> configEntries) {
+        if (base == null || mapIds == null || mapIds.isEmpty()) {
+            return;
+        }
         try {
-            Path base = baseDir(level);
             Files.createDirectories(base.resolve(PREVIEW_DIR));
             Path index = base.resolve(INDEX_FILE);
             JsonObject root = readIndex(index);
@@ -320,12 +314,20 @@ public final class MapVoteProfileStore {
      */
     public static Map<String, MapVoteProfilePayload.MapProfile> loadProfiles(
             ServerLevel level, Collection<String> mapIds, Map<String, MapVoteEntry> configEntries) {
-        Map<String, MapVoteProfilePayload.MapProfile> result = new LinkedHashMap<>();
         if (level == null || mapIds == null || mapIds.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return loadProfiles(baseDir(level), mapIds, configEntries);
+    }
+
+    /** Path-only IO used by async loaders that must not touch {@code ServerLevel}. */
+    public static Map<String, MapVoteProfilePayload.MapProfile> loadProfiles(
+            Path base, Collection<String> mapIds, Map<String, MapVoteEntry> configEntries) {
+        Map<String, MapVoteProfilePayload.MapProfile> result = new LinkedHashMap<>();
+        if (base == null || mapIds == null || mapIds.isEmpty()) {
             return result;
         }
         try {
-            Path base = baseDir(level);
             JsonObject root = readIndex(base.resolve(INDEX_FILE));
             JsonObject maps = root.has("maps") && root.get("maps").isJsonObject()
                     ? root.getAsJsonObject("maps") : new JsonObject();
@@ -433,15 +435,41 @@ public final class MapVoteProfileStore {
         }
     }
 
+    static boolean previewNeedsRebuild(Path file) throws IOException {
+        if (file == null || !Files.isRegularFile(file) || Files.size(file) <= 0) {
+            return true;
+        }
+        return !isValidPng(Files.readAllBytes(file));
+    }
+
+    private static void writePreviewAtomically(Path target, byte[] bytes) throws IOException {
+        Files.createDirectories(target.getParent());
+        Path temp = target.resolveSibling(target.getFileName() + ".uploading");
+        try {
+            Files.write(temp, bytes, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try {
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
     private static void ensurePreviewFile(Path base, String mapId) {
         Path file = base.resolve(PREVIEW_DIR).resolve(escapeId(mapId) + ".png");
         try {
-            if (Files.isRegularFile(file) && Files.size(file) > 0) {
+            if (!previewNeedsRebuild(file)) {
                 return;
             }
-            byte[] placeholder = placeholderBytes();
-            Files.createDirectories(file.getParent());
-            Files.write(file, placeholder);
+            if (Files.isRegularFile(file) && Files.size(file) > 0) {
+                LOGGER.warn("[MapVoteProfileStore] preview '{}' is truncated/corrupt, rebuilding placeholder",
+                        file.getFileName());
+            }
+            writePreviewAtomically(file, placeholderBytes());
             LOGGER.info("[MapVoteProfileStore] wrote placeholder preview for map '{}'", mapId);
         } catch (Exception e) {
             LOGGER.warn("[MapVoteProfileStore] failed to write placeholder preview for '{}'", mapId, e);

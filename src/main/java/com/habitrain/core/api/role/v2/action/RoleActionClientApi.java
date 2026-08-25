@@ -2,6 +2,7 @@ package com.habitrain.core.api.role.v2.action;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,9 +22,31 @@ import java.util.function.Consumer;
 @Environment(EnvType.CLIENT)
 public interface RoleActionClientApi {
 
-    /** The client-side session (bound to the running client). */
+    /**
+     * The client-side session (bound to the running client).
+     * Only {@code ClientModInitializer} / other client-side code may call this.
+     */
     static RoleActionClientApi instance() {
-        return com.habitrain.core.client.role.RoleActionClientSession.INSTANCE;
+        EnvType env = null;
+        try {
+            env = FabricLoader.getInstance().getEnvironmentType();
+        } catch (Throwable ignored) {
+            // JUnit / unloaded Fabric still resolves by reflection.
+        }
+        if (env != null && env != EnvType.CLIENT) {
+            throw new IllegalStateException(
+                    "RoleActionClientApi.instance() may only be called from ClientModInitializer or other client-side code");
+        }
+        try {
+            Class<?> type = Class.forName("com.habitrain.core.client.role.RoleActionClientSession");
+            Object value = type.getField("INSTANCE").get(null);
+            if (value instanceof RoleActionClientApi api) {
+                return api;
+            }
+            throw new IllegalStateException("RoleActionClientApi client session is unavailable");
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("RoleActionClientApi client session is unavailable", e);
+        }
     }
 
     /**

@@ -2,10 +2,14 @@ package com.habitrain.core.task;
 
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.TaskConfigEntry;
+import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
+import com.habitrain.core.game.blackout.task.FurnaceExplosionHandler;
+import com.habitrain.core.game.sre.DlcTaskTracker;
+import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -15,7 +19,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * 任务管理器 — 取代 HabiTaskManager。
@@ -30,6 +33,11 @@ public class TaskManager {
 
     /** SRE 游戏状态提供者 — 通过 setter 注入以解除对 SRE 具体类的编译依赖。 */
     private GameStateProvider gameStateProvider;
+
+    private record PendingReclaim(TaskInstance task, boolean fake) {}
+
+    /** Offline players whose tasks were dropped at round end; reclaim on JOIN. */
+    private final ConcurrentHashMap<UUID, List<PendingReclaim>> pendingReclaim = new ConcurrentHashMap<>();
 
     public static TaskManager getInstance() {
         if (INSTANCE == null) {
@@ -86,6 +94,11 @@ public class TaskManager {
         blackoutNextDailyPool.remove(playerUuid);
     }
 
+    /**
+     * JOIN resync (LifecycleEventsRegistrar) reads these maps and re-sends
+     * {@link ActiveTaskPayload} only when a slot is still present. {@link #unbindOwner}
+     * does not clear them.
+     */
     public TaskInstance getActiveTask(UUID playerUuid) { return activeCustomTasks.get(playerUuid); }
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
@@ -94,14 +107,129 @@ public class TaskManager {
     public void setFakeTask(UUID playerUuid, TaskInstance task) { activeFakeTasks.put(playerUuid, task); }
     public void removeFakeTask(UUID playerUuid) { activeFakeTasks.remove(playerUuid); }
 
+    /**
+     * DISCONNECT only: drop {@code Player} entity refs so the instance can outlive
+     * the disconnected entity. Does <em>not</em> remove the UUID from
+     * {@link #activeCustomTasks} / {@link #activeFakeTasks}.
+     * <p>
+     * JOIN resync re-sends {@link ActiveTaskPayload} iff {@link #getActiveTask} /
+     * {@link #getFakeTask} still return an instance. It does not recreate a slot
+     * that upstream {@code task.init()} / PlayerDiscard already cleared, so an
+     * ACTIVE reconnect can still find an empty map (F-G9-015 / F-G9-024).
+     */
+    public void unbindOwner(UUID playerUuid) {
+        if (playerUuid == null) return;
+        TaskInstance active = activeCustomTasks.get(playerUuid);
+        if (active != null) active.unbindOwner();
+        TaskInstance fake = activeFakeTasks.get(playerUuid);
+        if (fake != null) fake.unbindOwner();
+    }
+
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
     public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); dlcTaskCounts.clear(); }
 
+    /** Stop-server / world-swap: clear active tasks and offline reclaim backlog. */
+    public void clearAll() {
+        clearAllActiveTasks();
+        pendingReclaim.clear();
+    }
+
+    /**
+     * 局终/onCleanup 入口：先 per-player {@code onRemove}+回收，再丢掉该维任务，并清该维炸炉 pending。
+     * BlackoutMode.onCleanup 仍可走 {@link #clearActiveTasksForLevel(ResourceKey)}；有 {@link ServerLevel} 时请用本方法。
+     */
+    public static void clearActiveTasksForLevel(ServerLevel level) {
+        if (level == null) return;
+        getInstance().clearActiveTasksForLevel(level.dimension(), level.getServer());
+    }
+
     /** 只清空指定维度的活跃任务，避免一个世界结束影响另一个世界的对局。 */
     public void clearActiveTasksForLevel(ResourceKey<Level> dimension) {
+        clearActiveTasksForLevel(dimension, GameLifecycleHandler.peekServer());
+    }
+
+    private void clearActiveTasksForLevel(ResourceKey<Level> dimension, MinecraftServer server) {
         if (dimension == null) return;
-        activeCustomTasks.entrySet().removeIf(e -> dimension.equals(e.getValue().getDimension()));
-        activeFakeTasks.entrySet().removeIf(e -> dimension.equals(e.getValue().getDimension()));
+        dropAndReclaim(activeCustomTasks, dimension, server, false);
+        dropAndReclaim(activeFakeTasks, dimension, server, true);
+        FurnaceExplosionHandler.clearPendingForDimension(dimension);
+    }
+
+    private void dropAndReclaim(Map<UUID, TaskInstance> map, ResourceKey<Level> dimension,
+                                MinecraftServer server, boolean fake) {
+        List<UUID> toDrop = new ArrayList<>();
+        for (var e : map.entrySet()) {
+            if (dimension.equals(e.getValue().getDimension())) {
+                toDrop.add(e.getKey());
+            }
+        }
+        for (UUID id : toDrop) {
+            TaskInstance task = map.get(id);
+            if (task == null) continue;
+            Player player = server != null ? server.getPlayerList().getPlayer(id) : null;
+            if (player != null) {
+                cancelTrackedTask(player, task, fake);
+            } else {
+                map.remove(id, task);
+                pendingReclaim.computeIfAbsent(id, k -> new ArrayList<>())
+                        .add(new PendingReclaim(task, fake));
+            }
+        }
+    }
+
+    /** JOIN：回收局终时玩家不在线而未能扫描的任务道具。 */
+    public void flushPendingReclaim(Player player) {
+        if (player == null) return;
+        List<PendingReclaim> pending = pendingReclaim.remove(player.getUUID());
+        if (pending == null || pending.isEmpty()) return;
+        for (PendingReclaim entry : pending) {
+            cancelTrackedTask(player, entry.task(), entry.fake());
+        }
+    }
+
+    /**
+     * 取消路径：onRemove + 回收道具 + 摘 SRE wrapper + 清 HUD，不发奖。
+     * 成功完成不要走这里。
+     */
+    public void cancelTrackedTask(Player player, TaskInstance instance, boolean fake) {
+        if (player == null || instance == null) return;
+        UUID id = player.getUUID();
+        try {
+            instance.getDefinition().onRemove(player, instance);
+        } catch (Throwable t) {
+            LOGGER.error("onRemove failed: {}", instance.getFullId(), t);
+        }
+        try {
+            ItemReclaimHelper.reclaimForTask(player, instance);
+        } catch (Throwable t) {
+            LOGGER.error("reclaim failed: {}", instance.getFullId(), t);
+        }
+        if (player instanceof ServerPlayer sp) {
+            DlcTaskTracker.stripSreWrapper(sp, instance);
+            ActiveTaskPayload.clearForPlayer(sp, fake);
+            if (!fake) {
+                ExclusiveTaskHudSync.clear(sp);
+            }
+        }
+        if (fake) {
+            if (getFakeTask(id) == instance) {
+                removeFakeTask(id);
+            }
+        } else if (getActiveTask(id) == instance) {
+            removeActiveTask(id);
+        }
+    }
+
+    public void cancelAllTrackedTasks(Player player) {
+        if (player == null) return;
+        TaskInstance active = getActiveTask(player.getUUID());
+        if (active != null) {
+            cancelTrackedTask(player, active, false);
+        }
+        TaskInstance fake = getFakeTask(player.getUUID());
+        if (fake != null) {
+            cancelTrackedTask(player, fake, true);
+        }
     }
 
     public boolean hasTaskWithId(UUID playerUuid, String fullId) {
@@ -192,13 +320,27 @@ public class TaskManager {
 
     private void triggerDirectWin(ServerPlayer player, TaskInstance instance) {
         try {
+            if (!(player.level() instanceof ServerLevel sl)) return;
+            if (!isSreGameActive(sl)) {
+                LOGGER.debug("Refuse custom win {}: game is not ACTIVE", instance.getFullId());
+                return;
+            }
             String winnerId = instance.getDefinition().getModId()
                     + "_" + instance.getDefinition().getTaskId() + WIN_SUFFIX;
-            if (gameStateProvider != null && player.level() instanceof ServerLevel sl) {
+            if (gameStateProvider != null) {
                 gameStateProvider.triggerCustomWin(sl, winnerId, player.getUUID());
             }
         } catch (Exception e) {
             LOGGER.error("Failed to trigger direct win: " + instance.getFullId(), e);
+        }
+    }
+
+    private static boolean isSreGameActive(ServerLevel level) {
+        try {
+            SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
+            return gw != null && gw.getGameStatus() == SREGameWorldComponent.GameStatus.ACTIVE;
+        } catch (Throwable t) {
+            return false;
         }
     }
 }

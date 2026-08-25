@@ -1,6 +1,7 @@
 package com.habitrain.core.role.action;
 
 import com.habitrain.core.api.role.v2.RoleKey;
+import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.api.role.v2.action.ActionTargetCodec;
 import com.habitrain.core.api.role.v2.action.RoleActionApi;
 import com.habitrain.core.api.role.v2.action.RoleActionContext;
@@ -11,12 +12,14 @@ import com.habitrain.core.api.role.v2.action.RoleActionSpec;
 import com.habitrain.core.api.role.v2.action.RoleActionTarget;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.extension.ManagedDeclaration;
+import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,8 +61,8 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     /**
      * Registered action schemas wrapped in their provider ownership (audit
      * P1-2): every declaration is registered through a provider transaction
-     * with a config-scoped entry id, and runtime dispatch is gated by
-     * {@link RoleExtensionConfigService#gateFor}.
+     * with a config-scoped entry id, and runtime dispatch is gated by the
+     * current gameplay snapshot (live config is the pre-snapshot fallback).
      */
     private final Map<ResourceLocation, ManagedDeclaration<RoleActionSpec>> specs = new LinkedHashMap<>();
     private final Map<GateKey, Deque<Long>> rateWindows = new ConcurrentHashMap<>();
@@ -227,8 +230,7 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         if (player == null || spec == null) {
             return;
         }
-        if (RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
-                != RoleExtensionConfigService.EntryGate.ENABLED) {
+        if (!isGameplayEntryEnabled(decl)) {
             return; // disabled provider/entry: drop the push (audit P1-2)
         }
         if (spec.direction() == RoleActionDirection.C2S) {
@@ -319,12 +321,11 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         if (spec == null) {
             return RoleActionResult.reject(RoleActionResult.UNKNOWN);
         }
-        // 2. provider/entry config gate (audit P1-2): a disabled action is
+        // 2. provider/entry gameplay gate (audit P1-2): a disabled action is
         // refused before any sequence / cooldown / rate / handler side effect.
+        // Mid-round live config edits must not change the published snapshot.
         ManagedDeclaration<RoleActionSpec> decl = specs.get(actionId);
-        if (decl == null
-                || RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
-                != RoleExtensionConfigService.EntryGate.ENABLED) {
+        if (!isGameplayEntryEnabled(decl)) {
             return RoleActionResult.reject(RoleActionResult.CONFIG_DISABLED);
         }
         // 3. direction
@@ -389,7 +390,8 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                         return RoleActionResult.reject(RoleActionResult.TARGET, "target dead");
                     }
                     // 9. distance / line of sight (only for PLAYER_UUID targets)
-                    if (spec.maxDistance() > 0 && player.distanceTo(targetPlayer) > spec.maxDistance()) {
+                    if (spec.maxDistance() > 0
+                            && player.distanceToSqr(targetPlayer) > spec.maxDistance() * spec.maxDistance()) {
                         return RoleActionResult.reject(RoleActionResult.RANGE);
                     }
                     if (spec.requireLineOfSight() && !player.hasLineOfSight(targetPlayer)) {
@@ -401,6 +403,17 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                 BlockPos pos = decodeBlockPos(body);
                 if (pos == null) {
                     return RoleActionResult.reject(RoleActionResult.TARGET, "block pos required");
+                }
+                if (player != null) {
+                    Level level = player.level();
+                    if (pos.getY() < level.getMinBuildHeight() || pos.getY() >= level.getMaxBuildHeight()) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "block pos out of world");
+                    }
+                    if (spec.maxDistance() > 0
+                            && player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)
+                            > spec.maxDistance() * spec.maxDistance()) {
+                        return RoleActionResult.reject(RoleActionResult.RANGE);
+                    }
                 }
                 target = new RoleActionTarget.Block(pos);
             }
@@ -553,6 +566,23 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         synchronized (window) {
             window.addLast(now);
         }
+    }
+
+    /**
+     * C2S validation and S2C {@link #sendTo} share the same gate: the current
+     * gameplay snapshot when one is published (including settlement after
+     * {@code endRound}), otherwise the live config for lobby / no snapshot yet.
+     */
+    private static boolean isGameplayEntryEnabled(@Nullable ManagedDeclaration<RoleActionSpec> decl) {
+        if (decl == null) {
+            return false;
+        }
+        RoleSnapshot snap = RoleSnapshotManager.INSTANCE.current();
+        if (snap != null) {
+            return snap.isBehaviorEntryEnabled(decl.providerId(), decl.entryId());
+        }
+        return RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
+                == RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
     private static boolean lookupAlive(ServerPlayer player) {

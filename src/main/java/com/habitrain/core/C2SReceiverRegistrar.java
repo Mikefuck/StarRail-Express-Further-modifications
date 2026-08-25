@@ -16,14 +16,24 @@ import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * C2S 网络包接收器注册器 — 负责注册所有客户端→服务端的数据包接收与路由逻辑。
  * <p>在 {@link HabiTrainCore#onInitialize()} 中调用 {@link #init()}。</p>
  */
 public final class C2SReceiverRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|C2SReceiverRegistrar");
+    private static final ConcurrentHashMap<UUID, String> LAST_APPLIED_CONFIG_JSON = new ConcurrentHashMap<>();
 
     private C2SReceiverRegistrar() {}
+
+    public static void clearConfigUpdateHistory(UUID playerId) {
+        if (playerId != null) {
+            LAST_APPLIED_CONFIG_JSON.remove(playerId);
+        }
+    }
 
     public static void init() {
         // C2S 配置更新接收器
@@ -31,8 +41,13 @@ public final class C2SReceiverRegistrar {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
+                boolean hasOp2 = player.hasPermissions(2);
+                if (!ConfigUpdateAccessPolicy.mayInspectPayload(hasOp2)) {
+                    player.sendSystemMessage(Component.literal("§c你没有权限修改服务器配置（需要 OP2）"));
+                    return;
+                }
                 ConfigUpdateScope scope = ConfigUpdateScope.fromConfigJson(payload.getConfigJson());
-                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(scope, player.hasPermissions(2),
+                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(scope, hasOp2,
                         context.server().isDedicatedServer(), MenuGateService.isEnabled(),
                         MenuGateService.isAllowed(player));
                 if (!allowed) {
@@ -49,6 +64,13 @@ public final class C2SReceiverRegistrar {
                     player.sendSystemMessage(Component.literal("§c配置更新被拒绝：JSON 根节点无效"));
                     return;
                 }
+                ConfigUpdateAdmitPolicy.Result admit = ConfigUpdateAdmitPolicy.admit(
+                        filteredJson, LAST_APPLIED_CONFIG_JSON.get(player.getUUID()),
+                        System.currentTimeMillis(), 0L, 0L);
+                if (admit == ConfigUpdateAdmitPolicy.Result.SKIP_DUPLICATE) {
+                    LOGGER.debug("玩家 {} 的配置更新与上次相同，跳过", player.getName().getString());
+                    return;
+                }
                 // 背包 scope 会先剥离无关区域，不能借由伪造完整 JSON 修改其他配置。
                 boolean merged = ConfigManager.getInstance().mergeFromJsonString(filteredJson);
                 if (!merged) {
@@ -57,6 +79,7 @@ public final class C2SReceiverRegistrar {
                     LOGGER.warn("玩家 {} 的配置 merge 被拒绝（解析失败）", player.getName().getString());
                     return;
                 }
+                LAST_APPLIED_CONFIG_JSON.put(player.getUUID(), filteredJson);
                 ConfigManager.getInstance().save();
                 ConfigManager.getInstance().applyMinigameEnforcement(context.server());
                 // Rebuild role override engine with updated config
@@ -84,19 +107,29 @@ public final class C2SReceiverRegistrar {
                 } catch (Throwable t) {
                     LOGGER.debug("MapVoteProfile broadcast on ConfigUpdate skipped", t);
                 }
-                if (context.server().isSingleplayer()) return;
+                // 始终广播 FullConfig；集成主机客户端跳过 import，LAN 客人必须应用。
                 // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
                 // 单独的 TaskConfigPayload / ShaderConfigPayload 广播冗余，去掉（P1-16）。
                 FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });
-        // C2S 地图介绍预览图：地图轮换/投票区域内，OP2 可上传到服务端世界目录。
+        // C2S 地图介绍预览图：与完整 Mod 菜单相同（OP2 + 专用服 MenuGate）。
         ServerPlayNetworking.registerGlobalReceiver(MapVotePreviewUploadPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
-                if (!player.hasPermissions(2)) {
-                    player.sendSystemMessage(Component.literal("§c预览图上传失败：需要 OP2 权限"));
+                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(
+                        ConfigUpdateScope.FULL_MOD_MENU,
+                        player.hasPermissions(2),
+                        context.server().isDedicatedServer(),
+                        MenuGateService.isEnabled(),
+                        MenuGateService.isAllowed(player));
+                if (!allowed) {
+                    player.sendSystemMessage(Component.literal("§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"));
+                    return;
+                }
+                if (!C2SRateLimiter.tryAcquire(player.getUUID(), "preview_upload", 2000)) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传过快，请稍后再试"));
                     return;
                 }
                 com.habitrain.core.vote.MapVoteProfileStore.UploadResult result =
@@ -139,6 +172,9 @@ public final class C2SReceiverRegistrar {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
+                if (!C2SRateLimiter.tryAcquire(player.getUUID(), "shader_info", 1000)) {
+                    return;
+                }
                 ConfigManager cfg = ConfigManager.getInstance();
                 if (!cfg.isShaderWhitelistEnabled()) return;
                 String shaderPackName = payload.getShaderPackName();
@@ -268,6 +304,11 @@ public final class C2SReceiverRegistrar {
                     if (player == null || payload == null || payload.actionId() == null) {
                         return;
                     }
+                    // Cheap packet-level ceiling before handshake/hash/spec work.
+                    // Individual action specs retain their own stricter rate/cooldown gates.
+                    if (!C2SRateLimiter.tryAcquire(player.getUUID(), "role_action", 50)) {
+                        return;
+                    }
                     // The service runs the §12.4 validation order and echoes the
                     // result (with the request sequence) through its bound ResultSender.
                     com.habitrain.core.api.role.v2.action.RoleActionApi.instance()
@@ -284,6 +325,10 @@ public final class C2SReceiverRegistrar {
                         player.hasPermissions(2), context.server().isDedicatedServer(),
                         MenuGateService.isEnabled(), MenuGateService.isAllowed(player))) {
                     player.sendSystemMessage(Component.literal("§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"));
+                    return;
+                }
+                if (!C2SRateLimiter.tryAcquire(player.getUUID(), "role_config_update", 2000)) {
+                    player.sendSystemMessage(Component.literal("§c配置保存过快，请稍后再试"));
                     return;
                 }
                 if (!com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE
@@ -310,6 +355,9 @@ public final class C2SReceiverRegistrar {
                             if (player == null || payload == null) {
                                 return;
                             }
+                            // Always keep the newest report. Manifest and snapshot are sent
+                            // back-to-back, so dropping the second report could preserve an
+                            // earlier null definition hash and leave actions blocked.
                             com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
                                     .record(player.getUUID(), payload.toClientManifest());
                             LOGGER.debug("玩家 {} 上报角色扩展握手 manifest",

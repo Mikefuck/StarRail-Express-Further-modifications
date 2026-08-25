@@ -101,12 +101,16 @@ public class TaskColorPicker {
         for (int i = 0; i < n; i++) {
             if ((color(i) & 0x00FFFFFF) == cur) {
                 cfg.instinctColor = color((i + 1) % n);
+                cfg.hasInstinctColor = true;
+                cfg.instinctColorFromLegacyJson = false;
                 onSave.run();
                 colorBtn.setMessage(Component.literal(colorBtnLabel())); // S10-019
                 return;
             }
         }
         cfg.instinctColor = color(0);
+        cfg.hasInstinctColor = true;
+        cfg.instinctColorFromLegacyJson = false;
         onSave.run();
         colorBtn.setMessage(Component.literal(colorBtnLabel())); // S10-019
     }

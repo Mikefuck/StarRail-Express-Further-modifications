@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.api.role.v2.RoleChangeApi;
 import com.habitrain.core.api.role.v2.RoleChangeCause;
 import com.habitrain.core.api.role.v2.RoleChangeOptions;
@@ -88,7 +89,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
 
         for (ServerPlayer p : level.players()) {
             if (p == null || p.isSpectator()) continue;
-            if (!game.isRole(p, SevenSins.WRATH)) continue;
+            if (!HabiRoles.isHabiRole(p, SevenSins.WRATH)) continue;
             try {
                 WrathComponent c = KEY.get(p);
                 if (c == null || c.phase == Phase.TRANSFORMED) continue;
@@ -105,7 +106,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         if (level == null || p == null || SevenSins.WRATH == null) return false;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            return game != null && game.isRole(p, SevenSins.WRATH);
+            return HabiRoles.isHabiRole(p, SevenSins.WRATH);
         } catch (Throwable t) {
             return false;
         }
@@ -359,7 +360,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         if (!(self.level() instanceof ServerLevel level)) return;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        boolean isWrath = game != null && SevenSins.WRATH != null && game.isRole(self, SevenSins.WRATH);
+        boolean isWrath = HabiRoles.isHabiRole(self, SevenSins.WRATH);
         if (!isWrath || self.isSpectator()) {
             return;
         }
@@ -415,11 +416,11 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 }

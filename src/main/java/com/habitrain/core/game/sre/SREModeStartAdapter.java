@@ -3,6 +3,8 @@ package com.habitrain.core.game.sre;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.blackout.ForcedReadyJoinGate;
 import io.wifi.starrailexpress.cca.ParticipationComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -19,13 +21,45 @@ import java.util.UUID;
 public final class SREModeStartAdapter {
     private SREModeStartAdapter() {}
 
+    /**
+     * Pre-start refuse predicate. Lookup failure counts as blocking so start is refused.
+     */
+    static boolean blockingFrom(boolean starting, boolean running, boolean lookupFailed) {
+        return lookupFailed || starting || running;
+    }
+
+    /**
+     * Post-start success predicate. Lookup failure is not proven started.
+     */
+    static boolean startedFrom(boolean starting, boolean running, boolean lookupFailed) {
+        return !lookupFailed && (starting || running);
+    }
+
+    /** True when an SRE round is already starting/running (or CCA lookup failed). */
     public static boolean isSreGameBlocking(ServerLevel level) {
         try {
-            if (io.wifi.starrailexpress.game.GameUtils.isStartingGame) return true;
+            boolean starting = io.wifi.starrailexpress.game.GameUtils.isStartingGame;
             var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
-            return gw != null && gw.isRunning();
+            boolean running = gw != null && gw.isRunning();
+            return blockingFrom(starting, running, false);
         } catch (Throwable t) {
-            return false;
+            HabiTrainCore.LOGGER.error(
+                    "[SREModeStartAdapter] isSreGameBlocking lookup failed; refuse start", t);
+            return blockingFrom(false, false, true);
+        }
+    }
+
+    /** True when SRE is proven STARTING/RUNNING after a start attempt. */
+    public static boolean isSreGameStarted(ServerLevel level) {
+        try {
+            boolean starting = io.wifi.starrailexpress.game.GameUtils.isStartingGame;
+            var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
+            boolean running = gw != null && gw.isRunning();
+            return startedFrom(starting, running, false);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.error(
+                    "[SREModeStartAdapter] post-start SRE probe failed; treat as not started", t);
+            return startedFrom(false, false, true);
         }
     }
 
@@ -57,8 +91,23 @@ public final class SREModeStartAdapter {
             // blackout path
             if (registryFullId.endsWith(":habitrain:blackout")
                     || "habitrain_core:habitrain:blackout".equals(registryFullId)) {
+                if (isSreGameBlocking(level)) {
+                    HabiTrainCore.LOGGER.warn(
+                            "[SREModeStartAdapter] refuse blackout start: SRE already blocking in {}",
+                            level.dimension().location());
+                    return false;
+                }
+                forceReadyParticipants(level);
                 GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
-                return GameModeRegistry.isActiveInLevel(level);
+                if (!isSreGameStarted(level)) {
+                    GameModeRegistry.stop(level, WinResult.forceEnd("SRE未启动"));
+                    ForcedReadyJoinGate.clear();
+                    HabiTrainCore.LOGGER.warn(
+                            "[SREModeStartAdapter] blackout registry active but SRE not STARTING/RUNNING in {}",
+                            level.dimension().location());
+                    return false;
+                }
+                return true;
             }
             // murder
             if (registryFullId.contains("sre:murder")) {
@@ -66,8 +115,7 @@ public final class SREModeStartAdapter {
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 forceReadyParticipants(level);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                // GameUtils.startGame is void; best-effort success signal is SRE running/starting.
-                return isSreGameBlocking(level);
+                return isSreGameStarted(level);
             }
             // repair
             if (registryFullId.contains("sre:repair")) {
@@ -75,7 +123,7 @@ public final class SREModeStartAdapter {
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 forceReadyParticipants(level);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                return isSreGameBlocking(level);
+                return isSreGameStarted(level);
             }
             // Original SRE modes bridged as thin proxies (wifi:tnt_tag, wifi:lover, …)
             GameMode registered = GameModeRegistry.get(registryFullId);
@@ -89,6 +137,11 @@ public final class SREModeStartAdapter {
             }
             return false;
         } catch (Throwable t) {
+            try {
+                io.wifi.starrailexpress.game.GameUtils.clearForcedReadyPlayers();
+            } catch (Throwable ignored) {
+            }
+            ForcedReadyJoinGate.clear();
             HabiTrainCore.LOGGER.error("startMode failed: {}", registryFullId, t);
             return false;
         }
@@ -106,7 +159,7 @@ public final class SREModeStartAdapter {
         int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(sreMode.defaultStartTime, 0);
         forceReadyParticipants(level);
         io.wifi.starrailexpress.game.GameUtils.startGame(level, sreMode, ticks);
-        return isSreGameBlocking(level);
+        return isSreGameStarted(level);
     }
 
     /**
@@ -120,7 +173,8 @@ public final class SREModeStartAdapter {
      * 一样调用 {@code GameUtils.setForcedReadyPlayers}，让 {@code getStartingPlayers}
      * 短路 readyArea 检查、按参与组件返回全部参加者。SRE 在 abort 路径
      * （{@code trueStartGame} 内）和成功路径 {@code initializeGame} 都会
-     * {@code clearForcedReadyPlayers()}，无需手动清理。</p>
+     * {@code clearForcedReadyPlayers()}。core 另拷一份 UUID 到
+     * {@link ForcedReadyJoinGate}，SRE 清自己的 list 后仍用于 STARTING 加入门控。</p>
      */
     private static void forceReadyParticipants(ServerLevel level) {
         if (level == null) return;
@@ -133,10 +187,13 @@ public final class SREModeStartAdapter {
                 }
             }
             if (participants.isEmpty()) {
+                ForcedReadyJoinGate.clear();
                 return;
             }
             io.wifi.starrailexpress.game.GameUtils.setForcedReadyPlayers(participants);
+            ForcedReadyJoinGate.snapshot(participants);
         } catch (Throwable t) {
+            ForcedReadyJoinGate.clear();
             HabiTrainCore.LOGGER.warn("[SREModeStartAdapter] forceReadyParticipants failed", t);
         }
     }

@@ -10,6 +10,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 /**
  * Redirects SRE's hard-coded base-role constants through the live override
  * snapshot. This covers both fallback assignment and identity checks.
+ *
+ * <p>The lambda names below are verified against the deployed SRE 4.3.0 jar
+ * ($6–$12). Keeping them explicit lets Loom validate every target at build time.
  */
 @Mixin(targets = "io.wifi.starrailexpress.game.modes.SREMurderGameMode", remap = false)
 public abstract class SREMurderGameModeRoleOverrideMixin {
@@ -18,16 +21,21 @@ public abstract class SREMurderGameModeRoleOverrideMixin {
                     "assignRole",
                     "getAllRoles",
                     "assignRolesToPlayers",
-                    "lambda$getAllRoles$9",
-                    "lambda$getAllRoles$8",
                     "lambda$getAllRoles$6",
+                    "lambda$getAllRoles$7",
+                    "lambda$getAllRoles$8",
+                    "lambda$getAllRoles$9",
+                    "lambda$getAllRoles$10",
+                    "lambda$getAllRoles$11",
+                    "lambda$getAllRoles$12",
                     "lambda$assignRole$0"
             },
             at = @At(
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
             ),
-            require = 0
+            require = 0,
+            remap = false
     )
     private static SRERole habitrain$resolveCivilian() {
         return SreRoleOverrideResolver.resolveOrOriginal(TMMRoles.CIVILIAN);

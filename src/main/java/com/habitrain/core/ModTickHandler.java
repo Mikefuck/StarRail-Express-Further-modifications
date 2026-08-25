@@ -9,7 +9,6 @@ import com.habitrain.core.game.sre.SREWeatherController;
 import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.task.GameLifecycleHandler;
 import com.habitrain.core.vote.OptionVoteManager;
-import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -89,7 +88,6 @@ public class ModTickHandler {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             try {
                 BetelTickEngine.tickPlayer(player);
-                ExtraSlotComponent.KEY.get(player).serverTick();
             } catch (Throwable t) {
                 HabiTrainCore.LOGGER.warn("[ModTick] per-player tick failed for {}", player.getName().getString(), t);
             }

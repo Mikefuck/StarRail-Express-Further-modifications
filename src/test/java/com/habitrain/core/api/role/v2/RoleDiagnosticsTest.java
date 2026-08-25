@@ -51,9 +51,7 @@ class RoleDiagnosticsTest {
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "registeredEntryIds", new LinkedHashSet<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "frozen", false);
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "tmmAccessible", false);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "lobby", null);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "round", null);
-        setField(RoleSnapshotManager.class, RoleSnapshotManager.INSTANCE, "pending", null);
+        RoleSnapshotManager.INSTANCE.clear();
         com.habitrain.core.role.legacy.LegacyRoleScan.INSTANCE.clear();
         com.habitrain.core.role.legacy.LegacyRoleScan.INSTANCE.start();
     }

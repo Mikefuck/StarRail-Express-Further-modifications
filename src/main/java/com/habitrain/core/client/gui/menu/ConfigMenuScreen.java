@@ -94,7 +94,7 @@ public class ConfigMenuScreen extends Screen {
         }
     }
 
-    /** 抽奖桥接：直接打开投票页。 */
+    /** 公共 DLC 客户端桥接（抽奖优先反射本方法）：直接打开投票页。 */
     public static ConfigMenuScreen openVote(Screen parent) {
         ConfigMenuScreen screen = new ConfigMenuScreen(parent);
         screen.topTab = TOP_OUT_GAME;

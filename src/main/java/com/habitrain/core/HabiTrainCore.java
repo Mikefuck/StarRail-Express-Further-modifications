@@ -105,7 +105,8 @@ public class HabiTrainCore implements ModInitializer {
         // 由 CoreRoleExtensionProvider 经 role_extensions entrypoint 注册，并回填
         // HabiRoles.CRIME_SCAPEGOAT，供 HabiRoleEvents.init() 读取。
         com.habitrain.core.role.extension.RoleExtensionRegistry.init();
-        com.habitrain.core.api.role.v2.RoleExtensionApi.instance().loadProviders();
+        com.habitrain.core.internal.CoreBootstrap.run(() ->
+                com.habitrain.core.api.role.v2.RoleExtensionApi.instance().loadProviders());
         // MODIFY relation patches are linked only when a compiled lobby/round
         // snapshot is activated. Resolve keys through the catalog at that
         // materialization point, never while the pending snapshot is compiled.
@@ -236,6 +237,7 @@ public class HabiTrainCore implements ModInitializer {
         CommandRegistrar.init();
         // 5. 生命周期事件注册（SERVER_STARTED/STOPPING/JOIN/DISCONNECT）
         LifecycleEventsRegistrar.init();
+        com.habitrain.core.game.sre.MatchEventBridge.register();
         // 5b. 环境控制器（对局开始/结束应用 lobby/match/post-match 天气与时间）
         EnvironmentController.registerEvents();
         MvpScoreTracker.init();

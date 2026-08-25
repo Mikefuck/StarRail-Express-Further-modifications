@@ -30,7 +30,7 @@ import java.util.List;
  *   全部通过 @Shadow 访问目标类的字段，或使用静态变量。
  */
 @Environment(EnvType.CLIENT)
-@Mixin(StarRailExpressTitleScreen.class)
+@Mixin(value = StarRailExpressTitleScreen.class, remap = false)
 public class StarRailExpressTitleScreenMixin {
 
     @Shadow private boolean showChangelog;

@@ -9,6 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -21,6 +22,11 @@ public final class RoleOverrideTickApplier {
     private static final Map<ResourceLocation, String> ACTIVE_ENTRY_IDS = new HashMap<>();
     private static final Map<ResourceLocation, SRERole> SERVER_APPLIED_OBJECTS = new HashMap<>();
 
+    /** Flags/spawn frozen at round start; live rebuilds wait until {@link #releaseRound()}. */
+    private static volatile boolean roundFrozen;
+    private static volatile Map<ResourceLocation, ModifyRoleDefinition> roundModifies = Map.of();
+    private static Map<ResourceLocation, ModifyRoleDefinition> pendingModifies;
+
     private RoleOverrideTickApplier() {}
 
     /**
@@ -28,6 +34,57 @@ public final class RoleOverrideTickApplier {
      * immutable baseline before a new flags/spawn patch becomes active.
      */
     static synchronized void reconcile(Map<ResourceLocation, ModifyRoleDefinition> next) {
+        Map<ResourceLocation, ModifyRoleDefinition> copy = next == null
+                ? Map.of() : new LinkedHashMap<>(next);
+        if (roundFrozen) {
+            pendingModifies = copy;
+            return;
+        }
+        applyReconcile(copy);
+    }
+
+    /** Freezes the currently applied v1 flags/spawn as the round snapshot. */
+    public static synchronized void captureRound() {
+        roundModifies = new LinkedHashMap<>(
+                RoleOverrideEngine.getInstance().getSnapshot().getActiveModifies());
+        roundFrozen = true;
+        pendingModifies = null;
+    }
+
+    /**
+     * Ends the round freeze and applies any queued mid-round rebuild to live
+     * {@code TMMRoles} (lobby / next round).
+     */
+    public static synchronized void releaseRound() {
+        boolean wasFrozen = roundFrozen;
+        roundFrozen = false;
+        roundModifies = Map.of();
+        Map<ResourceLocation, ModifyRoleDefinition> pending = pendingModifies;
+        pendingModifies = null;
+        if (wasFrozen && pending != null) {
+            applyReconcile(pending);
+        }
+    }
+
+    /** Test/lifecycle helper: drop freeze state without mutating live roles. */
+    public static synchronized void discardRoundFreeze() {
+        roundFrozen = false;
+        roundModifies = Map.of();
+        pendingModifies = null;
+    }
+
+    /** Restore v1 flags/spawn baselines when the server stops (same JVM / integrated restart). */
+    public static synchronized void serverStop() {
+        for (ResourceLocation id : new HashMap<>(ACTIVE_ENTRY_IDS).keySet()) {
+            restore(id);
+        }
+        BASELINES.clear();
+        ACTIVE_ENTRY_IDS.clear();
+        SERVER_APPLIED_OBJECTS.clear();
+        discardRoundFreeze();
+    }
+
+    private static void applyReconcile(Map<ResourceLocation, ModifyRoleDefinition> next) {
         for (var old : new HashMap<>(ACTIVE_ENTRY_IDS).entrySet()) {
             ModifyRoleDefinition nextDef = next.get(old.getKey());
             String nextEntryId = nextDef == null ? null : RoleOverrideRegistry.entryId(nextDef);
@@ -53,9 +110,39 @@ public final class RoleOverrideTickApplier {
         }
     }
 
-    public static synchronized void tick(MinecraftServer server) {
-        RoleOverrideEngine engine = RoleOverrideEngine.getInstance();
-        for (var entry : engine.getSnapshot().getActiveModifies().entrySet()) {
+    /**
+     * v1 MODIFY map used by shop mixins and the tick applier. Frozen at
+     * {@link #captureRound()} so mid-round rebuilds stay diagnostic-only.
+     */
+    public static synchronized Map<ResourceLocation, ModifyRoleDefinition> gameplayModifies() {
+        if (roundFrozen) {
+            return roundModifies;
+        }
+        return RoleOverrideEngine.getInstance().getSnapshot().getActiveModifies();
+    }
+
+    static synchronized boolean isRoundFrozen() {
+        return roundFrozen;
+    }
+
+    static synchronized int pendingSize() {
+        return pendingModifies == null ? 0 : pendingModifies.size();
+    }
+
+    public static void tick(MinecraftServer server) {
+        Map<ResourceLocation, ModifyRoleDefinition> source = gameplayModifies();
+        if (source.isEmpty()) {
+            return;
+        }
+        applyTick(server, source);
+    }
+
+    private static synchronized void applyTick(MinecraftServer server,
+                                               Map<ResourceLocation, ModifyRoleDefinition> source) {
+        if (source.isEmpty()) {
+            return;
+        }
+        for (var entry : source.entrySet()) {
             SRERole role = TMMRoles.getRole(entry.getKey());
             if (role == null) continue;
             ModifyRoleDefinition def = entry.getValue();

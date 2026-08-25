@@ -2,8 +2,13 @@
     "required": false,
     "package": "com.habitrain.core.client.mixin",
     "compatibilityLevel": "JAVA_21",
+    "plugin": "com.habitrain.core.mixin.HabiMixinPlugin",
+    "injectors": {
+        "defaultRequire": 1
+    },
     "client": [
         "CustomTaskBlockRendererMixin",
+        "FrustumAccessor",
         "TaskBlockOverlayThroughWallMixin",
         "InstinctColorMixin",
         "InstinctCacheFixMixin",

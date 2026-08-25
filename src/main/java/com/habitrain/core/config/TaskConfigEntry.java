@@ -13,11 +13,25 @@ import java.util.List;
  */
 public class TaskConfigEntry {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskConfigEntry");
+    /** Default gray used when a task has no Mod Menu color override. */
+    public static final int DEFAULT_INSTINCT_COLOR = 0xB4C8C8C8;
+
     public boolean enabled = true;
     public List<String> enabledMaps = new ArrayList<>();
     public int mapFilterMode = 0;
 
-    public int instinctColor = 0xB4C8C8C8;
+    public int instinctColor = DEFAULT_INSTINCT_COLOR;
+    /**
+     * True when the operator explicitly set a color in Mod Menu.
+     * False means {@link com.habitrain.core.api.TaskDefinition#getInstinctColorRGB()} wins.
+     */
+    public boolean hasInstinctColor = false;
+    /**
+     * True when {@code instinctColor} was loaded from a JSON file that predates
+     * {@link #hasInstinctColor}. Legacy default-gray values are treated as unset
+     * at resolve time if the task definition is not gray.
+     */
+    public boolean instinctColorFromLegacyJson = false;
     public float outlineWidth = 4.0f;
 
     public int goldReward = 0;
@@ -46,6 +60,7 @@ public class TaskConfigEntry {
         json.add("enabledMaps", enabledList);
 
         json.addProperty("mapFilterMode", mapFilterMode);
+        json.addProperty("hasInstinctColor", hasInstinctColor);
         json.addProperty("instinctColor", instinctColor);
         json.addProperty("outlineWidth", outlineWidth);
         if (hasGoldReward) json.addProperty("goldReward", goldReward);
@@ -77,6 +92,16 @@ public class TaskConfigEntry {
             }
         }
         if (json.has("instinctColor")) entry.instinctColor = json.get("instinctColor").getAsInt();
+        if (json.has("hasInstinctColor")) {
+            entry.hasInstinctColor = json.get("hasInstinctColor").getAsBoolean();
+            entry.instinctColorFromLegacyJson = false;
+        } else if (json.has("instinctColor")) {
+            entry.hasInstinctColor = true;
+            entry.instinctColorFromLegacyJson = true;
+        } else {
+            entry.hasInstinctColor = false;
+            entry.instinctColorFromLegacyJson = false;
+        }
         if (json.has("outlineWidth")) entry.outlineWidth = json.get("outlineWidth").getAsFloat();
         if (json.has("goldReward")) {
             entry.hasGoldReward = true;

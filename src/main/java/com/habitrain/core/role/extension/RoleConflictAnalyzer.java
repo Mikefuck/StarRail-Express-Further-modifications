@@ -5,6 +5,7 @@ import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.legacy.LegacyRoleOverrideTranslator;
+import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.override.RoleOverrideRegistry;
 import net.minecraft.resources.ResourceLocation;
 
@@ -24,8 +25,8 @@ import java.util.Set;
  *
  * <p>Conflict rule mirrors the v1 engine's existing runtime guard: any legacy
  * (v1) {@code REPLACE}/{@code MODIFY} whose target is owned by a v2
- * {@code REPLACE}/{@code MODIFY} is {@code CONFLICT} and excluded from the
- * effective snapshot.
+ * {@code REPLACE}/{@code MODIFY}/{@code ADD} is {@code CONFLICT} and excluded
+ * from the effective snapshot.
  *
  * <p>v2 entries are also checked at field granularity. Two enabled
  * {@code MODIFY} entries that issue incompatible scalar {@code SET}s for the
@@ -76,12 +77,10 @@ public final class RoleConflictAnalyzer {
                 continue;
             }
             // Only a config-ENABLED v2 owner suppresses the v1 entry; a disabled
-            // v2 REPLACE/MODIFY leaves the target to the legacy engine.
-            boolean v2Owns = RoleExtensionRegistry.INSTANCE.isActiveReplaced(entry.target().location())
-                    || RoleExtensionRegistry.INSTANCE.isActiveModified(entry.target().location());
-            if (v2Owns) {
+            // v2 REPLACE/MODIFY/ADD leaves the target to the legacy engine.
+            if (RoleOverrideEngine.v2OwnsTarget(entry.target().location())) {
                 entries.set(i, entry.withStatus(EntryStatus.CONFLICT,
-                        "v1 override conflicts with a v2 REPLACE/MODIFY on " + entry.target()));
+                        "v1 override conflicts with a v2 REPLACE/MODIFY/ADD on " + entry.target()));
             }
         }
         return Collections.unmodifiableList(entries);

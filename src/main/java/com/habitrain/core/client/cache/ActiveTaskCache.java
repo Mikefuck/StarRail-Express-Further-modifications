@@ -146,18 +146,9 @@ public class ActiveTaskCache {
      */
     public static Color getColor() {
         if (activeTaskFullId == null) return new Color(200, 200, 200, 180);
-
-        TaskConfigEntry cfg = getConfig();
-        if (cfg != null) {
-            return new Color(cfg.getColor(), true);
-        }
-
         TaskDefinition def = TaskRegistry.get(activeTaskFullId);
-        if (def != null) {
-            return new Color(def.getInstinctColorRGB(), true);
-        }
-
-        return new Color(200, 200, 200, 180);
+        int argb = com.habitrain.core.config.TaskInstinctColor.resolveArgb(getConfig(), def);
+        return new Color(argb, true);
     }
 
 }

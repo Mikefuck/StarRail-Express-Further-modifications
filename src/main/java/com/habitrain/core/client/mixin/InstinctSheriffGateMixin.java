@@ -1,5 +1,6 @@
 package com.habitrain.core.client.mixin;
 
+import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.client.SREClient;
@@ -19,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 保留 SRE 自带的旁观透视（上游对旁观者恒开启）。
  * 不改动 canUseKiller/canUseInstinct，因此警长的商店/左轮/手铐权限不受影响。
  */
-@Mixin(SREClient.class)
+@Mixin(value = SREClient.class, remap = false)
 public class InstinctSheriffGateMixin {
 
     @Inject(
@@ -29,6 +30,10 @@ public class InstinctSheriffGateMixin {
             remap = false
     )
     private static void habitrain$noSheriffInstinct(CallbackInfoReturnable<Boolean> cir) {
+        if (EliminatedRestPromptState.isVisible()) {
+            cir.setReturnValue(false);
+            return;
+        }
         SREGameWorldComponent gameComponent = SREClient.gameComponent;
         if (gameComponent == null) return;
         var player = Minecraft.getInstance().player;

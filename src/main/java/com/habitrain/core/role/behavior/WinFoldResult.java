@@ -7,10 +7,20 @@ import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The two-stage result of the unified victory fold: the {@code allowGameEnd} gate
- * decision plus the folded {@code evaluateWin} patch. Both the standard SRE murder
- * chain and the blackout chain call {@link RoleEventDispatcher#foldWin} and read
- * this — the fold no longer lives in two places.
+ * Result of the single victory fold used by both the SRE murder
+ * {@code AllowGameEnd} listener and the blackout checker.
+ *
+ * <p>Fold order (G10 P1.4):
+ * <ol>
+ *   <li>v2 {@code RoleWinHooks.allowGameEnd} — {@link Decision#DENY} blocks the proposed end</li>
+ *   <li>v2 {@code RoleWinHooks.evaluateWin}</li>
+ *   <li>v1 {@code ModifyRoleDefinition.winConditionHook} / RolePatch win hook,
+ *       as overlay input only — never a second Fabric listener. Skipped on
+ *       DENY, and never overwrites a v2 patch that already declares winners.</li>
+ * </ol>
+ *
+ * <p>Both chains call {@link RoleEventDispatcher#foldWin}; the v1 overlay is
+ * folded here rather than racing {@code first non-NOT_MODIFY wins}.
  */
 public record WinFoldResult(Decision gate, WinPatch patch) {
 
@@ -33,5 +43,17 @@ public record WinFoldResult(Decision gate, WinPatch patch) {
                 : (patch.customId() != null ? patch.customId()
                 : (patch.faction() != null ? patch.faction() : "v2 win"));
         return new WinResult(patch.winners(), reason);
+    }
+
+    /**
+     * Merges a v1 / RolePatch overlay onto the v2 {@code evaluateWin} accumulator.
+     * DENY skips the overlay. A v2 patch that already declares winners is kept.
+     */
+    public static WinPatch overlayV1(Decision gate, @Nullable WinPatch v2, @Nullable WinPatch v1) {
+        WinPatch acc = v2 == null ? WinPatch.noChange() : v2;
+        if (gate == Decision.DENY || acc.op() != WinPatchOp.NO_CHANGE) {
+            return acc;
+        }
+        return WinPatch.merge(acc, v1);
     }
 }

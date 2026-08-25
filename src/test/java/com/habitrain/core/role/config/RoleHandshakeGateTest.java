@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -93,7 +94,7 @@ class RoleHandshakeGateTest {
     @Test
     void presentationDegradeStillAllowsActions() {
         RoleHandshakeGate.INSTANCE.record(PLAYER,
-                new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), false, null, "stalePres",
+                new ClientManifest(API, Map.of("habitrain_dlc", "1.2.0"), false, "serverHash", "stalePres",
                         Set.of("habitrain_dlc")));
         assertEquals(RoleHandshakeStatus.DEGRADED_CLIENT_EXTENSION,
                 RoleHandshakeGate.INSTANCE.resultFor(PLAYER).status());
@@ -108,5 +109,18 @@ class RoleHandshakeGateTest {
         RoleHandshakeGate.INSTANCE.clear(PLAYER);
         assertFalse(RoleHandshakeGate.INSTANCE.isActionAllowed(PLAYER),
                 "a cleared report must fail closed again");
+    }
+
+    @Test
+    void blockedReasonBuildsServerManifestOnlyOnce() {
+        AtomicInteger builds = new AtomicInteger();
+        RoleHandshakeGate.INSTANCE.setManifestSupplier(() -> {
+            builds.incrementAndGet();
+            return SERVER;
+        });
+        RoleHandshakeGate.INSTANCE.record(PLAYER, client(true, "staleHash"));
+
+        assertNotNull(RoleHandshakeGate.INSTANCE.blockReason(PLAYER));
+        assertEquals(1, builds.get());
     }
 }

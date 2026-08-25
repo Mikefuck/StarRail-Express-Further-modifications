@@ -4,6 +4,7 @@ import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
@@ -29,7 +30,7 @@ public class SRERoleItemsMixin {
             cir.setReturnValue(overlay.defaultItemsPatch().getDefaultItems(self, server));
             return;
         }
-        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getActiveModify(self.identifier());
+        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getGameplayModify(self.identifier());
         if (def != null && def.defaultItemsPatch().isPresent()) {
             MinecraftServer server = getServer();
             cir.setReturnValue(def.defaultItemsPatch().get().getDefaultItems(self, server));
@@ -37,10 +38,6 @@ public class SRERoleItemsMixin {
     }
 
     private static MinecraftServer getServer() {
-        Object gameInstance = net.fabricmc.loader.api.FabricLoader.getInstance().getGameInstance();
-        if (gameInstance instanceof MinecraftServer server) {
-            return server;
-        }
-        return null;
+        return RuntimeRoleServer.INSTANCE.server();
     }
 }

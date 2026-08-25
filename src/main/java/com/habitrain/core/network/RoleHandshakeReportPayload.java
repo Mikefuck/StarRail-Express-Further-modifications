@@ -19,6 +19,10 @@ import java.util.Set;
  * server can run the §14.2 handshake authoritatively and gate role actions for
  * clients that are missing required providers, on an incompatible API version,
  * or holding stale gameplay-definition hashes.
+ *
+ * <p>Compatibility only, not anti-cheat: client-reported providers/hashes
+ * open the RoleAction gate and cannot grant a role. A missing hash still
+ * skips HASH_MISMATCH (see {@link com.habitrain.core.role.config.RoleHandshakeMatcher}).
  */
 public record RoleHandshakeReportPayload(
         String coreApiVersion,

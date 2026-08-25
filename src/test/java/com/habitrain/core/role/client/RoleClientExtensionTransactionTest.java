@@ -90,6 +90,25 @@ class RoleClientExtensionTransactionTest {
     }
 
     @Test
+    void nullAndEmptyActiveProvidersFailClosed() {
+        ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("example", store);
+        registrar.hud(RoleHudSpec.of("example", "valid").entryKey("armed").role(CIVILIAN).build());
+        registrar.commit();
+
+        assertTrue(store.hudsFor(CIVILIAN).isEmpty(),
+                "unbound (null) active providers must hide committed HUDs");
+        store.setActiveProviders(null, java.util.Set.of("example$armed@sre:civilian"));
+        assertTrue(store.hudsFor(CIVILIAN).isEmpty(),
+                "null providers stay fail-closed even when entry keys are present");
+        store.setActiveProviders(java.util.Set.of(), java.util.Set.of());
+        assertTrue(store.hudsFor(CIVILIAN).isEmpty(),
+                "empty providers must hide committed HUDs");
+        store.setActiveProviders(java.util.Set.of("example"), null);
+        assertEquals(1, store.hudsFor(CIVILIAN).size(),
+                "null entries with an active provider keep that provider's HUDs");
+    }
+
+    @Test
     void thirdPartyCanAddWidgetToUpstreamRoleWithProviderOwnedId() {
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("civilian_plus", store);
         java.util.concurrent.atomic.AtomicInteger draws = new java.util.concurrent.atomic.AtomicInteger();

@@ -1,6 +1,7 @@
 package com.habitrain.core.client;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.component.EnvyComponent;
 import com.habitrain.core.game.sre.role.sins.component.LustComponent;
@@ -42,6 +43,9 @@ public final class HabiRoleClientHooks {
 
     private static TrueFalseAndCustomResult<Integer> sinInstinctHighlight(
             LocalPlayer viewer, Entity entity, boolean spectator) {
+        if (EliminatedRestPromptState.isVisible()) {
+            return TrueFalseAndCustomResult.pass();
+        }
         if (viewer == null || entity == null) {
             return TrueFalseAndCustomResult.pass();
         }
@@ -57,7 +61,7 @@ public final class HabiRoleClientHooks {
             if (game == null) {
                 return TrueFalseAndCustomResult.pass();
             }
-            if (SevenSins.ENVY != null && game.isRole(viewer, SevenSins.ENVY)) {
+            if (HabiRoles.isHabiRole(viewer, SevenSins.ENVY)) {
                 EnvyComponent envy = EnvyComponent.KEY.get(viewer);
                 // Only the current mark gets money-color outline.
                 if (envy != null && envy.isMark(target)) {
@@ -73,13 +77,13 @@ public final class HabiRoleClientHooks {
                     return TrueFalseAndCustomResult.pass();
                 }
             }
-            if (SevenSins.SLOTH != null && game.isRole(viewer, SevenSins.SLOTH)) {
+            if (HabiRoles.isHabiRole(viewer, SevenSins.SLOTH)) {
                 SlothComponent sloth = SlothComponent.KEY.get(viewer);
                 if (sloth != null && sloth.getAttackers().contains(target.getUUID())) {
                     return TrueFalseAndCustomResult.custom(SLOTH_ATTACKER_HIGHLIGHT);
                 }
             }
-            if (SevenSins.LUST != null && game.isRole(viewer, SevenSins.LUST)) {
+            if (HabiRoles.isHabiRole(viewer, SevenSins.LUST)) {
                 LustComponent lust = LustComponent.KEY.get(viewer);
                 if (lust != null && lust.isDesireMarked(target.getUUID())) {
                     return TrueFalseAndCustomResult.custom(DESIRE_HIGHLIGHT);

@@ -5,8 +5,10 @@ import com.habitrain.core.api.VoteResult;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.network.MapVoteProfilePayload;
 import com.habitrain.core.network.OptionVotePayload;
+import io.wifi.starrailexpress.cca.ParticipationComponent;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -18,11 +20,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
+import java.util.function.IntUnaryOperator;
+import java.util.function.Predicate;
 
 /**
  * 通用选项投票管理器（模式/地图等字符串选项，非玩家 UUID）。
@@ -113,12 +116,13 @@ public final class OptionVoteManager {
         if (state == null || !state.active) return false;
         if (voteId == null || !voteId.equals(state.voteId)) return false;
 
-        // Only online, non-repairer players in this dimension may cast.
+        // Only online, participating, non-repairer players in this dimension may cast.
         ServerPlayer voter = level.getServer() != null
                 ? level.getServer().getPlayerList().getPlayer(voterId) : null;
         if (voter == null || voter.serverLevel() != level) return false;
         if (RepairModeManager.isRepairer(voter)) return false;
         if (voter.isSpectator()) return false;
+        if (!isParticipatingVoter(level, voterId)) return false;
 
         if (optionId != null) {
             boolean known = false;
@@ -129,6 +133,10 @@ public final class OptionVoteManager {
                 }
             }
             if (!known) return false;
+            // 地图阶段：维修锁在 beginMapVote 快照之后仍可能加上，开票后拒投被锁图。
+            if (isMapVoteId(state.voteId) && RepairModeManager.isMapLocked(optionId)) {
+                return false;
+            }
             // 重复投同一选项：no-op，不 bump 版本、不广播（review M18——
             // 恶意刷包时每包不应产生全维度全量广播）。
             if (optionId.equals(state.votesByVoter.get(voterId))) {
@@ -181,32 +189,16 @@ public final class OptionVoteManager {
         }
 
         int totalVotes = state.votesByVoter.size();
-        boolean randomPick = false;
-        String winnerId = null;
-
-        if (state.options.isEmpty()) {
-            // 不应发生：start 已拒绝空选项
-            winnerId = null;
-        } else if (totalVotes == 0) {
-            // 全员 0 票：在所有选项中随机
-            randomPick = true;
-            int idx = level.getRandom().nextInt(state.options.size());
-            winnerId = state.options.get(idx).id();
-        } else {
-            int maxVotes = tallies.values().stream().max(Integer::compareTo).orElse(0);
-            List<String> top = new ArrayList<>();
-            for (var e : tallies.entrySet()) {
-                if (e.getValue() == maxVotes) {
-                    top.add(e.getKey());
-                }
-            }
-            if (top.size() == 1) {
-                winnerId = top.get(0);
-            } else {
-                randomPick = true;
-                winnerId = top.get(level.getRandom().nextInt(top.size()));
-            }
-        }
+        Predicate<String> blocked = isMapVoteId(state.voteId)
+                ? RepairModeManager::isMapLocked
+                : id -> false;
+        WinnerPick pick = pickWinner(
+                state.options,
+                state.votesByVoter,
+                blocked,
+                bound -> level.getRandom().nextInt(bound));
+        boolean randomPick = pick.randomPick();
+        String winnerId = pick.winnerId();
 
         VoteResult result = new VoteResult(state.voteId, winnerId, tallies, randomPick);
         state.resolvedOptionId = winnerId == null ? "" : winnerId;
@@ -227,14 +219,178 @@ public final class OptionVoteManager {
         }
     }
 
-    /** 投票者离线/移除：删除其选票并 rebroadcast。 */
+    /** Lobby map-phase vote id used by {@link ModeMapVoteOrchestrator}. */
+    static boolean isMapVoteId(@Nullable String voteId) {
+        return "map".equals(voteId);
+    }
+
+    /**
+     * Pick a winner among non-blocked options. Votes for blocked/unknown ids are ignored.
+     * All blocked (or empty) → {@code winnerId == null} rather than starting a locked map.
+     */
+    static WinnerPick pickWinner(List<VoteOption> options,
+                                 Map<UUID, String> votesByVoter,
+                                 @Nullable Predicate<String> optionBlocked,
+                                 @Nullable IntUnaryOperator randomIndex) {
+        List<VoteOption> eligible = new ArrayList<>();
+        if (options != null) {
+            for (VoteOption opt : options) {
+                if (opt == null || opt.id() == null || opt.id().isBlank()) {
+                    continue;
+                }
+                if (optionBlocked != null && optionBlocked.test(opt.id())) {
+                    continue;
+                }
+                eligible.add(opt);
+            }
+        }
+        if (eligible.isEmpty()) {
+            return new WinnerPick(null, false);
+        }
+
+        Map<String, Integer> tallies = new HashMap<>();
+        for (VoteOption opt : eligible) {
+            tallies.put(opt.id(), 0);
+        }
+        int countedVotes = 0;
+        if (votesByVoter != null) {
+            for (String optionId : votesByVoter.values()) {
+                if (optionId != null && tallies.containsKey(optionId)) {
+                    tallies.merge(optionId, 1, Integer::sum);
+                    countedVotes++;
+                }
+            }
+        }
+
+        if (countedVotes == 0) {
+            return new WinnerPick(eligible.get(indexInRange(randomIndex, eligible.size())).id(), true);
+        }
+
+        int maxVotes = 0;
+        for (int count : tallies.values()) {
+            if (count > maxVotes) {
+                maxVotes = count;
+            }
+        }
+        List<String> top = new ArrayList<>();
+        for (var e : tallies.entrySet()) {
+            if (e.getValue() == maxVotes) {
+                top.add(e.getKey());
+            }
+        }
+        if (top.size() == 1) {
+            return new WinnerPick(top.get(0), false);
+        }
+        return new WinnerPick(top.get(indexInRange(randomIndex, top.size())), true);
+    }
+
+    private static int indexInRange(@Nullable IntUnaryOperator randomIndex, int size) {
+        if (size <= 0) {
+            return 0;
+        }
+        int idx = randomIndex == null ? 0 : randomIndex.applyAsInt(size);
+        if (idx < 0 || idx >= size) {
+            return 0;
+        }
+        return idx;
+    }
+
+    record WinnerPick(@Nullable String winnerId, boolean randomPick) {}
+
+    private static boolean isParticipatingVoter(ServerLevel level, UUID voterId) {
+        try {
+            ParticipationComponent participation = ParticipationComponent.KEY.get(level);
+            return participation != null && participation.isParticipating(voterId);
+        } catch (Throwable t) {
+            // SRE 组件不可用时不额外拦票（默认参与）。
+            return true;
+        }
+    }
+
+    /**
+     * Disconnect keeps the ballot while a vote is active so reconnect restores
+     * this round's vote. Explicit leave-participation still uses
+     * {@link #onVoterRemoved}. Rebroadcasts remaining players' UI.
+     */
+    public static void onVoterDisconnected(ServerLevel level, UUID voterId) {
+        applyVoterExit(level, voterId, false);
+    }
+
+    /** 明确退出投票（维修模式等）：删除其选票并 rebroadcast。 */
     public static void onVoterRemoved(ServerLevel level, UUID voterId) {
+        applyVoterExit(level, voterId, true);
+    }
+
+    /**
+     * Current level if it has an active vote; otherwise the first other loaded
+     * level with an active vote (rest/reconnect may not be in the vote world).
+     */
+    public static @Nullable ServerLevel resolveActiveVoteLevel(@Nullable ServerPlayer player) {
+        if (player == null) {
+            return null;
+        }
+        return resolveActiveVoteLevel(player.getServer(), player.serverLevel());
+    }
+
+    static @Nullable ServerLevel resolveActiveVoteLevel(
+            @Nullable MinecraftServer server, @Nullable ServerLevel preferred) {
+        if (preferred != null && isActive(preferred)) {
+            return preferred;
+        }
+        if (server == null) {
+            return null;
+        }
+        for (ServerLevel level : server.getAllLevels()) {
+            if (level != preferred && isActive(level)) {
+                return level;
+            }
+        }
+        return null;
+    }
+
+    private static void applyVoterExit(ServerLevel level, UUID voterId, boolean explicitLeave) {
+        if (level == null || voterId == null) {
+            return;
+        }
         State state = STATES.get(level.dimension());
-        if (state == null || voterId == null) return;
+        if (state == null) {
+            return;
+        }
+        if (!dropBallotOnVoterExit(state.active, explicitLeave)) {
+            if (state.active && state.votesByVoter.containsKey(voterId)) {
+                markChanged(state);
+                broadcastState(level);
+            }
+            return;
+        }
         if (state.votesByVoter.remove(voterId) != null && state.active) {
             markChanged(state);
             broadcastState(level);
         }
+    }
+
+    /** Disconnect keeps an active ballot; explicit leave always drops it. */
+    static boolean dropBallotOnVoterExit(boolean voteActive, boolean explicitLeaveParticipation) {
+        return explicitLeaveParticipation || !voteActive;
+    }
+
+    /**
+     * 地图投票进行中时从候选列表拿掉一张已锁地图，并删除投给它的票。
+     * 若删空则立即结算（winner null），让编排器取消开局而不是卡在 MAP_VOTING。
+     */
+    public static void invalidateMapOption(ServerLevel level, String optionId) {
+        if (level == null || optionId == null || optionId.isBlank()) return;
+        State state = STATES.get(level.dimension());
+        if (state == null || !state.active || !isMapVoteId(state.voteId)) return;
+        boolean removed = state.options.removeIf(opt -> optionId.equals(opt.id()));
+        if (!removed) return;
+        state.votesByVoter.entrySet().removeIf(e -> optionId.equals(e.getValue()));
+        markChanged(state);
+        if (state.options.isEmpty()) {
+            resolve(level, state);
+            return;
+        }
+        broadcastState(level);
     }
 
     /** 取消当前投票：不调用 onResolved，广播 close。 */
@@ -315,7 +471,8 @@ public final class OptionVoteManager {
         if (player == null) return;
         // 维修人员不进入对局，不收到大厅投票 GUI
         if (RepairModeManager.isRepairer(player)) return;
-        ServerLevel level = player.serverLevel();
+        ServerLevel level = resolveActiveVoteLevel(player);
+        if (level == null) return;
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
         List<OptionVotePayload.Entry> entries = buildEntries(state);

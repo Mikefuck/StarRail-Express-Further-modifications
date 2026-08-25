@@ -6,9 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,12 +41,18 @@ public abstract class SRERepairRoleSelectionMixin {
         return out;
     }
 
-    /** begin：洗牌列表只保留非维修员，避免把维修员送进选角房间/发初始物资。 */
+    /**
+     * begin：洗牌列表只保留非维修员，避免把维修员送进选角房间/发初始物资。
+     *
+     * <p>Mixin {@code NEW} constructor targets put the constructed type in the
+     * descriptor <em>return</em> slot. {@code Ljava/util/ArrayList;&lt;init&gt;(Collection)V}
+     * parses as {@code NEW V} and matches nothing.
+     */
     @Redirect(
             method = "begin",
             at = @At(
                     value = "NEW",
-                    target = "Ljava/util/ArrayList;<init>(Ljava/util/Collection;)V"),
+                    target = "(Ljava/util/Collection;)Ljava/util/ArrayList;"),
             remap = false)
     private static ArrayList<ServerPlayer> habitrain$filterRepairersFromShuffle(Collection<ServerPlayer> source) {
         return new ArrayList<>(habitrain$withoutRepairers(source));

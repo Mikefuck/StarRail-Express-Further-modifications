@@ -62,6 +62,12 @@ class ConfigUpdateAccessPolicyTest {
                 ConfigUpdateScope.BACKPACK_MAP_VOTE, false, true, true, true));
     }
 
+    @Test
+    void payloadInspectionRequiresOperatorBeforeScopeJsonIsParsed() {
+        assertFalse(ConfigUpdateAccessPolicy.mayInspectPayload(false));
+        assertTrue(ConfigUpdateAccessPolicy.mayInspectPayload(true));
+    }
+
     private static JsonObject parse(String json) {
         return JsonParser.parseString(json).getAsJsonObject();
     }

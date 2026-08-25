@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
 import io.wifi.starrailexpress.api.GameMode;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -39,7 +40,14 @@ public abstract class SRETrueStartGameMixin {
             }
             MapVoteLoadCoordinator.onGameStartConfirmed(world, started);
         } catch (Throwable t) {
-            // 不因 mixin 失败阻断对局启动。
+            HabiTrainCore.LOGGER.error(
+                    "[SRETrueStartGameMixin] confirm failed; aborting map-vote load UI", t);
+            try {
+                MapVoteLoadCoordinator.onGameStartConfirmed(world, false);
+            } catch (Throwable abortError) {
+                HabiTrainCore.LOGGER.error(
+                        "[SRETrueStartGameMixin] load abort after confirm failure also failed", abortError);
+            }
         }
     }
 }

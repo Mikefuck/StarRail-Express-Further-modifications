@@ -1,11 +1,15 @@
 package com.habitrain.core.client.role;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.role.v2.RoleCatalogApi;
+import com.habitrain.core.client.EliminatedRestPromptState;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.client.InstinctDecision;
 import com.habitrain.core.api.role.v2.client.InstinctPhase;
 import com.habitrain.core.api.role.v2.client.RoleClientExtensionApi;
 import com.habitrain.core.api.role.v2.client.RoleHudSpec;
+import com.habitrain.core.api.role.v2.client.RoleHudWidget;
+import com.habitrain.core.api.role.v2.client.RoleInstinctRule;
 import com.habitrain.core.role.client.InstinctRuleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -21,6 +25,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * Physical-client adapter for v2 HUD / instinct declarations.
  *
@@ -30,6 +39,13 @@ import net.minecraft.world.entity.player.Player;
 public final class RoleClientExtensionHooks {
 
     private static boolean registered;
+    private static String frozenRoundId;
+    private static final Map<RoleKey, List<RoleHudSpec>> frozenHuds = new HashMap<>();
+    private static final Map<RoleKey, List<RoleInstinctRule>> frozenInstincts = new HashMap<>();
+    private static final Map<RoleKey, Collection<RoleHudWidget>> frozenWidgets = new HashMap<>();
+    private static RoleKey hudCacheRole;
+    private static String hudCacheLanguage;
+    private static final Map<net.minecraft.resources.ResourceLocation, Component> HUD_TEXT_CACHE = new HashMap<>();
 
     private RoleClientExtensionHooks() {}
 
@@ -56,8 +72,10 @@ public final class RoleClientExtensionHooks {
             return;
         }
         registered = true;
-        RoleClientExtensionApi.instance().loadProviders();
-        RoleClientExtensionApi.instance().freeze();
+        com.habitrain.core.internal.CoreBootstrap.run(() -> {
+            RoleClientExtensionApi.instance().loadProviders();
+            RoleClientExtensionApi.instance().freeze();
+        });
         CommonInstinctEvents.ALIVE_COMMON_BEFORE_EVENT.register(
                 (self, target, enabled) -> apply(InstinctPhase.ALIVE_BEFORE, self, target));
         CommonInstinctEvents.ALIVE_COMMON_MIDDLE_EVENT.register(
@@ -73,14 +91,16 @@ public final class RoleClientExtensionHooks {
 
     private static TrueFalseAndCustomResult<Integer> apply(InstinctPhase phase,
                                                            LocalPlayer viewer, Entity entity) {
+        if (EliminatedRestPromptState.isVisible() && phase != InstinctPhase.SPECTATOR) {
+            return TrueFalseAndCustomResult.pass();
+        }
         if (viewer == null || !(entity instanceof Player target)) {
             return TrueFalseAndCustomResult.pass();
         }
         RoleKey viewerRole = currentRole(viewer);
         RoleKey targetRole = currentRole(target);
-        java.util.List<com.habitrain.core.api.role.v2.client.RoleInstinctRule> rules =
-                viewerRole == null ? java.util.List.of()
-                        : RoleClientExtensionApi.instance().instinctsFor(viewerRole);
+        List<RoleInstinctRule> rules =
+                viewerRole == null ? List.of() : instinctsForRound(viewerRole);
         InstinctDecision decision = InstinctRuleResolver.resolve(
                 rules, phase, viewerRole, targetRole);
         return switch (decision.kind()) {
@@ -93,15 +113,21 @@ public final class RoleClientExtensionHooks {
     private static void renderHud(GuiGraphics graphics, float tickDelta) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        if (player == null || mc.options.hideGui) {
+        if (player == null || mc.options.hideGui || EliminatedRestPromptState.isVisible()) {
             return;
         }
         RoleKey role = currentRole(player);
         if (role == null) {
             return;
         }
+        String language = currentLanguageCode();
+        if (!role.equals(hudCacheRole) || !java.util.Objects.equals(language, hudCacheLanguage)) {
+            hudCacheRole = role;
+            hudCacheLanguage = language;
+            HUD_TEXT_CACHE.clear();
+        }
         boolean spectator = player.isSpectator();
-        for (RoleHudSpec spec : RoleClientExtensionApi.instance().hudsFor(role)) {
+        for (RoleHudSpec spec : hudsForRound(role)) {
             if (spectator && !spec.showWhenSpectator()) {
                 continue;
             }
@@ -113,20 +139,23 @@ public final class RoleClientExtensionHooks {
             if (spec.textKey().isEmpty()) {
                 continue;
             }
-            String prefix = switch (spec.kind()) {
-                case ICON -> "[图标] ";
-                case PROGRESS -> "[进度] ";
-                case COOLDOWN -> "[冷却] ";
-                case CHARGE -> "[充能] ";
-                case TEXT, BADGE -> "";
-            };
-            graphics.drawString(mc.font,
-                    Component.literal(prefix).append(Component.translatable(spec.textKey())),
-                    spec.x(), spec.y(), spec.color(), true);
+            Component text = HUD_TEXT_CACHE.get(spec.id());
+            if (text == null) {
+                String prefix = switch (spec.kind()) {
+                    case ICON -> "[图标] ";
+                    case PROGRESS -> "[进度] ";
+                    case COOLDOWN -> "[冷却] ";
+                    case CHARGE -> "[充能] ";
+                    case TEXT, BADGE -> "";
+                };
+                text = Component.literal(prefix).append(Component.translatable(spec.textKey()));
+                HUD_TEXT_CACHE.put(spec.id(), text);
+            }
+            graphics.drawString(mc.font, text, spec.x(), spec.y(), spec.color(), true);
         }
         int width = mc.getWindow().getGuiScaledWidth();
         int height = mc.getWindow().getGuiScaledHeight();
-        for (var widget : RoleClientExtensionApi.instance().hudWidgetsFor(role)) {
+        for (var widget : widgetsForRound(role)) {
             try {
                 // The real render-frame tick delta (audit P1-5): animations and
                 // interpolation must see the actual frame time, never a flat 0f.
@@ -134,6 +163,18 @@ public final class RoleClientExtensionHooks {
             } catch (Throwable ignored) {
             }
         }
+    }
+
+    private static String currentLanguageCode() {
+        try {
+            var languages = Minecraft.getInstance().getLanguageManager();
+            if (languages != null) {
+                String selected = languages.getSelected();
+                return selected == null ? "" : selected;
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
     }
 
     public static RoleKey currentRole(Player player) {
@@ -149,9 +190,65 @@ public final class RoleClientExtensionHooks {
             if (role == null || role.identifier() == null) {
                 return null;
             }
-            return RoleKey.of(role.identifier());
+            try {
+                return RoleCatalogApi.instance().canonicalize(role.identifier());
+            } catch (Throwable ignored) {
+                return RoleKey.of(role.identifier());
+            }
         } catch (Throwable t) {
             return null;
+        }
+    }
+
+    private static List<RoleHudSpec> hudsForRound(RoleKey role) {
+        noteRoundSnapshot();
+        if (frozenRoundId == null) {
+            return RoleClientExtensionApi.instance().hudsFor(role);
+        }
+        return frozenHuds.computeIfAbsent(role, RoleClientExtensionApi.instance()::hudsFor);
+    }
+
+    private static List<RoleInstinctRule> instinctsForRound(RoleKey role) {
+        noteRoundSnapshot();
+        if (frozenRoundId == null) {
+            return RoleClientExtensionApi.instance().instinctsFor(role);
+        }
+        return frozenInstincts.computeIfAbsent(role, RoleClientExtensionApi.instance()::instinctsFor);
+    }
+
+    private static Collection<RoleHudWidget> widgetsForRound(RoleKey role) {
+        noteRoundSnapshot();
+        if (frozenRoundId == null) {
+            return RoleClientExtensionApi.instance().hudWidgetsFor(role);
+        }
+        return frozenWidgets.computeIfAbsent(role, RoleClientExtensionApi.instance()::hudWidgetsFor);
+    }
+
+    private static void noteRoundSnapshot() {
+        String roundId = null;
+        try {
+            var payload = RoleSnapshotState.INSTANCE.get();
+            if (payload != null) {
+                roundId = payload.roundSnapshotId();
+            }
+        } catch (Throwable ignored) {
+        }
+        if (roundId == null || roundId.isBlank()) {
+            if (frozenRoundId != null) {
+                frozenRoundId = null;
+                frozenHuds.clear();
+                frozenInstincts.clear();
+                frozenWidgets.clear();
+                HUD_TEXT_CACHE.clear();
+            }
+            return;
+        }
+        if (!roundId.equals(frozenRoundId)) {
+            frozenRoundId = roundId;
+            frozenHuds.clear();
+            frozenInstincts.clear();
+            frozenWidgets.clear();
+            HUD_TEXT_CACHE.clear();
         }
     }
 }

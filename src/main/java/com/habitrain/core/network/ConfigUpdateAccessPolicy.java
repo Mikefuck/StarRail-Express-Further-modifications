@@ -8,6 +8,15 @@ import com.google.gson.JsonParser;
 public final class ConfigUpdateAccessPolicy {
     private ConfigUpdateAccessPolicy() {}
 
+    /**
+     * Cheap preflight that must run before inspecting attacker-controlled JSON.
+     * Every update scope requires OP2, so a non-operator can be rejected without
+     * parsing scope metadata or any other part of the payload.
+     */
+    public static boolean mayInspectPayload(boolean hasOp2) {
+        return hasOp2;
+    }
+
     public static boolean isAllowed(ConfigUpdateScope scope, boolean hasOp2,
                                     boolean dedicatedServer, boolean menuGateEnabled,
                                     boolean menuGateAllowed) {

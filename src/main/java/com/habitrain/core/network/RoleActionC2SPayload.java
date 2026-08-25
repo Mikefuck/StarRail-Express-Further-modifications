@@ -31,7 +31,12 @@ public record RoleActionC2SPayload(ResourceLocation actionId, int sequence, byte
     private void write(FriendlyByteBuf buf) {
         buf.writeResourceLocation(actionId);
         buf.writeVarInt(sequence);
-        buf.writeByteArray(payload == null ? new byte[0] : payload);
+        byte[] bytes = payload == null ? new byte[0] : payload;
+        if (bytes.length > DECODE_MAX_BYTES) {
+            throw new io.netty.handler.codec.EncoderException(
+                    "RoleAction C2S payload too large: " + bytes.length);
+        }
+        buf.writeByteArray(bytes);
     }
 
     @Override

@@ -19,20 +19,23 @@ import java.util.Set;
  *
  * <p>Priority is by severity: required-provider rejection first (needs the most
  * concrete remediation), then gameplay hash, then presentation degradation. A
- * nullable client hash means "trust the server" so a client that cannot compute
- * an independent fingerprint never false-positives. Since audit P1-4 a
+ * missing client definition hash means the handshake is incomplete and fails
+ * closed until the snapshot-backed report arrives. Since audit P1-4 a
  * required provider must be present in BOTH the version map and the client's
  * loaded client-extension set (its {@code requiresClient()} declaration is
  * explicit, not guessed from entrypoint presence).
  *
- * <p><b>Hash branch caveat (review 2026-08-14 P1):</b> the definition-hash
- * branch only fires when the client reports a non-blank
- * {@code expectedDefinitionHash}. The core client cannot independently compute
- * the server's definition hash (it folds the server-side compiled entry view +
- * the applied {@code roleExtensionsV2} config), so it reports {@code null} and
- * the HASH_MISMATCH branch never triggers for it; the gate instead relies on
- * report completeness, API compatibility and required-provider checks. Do not
- * advertise definition-hash gating as closed for the stock client.
+ * <p>This is compatibility, not anti-cheat. Client-reported providers and
+ * hashes only open the RoleAction gate; they cannot grant a role. A missing
+ * or blank client definition hash cannot open the RoleAction gate.
+ *
+ * <p>The stock core client echoes the definition hash from the latest
+ * server-sent role snapshot once one has arrived, so the {@code HASH_MISMATCH}
+ * branch <em>can</em> fire when the manifest hash and the snapshot hash
+ * disagree. That is still not independent bilateral verification: the client
+ * does not recompute the server's compiled entry view plus
+ * {@code roleExtensionsV2} config. Do not advertise definition-hash gating as
+ * closed independent verification.
  */
 public final class RoleHandshakeMatcher {
 
@@ -56,8 +59,11 @@ public final class RoleHandshakeMatcher {
                             + "。请安装对应模组或更新版本后重新加入。");
         }
 
-        if (local.expectedDefinitionHash() != null && !local.expectedDefinitionHash().isBlank()
-                && !server.definitionHash().equals(local.expectedDefinitionHash())) {
+        if (local.expectedDefinitionHash() == null || local.expectedDefinitionHash().isBlank()) {
+            return RoleHandshakeResult.hashMismatch(
+                    "客户端尚未收到角色定义快照，握手未完成；请等待同步或重新加入。");
+        }
+        if (!server.definitionHash().equals(local.expectedDefinitionHash())) {
             return RoleHandshakeResult.hashMismatch(
                     "角色定义哈希不一致（服务端 " + server.definitionHash()
                             + " ≠ 客户端 " + local.expectedDefinitionHash()

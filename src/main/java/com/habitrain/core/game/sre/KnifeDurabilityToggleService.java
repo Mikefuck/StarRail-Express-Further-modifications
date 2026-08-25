@@ -21,10 +21,31 @@ public final class KnifeDurabilityToggleService {
         registered = true;
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (server.getTickCount() % 20 == 0
-                    && !ConfigManager.getInstance().isKnifeDurabilityEnabled()) {
+                    && !ConfigManager.getInstance().isKnifeDurabilityEnabled()
+                    && isMatchRunning(server)) {
                 applyToServer(server);
             }
         });
+    }
+
+    /** 1Hz strip only while an SRE/overworld match is running — not in lobby. */
+    static boolean isMatchRunning(@Nullable MinecraftServer server) {
+        if (server == null) {
+            return false;
+        }
+        try {
+            for (var world : server.getAllLevels()) {
+                if (world == null) {
+                    continue;
+                }
+                var game = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(world);
+                if (game != null && game.isRunning()) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     public static void applyToServer(@Nullable MinecraftServer server) {
@@ -33,6 +54,9 @@ public final class KnifeDurabilityToggleService {
         }
         boolean enabled = ConfigManager.getInstance().isKnifeDurabilityEnabled();
         for (var player : server.getPlayerList().getPlayers()) {
+            if (!isInRunningSreGame(player)) {
+                continue;
+            }
             applyToPlayer(player, enabled);
         }
     }
@@ -43,23 +67,43 @@ public final class KnifeDurabilityToggleService {
         }
     }
 
+    /** Periodic / config-edge scans must not rewrite lobby knives. */
+    private static boolean isInRunningSreGame(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null || player.serverLevel() == null) {
+            return false;
+        }
+        try {
+            var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(player.serverLevel());
+            return gw != null && gw.isRunning();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static void applyToPlayer(
             net.minecraft.server.level.ServerPlayer player,
             boolean enabled) {
         var inventory = player.getInventory();
+        boolean changed = false;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
             if (!stack.is(TMMItems.KNIFE)) {
                 continue;
             }
             if (enabled) {
-                KillerKnifeDurability.applyFreshDurability(stack);
-            } else {
+                if (!stack.has(DataComponents.MAX_DAMAGE)) {
+                    KillerKnifeDurability.applyFreshDurability(stack);
+                    changed = true;
+                }
+            } else if (stack.has(DataComponents.DAMAGE) || stack.has(DataComponents.MAX_DAMAGE)) {
                 removeDurability(stack);
+                changed = true;
             }
         }
-        inventory.setChanged();
-        player.containerMenu.broadcastChanges();
+        if (changed) {
+            inventory.setChanged();
+            player.containerMenu.broadcastChanges();
+        }
     }
 
     public static void removeDurability(ItemStack stack) {

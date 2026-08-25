@@ -2,6 +2,7 @@ package com.habitrain.core.network;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
+import io.netty.handler.codec.EncoderException;
 import java.nio.charset.StandardCharsets;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
@@ -54,6 +55,9 @@ public class ConfigUpdatePayload implements CustomPacketPayload {
         @Override
         public void encode(ByteBuf buf, ConfigUpdatePayload payload) {
             byte[] bytes = payload.configJson.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_JSON_LENGTH) {
+                throw new EncoderException("ConfigUpdate payload 过大: " + bytes.length + " > " + MAX_JSON_LENGTH);
+            }
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);

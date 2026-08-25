@@ -3,8 +3,8 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 
 /**
  * 停电模式好人任务：进食（吃任意食物完成）。
@@ -26,7 +26,13 @@ public class BlackoutEatTask {
             .onAssign((player, task) -> {
                 task.setMaxProgress(1);
             })
-            .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
+            .onTick((player, task) -> {
+                if (!CustomTaskTickGate.allow(player) && task.getProgress() != 0) {
+                    task.setProgress(0);
+                }
+            })
+            .completionChecker((player, task) ->
+                    CustomTaskTickGate.allow(player) && task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     BlackoutTaskHelper.applyTimeImpact(serverPlayer.serverLevel(),

@@ -4,6 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.BlackoutKeyHandler;
 import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.RoleSkill;
+import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -13,7 +14,6 @@ import org.agmas.noellesroles.client.NoellesrolesClient;
 import org.agmas.noellesroles.client.hud.UnifiedSkillHud;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 import java.util.ArrayList;
@@ -25,6 +25,14 @@ import java.util.List;
  * <p>
  * 上游文案 {@code hud.sre.skill.ready_shift} = 「就绪 (%s+%s)」，
  * 正确参数应为 {@link KeyMapping#getTranslatedKeyMessage()}。
+ * <p>
+ * SRE 4.3.0 javap（禁止改成 {@code $0}）：
+ * <ul>
+ *   <li>{@code lambda$register$0(Style)} — 内部 {@code withColor}，不是 HUD 回调</li>
+ *   <li>{@code lambda$register$1(FakeGuiGraphics, DeltaTracker)} — 真正的 HUD 回调</li>
+ * </ul>
+ * 休息提示通过 Redirect {@code RoleSkill.getDefinitions(SRERole)} <b>追加</b>
+ * 到技能列表（空列表也能插入，避免 early-return 把提示吞掉）。
  */
 @Mixin(value = UnifiedSkillHud.class, remap = false)
 public class UnifiedSkillHudReadyShiftMixin {
@@ -37,14 +45,21 @@ public class UnifiedSkillHudReadyShiftMixin {
             .showOnHud(true)
             .build();
 
-    /** Adds the prompt as an ordinary active-skill row in the upstream right-hand HUD. */
-    @ModifyVariable(
+    /**
+     * Append the rest-area prompt to the live skill list.
+     * {@code showOnHud=true} so the rest row survives the HUD visible filter.
+     * Empty original lists still receive the prompt so the HUD does not early-return.
+     */
+    @Redirect(
             method = "lambda$register$1",
-            at = @At(value = "STORE", ordinal = 0),
-            ordinal = 0
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lio/wifi/starrailexpress/api/RoleSkill;getDefinitions(Lio/wifi/starrailexpress/api/SRERole;)Ljava/util/List;",
+                    remap = false
+            )
     )
-    private static List<RoleSkill.Definition> habitrain$addRestAreaPrompt(
-            List<RoleSkill.Definition> definitions) {
+    private static List<RoleSkill.Definition> habitrain$addRestAreaPrompt(SRERole role) {
+        List<RoleSkill.Definition> definitions = RoleSkill.getDefinitions(role);
         if (!EliminatedRestPromptState.isVisible()) {
             return definitions;
         }
@@ -107,7 +122,7 @@ public class UnifiedSkillHudReadyShiftMixin {
     }
 
     @Redirect(
-            method = "*",
+            method = "lambda$register$1",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/network/chat/Component;translatable(Ljava/lang/String;[Ljava/lang/Object;)Lnet/minecraft/network/chat/MutableComponent;",

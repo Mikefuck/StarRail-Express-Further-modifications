@@ -27,7 +27,7 @@ import java.util.List;
  */
 public class ShaderConfigPayload implements CustomPacketPayload {
     private static final int MAX_SHADERS = 256;
-    private static final int MAX_STRING_LENGTH = 65536;
+    private static final int MAX_STRING_LENGTH = 256;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "shader_config_sync");
     public static final CustomPacketPayload.Type<ShaderConfigPayload> TYPE =
@@ -76,6 +76,9 @@ public class ShaderConfigPayload implements CustomPacketPayload {
             buf.writeInt(payload.whitelist.size());
             for (String name : payload.whitelist) {
                 byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
+                if (bytes.length > MAX_STRING_LENGTH) {
+                    throw new DecoderException("Invalid shader name length: " + bytes.length);
+                }
                 buf.writeInt(bytes.length);
                 buf.writeBytes(bytes);
             }

@@ -6,6 +6,9 @@ import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.gui.VoteLaunchTransitionScreen;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.gui.screens.ReceivingLevelScreen;
 import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -37,9 +40,8 @@ public abstract class SlothScreenLockMixin {
         if (screen instanceof VoteLaunchTransitionScreen || screen instanceof GameEndTransitionScreen) return;
         if (!SlothComponent.isSleepingSloth(client.player)) return;
 
-        String name = screen.getClass().getSimpleName();
-        if ("PauseScreen".equals(name) || "DeathScreen".equals(name)
-                || "ReceivingLevelScreen".equals(name)) {
+        if (screen instanceof PauseScreen || screen instanceof DeathScreen
+                || screen instanceof ReceivingLevelScreen) {
             return;
         }
         ci.cancel();

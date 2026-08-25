@@ -3,6 +3,7 @@ package com.habitrain.core.game.blackout.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -29,6 +30,7 @@ public class BlackoutLookMyEyesTask {
                 task.setMaxProgress(140);
             })
             .onTick((player, task) -> {
+                if (!CustomTaskTickGate.allow(player)) return;
                 if (task.getProgress() >= task.getMaxProgress()) return;
                 if (!(player instanceof ServerPlayer serverPlayer)) return;
 
@@ -72,7 +74,7 @@ public class BlackoutLookMyEyesTask {
                 }
             })
             .completionChecker((player, task) ->
-                task.getProgress() >= task.getMaxProgress())
+                CustomTaskTickGate.allow(player) && task.getProgress() >= task.getMaxProgress())
             .onComplete((player, task) -> {
                 if (player instanceof ServerPlayer serverPlayer) {
                     BlackoutTaskHelper.grantRewards(serverPlayer, HabiTrainCore.TASK_BLACKOUT_LOOK_MY_EYES);

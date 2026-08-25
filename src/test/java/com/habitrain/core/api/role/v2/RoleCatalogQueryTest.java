@@ -258,6 +258,48 @@ class RoleCatalogQueryTest {
     }
 
     @Test
+    void lotteryCardDropsOtherModeRolesWithoutSettingMode() {
+        SRERole otherMode = civilian(NEUTRAL_ID).setOtherModeRole(true);
+        SRERole normal = civilian(CIV_ID).setCanBeRandomedByOtherRoles(false);
+        SRERole otherModeRandomable = killer(KILLER_ID).setOtherModeRole(true);
+        RoleCatalogImpl api = new RoleCatalogImpl(rawWith(
+                CIV_ID, normal, NEUTRAL_ID, otherMode, KILLER_ID, otherModeRandomable));
+
+        assertTrue(RoleQuery.builder().purpose(QueryPurpose.LOTTERY_CARD).build()
+                .excludesOtherModeRoles());
+
+        Collection<EffectiveRole> lottery = api.effectiveRoles(
+                RoleQuery.builder().purpose(QueryPurpose.LOTTERY_CARD).build());
+        assertTrue(ids(lottery).contains(CIV_ID.toString()));
+        assertFalse(ids(lottery).contains(NEUTRAL_ID.toString()),
+                "LOTTERY_CARD drops other-mode roles even when mode is unset");
+        assertFalse(ids(lottery).contains(KILLER_ID.toString()),
+                "LOTTERY_CARD drops randomable other-mode roles without a mode");
+
+        Collection<EffectiveRole> selfSelect = api.effectiveRoles(
+                RoleQuery.builder().purpose(QueryPurpose.SELF_SELECT).build());
+        assertFalse(ids(selfSelect).contains(NEUTRAL_ID.toString()),
+                "SELF_SELECT drops other-mode roles even when mode is unset");
+
+        Collection<EffectiveRole> generic = api.effectiveRoles(
+                RoleQuery.builder().purpose(QueryPurpose.GENERIC).build());
+        assertTrue(ids(generic).contains(NEUTRAL_ID.toString()),
+                "GENERIC stays inclusive without a mode");
+
+        Collection<EffectiveRole> rotation = api.effectiveRoles(
+                RoleQuery.builder().purpose(QueryPurpose.ROTATION).build());
+        assertTrue(ids(rotation).contains(NEUTRAL_ID.toString()),
+                "ROTATION stays inclusive without a mode");
+
+        Collection<EffectiveRole> random = api.effectiveRoles(
+                RoleQuery.builder().purpose(QueryPurpose.RANDOM).build());
+        assertTrue(ids(random).contains(KILLER_ID.toString()),
+                "RANDOM without a mode still includes other-mode roles that canBeRandomed");
+        assertFalse(ids(random).contains(CIV_ID.toString()),
+                "RANDOM still requires canBeRandomed");
+    }
+
+    @Test
     void includeDisabledAndInvalidAreAcceptedContractFlags() {
         RoleQuery query = RoleQuery.builder()
                 .includeDisabled(true)

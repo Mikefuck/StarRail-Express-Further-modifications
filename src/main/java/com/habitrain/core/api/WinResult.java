@@ -18,10 +18,15 @@ public class WinResult {
         this.reason = reason;
     }
 
+    /**
+     * 单一胜者。{@code playerId} 不可为 null（{@code List.of} 会 NPE）。
+     * 无人获胜时使用 {@link #noWinner(String)}。
+     */
     public static WinResult singleWinner(UUID playerId, String reason) {
         return new WinResult(List.of(playerId), reason);
     }
 
+    /** 空胜者列表（超时、团灭、中止等）。 */
     public static WinResult noWinner(String reason) {
         return new WinResult(List.of(), reason);
     }

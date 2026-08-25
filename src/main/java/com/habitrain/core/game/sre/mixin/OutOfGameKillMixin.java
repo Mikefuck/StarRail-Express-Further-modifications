@@ -23,6 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       {@link SREGameWorldComponent#isRunning()}（ACTIVE|STOPPING）作为局外硬门禁，
  *       与「结束对局后道具无法使人切旁观」一致。forceDeath（指令/巫毒等）不拦。</li>
  * </ul>
+ *
+ * <p>签名 miss 必须启动失败，不再静默跳过。
  */
 @Mixin(value = GameUtils.class, remap = false)
 public class OutOfGameKillMixin {
@@ -31,8 +33,7 @@ public class OutOfGameKillMixin {
             method = "killPlayer(Lnet/minecraft/world/entity/player/Player;ZLnet/minecraft/world/entity/player/Player;Lnet/minecraft/resources/ResourceLocation;Z)V",
             at = @At("HEAD"),
             cancellable = true,
-            remap = false,
-            require = 0
+            remap = false
     )
     private static void habitrain$blockKillOutsideMatch(Player victim, boolean spawnBody, Player killer,
                                                          ResourceLocation deathReason, boolean forceDeath,

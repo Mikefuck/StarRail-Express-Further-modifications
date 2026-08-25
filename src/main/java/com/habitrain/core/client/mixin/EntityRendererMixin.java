@@ -38,8 +38,8 @@ public abstract class EntityRendererMixin<T extends Entity> {
         }
     }
 
-    @ModifyVariable(method = "renderNameTag", at = @At("HEAD"), argsOnly = true, index = 2)
-    private Component habitrain$recolorNameTag(T entity, Component component) {
+    @ModifyVariable(method = "renderNameTag", at = @At("HEAD"), argsOnly = true, ordinal = 0, require = 0)
+    private Component habitrain$recolorNameTag(Component component, T entity) {
         if (entity instanceof Player player) {
             RoleNameRenderRule rule = RoleNameRenderHelper.findNameplateRule(player);
             return RoleNameRenderHelper.applyColor(rule, component);

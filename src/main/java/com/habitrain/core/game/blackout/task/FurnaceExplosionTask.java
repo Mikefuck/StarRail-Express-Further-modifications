@@ -107,6 +107,7 @@ public class FurnaceExplosionTask {
 
     private static void cleanup(Player player) {
         if (player == null) return;
+        // clearState 同时取消该玩家仍在排队的 pending 爆炸。
         FurnaceExplosionHandler.clearState(player.getUUID());
     }
 }

@@ -4,14 +4,16 @@ import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import org.agmas.noellesroles.utils.MCItemsUtils;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
@@ -51,6 +53,32 @@ public abstract class RoleInitialItemsMixin {
         }
     }
 
+    /**
+     * Built-in roles with an INITIAL_ITEMS_MAP entry never call
+     * {@code getInitialItemsForRole}; they insert MAP stacks directly. Apply the
+     * same MODIFY patch used by the book/preview getters so start-of-round kits
+     * match the role book.
+     */
+    @Inject(
+            method = "addInitialItemsForRole(Lnet/minecraft/world/entity/player/Player;Lio/wifi/starrailexpress/api/SRERole;)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = true
+    )
+    private static void habitrain$addPatchedInitialItemsForRole(
+            Player player, SRERole role, CallbackInfo ci) {
+        List<ItemStack> patched = patchedItems(role, serverFor(player));
+        if (patched == null) {
+            return;
+        }
+        for (ItemStack stack : patched) {
+            if (stack != null && !stack.isEmpty()) {
+                MCItemsUtils.insertStackInFreeSlot(player, stack.copy());
+            }
+        }
+        ci.cancel();
+    }
+
     private static List<ItemStack> patchedItems(SRERole role, MinecraftServer server) {
         if (role == null || role.identifier() == null) return null;
         CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(role);
@@ -64,7 +92,7 @@ public abstract class RoleInitialItemsMixin {
             }
         }
         ModifyRoleDefinition def =
-                RoleOverrideEngine.getInstance().getActiveModify(role.identifier());
+                RoleOverrideEngine.getInstance().getGameplayModify(role.identifier());
         if (def == null || def.defaultItemsPatch().isEmpty()) return null;
         try {
             return def.defaultItemsPatch().get().getDefaultItems(role, server);
@@ -91,7 +119,6 @@ public abstract class RoleInitialItemsMixin {
             MinecraftServer server = player.level().getServer();
             if (server != null) return server;
         }
-        Object gameInstance = FabricLoader.getInstance().getGameInstance();
-        return gameInstance instanceof MinecraftServer server ? server : null;
+        return RuntimeRoleServer.INSTANCE.server();
     }
 }

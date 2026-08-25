@@ -16,6 +16,7 @@ import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotArchive;
 import com.habitrain.core.role.snapshot.RoleSnapshotCompiler;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
+import com.habitrain.core.role.snapshot.RoleSnapshotVersions;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 
@@ -100,16 +101,18 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
 
     /**
      * The effective-directory snapshot this catalog answers from: the manager's
-     * frozen lobby/round snapshot when present, otherwise a lazily-compiled temp
-     * view built by the single authoritative {@link RoleSnapshotCompiler} from
-     * the injected raw source (unit tests, pre-{@code SERVER_STARTED}).
+     * frozen lobby/round/settlement snapshot when present, otherwise a
+     * lazily-compiled temp view ({@link RoleSnapshotVersions#TEMP}) built by the
+     * single authoritative {@link RoleSnapshotCompiler} from the injected raw
+     * source (unit tests, pre-{@code SERVER_STARTED}). Temp compiles are not
+     * archived and do not consume a published generation.
      */
     private RoleSnapshot compiledSnapshot() {
         RoleSnapshot frozen = RoleSnapshotManager.INSTANCE.current();
         if (frozen != null) {
             return frozen;
         }
-        return RoleSnapshotCompiler.compile(new RoleSnapshotId(engine().getSnapshotVersion()), lookup);
+        return RoleSnapshotCompiler.compile(RoleSnapshotVersions.TEMP, lookup);
     }
 
     private static boolean matches(EffectiveRole er, RoleQuery query) {
@@ -272,12 +275,22 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         if (current != null) {
             return current.id();
         }
-        return new RoleSnapshotId(engine().getSnapshotVersion());
+        return RoleSnapshotVersions.TEMP;
     }
 
     @Override
     public Optional<RoleSnapshot> currentSnapshot() {
         return Optional.ofNullable(RoleSnapshotManager.INSTANCE.current());
+    }
+
+    @Override
+    public Optional<RoleSnapshot> roundSnapshot() {
+        return Optional.ofNullable(RoleSnapshotManager.INSTANCE.round());
+    }
+
+    @Override
+    public Optional<RoleSnapshot> lastEndedSnapshot() {
+        return Optional.ofNullable(RoleSnapshotManager.INSTANCE.lastEnded());
     }
 
     @Override

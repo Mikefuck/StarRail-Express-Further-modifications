@@ -296,7 +296,9 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
             if (t != null && left > 0) {
                 t.setDeltaMovement(0, Math.min(0, t.getDeltaMovement().y), 0);
                 t.hurtMarked = true;
-                t.teleportTo(t.getX(), t.getY(), t.getZ());
+                if (left % 5 == 0) {
+                    t.teleportTo(t.getX(), t.getY(), t.getZ());
+                }
                 e.setValue(left);
             } else {
                 it.remove();
@@ -336,11 +338,11 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 }

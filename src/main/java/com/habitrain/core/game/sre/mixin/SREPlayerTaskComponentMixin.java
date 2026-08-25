@@ -1,12 +1,9 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.sre.PerPlayerTaskTicker;
 import com.habitrain.core.task.TaskManager;
-import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,26 +70,13 @@ public abstract class SREPlayerTaskComponentMixin {
         if (oldTask != null) {
             LOGGER.debug("[HabiDebug] {}() - clearing activeCustomTask {} for player {}",
                     reason, oldTask.getFullId(), p.getName().getString());
-            ItemReclaimHelper.reclaimForTask(p, oldTask);
-            mgr.removeActiveTask(p.getUUID());
-            if (p instanceof ServerPlayer sp) {
-                ActiveTaskPayload.clearForPlayer(sp);
-            }
         }
         TaskInstance fake = mgr.getFakeTask(p.getUUID());
         if (fake != null) {
             LOGGER.debug("[HabiDebug] {}() - clearing fakeTask {} for player {}",
                     reason, fake.getFullId(), p.getName().getString());
-            try {
-                ItemReclaimHelper.reclaimForTask(p, fake);
-            } catch (Throwable t) {
-                LOGGER.debug("fake task reclaim failed on {}", reason, t);
-            }
-            mgr.removeFakeTask(p.getUUID());
-            if (p instanceof ServerPlayer sp) {
-                ActiveTaskPayload.clearForPlayer(sp, true);
-            }
         }
+        mgr.cancelAllTrackedTasks(p);
     }
 
     @Inject(

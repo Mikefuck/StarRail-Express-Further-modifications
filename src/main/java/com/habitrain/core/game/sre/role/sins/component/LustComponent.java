@@ -1,6 +1,7 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
@@ -61,6 +62,8 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     /** 真爱对扫描缓存（10 tick 一次，review L4）。 */
     private transient List<ServerPlayer> cachedPair;
     private long lastPairScanTick;
+    private long lastLosTick;
+    private boolean cachedObserveLos;
 
     public LustComponent(Player player) {
         this.player = player;
@@ -112,7 +115,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (!(self.level() instanceof ServerLevel level)) return false;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || SevenSins.LUST == null || !game.isRole(self, SevenSins.LUST)) {
+        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.LUST)) {
             return false;
         }
 
@@ -148,7 +151,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (!(self.level() instanceof ServerLevel level)) return false;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || SevenSins.LUST == null || !game.isRole(self, SevenSins.LUST)) {
+        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.LUST)) {
             return false;
         }
 
@@ -209,7 +212,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (!(self.level() instanceof ServerLevel level)) return;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        boolean isLust = game != null && SevenSins.LUST != null && game.isRole(self, SevenSins.LUST);
+        boolean isLust = HabiRoles.isHabiRole(self, SevenSins.LUST);
         if (!isLust || self.isSpectator()) {
             if (observing) observing = false;
             return;
@@ -244,11 +247,13 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (pair != null && pair.size() == 2
                 && pair.get(0).isAlive() && !pair.get(0).isRemoved()
                 && pair.get(1).isAlive() && !pair.get(1).isRemoved()) {
-            ServerPlayer a = pair.get(0);
-            ServerPlayer b = pair.get(1);
-            if (isNearWithLos(self, a) && isNearWithLos(self, b)) {
-                charging = true;
+            if (now - lastLosTick >= 2) {
+                lastLosTick = now;
+                cachedObserveLos = isNearWithLos(self, pair.get(0)) && isNearWithLos(self, pair.get(1));
             }
+            charging = cachedObserveLos;
+        } else {
+            cachedObserveLos = false;
         }
 
         if (charging) {
@@ -308,7 +313,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         List<ServerPlayer> lovers = new java.util.ArrayList<>();
         for (ServerPlayer p : collectAlivePlayers(level)) {
-            if (game != null && SevenSins.LUST != null && game.isRole(p, SevenSins.LUST)) {
+            if (HabiRoles.isHabiRole(p, SevenSins.LUST)) {
                 continue;
             }
             if (isTrueLover(level, p)) {
@@ -427,12 +432,12 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        writeToSyncNbt(tag, registryLookup);
+        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        readFromSyncNbt(tag, registryLookup);
+        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
     }
 
     private static ListTag uuidList(Set<UUID> set) {

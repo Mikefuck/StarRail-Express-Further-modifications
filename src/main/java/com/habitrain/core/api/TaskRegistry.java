@@ -1,5 +1,9 @@
 package com.habitrain.core.api;
 
+import com.habitrain.core.internal.CoreBootstrap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -7,8 +11,10 @@ import java.util.stream.Collectors;
 /**
  * 任务注册中心 — 取代 HabiTaskRegistry。
  * 新增: 按 GameMode 查询。
+ * 仅 habitrain_core 的 SERVER_STARTED bootstrap 可 freeze()；外部调用会被忽略。
  */
 public class TaskRegistry {
+    private static final Logger LOGGER = LoggerFactory.getLogger("TaskRegistry");
     private static final Map<String, TaskDefinition> REGISTRY = new LinkedHashMap<>();
     private static boolean frozen = false;
 
@@ -49,9 +55,23 @@ public class TaskRegistry {
                 .toList();
     }
 
+    /**
+     * Core-lifecycle only: freeze after all entrypoints have registered.
+     * Callers outside habitrain_core's SERVER_STARTED bootstrap are ignored
+     * (no-op + warning). Idempotent once frozen.
+     */
     public static void freeze() {
+        if (!CoreBootstrap.isInBootstrap()) {
+            LOGGER.warn("TaskRegistry.freeze() ignored: only habitrain_core SERVER_STARTED bootstrap may freeze this registry");
+            return;
+        }
         frozen = true;
         com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
     }
     public static boolean isFrozen() { return frozen; }
+
+    /** Test-only: allow a second {@link #register} in the same JVM. */
+    public static void unfreezeForTests() {
+        frozen = false;
+    }
 }

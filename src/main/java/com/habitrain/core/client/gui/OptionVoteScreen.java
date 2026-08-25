@@ -115,6 +115,8 @@ public class OptionVoteScreen extends Screen {
     private int mapPaneSplitX = Integer.MAX_VALUE;
     private int lastMouseX = -1;
     private int lastMouseY = -1;
+    private long lastAutoPickStepMillis;
+    private String revealedAutoPickId = "";
 
     public OptionVoteScreen(Screen parent) {
         super(OptionVoteTexts.titleFor(OptionVoteState.getVoteId()));
@@ -128,8 +130,9 @@ public class OptionVoteScreen extends Screen {
         if (Double.isNaN(carouselPosition)) {
             carouselPosition = Math.max(0, focusedIndex);
         }
-        detailRequested = "map".equals(OptionVoteState.getVoteId())
-                && selectedOptionId() != null;
+        // A reopened or freshly created screen always starts in browsing mode.
+        // Existing/local votes may highlight a card, but only a new left click may open details.
+        detailRequested = false;
         if ("map".equals(OptionVoteState.getVoteId())) {
             ClientMapIntroCache.requestSyncIfNeeded();
         }
@@ -141,6 +144,10 @@ public class OptionVoteScreen extends Screen {
         super.tick();
         if (!OptionVoteState.isActive()) {
             Minecraft.getInstance().setScreen(null);
+            return;
+        }
+        if ("map".equals(OptionVoteState.getVoteId()) && !ClientMapIntroCache.hasData()) {
+            ClientMapIntroCache.requestSyncIfNeeded();
         }
     }
 
@@ -161,6 +168,7 @@ public class OptionVoteScreen extends Screen {
             carouselPosition += (focusedIndex - carouselPosition) * approachFactor(frameSeconds, 11.0f);
         }
 
+        updateAutoPickAnimation(now, candidates);
         updateDetailAnimation(frameSeconds, candidates);
 
         renderHeader(g, mouseX, mouseY, frameSeconds, elapsedSeconds);
@@ -186,10 +194,6 @@ public class OptionVoteScreen extends Screen {
             detailProgress = Math.max(0.0f, detailProgress - frameSeconds / (DETAIL_CLOSE_MILLIS / 1000.0f));
         }
 
-        if (mapPhase && !ClientMapIntroCache.hasData()) {
-            ClientMapIntroCache.requestSyncIfNeeded();
-        }
-
         // 切换地图：只交叉淡入档案卡内容，不收起再展开
         if (mapPhase && !detailShowingMapId.equals(focusedOptionId)) {
             oldShowingMapId = detailShowingMapId;
@@ -204,6 +208,37 @@ public class OptionVoteScreen extends Screen {
         }
         detailScrollTarget = Mth.clamp(detailScrollTarget, 0.0f, detailScrollMax);
         detailScroll += (detailScrollTarget - detailScroll) * approachFactor(frameSeconds, 14.0f);
+    }
+
+    /** Cycles the map deck during the final three seconds, then reveals the reported random pick. */
+    private void updateAutoPickAnimation(long now, List<OptionVotePayload.Entry> candidates) {
+        if (!"map".equals(OptionVoteState.getVoteId()) || candidates.isEmpty()) return;
+
+        if (OptionVoteState.isAutoPickAnimating()) {
+            applyMapEvent(MapVoteInteractionPolicy.Event.AUTO_PICK);
+            if (lastAutoPickStepMillis == 0L || now - lastAutoPickStepMillis >= 90L) {
+                int next = focusedIndex < 0 ? 0 : (focusedIndex + 1) % candidates.size();
+                setFocus(next, candidates, false);
+                playUiSound(0.90f + (next % 4) * 0.08f);
+                lastAutoPickStepMillis = now;
+            }
+            return;
+        }
+
+        String autoPickedId = OptionVoteState.getAutoPickedOptionId();
+        if (autoPickedId == null || autoPickedId.isBlank()
+                || autoPickedId.equals(revealedAutoPickId)) {
+            return;
+        }
+        for (int i = 0; i < candidates.size(); i++) {
+            if (autoPickedId.equals(candidates.get(i).optionId())) {
+                setFocus(i, candidates, false);
+                applyMapEvent(MapVoteInteractionPolicy.Event.AUTO_PICK);
+                revealedAutoPickId = autoPickedId;
+                playUiSound(1.45f);
+                break;
+            }
+        }
     }
 
     private void renderBackdrop(GuiGraphics g, int mouseX, int mouseY,
@@ -287,6 +322,14 @@ public class OptionVoteScreen extends Screen {
             drawScaledCentered(g, heading, width / 2.0f, 8.0f, 1.22f, withAlpha(IVORY, titleAlpha));
             g.drawCenteredString(font, OptionVoteTexts.descriptionFor(voteId),
                     width / 2, 27, withAlpha(TEXT_MUTED, titleAlpha));
+        }
+
+        if (OptionVoteState.isAutoPickAnimating()) {
+            Component roulette = OptionVoteTexts.randomSelecting();
+            int pulseAlpha = Math.round(185.0f + 70.0f
+                    * (0.5f + 0.5f * Mth.sin(elapsedSeconds * 10.0f)));
+            g.drawCenteredString(font, roulette, width / 2, 38,
+                    withAlpha(GOLD_BRIGHT, pulseAlpha));
         }
 
         closeBounds = new Rect(Math.max(0, width - 21), 7, 13, 13);
@@ -1511,6 +1554,9 @@ public class OptionVoteScreen extends Screen {
     private void changeFocus(int delta) {
         List<OptionVotePayload.Entry> candidates = OptionVoteState.getCandidates();
         if (candidates.isEmpty()) return;
+        if ("map".equals(OptionVoteState.getVoteId())) {
+            applyMapEvent(MapVoteInteractionPolicy.Event.BROWSE);
+        }
         int next = Mth.clamp(focusedIndex + delta, 0, candidates.size() - 1);
         if (next != focusedIndex) {
             setFocus(next, candidates, true);
@@ -1525,9 +1571,6 @@ public class OptionVoteScreen extends Screen {
         focusedOptionId = candidates.get(clamped).optionId();
         if (sound && changed) {
             playUiSound(1.25f);
-            if ("map".equals(OptionVoteState.getVoteId())) {
-                detailRequested = true;
-            }
         }
     }
 
@@ -1538,8 +1581,15 @@ public class OptionVoteScreen extends Screen {
 
         OptionVotePayload.Entry entry = candidates.get(index);
         if ("map".equals(OptionVoteState.getVoteId())) {
-            // 点击左侧地图卡：当前展开则收起，当前收起则展开。
-            detailRequested = !detailRequested;
+            setFocus(index, candidates, false);
+            boolean changed = !OptionVoteState.isSelected(entry.optionId());
+            OptionVoteState.select(entry.optionId());
+            applyMapEvent(MapVoteInteractionPolicy.Event.LEFT_CLICK_CONFIRM);
+            if (changed) {
+                PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), entry.optionId());
+            }
+            playUiSound(1.05f);
+            return;
         }
         setFocus(index, candidates, false);
         boolean wasSelected = OptionVoteState.isSelected(entry.optionId());
@@ -1581,6 +1631,11 @@ public class OptionVoteScreen extends Screen {
                     for (int i = cardHitboxes.size() - 1; i >= 0; i--) {
                         CardHitbox hitbox = cardHitboxes.get(i);
                         if (hitbox.bounds().contains(mouseX, mouseY)) {
+                            if (mapPhase && detailRequested) {
+                                applyMapEvent(MapVoteInteractionPolicy.Event.BROWSE);
+                                setFocus(hitbox.index(), candidates, true);
+                                return true;
+                            }
                             castVote(hitbox.index());
                             return true;
                         }
@@ -1588,7 +1643,7 @@ public class OptionVoteScreen extends Screen {
                     // 点击左侧列表的空白区域：介绍页展开时直接收起。
                     if (mapPhase && detailProgress > 0.01f && mouseX < mapPaneSplitX
                             && mouseY >= 46 && mouseY <= height - 56) {
-                        detailRequested = false;
+                        applyMapEvent(MapVoteInteractionPolicy.Event.BROWSE);
                         return true;
                     }
                 }
@@ -1600,13 +1655,18 @@ public class OptionVoteScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (OptionVoteState.isActive() && scrollY != 0.0) {
-            // 地图档案展开后，以左右分区消费滚轮：左侧切换候选，右侧阅读完整档案。
             boolean overRightPane = detailBounds.contains(mouseX, mouseY) || mouseX >= mapPaneSplitX;
-            if (mapPhase && detailProgress > 0.08f && overRightPane) {
-                detailScrollTarget = Mth.clamp(
-                        detailScrollTarget - (float) scrollY * 28.0f,
-                        0.0f, detailScrollMax);
-                return true;
+            if (mapPhase) {
+                MapVoteInteractionPolicy.ScrollIntent intent = MapVoteInteractionPolicy.scrollIntent(
+                        detailRequested, overRightPane, scrollY);
+                if (intent == MapVoteInteractionPolicy.ScrollIntent.READ_PREVIOUS
+                        || intent == MapVoteInteractionPolicy.ScrollIntent.READ_NEXT) {
+                    detailScrollTarget = Mth.clamp(
+                            detailScrollTarget - (float) scrollY * 28.0f,
+                            0.0f, detailScrollMax);
+                    return true;
+                }
+                applyMapEvent(MapVoteInteractionPolicy.Event.BROWSE);
             }
             changeFocus(scrollY > 0.0 ? -1 : 1);
             return true;
@@ -1628,6 +1688,9 @@ public class OptionVoteScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER
                 || keyCode == GLFW.GLFW_KEY_SPACE) {
+            if ("map".equals(OptionVoteState.getVoteId())) {
+                return true; // 地图只能由鼠标左键确认；键盘不得隐式打开详情或上报。
+            }
             castVote(focusedIndex);
             return true;
         }
@@ -1637,6 +1700,10 @@ public class OptionVoteScreen extends Screen {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void applyMapEvent(MapVoteInteractionPolicy.Event event) {
+        detailRequested = MapVoteInteractionPolicy.detailOpenAfter(detailRequested, event);
     }
 
     /**

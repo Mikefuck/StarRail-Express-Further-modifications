@@ -1,12 +1,14 @@
 package com.habitrain.core.betel;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.task.SlownessReapplyManager;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -81,6 +83,10 @@ public class BetelLeafHandler {
 
         // 给予缓慢3效果（持续70ticks，比采集时间略长作为缓冲）
         serverPlayer.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, HARVEST_TICKS + 10, 2, false, true, true));
+        if (world instanceof ServerLevel serverLevel) {
+            SlownessReapplyManager.register(serverLevel, uuid, 2, HARVEST_TICKS + 10,
+                    ResourceLocation.fromNamespaceAndPath(HabiTrainCore.MOD_ID, "betel_harvest"));
+        }
         serverPlayer.displayClientMessage(Component.literal("§7正在采集槟榔叶... 3秒后完成"), true);
 
         // 记录采集任务（按世界分桶存储，避免跨世界遍历）
@@ -113,17 +119,12 @@ public class BetelLeafHandler {
             HarvestTask task = entry.getValue();
 
             if (currentTick - task.startTick < HARVEST_TICKS) {
-                // 还没到完成时间 — 重施缓慢（槟榔mod每tick会清除SLOWNESS）
-                Player player = world.getPlayerByUUID(uuid);
-                if (player instanceof ServerPlayer serverPlayer) {
-                    serverPlayer.addEffect(new MobEffectInstance(
-                            MobEffects.MOVEMENT_SLOWDOWN, HARVEST_TICKS + 10, 2, false, true, true));
-                }
                 continue;
             }
 
             // 采集完成 — 移除任务
             it.remove();
+            SlownessReapplyManager.unregisterAllLevels(uuid);
 
             Player player = world.getPlayerByUUID(uuid);
             if (!(player instanceof ServerPlayer serverPlayer)) continue;

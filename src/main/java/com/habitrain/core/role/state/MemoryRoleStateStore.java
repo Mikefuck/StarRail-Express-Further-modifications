@@ -24,11 +24,12 @@ public final class MemoryRoleStateStore implements RoleStateStore {
     }
 
     @Override
-    public void write(StateSlotKey key, StoredState state) {
+    public boolean write(StateSlotKey key, StoredState state) {
         if (key == null || state == null) {
-            return;
+            return false;
         }
         slots.put(key, state);
+        return true;
     }
 
     @Override

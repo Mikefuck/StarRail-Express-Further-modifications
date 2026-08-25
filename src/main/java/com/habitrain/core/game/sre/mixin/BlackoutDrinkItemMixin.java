@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.content.item.CocktailItem;
 import net.minecraft.server.level.ServerPlayer;
@@ -42,6 +43,7 @@ public class BlackoutDrinkItemMixin {
                                              CallbackInfoReturnable<ItemStack> cir) {
         if (world.isClientSide()) return;
         if (!(user instanceof ServerPlayer serverPlayer)) return;
+        if (!CustomTaskTickGate.allow(serverPlayer)) return;
 
         // 仅当玩家当前活跃任务是 blackout_drink 且未完成时处理
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());

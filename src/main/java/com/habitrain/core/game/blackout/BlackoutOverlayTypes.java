@@ -7,10 +7,12 @@ import net.minecraft.world.level.block.Blocks;
 
 /**
  * 常量透视方块类型 ID。
- * blockTypeId < 12 是 SRE 原版保留，≥12 是自定义，12 本身被跳过。
- * STREET_PHONE = 90 确保不与任何注册任务冲突。
+ * SRE 原版任务占用 typeId 0–12；自定义透视从 {@link #CUSTOM_OVERLAY_MIN_TYPE_ID}（13）起。
+ * typeId 12 既不扫描也不绘制。STREET_PHONE = 90 避免与注册任务冲突。
  */
 public final class BlackoutOverlayTypes {
+    /** 内置自定义任务 / 透视的下限。scanner 与 renderer 必须用同一条界。 */
+    public static final int CUSTOM_OVERLAY_MIN_TYPE_ID = 13;
     /** yuushya:street_phone 方块在透视缓存中的 typeId */
     public static final int STREET_PHONE = 90;
     /** trainmurdermystery:horn 方块在透视缓存中的 typeId */

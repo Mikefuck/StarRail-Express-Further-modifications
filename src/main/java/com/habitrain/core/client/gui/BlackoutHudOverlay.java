@@ -1,6 +1,7 @@
 package com.habitrain.core.client.gui;
 
 import com.habitrain.core.client.BlackoutKeyHandler;
+import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.client.SREClient;
 import net.minecraft.client.Minecraft;
@@ -74,6 +75,9 @@ public class BlackoutHudOverlay {
     private static long cachedEndTimeTick = -1;
     /** 当前阶段倒计时分母（好人黄条用）；随 phase 切换重置。 */
     private static int countdownDuration = DEFAULT_BLACKOUT_CD;
+    private static String cachedVoteActionLabel;
+    private static int cachedVoteRemainingSeconds = Integer.MIN_VALUE;
+    private static Component cachedVoteHint;
 
     public static void updateTime(int total, long endTimeTick, boolean active, int phase) {
         totalTimeRemaining = total;
@@ -144,6 +148,9 @@ public class BlackoutHudOverlay {
         totalDuration = DEFAULT_MATCH_DURATION;
         cachedEndTimeTick = -1;
         countdownDuration = DEFAULT_BLACKOUT_CD;
+        cachedVoteActionLabel = null;
+        cachedVoteRemainingSeconds = Integer.MIN_VALUE;
+        cachedVoteHint = null;
     }
 
     public static void render(GuiGraphics g) {
@@ -151,6 +158,7 @@ public class BlackoutHudOverlay {
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
+        if (EliminatedRestPromptState.isVisible() || mc.player.isSpectator()) return;
 
         int width = mc.getWindow().getGuiScaledWidth();
         int barX = (width - BAR_WIDTH) / 2;
@@ -268,10 +276,18 @@ public class BlackoutHudOverlay {
     }
 
     private static void drawVoteHint(GuiGraphics g, Font font, int width, String actionLabel, int remainingSeconds) {
-        Component keyName = BlackoutKeyHandler.getBoundKeyDisplay();
-        Component hint = Component.literal("§e按 §f")
-                .append(keyName)
-                .append("§e " + actionLabel + " §7(" + remainingSeconds + "s)");
+        Component hint = cachedVoteHint;
+        if (hint == null
+                || remainingSeconds != cachedVoteRemainingSeconds
+                || !java.util.Objects.equals(actionLabel, cachedVoteActionLabel)) {
+            Component keyName = BlackoutKeyHandler.getBoundKeyDisplay();
+            hint = Component.literal("§e按 §f")
+                    .append(keyName)
+                    .append("§e " + actionLabel + " §7(" + remainingSeconds + "s)");
+            cachedVoteActionLabel = actionLabel;
+            cachedVoteRemainingSeconds = remainingSeconds;
+            cachedVoteHint = hint;
+        }
         int hintWidth = font.width(hint);
         int hintX = (width - hintWidth) / 2;
         int hintY = BAR_Y + 12;

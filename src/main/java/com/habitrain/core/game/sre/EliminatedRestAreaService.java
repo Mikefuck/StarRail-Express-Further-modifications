@@ -35,16 +35,35 @@ import java.util.UUID;
  * without turning that player back into a live round participant.
  */
 public final class EliminatedRestAreaService {
+    /**
+     * Players eliminated in the current round. Intentionally retained across
+     * disconnect/reconnect so a still-running match can let them re-enter the
+     * rest area. Cleared on round end, server stop, or upstream revival.
+     */
     private static final Set<UUID> ELIMINATED_PLAYERS = new HashSet<>();
     /**
-     * The match world is retained while a player is in the post-game area.
-     * The post-game area itself is always in the overworld, so reading the
-     * player's current level on the second G press would otherwise lose the
-     * map-specific spectator spawn.
+     * Match dimension that recorded each elimination. Used so {@link OnGameStarted}
+     * / {@link OnGameEnd} can drop only that match's entries. UUID-only
+     * {@link #markEliminated(UUID)} leaves this empty (no dim known).
+     */
+    private static final Map<UUID, ResourceKey<Level>> ELIMINATED_MATCH_LEVELS = new HashMap<>();
+    /**
+     * Occupancy only: the match world while a player is physically in the
+     * post-game area. Keys are ResourceKey, not Level references. Dropped on
+     * disconnect so reconnect does not keep {@link #isResting(ServerPlayer)}.
      */
     private static final Map<UUID, ResourceKey<Level>> RESTING_MATCH_LEVELS = new HashMap<>();
     private static final Set<UUID> ENTERING_REST_PLAYERS = new HashSet<>();
+    /**
+     * Set by {@link #prepareUpstreamRevival} when a resting player is about to
+     * be switched to adventure by an upstream revive. {@link #finishUpstreamRevival}
+     * is a no-op unless this set contains the UUID, so login / occupancy
+     * {@code setGameMode(ADVENTURE)} cannot clear {@link #ELIMINATED_PLAYERS}.
+     */
+    private static final Set<UUID> REVIVING_PLAYERS = new HashSet<>();
     private static final Map<UUID, RestPromptState> PROMPT_STATES = new HashMap<>();
+    private static final Map<UUID, Long> TOGGLE_COOLDOWN_UNTIL = new HashMap<>();
+    private static final int TOGGLE_COOLDOWN_TICKS = 10;
     private static boolean initialized;
 
     private EliminatedRestAreaService() {
@@ -62,17 +81,28 @@ public final class EliminatedRestAreaService {
             if (player instanceof ServerPlayer serverPlayer) {
                 SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(serverPlayer.serverLevel());
                 if (gameWorld != null && gameWorld.isRunning()) {
-                    ELIMINATED_PLAYERS.add(serverPlayer.getUUID());
-                    RESTING_MATCH_LEVELS.remove(serverPlayer.getUUID());
+                    UUID playerId = serverPlayer.getUUID();
+                    ELIMINATED_PLAYERS.add(playerId);
+                    ELIMINATED_MATCH_LEVELS.put(playerId, serverPlayer.serverLevel().dimension());
+                    RESTING_MATCH_LEVELS.remove(playerId);
+                    REVIVING_PLAYERS.remove(playerId);
                     syncPrompt(serverPlayer, false);
                 }
             }
         });
-        OnGameStarted.EVENT.register(level -> clearRoundState(level.getServer()));
-        OnGameEnd.EVENT.register((level, gameWorld) -> clearRoundState(level.getServer()));
+        OnGameStarted.EVENT.register(EliminatedRestAreaService::clearRoundStateForLevel);
+        OnGameEnd.EVENT.register((level, gameWorld) -> clearRoundStateForLevel(level));
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> clearRoundState());
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                syncPrompt(handler.getPlayer(), true));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            if (handler.getPlayer() != null) {
+                handleDisconnect(handler.getPlayer().getUUID());
+            }
+        });
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayer player = handler.getPlayer();
+            restoreAfterReconnect(player, server);
+            syncPrompt(player, true);
+        });
         ServerTickEvents.END_SERVER_TICK.register(EliminatedRestAreaService::syncPromptStates);
 
         ServerPlayNetworking.registerGlobalReceiver(EliminatedRestTogglePayload.TYPE, (payload, context) ->
@@ -87,6 +117,35 @@ public final class EliminatedRestAreaService {
     }
 
     /**
+     * Records rest-area eligibility without waiting for {@link OnPlayerDeath}.
+     * Used when a blackout player is eliminated while offline (timeout) and no
+     * {@link ServerLevel} is available. Does not bind a match dimension; those
+     * entries survive per-level round clear until {@code SERVER_STOPPED} or a
+     * later death that writes {@link #ELIMINATED_MATCH_LEVELS}.
+     */
+    public static void markEliminated(UUID playerId) {
+        markEliminated(playerId, null);
+    }
+
+    /**
+     * Same as {@link #markEliminated(UUID)} but ties the player to {@code level}
+     * so {@link OnGameStarted}/{@link OnGameEnd} for that dimension can drop them.
+     */
+    public static void markEliminated(ServerLevel level, UUID playerId) {
+        markEliminated(playerId, level == null ? null : level.dimension());
+    }
+
+    private static void markEliminated(UUID playerId, ResourceKey<Level> matchLevel) {
+        if (playerId == null) {
+            return;
+        }
+        ELIMINATED_PLAYERS.add(playerId);
+        if (matchLevel != null) {
+            ELIMINATED_MATCH_LEVELS.put(playerId, matchLevel);
+        }
+    }
+
+    /**
      * Used by the ServerPlayer mixin so all upstream survival checks continue
      * to regard a resting player as eliminated.
      */
@@ -95,23 +154,88 @@ public final class EliminatedRestAreaService {
     }
 
     /**
-     * Called when an upstream revival mechanism changes a resting player back
-     * to adventure mode. The upstream mechanism itself owns the actual revive.
+     * Disconnect drops rest occupancy and prompt/cooldown state. {@link #ELIMINATED_PLAYERS}
+     * and {@link #ELIMINATED_MATCH_LEVELS} are kept so the same still-running round still
+     * treats this player as eliminated, and so that match's later start/end can drop them.
      */
-    public static void finishUpstreamRevival(ServerPlayer player) {
-        if (player == null || ENTERING_REST_PLAYERS.contains(player.getUUID())) {
+    static void handleDisconnect(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        RESTING_MATCH_LEVELS.remove(playerId);
+        ENTERING_REST_PLAYERS.remove(playerId);
+        REVIVING_PLAYERS.remove(playerId);
+        PROMPT_STATES.remove(playerId);
+        TOGGLE_COOLDOWN_UNTIL.remove(playerId);
+    }
+
+    /**
+     * JOIN fallback: never auto-teleport into the rest area. Drop a leftover rest
+     * key when the match world is gone or not running. Occupancy is always cleared
+     * so {@code isResting()} is false after reconnect. Elimination is dropped only
+     * when the match is known stopped; a lobby/overworld with no SRE component is
+     * not treated as "round ended" (OnGameEnd already clears a finished round).
+     */
+    static void applyJoinReconnect(UUID playerId, boolean restKeyPresent,
+                                   boolean matchLevelPresent, boolean matchKnownStopped,
+                                   boolean stillEliminated) {
+        if (playerId == null) {
+            return;
+        }
+        if (restKeyPresent && (!matchLevelPresent || matchKnownStopped)) {
+            RESTING_MATCH_LEVELS.remove(playerId);
+        }
+        RESTING_MATCH_LEVELS.remove(playerId);
+        if (matchKnownStopped) {
+            ELIMINATED_PLAYERS.remove(playerId);
+            ELIMINATED_MATCH_LEVELS.remove(playerId);
+            REVIVING_PLAYERS.remove(playerId);
+            return;
+        }
+        if (stillEliminated) {
+            return;
+        }
+    }
+
+    private static void restoreAfterReconnect(ServerPlayer player, MinecraftServer server) {
+        if (player == null) {
             return;
         }
         UUID playerId = player.getUUID();
-        boolean wasTracked = RESTING_MATCH_LEVELS.remove(playerId) != null;
-        wasTracked |= ELIMINATED_PLAYERS.remove(playerId);
-        wasTracked |= PROMPT_STATES.containsKey(playerId);
-        if (wasTracked) {
-            HabiTrainCore.LOGGER.info(
-                    "[EliminatedRest] {} cleared eliminated/rest state for upstream revival in {}",
-                    player.getGameProfile().getName(), player.serverLevel().dimension().location());
-            syncPrompt(player, true);
+        ResourceKey<Level> restKey = RESTING_MATCH_LEVELS.get(playerId);
+        ServerLevel matchLevel = restKey == null || server == null ? null : server.getLevel(restKey);
+        SREGameWorldComponent matchWorld = matchLevel == null ? null : SREGameWorldComponent.KEY.get(matchLevel);
+        boolean restKeyPresent = restKey != null;
+        boolean matchLevelPresent = matchLevel != null;
+        boolean matchKnownStopped;
+        if (restKeyPresent) {
+            matchKnownStopped = matchWorld == null || !matchWorld.isRunning();
+        } else {
+            ServerLevel current = player.serverLevel();
+            SREGameWorldComponent currentWorld = current == null ? null : SREGameWorldComponent.KEY.get(current);
+            matchKnownStopped = currentWorld != null && !currentWorld.isRunning();
         }
+        applyJoinReconnect(playerId, restKeyPresent, matchLevelPresent, matchKnownStopped,
+                GameUtils.isPlayerEliminated(player));
+    }
+
+    /**
+     * Called when an upstream revival mechanism changes a resting player back
+     * to adventure mode. The upstream mechanism itself owns the actual revive.
+     * No-op unless {@link #prepareUpstreamRevival} marked this UUID; does not
+     * touch {@link #ELIMINATED_PLAYERS} for login / occupancy adventure sets.
+     */
+    public static void finishUpstreamRevival(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        if (!completeUpstreamRevival(player.getUUID())) {
+            return;
+        }
+        HabiTrainCore.LOGGER.info(
+                "[EliminatedRest] {} cleared eliminated/rest state for upstream revival in {}",
+                player.getGameProfile().getName(), player.serverLevel().dimension().location());
+        syncPrompt(player, true);
     }
 
     /**
@@ -121,7 +245,7 @@ public final class EliminatedRestAreaService {
      * player an adventurer, without deciding whether the revival is allowed.
      */
     public static void prepareUpstreamRevival(ServerPlayer player) {
-        if (!isResting(player)) {
+        if (player == null || !beginUpstreamRevival(player.getUUID())) {
             return;
         }
 
@@ -132,10 +256,51 @@ public final class EliminatedRestAreaService {
         }
     }
 
+    /**
+     * Marks a resting player as an in-flight upstream revive. ENTERING_REST is
+     * the rest-area occupancy path and must not count as revival.
+     */
+    static boolean beginUpstreamRevival(UUID playerId) {
+        if (playerId == null || ENTERING_REST_PLAYERS.contains(playerId)) {
+            return false;
+        }
+        if (!RESTING_MATCH_LEVELS.containsKey(playerId)) {
+            return false;
+        }
+        REVIVING_PLAYERS.add(playerId);
+        return true;
+    }
+
+    /**
+     * Drops rest + elimination only for a UUID previously marked by
+     * {@link #beginUpstreamRevival}. Otherwise a no-op (including eliminated
+     * spectators who were set to adventure without preparing).
+     */
+    static boolean completeUpstreamRevival(UUID playerId) {
+        if (playerId == null || ENTERING_REST_PLAYERS.contains(playerId)) {
+            return false;
+        }
+        if (!REVIVING_PLAYERS.remove(playerId)) {
+            return false;
+        }
+        RESTING_MATCH_LEVELS.remove(playerId);
+        ELIMINATED_PLAYERS.remove(playerId);
+        ELIMINATED_MATCH_LEVELS.remove(playerId);
+        PROMPT_STATES.remove(playerId);
+        TOGGLE_COOLDOWN_UNTIL.remove(playerId);
+        return true;
+    }
+
     private static void toggle(ServerPlayer player) {
         if (player == null) {
             return;
         }
+        long now = player.serverLevel().getGameTime();
+        Long until = TOGGLE_COOLDOWN_UNTIL.get(player.getUUID());
+        if (until != null && now < until) {
+            return;
+        }
+        TOGGLE_COOLDOWN_UNTIL.put(player.getUUID(), now + TOGGLE_COOLDOWN_TICKS);
 
         if (isResting(player)) {
             ServerLevel matchLevel = getRestingMatchLevel(player);
@@ -247,6 +412,9 @@ public final class EliminatedRestAreaService {
     }
 
     private static void syncPromptStates(MinecraftServer server) {
+        if (ELIMINATED_PLAYERS.isEmpty()) {
+            return;
+        }
         for (UUID playerId : new HashSet<>(ELIMINATED_PLAYERS)) {
             ServerPlayer player = server.getPlayerList().getPlayer(playerId);
             if (player == null) {
@@ -270,20 +438,127 @@ public final class EliminatedRestAreaService {
         }
     }
 
-    private static void clearRoundState(MinecraftServer server) {
+    private static void clearRoundStateForLevel(ServerLevel level) {
+        if (level == null) {
+            return;
+        }
+        clearRoundStateForDimension(level.dimension(), level.getServer());
+    }
+
+    /**
+     * Drops rest occupancy and elimination only for players bound to this
+     * match dimension. Other dimensions' resters stay. Process-wide wipe is
+     * {@link #clearRoundState()} on {@code SERVER_STOPPED} only.
+     */
+    static void clearRoundStateForDimension(ResourceKey<Level> dimension) {
+        clearRoundStateForDimension(dimension, null);
+    }
+
+    private static void clearRoundStateForDimension(ResourceKey<Level> dimension, MinecraftServer server) {
+        if (dimension == null) {
+            return;
+        }
+        Set<UUID> affected = playersBoundToDimension(dimension);
         if (server != null) {
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                EliminatedRestPromptPayload.sendTo(player, false, false);
+            for (UUID playerId : affected) {
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if (player != null) {
+                    EliminatedRestPromptPayload.sendTo(player, false, false);
+                }
             }
         }
-        clearRoundState();
+        dropRoundState(affected);
+    }
+
+    private static Set<UUID> playersBoundToDimension(ResourceKey<Level> dimension) {
+        Set<UUID> affected = new HashSet<>();
+        for (Map.Entry<UUID, ResourceKey<Level>> e : RESTING_MATCH_LEVELS.entrySet()) {
+            if (dimension.equals(e.getValue())) {
+                affected.add(e.getKey());
+            }
+        }
+        for (Map.Entry<UUID, ResourceKey<Level>> e : ELIMINATED_MATCH_LEVELS.entrySet()) {
+            if (dimension.equals(e.getValue())) {
+                affected.add(e.getKey());
+            }
+        }
+        return affected;
+    }
+
+    private static void dropRoundState(Set<UUID> playerIds) {
+        for (UUID playerId : playerIds) {
+            ELIMINATED_PLAYERS.remove(playerId);
+            ELIMINATED_MATCH_LEVELS.remove(playerId);
+            RESTING_MATCH_LEVELS.remove(playerId);
+            ENTERING_REST_PLAYERS.remove(playerId);
+            REVIVING_PLAYERS.remove(playerId);
+            PROMPT_STATES.remove(playerId);
+            TOGGLE_COOLDOWN_UNTIL.remove(playerId);
+        }
     }
 
     private static void clearRoundState() {
         ELIMINATED_PLAYERS.clear();
+        ELIMINATED_MATCH_LEVELS.clear();
         RESTING_MATCH_LEVELS.clear();
         ENTERING_REST_PLAYERS.clear();
+        REVIVING_PLAYERS.clear();
         PROMPT_STATES.clear();
+        TOGGLE_COOLDOWN_UNTIL.clear();
+    }
+
+    static void resetTablesForTest() {
+        clearRoundState();
+    }
+
+    static void seedDisconnectFixture(UUID playerId, ResourceKey<Level> restKey) {
+        if (playerId == null) {
+            return;
+        }
+        ELIMINATED_PLAYERS.add(playerId);
+        if (restKey != null) {
+            RESTING_MATCH_LEVELS.put(playerId, restKey);
+            ELIMINATED_MATCH_LEVELS.put(playerId, restKey);
+        }
+        ENTERING_REST_PLAYERS.add(playerId);
+        PROMPT_STATES.put(playerId, new RestPromptState(true, true));
+        TOGGLE_COOLDOWN_UNTIL.put(playerId, 1L);
+    }
+
+    static void seedRestingEliminated(UUID playerId, ResourceKey<Level> matchLevel) {
+        if (playerId == null) {
+            return;
+        }
+        ELIMINATED_PLAYERS.add(playerId);
+        if (matchLevel != null) {
+            RESTING_MATCH_LEVELS.put(playerId, matchLevel);
+            ELIMINATED_MATCH_LEVELS.put(playerId, matchLevel);
+        }
+    }
+
+    static void seedEnteringRest(UUID playerId) {
+        if (playerId != null) {
+            ENTERING_REST_PLAYERS.add(playerId);
+        }
+    }
+
+    static boolean hasEliminated(UUID playerId) {
+        return playerId != null && ELIMINATED_PLAYERS.contains(playerId);
+    }
+
+    static boolean hasRestOccupancy(UUID playerId) {
+        return playerId != null && RESTING_MATCH_LEVELS.containsKey(playerId);
+    }
+
+    static boolean isMarkedReviving(UUID playerId) {
+        return playerId != null && REVIVING_PLAYERS.contains(playerId);
+    }
+
+    static boolean hasTransientDisconnectState(UUID playerId) {
+        return playerId != null && (ENTERING_REST_PLAYERS.contains(playerId)
+                || PROMPT_STATES.containsKey(playerId)
+                || TOGGLE_COOLDOWN_UNTIL.containsKey(playerId)
+                || REVIVING_PLAYERS.contains(playerId));
     }
 
     private record RestPromptState(boolean visible, boolean canToggle) {

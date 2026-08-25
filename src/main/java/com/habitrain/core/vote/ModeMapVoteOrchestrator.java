@@ -18,6 +18,7 @@ import com.habitrain.core.game.sre.SreOriginalModeProxy;
 import com.habitrain.core.network.MapVoteProfilePayload;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -25,10 +26,12 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -48,6 +51,12 @@ public final class ModeMapVoteOrchestrator {
     public enum Phase {
         IDLE, MODE_VOTING, MAP_VOTING, SWITCHING_MAP, STARTING_MODE
     }
+
+    /**
+     * Launch UI id for repair-escape: upstream {@code startGame} skips Areas and uses
+     * the auto-generated manor, so a voted train map must never be broadcast as the match map.
+     */
+    static final String REPAIR_LAUNCH_MAP_ID = "repair_manor";
 
     private static final ConcurrentMap<ResourceKey<Level>, Session> SESSIONS = new ConcurrentHashMap<>();
 
@@ -188,6 +197,13 @@ public final class ModeMapVoteOrchestrator {
 
     /** 模式已选定，进入地图投票阶段；单模式跳过模式投票时也走这里。 */
     private static void beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
+        // 修机：上游 startGame 丢弃 Areas / 投票图，用地图投票会把将被丢弃的图告诉玩家。
+        if (isRepairModeId(winnerId)) {
+            LOGGER.info("[ModeMapVote] repair mode skips map vote (upstream auto manor) mode={}", winnerId);
+            finishRepairWithoutVotedMap(level, session);
+            return;
+        }
+
         var discovered = SREIntegration.discoverServerMaps(level);
         ConfigManager.getInstance().ensureModeMapVoteDefaultsWithInfo(List.of(winnerId), discovered);
         List<String> available = new ArrayList<>(discovered.keySet());
@@ -305,19 +321,25 @@ public final class ModeMapVoteOrchestrator {
                     : com.habitrain.core.config.MapVoteProfileSettings.fromJson(source.profile.toJson());
             profileConfig.put(id, copy);
         }
+        Path baseDir = MapVoteProfileStore.baseDir(level);
+        MinecraftServer server = level.getServer();
         CompletableFuture.supplyAsync(() -> {
-            MapVoteProfileStore.ensureProfiles(level, profileIds, profileConfig);
-            return MapVoteProfileStore.loadProfiles(level, profileIds, profileConfig);
-        }).whenComplete((profiles, error) -> level.getServer().execute(() -> {
-            if (error != null) {
-                LOGGER.warn("[ModeMapVote] async profile load failed", error);
-                return;
-            }
-            if (SESSIONS.get(level.dimension()) != session || session.phase != Phase.MAP_VOTING) {
-                return;
-            }
-            OptionVoteManager.pushProfiles(level, profiles);
-        }));
+            MapVoteProfileStore.ensureProfiles(baseDir, profileIds, profileConfig);
+            return MapVoteProfileStore.loadProfiles(baseDir, profileIds, profileConfig);
+        }).whenComplete((profiles, error) -> {
+            if (server == null || server.isStopped()) return;
+            server.execute(() -> {
+                if (server.isStopped()) return;
+                if (SESSIONS.get(level.dimension()) != session || session.phase != Phase.MAP_VOTING) {
+                    return;
+                }
+                if (error != null) {
+                    LOGGER.warn("[ModeMapVote] async profile load failed", error);
+                    return;
+                }
+                OptionVoteManager.pushProfiles(level, profiles);
+            });
+        });
 
         LOGGER.info("[ModeMapVote] map vote started mode={} options={} duration={}s",
                 winnerId, mapOptions.size(), duration);
@@ -344,6 +366,19 @@ public final class ModeMapVoteOrchestrator {
     /** Load map then start mode; shared by map vote result and DIRECT_PICK. */
     private static void finishWithMap(ServerLevel level, Session session, String mapId, boolean randomPick) {
         if (session == null || mapId == null || mapId.isBlank()) {
+            clearSession(level);
+            return;
+        }
+
+        if (isRepairModeId(session.selectedModeId)) {
+            LOGGER.info("[ModeMapVote] repair DIRECT_PICK skipped loadMap map={} (upstream auto manor)", mapId);
+            finishRepairWithoutVotedMap(level, session);
+            return;
+        }
+
+        if (RepairModeManager.isMapLocked(mapId)) {
+            LOGGER.warn("[ModeMapVote] abort start: map is repair-locked map={} mode={}",
+                    mapId, session.selectedModeId);
             clearSession(level);
             return;
         }
@@ -376,6 +411,39 @@ public final class ModeMapVoteOrchestrator {
         }
 
         clearSession(level);
+    }
+
+    /** Repair escape: no map vote / no loadMap; coordinator UI uses auto-manor id. */
+    private static void finishRepairWithoutVotedMap(ServerLevel level, Session session) {
+        if (session == null) {
+            clearSession(level);
+            return;
+        }
+        String modeId = session.selectedModeId;
+        session.selectedMapId = REPAIR_LAUNCH_MAP_ID;
+        session.phase = Phase.STARTING_MODE;
+        session.phaseDurationSeconds = 0;
+        session.phaseStartMs = System.currentTimeMillis();
+
+        MapVoteLoadCoordinator.beginLoad(level, REPAIR_LAUNCH_MAP_ID, modeId);
+        boolean started = SREModeStartAdapter.startMode(level, modeId);
+        if (!started) {
+            LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (repair auto manor)",
+                    modeId, REPAIR_LAUNCH_MAP_ID);
+            MapVoteLoadCoordinator.reset(level);
+        } else {
+            LOGGER.info("[ModeMapVote] started mode={} map={} (repair auto manor, loading)",
+                    modeId, REPAIR_LAUNCH_MAP_ID);
+        }
+        clearSession(level);
+    }
+
+    static boolean isRepairModeId(@Nullable String modeId) {
+        if (modeId == null || modeId.isBlank()) {
+            return false;
+        }
+        String id = modeId.toLowerCase(Locale.ROOT);
+        return id.contains("sre:repair") || id.contains("repair_escape");
     }
 
     public static boolean cancel(ServerLevel level) {

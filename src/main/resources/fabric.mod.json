@@ -42,6 +42,7 @@
     "mixins": [
         "habitrain_core.mixins.json",
         "habitrain_core.rest_area.mixins.json",
+        "habitrain_core.guards.mixins.json",
         { "config": "habitrain_core.client.mixins.json", "environment": "client" }
     ],
     "depends": {
@@ -54,6 +55,7 @@
         "playeranimator": ">=2.0.4"
     },
     "suggests": {
-        "modmenu": "*"
+        "modmenu": "*",
+        "voicechat": "*"
     }
 }

@@ -1,5 +1,6 @@
 package com.habitrain.core.client.role;
 
+import com.habitrain.core.api.role.v2.action.RoleActionClientApi;
 import com.habitrain.core.api.role.v2.action.RoleActionResult;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,6 +40,12 @@ class RoleActionClientSessionTest {
         session.setClock(now::get);
         session.setTimeoutMs(10_000L);
         session.setSender((id, seq, payload) -> { });
+    }
+
+    @Test
+    void instanceResolvesSessionWithoutHardLink() {
+        assertSame(RoleActionClientSession.INSTANCE, RoleActionClientApi.instance());
+        assertNotNull(RoleActionClientSession.INSTANCE);
     }
 
     @Test

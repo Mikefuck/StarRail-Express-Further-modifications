@@ -15,9 +15,22 @@ import net.minecraft.sounds.SoundSource;
  */
 public class BlackoutWelcomeRenderer {
 
+    private static String cachedRoleName;
+    private static String cachedSubtitle;
+    private static String cachedGoal;
+    private static Component cachedRoleComponent;
+    private static Component cachedSubtitleComponent;
+    private static Component cachedGoalComponent;
+
     /** 启动报幕动画 —— 委托给 {@link ClientBlackoutState} */
     public static void startWelcome(String name, String sub, String g) {
         ClientBlackoutState.startWelcome(name, sub, g);
+        cachedRoleName = null;
+        cachedSubtitle = null;
+        cachedGoal = null;
+        cachedRoleComponent = null;
+        cachedSubtitleComponent = null;
+        cachedGoalComponent = null;
     }
 
     public static boolean isActive() {
@@ -58,7 +71,7 @@ public class BlackoutWelcomeRenderer {
 
         // 角色名 (tick 180-0, 累加显示后常驻)
         if (welcomeTime <= 180) {
-            var txt = Component.literal(ClientBlackoutState.getWelcomeRoleName());
+            var txt = cachedLiteral(ClientBlackoutState.getWelcomeRoleName(), true, false, false);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
             g.pose().scale(2.6f, 2.6f, 1f);
@@ -67,7 +80,7 @@ public class BlackoutWelcomeRenderer {
         }
         // 副标题 (tick 120-0, 累加显示后常驻)
         if (welcomeTime <= 120) {
-            var txt = Component.literal(ClientBlackoutState.getWelcomeSubtitle());
+            var txt = cachedLiteral(ClientBlackoutState.getWelcomeSubtitle(), false, true, false);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
             g.pose().scale(1.2f, 1.2f, 1f);
@@ -76,7 +89,7 @@ public class BlackoutWelcomeRenderer {
         }
         // 目标 (tick 60-0, 累加显示后常驻)
         if (welcomeTime <= 60) {
-            var txt = Component.literal(ClientBlackoutState.getWelcomeGoal());
+            var txt = cachedLiteral(ClientBlackoutState.getWelcomeGoal(), false, false, true);
             g.pose().pushPose();
             g.pose().translate(cx, cy, 0);
             g.drawCenteredString(font, txt, 0, 14, 0xFFFFFF);
@@ -84,8 +97,37 @@ public class BlackoutWelcomeRenderer {
         }
     }
 
+    private static Component cachedLiteral(String text, boolean role, boolean sub, boolean goal) {
+        String value = text == null ? "" : text;
+        if (role) {
+            if (cachedRoleComponent == null || !value.equals(cachedRoleName)) {
+                cachedRoleName = value;
+                cachedRoleComponent = Component.literal(value);
+            }
+            return cachedRoleComponent;
+        }
+        if (sub) {
+            if (cachedSubtitleComponent == null || !value.equals(cachedSubtitle)) {
+                cachedSubtitle = value;
+                cachedSubtitleComponent = Component.literal(value);
+            }
+            return cachedSubtitleComponent;
+        }
+        if (cachedGoalComponent == null || !value.equals(cachedGoal)) {
+            cachedGoal = value;
+            cachedGoalComponent = Component.literal(value);
+        }
+        return cachedGoalComponent;
+    }
+
     public static void reset() {
         ClientBlackoutState.resetWelcome();
+        cachedRoleName = null;
+        cachedSubtitle = null;
+        cachedGoal = null;
+        cachedRoleComponent = null;
+        cachedSubtitleComponent = null;
+        cachedGoalComponent = null;
     }
 
     private BlackoutWelcomeRenderer() {

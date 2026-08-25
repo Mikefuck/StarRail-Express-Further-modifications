@@ -1,7 +1,9 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.CustomTaskBlockIndexLimits;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -14,15 +16,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 旁观/创造模式下的方块高亮渲染调度。
+ * Spectator/creative custom-task ESP.
  *
- * 渲染所有已注册的自定义任务方块（类型 ≥12）。
- * 描边粗细使用 SRE 默认值 4.0。
+ * <p>Draws sparse overlay points (cats, backpacks, phones, generators, …) and
+ * skips bulk decorative blocks so a coal-heavy map does not flood the pass.
  */
 @Environment(EnvType.CLIENT)
 public final class ViewModeDispatcher {
 
     private static final float SPECTATOR_LINE_WIDTH = 4.0f;
+    private static final Color FALLBACK_COLOR = new Color(200, 200, 200, 180);
 
     private ViewModeDispatcher() {}
 
@@ -30,39 +33,65 @@ public final class ViewModeDispatcher {
         if (!GameRunningCache.isGameRunning()) {
             return;
         }
+        if (CustomTaskBlockCache.isEmpty()) {
+            return;
+        }
 
-        Map<Integer, Color> typeColors = TypeColorMapper.buildTypeColorMap();
-        if (typeColors.isEmpty()) return;
-
-        int renderedCount = 0;
         var level = renderContext.world();
+        Map<Integer, Color> colors = TypeColorMapper.buildTypeColorMap();
+        int renderedCount = 0;
         for (BlockPos pos : CustomTaskBlockCache.keySet()) {
             Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
-            if (typeIds == null) continue;
-
-            Block cachedBlock = CustomTaskBlockCache.getBlockAt(pos);
-            Block block = cachedBlock;
+            Block block = CustomTaskBlockCache.getBlockAt(pos);
             if (block == null && level != null) {
                 block = level.getBlockState(pos).getBlock();
             }
-            if (block != null && block instanceof TaskInstinctShowableInterface) {
+            if (!CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(block, typeIds)) {
                 continue;
             }
-
-            for (int type : typeIds) {
-                if (type == 12) continue;
-                Color color = typeColors.get(type);
-                if (color != null) {
-                    TaskOverlayDrawer.renderOverlay(renderContext, pos, color, SPECTATOR_LINE_WIDTH);
-                    renderedCount++;
-                    break;
-                }
+            if (block instanceof TaskInstinctShowableInterface) {
+                continue;
             }
+            if (!TaskOverlayDrawer.isInOverlayRange(
+                    renderContext, pos, TaskOverlayDrawer.SPECTATOR_SPARSE_OVERLAY_DISTANCE_SQ)) {
+                continue;
+            }
+            TaskOverlayDrawer.renderOverlay(
+                    renderContext, pos, resolveColor(typeIds, colors), SPECTATOR_LINE_WIDTH);
+            renderedCount++;
         }
 
         if (renderedCount > 0) {
             HabiTrainCore.LOGGER.debug(
-                    "[ViewModeDispatcher] rendered {} custom task blocks (spectating/creative)", renderedCount);
+                    "[ViewModeDispatcher] rendered {} sparse overlay blocks (spectating/creative)", renderedCount);
         }
+    }
+
+    private static Color resolveColor(Set<Integer> typeIds, Map<Integer, Color> colors) {
+        Color found = null;
+        int best = Integer.MAX_VALUE;
+        boolean phone = false;
+        for (int typeId : typeIds) {
+            if (typeId == BlackoutOverlayTypes.STREET_PHONE
+                    || typeId == BlackoutOverlayTypes.ROTARY_PHONE_RED
+                    || typeId == BlackoutOverlayTypes.HORN) {
+                phone = true;
+            }
+            if (typeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+                continue;
+            }
+            Color mapped = colors.get(typeId);
+            if (mapped != null && typeId < best) {
+                best = typeId;
+                found = mapped;
+            }
+        }
+        if (found != null) {
+            return found;
+        }
+        if (phone) {
+            return PhoneOverlayRenderer.PHONE_OVERLAY_COLOR;
+        }
+        return FALLBACK_COLOR;
     }
 }

@@ -22,7 +22,7 @@ import net.minecraft.resources.ResourceLocation;
  *   空字符串表示没有使用光影包（默认光影）
  */
 public class ShaderInfoPayload implements CustomPacketPayload {
-    private static final int MAX_STRING_LENGTH = 65536;
+    private static final int MAX_STRING_LENGTH = 256;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "shader_pack_info");
     public static final CustomPacketPayload.Type<ShaderInfoPayload> TYPE =

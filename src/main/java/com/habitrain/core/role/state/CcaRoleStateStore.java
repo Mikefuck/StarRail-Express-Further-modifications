@@ -95,14 +95,18 @@ public final class CcaRoleStateStore implements RoleStateStore {
     }
 
     @Override
-    public void write(StateSlotKey key, StoredState state) {
+    public boolean write(StateSlotKey key, StoredState state) {
+        if (key == null || state == null) {
+            return false;
+        }
         StateSlotBag bag = bagFor(key);
         if (bag == null) {
-            LOGGER.warn("[CcaRoleStateStore] write skipped for unloadable state slot {} (offline player or unloaded world)",
+            LOGGER.error("[CcaRoleStateStore] write failed for unloadable state slot {} (offline player or unloaded world)",
                     key);
-            return;
+            return false;
         }
         bag.write(key.encode(), state);
+        return true;
     }
 
     @Override
