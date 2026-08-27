@@ -1,5 +1,6 @@
 package com.habitrain.core.task;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
@@ -8,6 +9,8 @@ import com.habitrain.core.game.sre.DlcTaskTracker;
 import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
+import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -288,6 +291,9 @@ public class TaskManager {
             removeActiveTask(player.getUUID());
         }
 
+        // 统一桥接 SRE 角色任务结算与奖励（警卫获取左轮、其他角色道具/技能触发、金币、心情、连击等）
+        bridgeSreTaskCompletion(player, instance);
+
         if (player.level() instanceof ServerLevel sl) {
             GameModeRegistry.getActiveForLevel(sl).ifPresent(gm ->
                 gm.onTaskComplete(player, instance));
@@ -306,7 +312,7 @@ public class TaskManager {
             LOGGER.debug("MimeKiller task discount apply failed", t);
         }
 
-// 谦卑：自定义任务完成时附近玩家 actionbar「谢谢」
+        // 谦卑：自定义任务完成时附近玩家 actionbar「谢谢」
         try {
             com.habitrain.core.game.sre.modifier.virtue.HumilityVirtue.onTaskComplete(player);
         } catch (Throwable t) {
@@ -315,6 +321,95 @@ public class TaskManager {
 
         if (def.canDirectlyWin()) {
             triggerDirectWin(player, instance);
+        }
+    }
+
+    /**
+     * 桥接 API 任务完成至 SRE 原版与扩展管道：
+     * 1. 触发 RoleMethodDispatcher.callOnFinishQuest -> role.onFinishQuest -> giveGeneralTaskAwards
+     *    （警卫累积 2 个任务获枪、蛋糕师得食材、肉丸加赏金、以及所有角色自定义任务奖励）
+     * 2. 发放心情奖励与客户端完成音效报文（TaskCompletePayload）
+     * 3. 递增并同步连击计数（taskStreak）
+     * 4. 进食任务触发大胃王词条（onBigEaterTaskComplete）
+     * 5. 附近玩家狂躁症 / 渡鸦联动通知
+     */
+    private void bridgeSreTaskCompletion(ServerPlayer player, TaskInstance instance) {
+        try {
+            SREPlayerTaskComponent taskComp = SREPlayerTaskComponent.KEY.maybeGet(player).orElse(null);
+            int streak = taskComp != null ? taskComp.taskStreak : 0;
+            boolean parallel = taskComp != null && taskComp.parallelTaskGenerated;
+
+            // 1. 调用 RoleMethodDispatcher.callOnFinishQuest
+            String questName = instance.getDefinition().getTaskId();
+            io.wifi.starrailexpress.api.RoleMethodDispatcher.callOnFinishQuest(player, questName, streak, parallel);
+
+            // 2. 发放情绪奖励（若未在配置中指定自定义情绪奖励）
+            com.habitrain.core.config.TaskConfigEntry config = ConfigManager.getInstance().getTaskConfig(instance.getFullId());
+            if (config == null || !config.hasEmotionReward) {
+                SREPlayerMoodComponent.KEY.maybeGet(player).ifPresent(mood -> {
+                    float moodGain = io.wifi.starrailexpress.game.GameConstants.MOOD_GAIN;
+                    if (parallel) {
+                        moodGain += io.wifi.starrailexpress.game.GameConstants.PARALLEL_TASK_COMPLETION_BONUS;
+                    }
+                    mood.addMood(moodGain);
+                });
+            }
+
+            // 3. 发送任务完成音效与动画数据包
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
+                    player, new io.wifi.starrailexpress.network.original.TaskCompletePayload());
+
+            // 4. 增加连击计数
+            if (taskComp != null) {
+                taskComp.taskStreak++;
+                taskComp.sync();
+            }
+
+            // 5. 大胃王词条：完成进食任务时额外恢复理智与金币
+            if (HabiTrainCore.TASK_EAT.equals(instance.getFullId()) || "eat".equalsIgnoreCase(questName)) {
+                try {
+                    org.agmas.noellesroles.role.ModifierEffects.onBigEaterTaskComplete(player);
+                } catch (Throwable t) {
+                    LOGGER.debug("BigEater onTaskComplete failed", t);
+                }
+            }
+
+            // 6. 触发附近任务完成联动（狂躁症、渡鸦等）
+            notifyNearbyTaskComplete(player);
+
+        } catch (Throwable t) {
+            LOGGER.error("bridgeSreTaskCompletion failed for task {}", instance.getFullId(), t);
+        }
+    }
+
+    private static void notifyNearbyTaskComplete(ServerPlayer completingPlayer) {
+        try {
+            var worldModifiers = org.agmas.harpymodloader.component.WorldModifierComponent.KEY.get(completingPlayer.level());
+            if (worldModifiers != null) {
+                for (Player nearby : completingPlayer.level().players()) {
+                    if (nearby != completingPlayer && nearby.distanceTo(completingPlayer) <= 11.0
+                            && nearby instanceof ServerPlayer nearbySp
+                            && io.wifi.starrailexpress.game.GameUtils.isPlayerAliveAndSurvival(nearbySp)
+                            && worldModifiers.isModifier(nearbySp.getUUID(), org.agmas.noellesroles.role.TraitorAndModifiers.MANIC)) {
+                        org.agmas.noellesroles.role.ModifierEffects.onNearbyTaskComplete(nearbySp, completingPlayer);
+                    }
+                }
+            }
+            SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(completingPlayer.level());
+            if (gameWorld != null) {
+                for (Player nearby : completingPlayer.level().players()) {
+                    if (nearby != completingPlayer
+                            && nearby.distanceToSqr(completingPlayer) <= org.agmas.noellesroles.game.roles.neutral.raven.RavenPlayerComponent.CHARGE_RADIUS
+                                    * org.agmas.noellesroles.game.roles.neutral.raven.RavenPlayerComponent.CHARGE_RADIUS
+                            && nearby instanceof ServerPlayer nearbySp
+                            && io.wifi.starrailexpress.game.GameUtils.isPlayerAliveAndSurvival(nearbySp)
+                            && gameWorld.isRole(nearbySp, org.agmas.noellesroles.role.ModRoles.RAVEN)) {
+                        org.agmas.noellesroles.component.ModComponents.RAVEN.get(nearbySp).onNearbyTaskComplete();
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("notifyNearbyTaskComplete failed", t);
         }
     }
 

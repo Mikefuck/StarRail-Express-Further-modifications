@@ -44,43 +44,39 @@ public class CustomTaskBlockRendererMixin {
 
     @Inject(method = "render", at = @At("TAIL"), remap = false)
     private static void habitrain$renderCustomTaskBlocks(WorldRenderContext renderContext, CallbackInfo ci) {
-        try {
-            var instance = Minecraft.getInstance();
-            if (instance == null || instance.player == null || instance.level == null) return;
-            if (CustomTaskBlockCache.isEmpty()) return;
-            if (!GameRunningCache.isGameRunning()) return;
+        var instance = Minecraft.getInstance();
+        if (instance == null || instance.player == null || instance.level == null) return;
+        if (CustomTaskBlockCache.isEmpty()) return;
+        if (!GameRunningCache.isGameRunning()) return;
 
-            if (SREClient.isPlayerSpectatingOrCreative()) {
-                ViewModeDispatcher.renderAll(renderContext);
-                return;
-            }
+        if (SREClient.isPlayerSpectatingOrCreative()) {
+            ViewModeDispatcher.renderAll(renderContext);
+            return;
+        }
 
-            // Survival: ActiveTaskCache only (never client TaskManager singleton).
-            String taskName = ActiveTaskCache.getActiveTaskFullId();
+        // Survival: ActiveTaskCache only (never client TaskManager singleton).
+        String taskName = ActiveTaskCache.getActiveTaskFullId();
+        if (taskName == null) {
+            // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
+            taskName = ActiveTaskCache.getFakeTaskFullId();
             if (taskName == null) {
-                // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
-                taskName = ActiveTaskCache.getFakeTaskFullId();
-                if (taskName == null) {
-                    PhoneOverlayRenderer.render(renderContext);
-                    return;
-                }
-                renderTaskBlocks(renderContext, instance, taskName, true);
                 PhoneOverlayRenderer.render(renderContext);
                 return;
             }
-
-            renderTaskBlocks(renderContext, instance, taskName, false);
-
-            // Also outline fake task blocks when both are active and distinct.
-            String fakeName = ActiveTaskCache.getFakeTaskFullId();
-            if (fakeName != null && !fakeName.equals(taskName)) {
-                renderTaskBlocks(renderContext, instance, fakeName, true);
-            }
-
+            renderTaskBlocks(renderContext, instance, taskName, true);
             PhoneOverlayRenderer.render(renderContext);
-        } finally {
-            TaskOverlayDrawer.endOverlayPass();
+            return;
         }
+
+        renderTaskBlocks(renderContext, instance, taskName, false);
+
+        // Also outline fake task blocks when both are active and distinct.
+        String fakeName = ActiveTaskCache.getFakeTaskFullId();
+        if (fakeName != null && !fakeName.equals(taskName)) {
+            renderTaskBlocks(renderContext, instance, fakeName, true);
+        }
+
+        PhoneOverlayRenderer.render(renderContext);
     }
 
     private static void renderTaskBlocks(

@@ -1,7 +1,9 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.GameModeRegistry;
-import io.wifi.starrailexpress.SRE;
+import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.sre.CustomTaskTickGate;
+import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
@@ -10,10 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 强制玩家在 SRE/停电模式游戏中可以进食，即使饥饿值已满。
- * 镜像 SRE 原版 PlayerEntityMixin.tmm$allowEatingRegardlessOfHunger（line 252-259）。
- * 不做此覆盖时，满饥饿下 Player.eat() 不会被调用，BlackoutEatMixin 永远不触发，
- * 导致 blackout_eat 任务在满饥饿时无法完成。
+ * Core 进食任务活跃时允许满饥饿玩家完成任务，不影响大厅和普通世界。
  */
 @Mixin(Player.class)
 public class BlackoutCanEatMixin {
@@ -25,15 +24,14 @@ public class BlackoutCanEatMixin {
     )
     private void habitrain$allowEatingRegardlessOfHunger(boolean ignoreHunger,
                                                          CallbackInfoReturnable<Boolean> cir) {
-        // 与 SRE 原版一致：在 lobby（主城大厅）不强制；
-        // 仅当本 mod 的停电模式对局进行中才强制 canEat=true，避免影响普通世界。
-        if (SRE.isLobby) return;
         Player self = (Player) (Object) this;
-        if (!(self.level() instanceof ServerLevel serverLevel)) return;
-        var active = GameModeRegistry.getActiveForLevel(serverLevel);
-        if (active.isEmpty() || !"habitrain:blackout".equals(active.get().getId())) return;
-        if (active.get() instanceof com.habitrain.core.game.blackout.BlackoutMode bm
-                && bm.isGameEnded(serverLevel)) return;
-        cir.setReturnValue(true);
+        if (!(self.level() instanceof ServerLevel)) return;
+        TaskInstance task = TaskManager.getInstance().getActiveTask(self.getUUID());
+        if (task != null
+                && HabiTrainCore.TASK_EAT.equals(task.getFullId())
+                && !task.isFulfilled()
+                && CustomTaskTickGate.allow(self)) {
+            cir.setReturnValue(true);
+        }
     }
 }

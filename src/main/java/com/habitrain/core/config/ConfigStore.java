@@ -146,6 +146,10 @@ public class ConfigStore {
                     taskMap.put(entry.getKey(),
                             TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
                 }
+                if (CoreConsumableTaskConfigMigration.migrate(taskMap)) {
+                    dirty = true;
+                    LOGGER.info("已将 blackout_eat/blackout_drink 配置迁移为全模式 Core eat/drink");
+                }
             }
 
             if (root.has("gameModes")) {

@@ -1,5 +1,6 @@
 package com.habitrain.core.client.render;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -8,6 +9,7 @@ import com.habitrain.core.client.mixin.FrustumAccessor;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -27,6 +29,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.awt.Color;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 
@@ -36,23 +40,41 @@ import java.util.OptionalDouble;
  * <p>Must live outside any {@code @Mixin} class: Mixin rejects non-private static methods
  * on mixin classes ({@code InvalidMixinException}), which previously killed all DLC ESP.
  *
- * <p>Wall-through notes (1.21 / AFTER_TRANSLUCENT):
+ * <p>Wall-through notes (1.21):
  * <ul>
- *   <li>{@link RenderStateShard#NO_DEPTH_TEST} alone is not enough if the batch is flushed later
- *       with a different depth state, or if {@code ITEM_ENTITY_TARGET} is composited with depth.</li>
- *   <li>Use {@link RenderStateShard#MAIN_TARGET} + immediate {@code endBatch(type)} so the
- *       NO_DEPTH_TEST state is applied when vertices are actually submitted.</li>
+ *   <li>SRE discovers task points during {@code AFTER_TRANSLUCENT}, where Fabric requires direct
+ *       framebuffer rendering and does not provide a deferred consumer contract.</li>
+ *   <li>All task outlines are therefore queued and submitted in {@link WorldRenderEvents#LAST},
+ *       after world framebuffer writes are complete.</li>
+ *   <li>Minecraft's {@link RenderStateShard#NO_DEPTH_TEST} is a no-op for the GL_ALWAYS branch.
+ *       This renderer explicitly applies GL_ALWAYS and restores GL_LEQUAL around GPU submission.</li>
  * </ul>
  */
 @Environment(EnvType.CLIENT)
 public final class TaskOverlayDrawer {
 
     private static final Map<Float, RenderType> RENDER_TYPE_CACHE = new HashMap<>();
+    private static final TaskOverlayFrameQueue<QueuedOverlay> OVERLAY_QUEUE = new TaskOverlayFrameQueue<>();
+    private static boolean finalPassRegistered;
+
+    private static final RenderStateShard.DepthTestStateShard EXPLICIT_ALWAYS_DEPTH =
+            new RenderStateShard.DepthTestStateShard("habitrain_explicit_always", ThroughWallDepthFunction.ALWAYS) {
+                @Override
+                public void setupRenderState() {
+                    ThroughWallDepthFunction.apply(RenderSystem::depthFunc);
+                }
+
+                @Override
+                public void clearRenderState() {
+                    ThroughWallDepthFunction.restore(RenderSystem::depthFunc);
+                }
+            };
 
     /** Default SRE-style line width (matches {@code ALWAYS_VISIBLE_THICK_LINES}). */
     public static final float DEFAULT_LINE_WIDTH = 4.0f;
-    public static final double SURVIVAL_OVERLAY_DISTANCE = 32.0;
-    public static final double SPECTATOR_OVERLAY_DISTANCE = 24.0;
+    /** 12 chunks = 12 * 16 = 192 blocks. */
+    public static final double SURVIVAL_OVERLAY_DISTANCE = 192.0;
+    public static final double SPECTATOR_OVERLAY_DISTANCE = 192.0;
     public static final double SURVIVAL_OVERLAY_DISTANCE_SQ = SURVIVAL_OVERLAY_DISTANCE * SURVIVAL_OVERLAY_DISTANCE;
     public static final double SPECTATOR_OVERLAY_DISTANCE_SQ = SPECTATOR_OVERLAY_DISTANCE * SPECTATOR_OVERLAY_DISTANCE;
     /**
@@ -62,6 +84,16 @@ public final class TaskOverlayDrawer {
     public static final double SPECTATOR_SPARSE_OVERLAY_DISTANCE_SQ = Double.POSITIVE_INFINITY;
 
     private TaskOverlayDrawer() {}
+
+    /** Registers the frame queue lifecycle and final direct render pass once. */
+    public static void registerFinalPass() {
+        if (finalPassRegistered) {
+            return;
+        }
+        finalPassRegistered = true;
+        WorldRenderEvents.START.register(context -> OVERLAY_QUEUE.beginFrame());
+        WorldRenderEvents.LAST.register(TaskOverlayDrawer::flushOverlayFrame);
+    }
 
     /**
      * Memoized see-through line RenderType. Safe to share across SRE redirect + Habi drawer.
@@ -86,7 +118,7 @@ public final class TaskOverlayDrawer {
                         .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
                         .setWriteMaskState(RenderStateShard.COLOR_WRITE)
                         .setCullState(RenderStateShard.NO_CULL)
-                        .setDepthTestState(RenderStateShard.NO_DEPTH_TEST)
+                        .setDepthTestState(EXPLICIT_ALWAYS_DEPTH)
                         .createCompositeState(false)
         );
     }
@@ -98,46 +130,91 @@ public final class TaskOverlayDrawer {
     public static void renderOverlay(
             WorldRenderContext context, BlockPos blockPos, Color color, float lineWidth) {
         if (context == null || blockPos == null || color == null) return;
-
-        Minecraft client = Minecraft.getInstance();
-        Level world = client != null ? client.level : null;
-        if (world == null) return;
-
-        PoseStack matrices = context.matrixStack();
-        if (matrices == null) return;
-
-        BlockState state = world.getBlockState(blockPos);
-        AABB localAABB = getCombinedAABB(world, blockPos, state);
-        RenderType type = throughWallLines(lineWidth);
-
-        // Independent BufferSource + immediate endBatch: do not wait for the world renderer's
-        // deferred flush (which can apply a different depth state and kill wall-through).
-        MultiBufferSource.BufferSource bufferSource = client.renderBuffers().bufferSource();
-        VertexConsumer vertexConsumer = bufferSource.getBuffer(type);
-
-        matrices.pushPose();
-        Vec3 cameraPos = context.camera().getPosition();
-        matrices.translate(
-                blockPos.getX() - cameraPos.x,
-                blockPos.getY() - cameraPos.y,
-                blockPos.getZ() - cameraPos.z);
-
-        float red = color.getRed() / 255f;
-        float green = color.getGreen() / 255f;
-        float blue = color.getBlue() / 255f;
-        float alpha = color.getAlpha() / 255f;
-
-        LevelRenderer.renderLineBox(matrices, vertexConsumer, localAABB, red, green, blue, alpha);
-        matrices.popPose();
+        OVERLAY_QUEUE.enqueue(new QueuedOverlay(blockPos, color, normalizeLineWidth(lineWidth)));
     }
 
-    /** Flush every overlay RenderType once per world-render pass. */
-    public static void endOverlayPass() {
+    /** Captures an upstream SRE overlay while preserving its independently supplied alpha. */
+    public static boolean queueUpstreamOverlay(
+            WorldRenderContext context, BlockPos blockPos, Color color, float alpha, float lineWidth) {
+        if (context == null || blockPos == null || color == null) {
+            return false;
+        }
+        if (!isInOverlayRange(context, blockPos, SURVIVAL_OVERLAY_DISTANCE_SQ)) {
+            return true;
+        }
+        int alphaByte = Math.round(Math.max(0.0f, Math.min(1.0f, alpha)) * 255.0f);
+        Color queuedColor = new Color(color.getRed(), color.getGreen(), color.getBlue(), alphaByte);
+        OVERLAY_QUEUE.enqueue(new QueuedOverlay(blockPos, queuedColor, normalizeLineWidth(lineWidth)));
+        return true;
+    }
+
+    private static float normalizeLineWidth(float lineWidth) {
+        return lineWidth > 0.0f ? lineWidth : DEFAULT_LINE_WIDTH;
+    }
+
+    private static void flushOverlayFrame(WorldRenderContext context) {
+        List<QueuedOverlay> overlays = OVERLAY_QUEUE.drain();
+        if (overlays.isEmpty() || context == null || context.camera() == null) {
+            return;
+        }
+
         Minecraft client = Minecraft.getInstance();
-        if (client == null) return;
+        Level world = context.world();
+        PoseStack matrices = context.matrixStack();
+        if (client == null || world == null || matrices == null) {
+            return;
+        }
+
+        Map<Float, List<QueuedOverlay>> batches = new LinkedHashMap<>();
+        for (QueuedOverlay overlay : overlays) {
+            batches.computeIfAbsent(overlay.lineWidth(), ignored -> new java.util.ArrayList<>()).add(overlay);
+        }
+
         MultiBufferSource.BufferSource source = client.renderBuffers().bufferSource();
-        for (RenderType type : RENDER_TYPE_CACHE.values()) {
-            source.endBatch(type);
+        Vec3 cameraPos = context.camera().getPosition();
+        try {
+            for (Map.Entry<Float, List<QueuedOverlay>> batch : batches.entrySet()) {
+                RenderType type = throughWallLines(batch.getKey());
+                VertexConsumer consumer = source.getBuffer(type);
+                for (QueuedOverlay overlay : batch.getValue()) {
+                    drawQueuedOverlay(world, matrices, cameraPos, consumer, overlay);
+                }
+                source.endBatch(type);
+            }
+        } finally {
+            // RenderType normally restores this itself. Keep the final guard because LAST callbacks
+            // must not leak GL state into held-item or GUI rendering if a draw throws midway.
+            ThroughWallDepthFunction.restore(RenderSystem::depthFunc);
+        }
+    }
+
+    private static void drawQueuedOverlay(
+            Level world,
+            PoseStack matrices,
+            Vec3 cameraPos,
+            VertexConsumer consumer,
+            QueuedOverlay overlay) {
+        BlockPos blockPos = overlay.blockPos();
+        BlockState state = world.getBlockState(blockPos);
+        AABB localAABB = getCombinedAABB(world, blockPos, state);
+        Color color = overlay.color();
+
+        matrices.pushPose();
+        try {
+            matrices.translate(
+                    blockPos.getX() - cameraPos.x,
+                    blockPos.getY() - cameraPos.y,
+                    blockPos.getZ() - cameraPos.z);
+            LevelRenderer.renderLineBox(
+                    matrices,
+                    consumer,
+                    localAABB,
+                    color.getRed() / 255.0f,
+                    color.getGreen() / 255.0f,
+                    color.getBlue() / 255.0f,
+                    color.getAlpha() / 255.0f);
+        } finally {
+            matrices.popPose();
         }
     }
 
@@ -216,5 +293,8 @@ public final class TaskOverlayDrawer {
         }
 
         return shape.bounds();
+    }
+
+    private record QueuedOverlay(BlockPos blockPos, Color color, float lineWidth) {
     }
 }

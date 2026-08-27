@@ -1,6 +1,5 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.EliminatedRestPromptState;
 import com.habitrain.core.client.InstinctColorHelper;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.CameraBlock;
@@ -26,10 +25,6 @@ public class InstinctColorMixin {
 
     @Inject(method = "render", at = @At("HEAD"), remap = false, cancellable = true)
     private static void habitrain$buildOverrides(CallbackInfo ci) {
-        if (EliminatedRestPromptState.isVisible()) {
-            ci.cancel();
-            return;
-        }
         if (!InstinctColorHelper.isDirty()) {
             return;
         }
@@ -48,9 +43,6 @@ public class InstinctColorMixin {
     private static void habitrain$redirectOverlay(
             WorldRenderContext ctx, BlockPos pos, Color color, float alpha,
             boolean colorize, float textScale) {
-        if (EliminatedRestPromptState.isVisible()) {
-            return;
-        }
         Integer type = NoellesrolesClient.taskBlocks.get(pos);
         if (type != null) {
             var level = ctx.world();

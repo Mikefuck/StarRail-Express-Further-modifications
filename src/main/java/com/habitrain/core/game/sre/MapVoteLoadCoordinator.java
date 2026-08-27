@@ -3,11 +3,14 @@ package com.habitrain.core.game.sre;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.sre.mixin.FullTrainResetTaskAccessor;
+import com.habitrain.core.game.sre.mixin.OnlySomeBlockResetTaskAccessor;
 import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
 import com.habitrain.core.network.MapVoteProgressPayload;
 import com.habitrain.core.network.MapVoteStartConfirmedPayload;
 import io.wifi.starrailexpress.game.GameUtils;
+import io.wifi.starrailexpress.game.ServerTaskInfoClasses;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -18,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.OptionalInt;
 
 /**
  * 地图投票后「开局加载」的服务端权威协调器。
@@ -25,8 +29,9 @@ import java.util.concurrent.ConcurrentMap;
  * <p>在 {@code GameUtils.startGame}（投完票→地图重置开始）到 {@code GameUtils.trueStartGame}
  * （重置完成→真正开局）之间的窗口内：</p>
  * <ul>
- *   <li>1Hz 向该维度广播 {@link MapVoteProgressPayload}：进度（SRE STARTING fade 百分比，
- *       未进 STARTING 时按时间推进封顶 90）、游玩人数、按模式配置估算的杀手人数、
+ *   <li>1Hz 向该维度广播 {@link MapVoteProgressPayload}：进度优先采用 SRE 当前地图重置
+ *       任务的真实百分比，重置完成后采用 STARTING fade 百分比；游玩人数、按模式配置
+ *       估算的杀手人数、
  *       选中地图与模式 id。客户端据此绘制加载面板与进度条。</li>
  *   <li>当 {@code trueStartGame} 真正执行（地图重置 + 5 tick 调度完成）时，由服务端 mixin
  *       {@code SRETrueStartGameMixin} 调用 {@link #onGameStartConfirmed} 记录开局成功；待 SRE
@@ -209,14 +214,16 @@ public final class MapVoteLoadCoordinator {
         return true;
     }
 
-    /** 估算开局加载进度：基于 SRE 服务端任务队列（地图重置）。 */
+    /** 开局加载进度：优先跟随 SRE 地图重置任务，之后才进入 STARTING fade。 */
     private static int computeProgress(ServerLevel level) {
+        OptionalInt resetProgress = findUpstreamResetProgress(level);
+        if (resetProgress.isPresent()) {
+            return resetProgress.getAsInt();
+        }
         try {
-            // FullTrainResetTask / OnlySomeBlockResetTask 的进度可从 GameUtils 队列推断，
-            // 但没有公开 getter。用「是否进入 trueStartGame 前」的启发式：
-            // STARTING 阶段 fade 每 tick +1，进度 = fade / (FADE_TIME+FADE_PAUSE)。
             var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
-            if (gw != null) {
+            if (gw != null && gw.getGameStatus()
+                    == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STARTING) {
                 int fade = gw.getFade();
                 int total = io.wifi.starrailexpress.game.GameConstants.FADE_TIME
                         + io.wifi.starrailexpress.game.GameConstants.FADE_PAUSE;
@@ -230,6 +237,25 @@ public final class MapVoteLoadCoordinator {
         LoadState st = LOADS.get(level.dimension());
         long sinceStart = System.currentTimeMillis() - (st != null ? st.startedMs : 0L);
         return (int) Math.min(90, 10 + sinceStart / 300L);
+    }
+
+    /** Reads the same counters used by SRE's {@code message.sre.reseting} action-bar percentage. */
+    private static OptionalInt findUpstreamResetProgress(ServerLevel level) {
+        for (ServerTaskInfoClasses.ServerTaskInfo task : GameUtils.serverTaskQueue) {
+            if (task instanceof ServerTaskInfoClasses.FullTrainResetTask
+                    && task instanceof FullTrainResetTaskAccessor accessor
+                    && accessor.habitrain$getServerWorld() == level) {
+                return MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress());
+            }
+            if (task instanceof ServerTaskInfoClasses.OnlySomeBlockResetTask
+                    && task instanceof OnlySomeBlockResetTaskAccessor accessor
+                    && accessor.habitrain$getWorld() == level) {
+                return MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress());
+            }
+        }
+        return OptionalInt.empty();
     }
 
     private static void broadcastProgress(ServerLevel level, LoadState st, int progress) {

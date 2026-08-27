@@ -67,8 +67,12 @@ public class HabiTrainCore implements ModInitializer {
     public static final SoundEvent MIKE_CODE_EDIT_SOUND = SoundEvent.createVariableRangeEvent(MIKE_CODE_EDIT_ID);
 
     // ===== 任务 ID 常量（全限定字符串，供 mixin/追踪器按 getFullId() 匹配） =====
-    public static final String TASK_BLACKOUT_EAT = MOD_ID + ":blackout_eat";
-    public static final String TASK_BLACKOUT_DRINK = MOD_ID + ":blackout_drink";
+    public static final String TASK_EAT = MOD_ID + ":eat";
+    public static final String TASK_DRINK = MOD_ID + ":drink";
+    /** @deprecated Use {@link #TASK_EAT}; retained for downstream source compatibility. */
+    @Deprecated public static final String TASK_BLACKOUT_EAT = TASK_EAT;
+    /** @deprecated Use {@link #TASK_DRINK}; retained for downstream source compatibility. */
+    @Deprecated public static final String TASK_BLACKOUT_DRINK = TASK_DRINK;
     public static final String TASK_BLACKOUT_SEARCH_BACKPACK = MOD_ID + ":blackout_search_backpack";
     public static final String TASK_BLACKOUT_BETEL_QUEST = MOD_ID + ":blackout_betel_quest";
     public static final String TASK_BLACKOUT_PET_CAT = MOD_ID + ":blackout_pet_cat";
@@ -83,6 +87,8 @@ public class HabiTrainCore implements ModInitializer {
         LOGGER.info("哈比列车核心 (HabiTrain Core) 初始化中...");
         // 1. 配置系统
         ConfigManager.getInstance().load();
+        // Core is the single authoritative implementation of eat/drink in every SRE mode.
+        com.habitrain.core.game.sre.CoreConsumableTasks.register();
         // Mod 菜单访问门控（独立文件 config/habitrain_menu_gate.json，服务端权威）
         com.habitrain.core.config.MenuGateService.load();
         // 角色扩展 v2 配置（独立版本化文件 config/habitrain_role_v2.json，服务端权威）
@@ -263,9 +269,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.blackout.task.RestorePowerTask.register();
         com.habitrain.core.game.blackout.task.RestorePowerHandler.register();
 
-        // 停电模式日常任务（7个，加入 BLACKOUT_GOOD 池，也自动成为坏人假任务池）
-        com.habitrain.core.game.blackout.task.BlackoutEatTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutDrinkTask.register();
+        // 停电模式日常专属任务（吃喝已由全模式 Core 任务统一接管）
         com.habitrain.core.game.blackout.task.BlackoutSearchBackpackTask.register();
         com.habitrain.core.game.blackout.task.BlackoutBetelQuestTask.register();
         com.habitrain.core.game.blackout.task.BlackoutPetCatTask.register();

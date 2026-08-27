@@ -1,6 +1,5 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.SRERole;
 import org.agmas.noellesroles.client.utils.InstinctManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -28,9 +27,6 @@ public class InstinctKillerTeamMixin {
             require = 0
     )
     private static boolean habitrain$noSheriffXray(SRERole role) {
-        if (EliminatedRestPromptState.isVisible()) {
-            return false;
-        }
         return role != null && !role.isVigilanteTeam() && role.isKillerTeam();
     }
 }

@@ -403,7 +403,7 @@ public class BlackoutMode implements GameMode {
     /**
      * 停电模式任务系统独立化：专属任务（BLACKOUT_GOOD / BLACKOUT_BAD）不再自动派发，
      * 仅通过红色电话商店购买或炸毁发电机后强制派发恢复供电。此处将专属任务从自动
-     * 派发池中排除，让原版 SRE 任务（吃/喝/外出/修线镜等）正常进入池子。
+     * 派发池中排除，让通用 Core 吃喝任务及其余 SRE 任务正常进入池子。
      */
     @Override
     public List<TaskDefinition> filterAvailableTasks(List<TaskDefinition> tasks, ServerPlayer player) {

@@ -91,9 +91,6 @@ public final class RoleClientExtensionHooks {
 
     private static TrueFalseAndCustomResult<Integer> apply(InstinctPhase phase,
                                                            LocalPlayer viewer, Entity entity) {
-        if (EliminatedRestPromptState.isVisible() && phase != InstinctPhase.SPECTATOR) {
-            return TrueFalseAndCustomResult.pass();
-        }
         if (viewer == null || !(entity instanceof Player target)) {
             return TrueFalseAndCustomResult.pass();
         }

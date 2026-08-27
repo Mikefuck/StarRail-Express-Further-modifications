@@ -43,9 +43,6 @@ public final class HabiRoleClientHooks {
 
     private static TrueFalseAndCustomResult<Integer> sinInstinctHighlight(
             LocalPlayer viewer, Entity entity, boolean spectator) {
-        if (EliminatedRestPromptState.isVisible()) {
-            return TrueFalseAndCustomResult.pass();
-        }
         if (viewer == null || entity == null) {
             return TrueFalseAndCustomResult.pass();
         }

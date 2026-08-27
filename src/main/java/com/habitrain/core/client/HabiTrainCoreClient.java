@@ -1,6 +1,7 @@
 package com.habitrain.core.client;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.client.render.TaskOverlayDrawer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -35,6 +36,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // HUD 叠加层 + 快捷键注册
         new HudRegistrar();
         EliminatedRestPromptState.registerLifecycle();
+
+        // 任务点统一在世界渲染 LAST 阶段直绘，避免深度状态和延迟 buffer 重新遮挡。
+        TaskOverlayDrawer.registerFinalPass();
 
         // 投稿职业客户端钩子（替罪羊本能伪装等）
         HabiRoleClientHooks.init();

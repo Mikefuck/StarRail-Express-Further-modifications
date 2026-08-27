@@ -8,17 +8,11 @@ import com.habitrain.core.network.CustomTaskBlockPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.content.block.FoodPlatterBlock;
 import io.wifi.starrailexpress.content.block_entity.BeveragePlateBlockEntity;
-import io.wifi.starrailexpress.content.item.CocktailItem;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.item.HoneyBottleItem;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -100,8 +94,8 @@ public final class CustomTaskBlockScanner {
 
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int blockTypeId = def.getBlockTypeId();
-            if (HabiTrainCore.TASK_BLACKOUT_EAT.equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
-            else if (HabiTrainCore.TASK_BLACKOUT_DRINK.equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
+            if (HabiTrainCore.TASK_EAT.equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
+            else if (HabiTrainCore.TASK_DRINK.equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
             if (blockTypeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) continue;
 
             boolean anyResolved = false;
@@ -192,15 +186,15 @@ public final class CustomTaskBlockScanner {
                                     var items = entity.getStoredItems();
                                     if (items.isEmpty()) continue;
                                     ItemStack item0 = items.get(0);
-                                    Item item = item0.getItem();
-                                    if (item instanceof CocktailItem || item instanceof PotionItem || item instanceof HoneyBottleItem) {
+                                    ConsumableClassificationPolicy.Kind kind =
+                                            FoodDrinkConsumableClassifier.classify(item0);
+                                    if (kind == ConsumableClassificationPolicy.Kind.DRINK) {
                                         if (foodPlatterDrinkTypeId > 0
                                                 && CustomTaskBlockCache.put(cursor, foodPlatterDrinkTypeId, block)) {
                                             totalAddedCount++;
                                         }
-                                    } else {
-                                        FoodProperties foodPro = item0.get(DataComponents.FOOD);
-                                        if (foodPro != null && foodPlatterEatTypeId > 0
+                                    } else if (kind == ConsumableClassificationPolicy.Kind.EAT) {
+                                        if (foodPlatterEatTypeId > 0
                                                 && CustomTaskBlockCache.put(cursor, foodPlatterEatTypeId, block)) {
                                             totalAddedCount++;
                                         }

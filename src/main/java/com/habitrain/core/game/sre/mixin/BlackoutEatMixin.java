@@ -2,14 +2,14 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
+import com.habitrain.core.game.sre.ConsumableClassificationPolicy;
 import com.habitrain.core.game.sre.CustomTaskTickGate;
+import com.habitrain.core.game.sre.FoodDrinkConsumableClassifier;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.HoneyBottleItem;
-import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -32,19 +32,17 @@ public class BlackoutEatMixin {
         TaskInstance task = TaskManager.getInstance().getActiveTask(serverPlayer.getUUID());
         if (task == null) return;
 
-        if (HabiTrainCore.TASK_BLACKOUT_EAT.equals(task.getFullId())) {
-            if (!task.isFulfilled() && task.getProgress() < task.getMaxProgress()) {
-                task.setProgress(task.getMaxProgress());
-            }
+        ConsumableClassificationPolicy.Kind expected;
+        if (HabiTrainCore.TASK_EAT.equals(task.getFullId())) {
+            expected = ConsumableClassificationPolicy.Kind.EAT;
+        } else if (HabiTrainCore.TASK_DRINK.equals(task.getFullId())) {
+            expected = ConsumableClassificationPolicy.Kind.DRINK;
+        } else {
             return;
         }
-
-        if (HabiTrainCore.TASK_BLACKOUT_DRINK.equals(task.getFullId())) {
-            if (!task.isFulfilled() && task.getProgress() < task.getMaxProgress()) {
-                if (stack.getItem() instanceof PotionItem || stack.getItem() instanceof HoneyBottleItem) {
-                    task.setProgress(task.getMaxProgress());
-                }
-            }
+        if (!task.isFulfilled() && task.getProgress() < task.getMaxProgress()
+                && FoodDrinkConsumableClassifier.classify(stack) == expected) {
+            task.setProgress(task.getMaxProgress());
         }
     }
 }

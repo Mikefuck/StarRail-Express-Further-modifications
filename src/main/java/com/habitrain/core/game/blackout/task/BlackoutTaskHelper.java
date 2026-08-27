@@ -10,7 +10,7 @@ import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
-final class BlackoutTaskHelper {
+public final class BlackoutTaskHelper {
 
     static final int DEFAULT_GOLD_REWARD = 25;
     static final float DEFAULT_EMOTION_REWARD = 0.5f;
@@ -18,7 +18,7 @@ final class BlackoutTaskHelper {
     private BlackoutTaskHelper() {
     }
 
-    static void grantRewards(ServerPlayer player, String taskFullId, int defaultGold, float defaultEmotion) {
+    public static void grantRewards(ServerPlayer player, String taskFullId, int defaultGold, float defaultEmotion) {
         TaskConfigEntry config = ConfigManager.getInstance().getTaskConfig(taskFullId);
         int gold = (config != null && config.hasGoldReward) ? config.goldReward : defaultGold;
         float emotion = (config != null && config.hasEmotionReward)
@@ -55,7 +55,7 @@ final class BlackoutTaskHelper {
         }
     }
 
-    static void grantRewards(ServerPlayer player, String taskFullId) {
+    public static void grantRewards(ServerPlayer player, String taskFullId) {
         grantRewards(player, taskFullId, DEFAULT_GOLD_REWARD, DEFAULT_EMOTION_REWARD);
     }
 
@@ -69,7 +69,7 @@ final class BlackoutTaskHelper {
      * @param level  服务端世界
      * @param fullId 任务完整 ID（用于查 TaskDefinition）
      */
-    static void applyTimeImpact(ServerLevel level, String fullId) {
+    public static void applyTimeImpact(ServerLevel level, String fullId) {
         if (level == null || fullId == null) return;
         TaskDefinition def = com.habitrain.core.api.TaskRegistry.get(fullId);
         if (def == null || def.getTimeImpact() == null) return;

@@ -32,8 +32,8 @@ public final class BlackoutExclusiveTasks {
 
     /** 好人日常轮换池。 */
     public static final Set<String> DAILY_TASK_IDS = Set.of(
-            HabiTrainCore.TASK_BLACKOUT_EAT,
-            HabiTrainCore.TASK_BLACKOUT_DRINK,
+            HabiTrainCore.TASK_EAT,
+            HabiTrainCore.TASK_DRINK,
             HabiTrainCore.TASK_BLACKOUT_SEARCH_BACKPACK,
             HabiTrainCore.TASK_BLACKOUT_BETEL_QUEST,
             HabiTrainCore.TASK_BLACKOUT_PET_CAT,

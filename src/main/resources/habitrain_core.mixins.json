@@ -51,6 +51,8 @@
         "SRERoleItemsMixin",
         "KillerKnifeDurabilityMixin",
         "SREBlackoutEffectEnhancementMixin",
+        "FullTrainResetTaskAccessor",
+        "OnlySomeBlockResetTaskAccessor",
         "SRETrueStartGameMixin",
         "SRESetGameStatusMixin",
         "TMMRolesLegacyScanMixin",

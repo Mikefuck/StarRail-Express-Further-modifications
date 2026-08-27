@@ -31,7 +31,7 @@ public abstract class GenerateTaskMixin {
      * assign-and-complete for 外出.
      */
     private static final Set<String> BUILTIN_SRE_TASK_IDS = Set.of(
-            "sleep", "raed_book", "eat", "drink", "exercise", "meditate",
+            "sleep", "raed_book", "exercise", "meditate",
             "bathe", "chair", "note_block", "toilet", "be_alone",
             "breathe", "outside", "vending_machine",
             "light_stove", "clean_dust", "transport",

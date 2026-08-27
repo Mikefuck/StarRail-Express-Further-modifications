@@ -58,6 +58,10 @@ public final class TaskWeightCalculator {
         int added = 0;
 
         for (SREPlayerTaskComponent.Task task : SREPlayerTaskComponent.Task.getAvailableTasksList()) {
+            if (CoreConsumableTaskPolicy.replacesUpstream(task.name())) {
+                LOGGER.debug("[HabiDebug]   skip original {}: globally replaced by habitrain_core", task.name());
+                continue;
+            }
             if (existingTasks.containsKey(task)) {
                 LOGGER.debug("[HabiDebug]   skip original {}: already in tasks", task.name());
                 continue;

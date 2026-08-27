@@ -4,24 +4,22 @@ import com.habitrain.core.client.render.TaskOverlayDrawer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.BlockPos;
 import org.agmas.noellesroles.client.TaskBlockOverlayRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.awt.Color;
 
 /**
  * Fix SRE vanilla task-point ESP not drawing through walls.
  *
- * <p>Upstream uses {@code ITEM_ENTITY_TARGET + NO_DEPTH_TEST} on a deferred
- * {@code context.consumers()} batch. On 1.21 / some shader pipelines that
- * combination still gets depth-tested at flush time, so outlines only show
- * when unoccluded. Redirect the buffer to Habi's MAIN_TARGET xray type and
- * flush once at the end of the overlay pass.
+ * <p>Upstream discovers overlays during {@code AFTER_TRANSLUCENT} and writes to
+ * {@code context.consumers()}, although Fabric does not expose a deferred-consumer contract in
+ * that phase. Capture each approved overlay at the method boundary and let Habi's dedicated
+ * {@code LAST} pass submit it after all world framebuffer writes have completed.
  *
  * <p>Does not edit upstream {@link TaskBlockOverlayRenderer} source.
  */
@@ -29,25 +27,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = TaskBlockOverlayRenderer.class, remap = false)
 public class TaskBlockOverlayThroughWallMixin {
 
-    @Redirect(
+    @Inject(
             method = "renderBlockOverlay",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/MultiBufferSource;getBuffer(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
-                    remap = true
-            ),
+            at = @At("HEAD"),
             remap = false,
-            require = 1
+            require = 1,
+            cancellable = true
     )
-    private static com.mojang.blaze3d.vertex.VertexConsumer habitrain$xrayBuffer(
-            MultiBufferSource consumers, RenderType ignored) {
-        // Prefer the shared main buffer source so endBatch in the TAIL inject targets the same builder.
-        MultiBufferSource.BufferSource source = Minecraft.getInstance().renderBuffers().bufferSource();
-        return source.getBuffer(TaskOverlayDrawer.throughWallLines(TaskOverlayDrawer.DEFAULT_LINE_WIDTH));
-    }
-
-    @Inject(method = "render", at = @At("TAIL"), remap = false, require = 0)
-    private static void habitrain$flushXrayPass(WorldRenderContext context, CallbackInfo ci) {
-        TaskOverlayDrawer.endOverlayPass();
+    private static void habitrain$queueXray(
+            WorldRenderContext context,
+            BlockPos blockPos,
+            Color color,
+            float alpha,
+            boolean colorize,
+            float textScale,
+            CallbackInfo ci) {
+        if (TaskOverlayDrawer.queueUpstreamOverlay(
+                context, blockPos, color, alpha, TaskOverlayDrawer.DEFAULT_LINE_WIDTH)) {
+            ci.cancel();
+        }
     }
 }

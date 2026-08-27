@@ -1,6 +1,5 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.client.SREClient;
@@ -30,10 +29,6 @@ public class InstinctSheriffGateMixin {
             remap = false
     )
     private static void habitrain$noSheriffInstinct(CallbackInfoReturnable<Boolean> cir) {
-        if (EliminatedRestPromptState.isVisible()) {
-            cir.setReturnValue(false);
-            return;
-        }
         SREGameWorldComponent gameComponent = SREClient.gameComponent;
         if (gameComponent == null) return;
         var player = Minecraft.getInstance().player;

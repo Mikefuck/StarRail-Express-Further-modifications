@@ -5,7 +5,6 @@ import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.TaskConfigEntry;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.Nullable;
@@ -14,10 +13,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 public class TaskPoolBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskPoolBuilder");
@@ -49,59 +49,41 @@ public class TaskPoolBuilder {
                                                              @Nullable TaskCategory forcedCategory,
                                                              Set<String> builtinSreTaskIds,
                                                              Player player) {
+        List<TaskDefinition> tasks = selectCandidates(
+                TaskRegistry.getAll(), id -> isTaskMapEnabled(id, mapName), currentCategory,
+                activeMode, forcedCategory, builtinSreTaskIds, player);
         if (forcedCategory != null) {
-            List<TaskDefinition> tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def, builtinSreTaskIds))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, currentCategory, activeMode, player))
-                    .filter(def -> forcedCategory.equals(def.getCategory()))
-                    .collect(Collectors.toList());
-            LOGGER.info("[HabiDebug] getAvailableDlcTasks: blackout faction filter={}, {} candidates (fallback disabled)",
+            LOGGER.info("[HabiDebug] getAvailableDlcTasks: forced category={}, {} candidates (no fallback)",
                     forcedCategory, tasks.size());
-            return tasks;
+        } else {
+            LOGGER.debug("[HabiDebug] getAvailableDlcTasks: {} candidates via exact mode/category policy {}",
+                    tasks.size(), currentCategory);
         }
-
-        List<TaskDefinition> tasks = TaskRegistry.getAll().stream()
-                .filter(def -> !isBuiltinSreTask(def, builtinSreTaskIds))
-                .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                .filter(def -> isTaskAllowedForPool(def, currentCategory, activeMode, player))
-                .collect(Collectors.toList());
-        if (!tasks.isEmpty()) {
-            LOGGER.debug("[HabiDebug] getAvailableDlcTasks: {} via category {}", tasks.size(), currentCategory);
-            return tasks;
-        }
-
-        if (currentCategory != TaskCategory.MURDER) {
-            tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def, builtinSreTaskIds))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, TaskCategory.MURDER, activeMode, player))
-                    .collect(Collectors.toList());
-            if (!tasks.isEmpty()) {
-                LOGGER.warn("[HabiDebug] getAvailableDlcTasks: fallback {}->MURDER, {}", currentCategory, tasks.size());
-                return tasks;
-            }
-        }
-
-        if (currentCategory != TaskCategory.ALL) {
-            tasks = TaskRegistry.getAll().stream()
-                    .filter(def -> !isBuiltinSreTask(def, builtinSreTaskIds))
-                    .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                    .filter(def -> isTaskAllowedForPool(def, TaskCategory.ALL, activeMode, player))
-                    .collect(Collectors.toList());
-            if (!tasks.isEmpty()) {
-                LOGGER.warn("[HabiDebug] getAvailableDlcTasks: fallback {}->ALL, {}", currentCategory, tasks.size());
-                return tasks;
-            }
-        }
-
-        LOGGER.warn("[HabiDebug] getAvailableDlcTasks: ULTIMATE fallback (ignoring category)");
-        tasks = TaskRegistry.getAll().stream()
-                .filter(def -> !isBuiltinSreTask(def, builtinSreTaskIds))
-                .filter(def -> isTaskMapEnabled(def.getFullId(), mapName))
-                .collect(Collectors.toList());
-        LOGGER.warn("[HabiDebug] getAvailableDlcTasks: ultimate found {} tasks", tasks.size());
         return tasks;
+    }
+
+    /**
+     * Selects only definitions that are valid for the current mode/category.
+     * An empty result intentionally remains empty: crossing into another mode's category
+     * is never a valid fallback.
+     */
+    static List<TaskDefinition> selectCandidates(Collection<TaskDefinition> definitions,
+                                                 Predicate<String> mapEnabled,
+                                                 @Nullable TaskCategory currentCategory,
+                                                 @Nullable GameMode activeMode,
+                                                 @Nullable TaskCategory forcedCategory,
+                                                 Set<String> builtinSreTaskIds,
+                                                 Player player) {
+        if (definitions == null || definitions.isEmpty()) return List.of();
+        Set<String> builtinIds = builtinSreTaskIds == null ? Set.of() : builtinSreTaskIds;
+        Predicate<TaskDefinition> base = def -> !isBuiltinSreTask(def, builtinIds)
+                && mapEnabled.test(def.getFullId())
+                && isTaskAllowedForPool(def, currentCategory, activeMode, player);
+
+        return definitions.stream()
+                .filter(base)
+                .filter(def -> forcedCategory == null || forcedCategory.equals(def.getCategory()))
+                .toList();
     }
 
     public static boolean isBuiltinSreTask(TaskDefinition def, Set<String> builtinSreTaskIds) {

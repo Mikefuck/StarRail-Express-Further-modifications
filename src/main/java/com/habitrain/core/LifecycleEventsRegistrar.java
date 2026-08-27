@@ -61,6 +61,8 @@ public final class LifecycleEventsRegistrar {
         // 服务器启动后加载配置
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ConfigManager.getInstance().load();
+            // 第二次加载发生在全部任务注册完成后；立即持久化一次性任务 ID 迁移。
+            ConfigManager.getInstance().save();
             ConfigManager.getInstance().setServer(server);
             ConfigManager.getInstance().applyMinigameEnforcement(server);
             // 角色状态 v2：绑定实时 server 引用供 CCA store 与状态同步解析

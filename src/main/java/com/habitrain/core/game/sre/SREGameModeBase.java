@@ -53,8 +53,6 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
         // Murder mode tasks
         registerBuiltin("sleep", "睡觉", TaskCategory.MURDER, 1.0f, 4);
-        registerBuiltin("eat", "进食", TaskCategory.MURDER, 1.0f, 1);
-        registerBuiltin("drink", "喝水", TaskCategory.MURDER, 1.0f, 2);
         registerBuiltin("exercise", "锻炼", TaskCategory.MURDER, 1.0f, 5);
         registerBuiltin("raed_book", "阅读", TaskCategory.MURDER, 1.0f, 6);
         registerBuiltin("bathe", "洗澡", TaskCategory.MURDER, 1.0f, 3);
