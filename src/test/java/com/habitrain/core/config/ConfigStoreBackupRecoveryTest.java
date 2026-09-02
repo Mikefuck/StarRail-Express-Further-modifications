@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigStoreBackupRecoveryTest {
@@ -23,7 +24,8 @@ class ConfigStoreBackupRecoveryTest {
                 {
                   "global": {
                     "knifeDurabilityEnabled": true,
-                    "sheriffCountDivisor": 9
+                    "sheriffCountDivisor": 9,
+                    "blackoutGlobalCooldownSeconds": 73
                   }
                 }
                 """, StandardCharsets.UTF_8);
@@ -33,6 +35,7 @@ class ConfigStoreBackupRecoveryTest {
 
         assertTrue(repository.isKnifeDurabilityEnabled());
         assertTrue(repository.getSheriffCountDivisor() == 9);
+        assertEquals(73, repository.getBlackoutGlobalCooldownSeconds());
         assertTrue(Files.isRegularFile(file), "backup should be restored as the live primary");
     }
 }

@@ -13,6 +13,7 @@
         "InstinctColorMixin",
         "InstinctCacheFixMixin",
         "StarRailExpressTitleScreenMixin",
+        "ScreenPanoramaMixin",
         "FixTaskRendererMixin",
         "SubtitleHUDPrefixFixMixin",
         "InstinctKillerTeamMixin",

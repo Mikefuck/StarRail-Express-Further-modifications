@@ -26,5 +26,17 @@
   "look_my_eyes": {
     "subtitle": "对视",
     "sounds": ["minecraft:entity.player.levelup"]
+  },
+  "moving_scene_outside": {
+    "subtitle": "subtitles.habitrain_core.moving_scene_outside",
+    "sounds": [
+      {
+        "name": "minecraft:entity.minecart.riding",
+        "type": "event",
+        "volume": 0.8,
+        "pitch": 0.7,
+        "stream": true
+      }
+    ]
   }
 }

@@ -508,5 +508,86 @@ public class NetworkReceiverRegistrar {
                                 }
                             }
                         }));
+
+        // 23) 场景配置器右键打开 GUI
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneEditorOpenS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            Minecraft mc = ctx.client();
+                            var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
+                            java.util.LinkedHashSet<String> configuredMapKeys = new java.util.LinkedHashSet<>(
+                                    ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
+                            configuredMapKeys.addAll(sceneSettings.profiles.keySet());
+                            var sceneRuntime = com.habitrain.core.scene.client.SceneRenderRuntime.getInstance();
+                            var runtimeState = sceneRuntime.getCurrentState();
+                            String runtimeMapKey = runtimeState != null && runtimeState.isActive()
+                                    ? runtimeState.getMapKey() : "";
+                            String initialMapKey = com.habitrain.core.scene.model.SceneEditorMapPolicy.resolve(
+                                    payload.mapKey(), runtimeMapKey,
+                                    com.habitrain.core.scene.client.SceneToolHud.getInstance().getCurrentMapKey(),
+                                    configuredMapKeys);
+                            var initialProfile = initialMapKey.equals(payload.mapKey())
+                                    ? payload.parseProfile() : sceneSettings.getProfile(initialMapKey).copy();
+                            var initialDescriptor = initialMapKey.equals(payload.mapKey())
+                                    ? payload.assetDescriptor() : sceneRuntime.getManifest(initialMapKey);
+                            mc.setScreen(com.habitrain.core.client.gui.menu.ConfigMenuScreen.openSceneMotion(
+                                    mc.screen,
+                                    initialMapKey,
+                                    initialProfile,
+                                    payload.sessionSelection(),
+                                    initialDescriptor
+                            ));
+                        }));
+
+        // 24) 场景选区状态同步
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneSelectionStateS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            com.habitrain.core.scene.client.SceneToolHud.getInstance()
+                                    .updateState(payload.mapKey(), payload.toBounds(), payload.blockCount());
+                            com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance()
+                                    .updateSelection(payload.toBounds());
+                        }));
+
+        // 25) 场景运行时状态同步（零Tick移动渲染 / 音效 / 微震）
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneRuntimeStateS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
+                                        .updateRuntimeState(payload.state())));
+
+        // 26) 场景资产 Manifest 下发（触发按需下载）
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetManifestS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
+                                        .acceptManifest(payload.mapKey(), payload.descriptor())));
+
+        // 27) 场景资产分片数据接收
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetChunkS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneAssetCache.getInstance()
+                                        .handleChunk(payload)));
+
+        // 投票加载页预取：文件校验、解码和 GPU 网格编译完成后再向服务端回执。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetPrefetchS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
+                                        .prefetchAsset(payload.sessionId(), payload.mapKey(), payload.descriptor())));
+
+        // 28) 场景资产生成进度通知
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetBuildProgressS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            var player = ctx.client().player;
+                            if (player != null) {
+                                player.displayClientMessage(
+                                        net.minecraft.network.chat.Component.literal("§6[场景构建] §f" + payload.statusMessage()),
+                                        true
+                                );
+                            }
+                        }));
     }
 }

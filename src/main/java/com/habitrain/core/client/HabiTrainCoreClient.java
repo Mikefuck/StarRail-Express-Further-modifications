@@ -25,6 +25,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        com.habitrain.core.client.config.ClientVisualPreferences.load();
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.START.register(
+                com.habitrain.core.scene.client.SceneCameraShakeRenderer::apply);
         HabiTrainCore.LOGGER.info("哈比列车任务API 客户端初始化完成");
 
         // S2C 网络接收器注册
@@ -39,6 +42,16 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         // 任务点统一在世界渲染 LAST 阶段直绘，避免深度状态和延迟 buffer 重新遮挡。
         TaskOverlayDrawer.registerFinalPass();
+
+        // 移动场景系统：世界渲染与配置器 HUD
+        // Match SRE's proven scene-preview pass: the terrain/depth buffer is complete here,
+        // while the context matrix still expects an explicit -camera world translation.
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
+                context -> com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().render(context));
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
+                context -> com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance().render(context));
+        com.habitrain.core.scene.client.SceneToolHud.init();
+        com.habitrain.core.scene.client.SceneOriginPlacementController.init();
 
         // 投稿职业客户端钩子（替罪羊本能伪装等）
         HabiRoleClientHooks.init();

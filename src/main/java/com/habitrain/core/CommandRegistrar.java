@@ -382,6 +382,93 @@ public final class CommandRegistrar {
                                                 return 1;
                                             })))
                     )
+                    // 移动场景系统调试与管理命令
+                    .then(Commands.literal("scene")
+                            .requires(source -> source.hasPermission(2))
+                            .then(Commands.literal("tool").executes(ctx -> {
+                                ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                player.getInventory().add(new net.minecraft.world.item.ItemStack(
+                                        com.habitrain.core.scene.item.HabiAdminItems.SCENE_CONFIGURATOR));
+                                ctx.getSource().sendSuccess(() -> Component.literal("§a已给予场景配置器道具"), false);
+                                return 1;
+                            }))
+                            .then(Commands.literal("status").executes(ctx -> {
+                                ServerLevel level = ctx.getSource().getLevel();
+                                var state = com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().getRuntimeState(level);
+                                var ctxRes = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level);
+                                ctx.getSource().sendSuccess(() -> Component.literal(
+                                        "§6=== 移动场景状态 ===\n"
+                                        + "§7当前地图: §b" + ctxRes.mapKey() + "\n"
+                                        + "§7对局进行中: §e" + ctxRes.matchActive() + "\n"
+                                        + "§7场景激活: " + (state != null && state.isActive() ? "§a是" : "§c否") + "\n"
+                                        + "§7资产哈希: §d" + (state != null ? state.getAssetHash() : "none") + "\n"
+                                        + "§7速度: §f" + (state != null ? state.getProfile().getSpeedBlocksPerSecond() : 0) + " m/s"
+                                ), false);
+                                return 1;
+                            }))
+                            .then(Commands.literal("start")
+                                    .executes(ctx -> {
+                                        ServerLevel level = ctx.getSource().getLevel();
+                                        var ctxRes = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level);
+                                        boolean ok = com.habitrain.core.api.scene.SceneMotionApi.instance().startScene(level, ctxRes.mapKey());
+                                        if (ok) {
+                                            ctx.getSource().sendSuccess(() -> Component.literal("§a已启动场景运动: " + ctxRes.mapKey()), true);
+                                            return 1;
+                                        }
+                                        ctx.getSource().sendFailure(Component.literal("§c启动场景失败（配置禁用或无有效资产）"));
+                                        return 0;
+                                    })
+                                    .then(Commands.argument("map", StringArgumentType.string())
+                                            .executes(ctx -> {
+                                                ServerLevel level = ctx.getSource().getLevel();
+                                                String map = StringArgumentType.getString(ctx, "map");
+                                                boolean ok = com.habitrain.core.api.scene.SceneMotionApi.instance().startScene(level, map);
+                                                if (ok) {
+                                                    ctx.getSource().sendSuccess(() -> Component.literal("§a已启动场景运动: " + map), true);
+                                                    return 1;
+                                                }
+                                                ctx.getSource().sendFailure(Component.literal("§c启动场景失败（配置禁用或无有效资产）"));
+                                                return 0;
+                                            }))
+                            )
+                            .then(Commands.literal("stop").executes(ctx -> {
+                                ServerLevel level = ctx.getSource().getLevel();
+                                com.habitrain.core.api.scene.SceneMotionApi.instance().stopScene(level);
+                                ctx.getSource().sendSuccess(() -> Component.literal("§e已停止当前维度的场景运动"), true);
+                                return 1;
+                            }))
+                            .then(Commands.literal("build")
+                                    .executes(ctx -> {
+                                        ServerLevel level = ctx.getSource().getLevel();
+                                        ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                        var ctxRes = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level);
+                                        var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(ctxRes.mapKey());
+                                        if (profile.getSourceBounds().isEmpty()) {
+                                            ctx.getSource().sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds"));
+                                            return 0;
+                                        }
+                                        com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                                                .requestCapture(level, ctxRes.mapKey(), profile.getSourceBounds(), player);
+                                        ctx.getSource().sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + ctxRes.mapKey()), false);
+                                        return 1;
+                                    })
+                                    .then(Commands.argument("map", StringArgumentType.string())
+                                            .executes(ctx -> {
+                                                ServerLevel level = ctx.getSource().getLevel();
+                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                                String map = StringArgumentType.getString(ctx, "map");
+                                                var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(map);
+                                                if (profile.getSourceBounds().isEmpty()) {
+                                                    ctx.getSource().sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds: " + map));
+                                                    return 0;
+                                                }
+                                                com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                                                        .requestCapture(level, map, profile.getSourceBounds(), player);
+                                                ctx.getSource().sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + map), false);
+                                                return 1;
+                                            }))
+                            )
+                    )
                     // 贪婪匿名交易双确认的命令兼容回退
                     .then(Commands.literal("greed_trade")
                             .then(Commands.literal("confirm")

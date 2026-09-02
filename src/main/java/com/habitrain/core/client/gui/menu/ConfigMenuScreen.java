@@ -9,6 +9,7 @@ import com.habitrain.core.client.gui.menu.page.OtherPage;
 import com.habitrain.core.client.gui.menu.page.OutGameLobbyEnvPage;
 import com.habitrain.core.client.gui.menu.page.OutGameMvpAnimationsPage;
 import com.habitrain.core.client.gui.menu.page.OutGameShaderPage;
+import com.habitrain.core.client.gui.menu.page.OutGameTitlePanoramaPage;
 import com.habitrain.core.client.gui.menu.page.OutGameVotePage;
 import com.habitrain.core.client.gui.menu.ui.SaveBar;
 import com.habitrain.core.client.gui.menu.ui.SubTabBar;
@@ -39,14 +40,14 @@ public class ConfigMenuScreen extends Screen {
         MenuTheme.ACCENT_AMBER, MenuTheme.TEXT_SECONDARY
     };
     private static final String[][] SUB_LABELS = {
-        {"小游戏", "数值平衡", "环境"},
-        {"投票", "大厅环境", "光影白名单", "MVP 动画"},
+        {"小游戏", "数值平衡", "环境", "移动场景"},
+        {"投票", "大厅环境", "光影白名单", "MVP 动画", Component.translatable("screen.habitrain_core.title_panorama.tab").getString()},
         {"任务配置", "角色覆盖", "角色扩展"},
         {}
     };
     private static final String[][] PAGE_HINTS = {
-        {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气"},
-        {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包", "配置结算页玩家动作与随机规则"},
+        {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气", "配置列车窗外移动场景与几何资产"},
+        {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包", "配置结算页玩家动作与随机规则", Component.translatable("screen.habitrain_core.title_panorama.page_hint").getString()},
         {"按模式管理任务并编辑奖励与地图", "管理角色替换、调整和冲突状态", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
         {"兼容、耐久与服务端自动行为"}
     };
@@ -54,7 +55,8 @@ public class ConfigMenuScreen extends Screen {
     public enum AccessMode {
         FULL,
         TASK_SETTINGS_ONLY,
-        MAP_VOTE_ONLY
+        MAP_VOTE_ONLY,
+        SCENE_SETTINGS_ONLY
     }
 
     private static final int HEADER_H = 50;
@@ -70,9 +72,21 @@ public class ConfigMenuScreen extends Screen {
     private int subTab;
 
     private ConfigPage[][] pages;
+    private PendingSceneSession pendingSceneSession;
     private final SubTabBar[] subBars = new SubTabBar[4];
     private SaveBar saveBar;
     private int subHitThisFrame = -1;
+
+    /**
+     * 场景配置器的数据包可能在屏幕交给 Minecraft 初始化之前到达。此时 Screen.font
+     * 尚未赋值，不能提前创建持有字体引用的配置页面，因此先保存数据并在首次创建页面时注入。
+     */
+    private record PendingSceneSession(
+            String mapKey,
+            com.habitrain.core.scene.model.SceneProfile profile,
+            com.habitrain.core.scene.model.SceneBounds selection,
+            com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+    }
 
     public ConfigMenuScreen(Screen parent) {
         this(parent, AccessMode.FULL);
@@ -118,19 +132,33 @@ public class ConfigMenuScreen extends Screen {
         return screen;
     }
 
+    /** 场景配置器道具入口：直接定位到游戏内 -> 移动场景页。 */
+    public static ConfigMenuScreen openSceneMotion(Screen parent, String mapKey, com.habitrain.core.scene.model.SceneProfile profile,
+                                                  com.habitrain.core.scene.model.SceneBounds selection,
+                                                  com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+        ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.SCENE_SETTINGS_ONLY);
+        screen.topTab = TOP_IN_GAME;
+        screen.subTab = 3;
+        screen.pendingSceneSession = new PendingSceneSession(mapKey, profile, selection, descriptor);
+        ConfigUpdateContext.setCurrentSceneMapKey(mapKey);
+        return screen;
+    }
+
     private ConfigPage[][] ensurePages() {
         if (pages != null) return pages;
         pages = new ConfigPage[4][];
         pages[TOP_IN_GAME] = new ConfigPage[]{
             new InGameMinigamesPage(this, font, remoteEditable),
             new InGameBalancePage(this, font, remoteEditable),
-            new InGameEnvPage(this, font, remoteEditable)
+            new InGameEnvPage(this, font, remoteEditable),
+            new com.habitrain.core.client.gui.menu.page.SceneMotionPage(this, font, remoteEditable)
         };
         pages[TOP_OUT_GAME] = new ConfigPage[]{
             new OutGameVotePage(this, font, remoteEditable),
             new OutGameLobbyEnvPage(this, font, remoteEditable),
             new OutGameShaderPage(this, font, remoteEditable),
-            new OutGameMvpAnimationsPage(this, font, remoteEditable)
+            new OutGameMvpAnimationsPage(this, font, remoteEditable),
+            new OutGameTitlePanoramaPage(font)
         };
         pages[TOP_MODE] = new ConfigPage[]{
             new ModeTasksPage(this, font, remoteEditable),
@@ -138,6 +166,16 @@ public class ConfigMenuScreen extends Screen {
             new com.habitrain.core.client.gui.menu.page.RoleExtensionsPage(this, font, remoteEditable)
         };
         pages[TOP_OTHER] = new ConfigPage[]{new OtherPage(this, font, remoteEditable)};
+
+        if (pendingSceneSession != null
+                && pages[TOP_IN_GAME][3] instanceof com.habitrain.core.client.gui.menu.page.SceneMotionPage page) {
+            page.setSessionData(
+                    pendingSceneSession.mapKey(),
+                    pendingSceneSession.profile(),
+                    pendingSceneSession.selection(),
+                    pendingSceneSession.descriptor());
+            pendingSceneSession = null;
+        }
         return pages;
     }
 
@@ -145,6 +183,7 @@ public class ConfigMenuScreen extends Screen {
         ConfigPage[][] all = ensurePages();
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return all[TOP_MODE][0];
         if (accessMode == AccessMode.MAP_VOTE_ONLY) return all[TOP_OUT_GAME][0];
+        if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) return all[TOP_IN_GAME][3];
         return topTab == TOP_OTHER ? all[TOP_OTHER][0] : all[topTab][subTab];
     }
 
@@ -199,6 +238,8 @@ public class ConfigMenuScreen extends Screen {
                     ? renderTaskSettingsOnlySubBar(g, contentX, contentW, mx, my)
                     : accessMode == AccessMode.MAP_VOTE_ONLY
                             ? renderMapVoteOnlySubBar(g, contentX, contentW, mx, my)
+                            : accessMode == AccessMode.SCENE_SETTINGS_ONLY
+                                    ? renderSceneSettingsOnlySubBar(g, contentX, contentW, mx, my)
                             : subBars[topTab].render(g, font, contentX, HEADER_H, contentW, subTab, mx, my);
             contentY += SubTabBar.H + 7;
         } else {
@@ -234,6 +275,8 @@ public class ConfigMenuScreen extends Screen {
                 enabled = (i == TOP_MODE);
             } else if (accessMode == AccessMode.MAP_VOTE_ONLY) {
                 enabled = (i == TOP_OUT_GAME);
+            } else if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) {
+                enabled = (i == TOP_IN_GAME);
             } else {
                 enabled = true;
             }
@@ -282,6 +325,15 @@ public class ConfigMenuScreen extends Screen {
         return -1;
     }
 
+    private int renderSceneSettingsOnlySubBar(GuiGraphics g, int x, int w, int mx, int my) {
+        int tabW = Math.max(60, Math.min(132, w));
+        boolean hover = MenuTheme.inBounds(mx, my, x, HEADER_H, tabW, SubTabBar.H);
+        MenuTheme.chip(g, font, SUB_LABELS[TOP_IN_GAME][3], x, HEADER_H,
+                tabW, SubTabBar.H, TOP_ACCENTS[TOP_IN_GAME], true);
+        if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_IN_GAME]);
+        return -1;
+    }
+
     /** 门控未授权时覆盖整个场景的「当前为未授权的访问」提示。 */
     private void drawLockedOverlay(GuiGraphics g) {
         g.fill(0, 0, width, height, 0xC0000000);
@@ -314,6 +366,7 @@ public class ConfigMenuScreen extends Screen {
 
     private String activePageLabel() {
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "任务点设置";
+        if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) return "移动场景";
         if (topTab == TOP_OTHER) return "其他设置";
         return SUB_LABELS[topTab][subTab];
     }
@@ -321,6 +374,7 @@ public class ConfigMenuScreen extends Screen {
     private String activePageHint() {
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "仅开放任务点设置，其他设置已锁定";
         if (accessMode == AccessMode.MAP_VOTE_ONLY) return PAGE_HINTS[TOP_OUT_GAME][0];
+        if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) return "管理员道具专用入口，仅编辑服务端当前地图";
         if (topTab == TOP_OTHER) return PAGE_HINTS[TOP_OTHER][0];
         return PAGE_HINTS[topTab][subTab];
     }
@@ -358,6 +412,7 @@ public class ConfigMenuScreen extends Screen {
             if (MenuTheme.inBounds(mx, my, 7, y, navW - 14, NAV_ITEM_H)) {
                 if (accessMode == AccessMode.TASK_SETTINGS_ONLY && i != TOP_MODE) return true;
                 if (accessMode == AccessMode.MAP_VOTE_ONLY && i != TOP_OUT_GAME) return true;
+                if (accessMode == AccessMode.SCENE_SETTINGS_ONLY && i != TOP_IN_GAME) return true;
                 currentPage().flushPending();
                 boolean switched = i != topTab;
                 topTab = i;
@@ -448,9 +503,21 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public void onClose() {
-        currentPage().flushPending();
+        ConfigPage page = currentPage();
+        page.flushPending();
+        // SceneMotionPage keeps widget values in an isolated draft. Merely flushing the
+        // widgets does not copy that draft into ConfigManager, so closing after previewing
+        // used to save the old repository value. Keep the menu's existing auto-save-on-close
+        // contract and perform the same page commit as the Save button.
+        if (page.canSave() && remoteEditable && MenuPermissions.canEditRemoteConfigs(configUpdateScope())) {
+            page.save();
+        }
         saveConfigNow();
+        // A live scene preview belongs to the client session, not to this disposable Screen.
+        // Keep it running after Save/Close so reopening the editor can truthfully show “预览中”.
+        // Map switches, game start and client/world lifecycle resets still stop it explicitly.
         ConfigUpdateContext.setCurrentScope(ConfigUpdateScope.FULL_MOD_MENU);
+        ConfigUpdateContext.setCurrentSceneMapKey("");
         Minecraft.getInstance().setScreen(parent);
     }
 
@@ -459,6 +526,7 @@ public class ConfigMenuScreen extends Screen {
             case FULL -> ConfigUpdateScope.FULL_MOD_MENU;
             case TASK_SETTINGS_ONLY -> ConfigUpdateScope.BACKPACK_TASKS;
             case MAP_VOTE_ONLY -> ConfigUpdateScope.BACKPACK_MAP_VOTE;
+            case SCENE_SETTINGS_ONLY -> ConfigUpdateScope.ADMIN_SCENE_TOOL;
         };
     }
 

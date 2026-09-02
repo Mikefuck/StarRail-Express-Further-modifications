@@ -10,9 +10,11 @@ class ConfigUpdateContextTest {
     @Test
     void resetPreventsBackpackScopeFromLeakingIntoLaterConfigurationSaves() {
         ConfigUpdateContext.setCurrentScope(ConfigUpdateScope.BACKPACK_TASKS);
+        ConfigUpdateContext.setCurrentSceneMapKey("map_b");
 
         ConfigUpdateContext.reset();
 
         assertEquals(ConfigUpdateScope.FULL_MOD_MENU, ConfigUpdateContext.currentScope());
+        assertEquals("", ConfigUpdateContext.currentSceneMapKey());
     }
 }

@@ -6,6 +6,7 @@ import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ui.*;
+import com.habitrain.core.config.BlackoutGlobalCooldownRules;
 import com.habitrain.core.config.ConfigManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -13,7 +14,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
-/** 游戏内·数值平衡：DLC 占比滑块 / 警长除数 / 小游戏总开关。 */
+/** 游戏内·数值平衡：DLC 占比 / 警长除数 / 停电通用 CD / 小游戏总开关。 */
 public class InGameBalancePage implements ConfigPage {
 
     private static final int PAD = 16;
@@ -27,8 +28,11 @@ public class InGameBalancePage implements ConfigPage {
     private float dlcTarget;
     private boolean mgGlobal;
     private int sheriffDivisor;
+    private int blackoutGlobalCooldownSeconds;
 
     private final EditBox sheriffField;
+    private final EditBox blackoutGlobalCooldownField;
+    private final EditBoxInputRouter editBoxInput;
 
     private final SliderRow slider = new SliderRow(MIN_TARGET, MAX_TARGET, STEP);
     private ScrollArea area;
@@ -45,10 +49,21 @@ public class InGameBalancePage implements ConfigPage {
         this.dlcTarget = c.getDlcProbabilityTarget();
         this.mgGlobal = c.isMinigameGlobalEnabled();
         this.sheriffDivisor = c.getSheriffCountDivisor();
+        this.blackoutGlobalCooldownSeconds = c.getBlackoutGlobalCooldownSeconds();
         this.sheriffField = new EditBox(font, -10000, -10000, 60, 14, Component.literal(""));
         this.sheriffField.setMaxLength(3);
         this.sheriffField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
         this.sheriffField.setValue(String.valueOf(sheriffDivisor));
+        this.sheriffField.setEditable(editable);
+        this.blackoutGlobalCooldownField = new EditBox(font, -10000, -10000, 72, 14,
+                Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown"));
+        this.blackoutGlobalCooldownField.setMaxLength(4);
+        this.blackoutGlobalCooldownField.setFilter(s -> s.isEmpty() || s.matches("\\d*"));
+        this.blackoutGlobalCooldownField.setValue(String.valueOf(blackoutGlobalCooldownSeconds));
+        this.blackoutGlobalCooldownField.setEditable(editable);
+        // 手动绘制的 EditBox 必须统一注册到路由器；漏掉 charTyped 会再次出现
+        // “输入框可见、可聚焦，但无法输入”的回归。
+        this.editBoxInput = new EditBoxInputRouter(sheriffField, blackoutGlobalCooldownField);
         this.area = new ScrollArea(0, 0, 0, 0); // 坐标在 render 里设定
     }
 
@@ -63,6 +78,14 @@ public class InGameBalancePage implements ConfigPage {
             sheriffDivisor = Math.max(1, v);
             ConfigManager.getInstance().setSheriffCountDivisor(sheriffDivisor);
         } catch (NumberFormatException ignored) {}
+        try {
+            int v = Integer.parseInt(blackoutGlobalCooldownField.getValue().trim());
+            blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.clampSeconds(v);
+            blackoutGlobalCooldownField.setValue(String.valueOf(blackoutGlobalCooldownSeconds));
+            ConfigManager.getInstance().setBlackoutGlobalCooldownSeconds(blackoutGlobalCooldownSeconds);
+        } catch (NumberFormatException ignored) {
+            blackoutGlobalCooldownField.setValue(String.valueOf(blackoutGlobalCooldownSeconds));
+        }
     }
 
     @Override
@@ -103,6 +126,26 @@ public class InGameBalancePage implements ConfigPage {
         g.drawString(font, "§7（点底部保存生效）", labelX + 118, cy + 2, 0xFF777777, false);
         cy += ROW_H;
 
+        // ===== 停电通用冷却 =====
+        cy = sectionLine(g, cy, labelX, sliderW);
+        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown"),
+                labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+        cy += 18;
+        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.desc"),
+                labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+        cy += 18;
+        Component cooldownLabel = Component.translatable("screen.habitrain_core.balance.cooldown");
+        g.drawString(font, cooldownLabel, labelX, cy + 2, 0xFFCCCCCC, false);
+        int cooldownFieldX = labelX + font.width(cooldownLabel) + 8;
+        EditRow.render(g, mx, my, delta, blackoutGlobalCooldownField, cooldownFieldX, cy, 72);
+        g.drawString(font, Component.translatable("screen.habitrain_core.balance.seconds_range",
+                        BlackoutGlobalCooldownRules.MAX_SECONDS),
+                cooldownFieldX + 80, cy + 2, MenuTheme.TEXT_DIM, false);
+        cy += ROW_H;
+        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.zero"),
+                labelX, cy - 8, MenuTheme.TEXT_DIM, false);
+        cy += 12;
+
         // ===== 小游戏任务总开关 =====
         cy = toggleRow(g, cy, labelX, "小游戏任务总开关",
                 "关闭后 SRE 将不再分配任何小游戏任务",
@@ -135,8 +178,7 @@ public class InGameBalancePage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (sheriffField.mouseClicked(mx, my, btn)) return true;
-        sheriffField.setFocused(false);
+        if (editBoxInput.mouseClicked(mx, my, btn)) return true;
         for (Hit hit : hits) {
             if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
@@ -175,13 +217,11 @@ public class InGameBalancePage implements ConfigPage {
 
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
-        if (sheriffField.isFocused() && sheriffField.keyPressed(key, scan, mod)) return true;
-        return false;
+        return editBoxInput.keyPressed(key, scan, mod);
     }
 
     @Override
     public boolean charTyped(char ch, int mod) {
-        if (sheriffField.isFocused() && sheriffField.charTyped(ch, mod)) return true;
-        return false;
+        return editBoxInput.charTyped(ch, mod);
     }
 }

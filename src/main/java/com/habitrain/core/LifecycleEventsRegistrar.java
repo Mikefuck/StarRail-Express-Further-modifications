@@ -96,6 +96,9 @@ public final class LifecycleEventsRegistrar {
                 LOGGER.debug("modeMapVote syncAndPruneMaps on SERVER_STARTED skipped", t);
             }
 
+            com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(
+                    server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toFile());
+
             // 服务端启动后应用大厅环境（时间/天气/雪雾等）
             try {
                 ServerLevel overworld = server.getLevel(Level.OVERWORLD);
@@ -191,6 +194,12 @@ public final class LifecycleEventsRegistrar {
             com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.unbind();
             // UUID 任务表跨集成服存档会串局：停服时清空活跃任务与离线回收队列。
             com.habitrain.core.task.TaskManager.getInstance().clearAll();
+
+            com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll();
+            com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll();
+            com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown();
+            com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown();
+            com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null);
         });
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -300,6 +309,9 @@ public final class LifecycleEventsRegistrar {
 
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
             ModeMapVoteOrchestrator.onPlayerJoin(player);
+            com.habitrain.core.game.sre.MapVoteLoadCoordinator.onPlayerJoin(player);
+            // 移动场景：在全部既有 JOIN 同步之后追加当前地图资产与运行状态。
+            com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().onPlayerJoin(player);
         });
         // 维度切换改走 ServerEntityWorldChangeEvents，避免每 tick 扫全员。
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
@@ -315,6 +327,21 @@ public final class LifecycleEventsRegistrar {
                                 : destination.dimension();
                 LAST_VIEW.put(id, new TrackedView(cam, dim));
                 sendCurrentRoleState(player);
+                if (dim != null) {
+                    com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
+                            .onPlayerChangeDimension(id, dim.location().toString());
+                    String mapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
+                            .resolve(player.serverLevel()).mapKey();
+                    net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,
+                            com.habitrain.core.scene.network.SceneSelectionStateS2C.cleared(
+                                    dim.location().toString(), mapKey));
+                }
+                com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance()
+                        .onPlayerChangeDimension(player);
+                com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
+                com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
+                        .onPlayerJoin(player);
             } catch (Throwable t) {
                 LOGGER.debug("role-state dimension resync skipped", t);
             }
@@ -324,6 +351,7 @@ public final class LifecycleEventsRegistrar {
         // EntityTrackingEvents 仍负责 tracking 边沿。
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             try {
+                com.habitrain.core.scene.server.SceneCaptureService.getInstance().tick(server);
                 if (!PENDING_ROLE_STATE.isEmpty()) {
                     for (java.util.UUID pendingId : PENDING_ROLE_STATE) {
                         sendCurrentRoleStateUuid(pendingId);
@@ -404,6 +432,12 @@ public final class LifecycleEventsRegistrar {
                 com.habitrain.core.network.C2SRateLimiter.clear(player.getUUID());
                 com.habitrain.core.C2SReceiverRegistrar.clearConfigUpdateHistory(player.getUUID());
                 com.habitrain.core.task.TaskManager.getInstance().unbindOwner(player.getUUID());
+                com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
+                com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
+                com.habitrain.core.scene.server.SceneTransferService.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
             } catch (Exception e) {
                 LOGGER.error("[GameMode] 处理玩家断线失败", e);
             }

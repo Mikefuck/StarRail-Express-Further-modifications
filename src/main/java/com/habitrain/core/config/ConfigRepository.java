@@ -15,12 +15,15 @@ public class ConfigRepository {
     private int tempPowerPrice = 100;
     private boolean knifeDurabilityEnabled = false;
     private boolean lobbyVoiceGroupEnabled = true;
+    /** SRE 停电成功后施加给全体玩家的通用物品冷却；0 表示不传播通用冷却。 */
+    private int blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.DEFAULT_SECONDS;
     /** 停电黑暗时长增强：普通停电 20 秒黑暗+失明，忍者 10 秒（默认关闭，关闭时保持 SRE 原版 10 秒）。 */
     private boolean blackoutEffectEnhancementEnabled = false;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
     private RoleOverrideConfigSection roleOverrides = RoleOverrideConfigSection.createDefault();
     private MvpAnimationSettings mvpAnimations = MvpAnimationSettings.createDefault();
+    private SceneMotionSettings sceneMotion = SceneMotionSettings.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
 
@@ -89,6 +92,12 @@ public class ConfigRepository {
 
     public void setLobbyVoiceGroupEnabled(boolean enabled) {
         this.lobbyVoiceGroupEnabled = enabled;
+    }
+
+    public int getBlackoutGlobalCooldownSeconds() { return blackoutGlobalCooldownSeconds; }
+
+    public void setBlackoutGlobalCooldownSeconds(int seconds) {
+        this.blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.clampSeconds(seconds);
     }
 
     public boolean isBlackoutEffectEnhancementEnabled() { return blackoutEffectEnhancementEnabled; }
@@ -187,6 +196,14 @@ public class ConfigRepository {
 
     public void setMvpAnimations(MvpAnimationSettings s) {
         this.mvpAnimations = s != null ? s : MvpAnimationSettings.createDefault();
+    }
+
+    public SceneMotionSettings getSceneMotion() {
+        return sceneMotion != null ? sceneMotion : SceneMotionSettings.createDefault();
+    }
+
+    public void setSceneMotion(SceneMotionSettings s) {
+        this.sceneMotion = s != null ? s : SceneMotionSettings.createDefault();
     }
 
     @Nullable

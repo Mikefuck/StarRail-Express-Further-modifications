@@ -9,6 +9,7 @@ import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
 import com.habitrain.core.network.MapVoteProgressPayload;
 import com.habitrain.core.network.MapVoteStartConfirmedPayload;
+import com.habitrain.core.scene.server.ScenePreloadCoordinator;
 import io.wifi.starrailexpress.game.GameUtils;
 import io.wifi.starrailexpress.game.ServerTaskInfoClasses;
 import net.minecraft.resources.ResourceKey;
@@ -16,6 +17,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +39,9 @@ import java.util.OptionalInt;
  *       {@code SRETrueStartGameMixin} 调用 {@link #onGameStartConfirmed} 记录开局成功；待 SRE
  *       地图天气与 API 对局环境都在 {@code OnGameStarted} 中应用完毕后，再由
  *       {@link #onMatchEnvironmentReady} 广播 {@link MapVoteLaunchTransitionPayload}。这样客户端
- *       的「对局开始」动画不会先于天气切换播放。</li>
+ *       的「对局开始」动画不会先于天气切换播放。若获胜地图配置了场景资产，还会等待全部
+ *       玩家完成文件校验、解码与 GPU 网格预编译；上游重置完成 5 秒后仍未完成则超时放行，
+ *       未完成玩家转入对局期 1 MiB/s 后台续传。</li>
  * </ul>
  *
  * <p>加载与扫场期间对局时间不计入（SRE 只在 ACTIVE 后开始倒数游戏时间），符合"加载不算在
@@ -59,6 +63,8 @@ public final class MapVoteLoadCoordinator {
         boolean startConfirmed = false;
         /** 环境已应用后再等待两个世界 tick，确保原版天气同步包先于动画包发出。 */
         long environmentReadyAtTick = -1L;
+        /** 上游地图重置完成（trueStartGame）后最多再等待场景准备 5 秒。 */
+        long sceneReadyDeadlineTick = -1L;
         /** 是否已向客户端广播过开局确认（环境就绪）或开局中止。避免重复广播。 */
         boolean settled = false;
     }
@@ -70,6 +76,7 @@ public final class MapVoteLoadCoordinator {
         st.mapId = mapId == null ? "" : mapId;
         st.modeId = modeId == null ? "" : modeId;
         LOADS.put(level.dimension(), st);
+        ScenePreloadCoordinator.getInstance().begin(level, st.mapId);
         LOGGER.info("[MapVoteLoad] load begin dim={} map={} mode={}",
                 level.dimension().location(), st.mapId, st.modeId);
     }
@@ -106,13 +113,20 @@ public final class MapVoteLoadCoordinator {
         for (ServerLevel level : server.getAllLevels()) {
             LoadState st = LOADS.get(level.dimension());
             if (st == null || st.settled || !st.startConfirmed
-                    || st.environmentReadyAtTick < 0L
-                    || level.getGameTime() < st.environmentReadyAtTick) {
+                    || st.environmentReadyAtTick < 0L) {
                 continue;
             }
+            long gameTime = level.getGameTime();
+            boolean environmentReady = gameTime >= st.environmentReadyAtTick;
+            boolean sceneReady = ScenePreloadCoordinator.getInstance().allReady(level);
+            if (!ScenePreloadReleasePolicy.shouldRelease(environmentReady, sceneReady,
+                    gameTime, st.sceneReadyDeadlineTick)) continue;
+
             st.settled = true;
-            LOGGER.info("[MapVoteLoad] environment synced dim={} map={} → sending launch transition",
-                    level.dimension().location(), st.mapId);
+            boolean timedOut = !sceneReady;
+            ScenePreloadCoordinator.getInstance().enterMatch(level);
+            LOGGER.info("[MapVoteLoad] launch gate released dim={} map={} sceneReady={} timedOut={} → sending transition",
+                    level.dimension().location(), st.mapId, sceneReady, timedOut);
             MapVoteLaunchTransitionPayload.broadcastToLevel(level, st.mapId);
             LOADS.remove(level.dimension(), st);
         }
@@ -135,12 +149,15 @@ public final class MapVoteLoadCoordinator {
         if (st.settled) return;
         if (started) {
             st.startConfirmed = true;
+            st.sceneReadyDeadlineTick = level.getGameTime()
+                    + ScenePreloadReleasePolicy.RESET_COMPLETE_TIMEOUT_TICKS;
             // 判定点 A：通知客户端锁定 hide / 对已隐藏玩家左→右补盖（遮住随后 initializeGame 的 TP）
             MapVoteStartConfirmedPayload.broadcastToLevel(level, st.mapId);
             LOGGER.info("[MapVoteLoad] game start confirmed dim={} map={} → waiting for environment",
                     level.dimension().location(), st.mapId);
         } else {
             st.settled = true;
+            ScenePreloadCoordinator.getInstance().reset(level);
             LOGGER.info("[MapVoteLoad] game start ABORTED dim={} (not enough players?) → sending launch abort",
                     level.dimension().location());
             MapVoteLaunchAbortPayload.broadcastToLevel(level);
@@ -170,15 +187,37 @@ public final class MapVoteLoadCoordinator {
     public static void reset(ServerLevel level) {
         if (level == null) return;
         LOADS.remove(level.dimension());
+        ScenePreloadCoordinator.getInstance().reset(level);
     }
 
     /** 清空所有维度的加载态（集成服同 JVM 重启残留）。 */
     public static void resetAll() {
         LOADS.clear();
+        ScenePreloadCoordinator.getInstance().resetAll();
+    }
+
+    /** Late joiners during the loading page join the same prefetch gate and bandwidth phase. */
+    public static void onPlayerJoin(ServerPlayer player) {
+        ScenePreloadCoordinator.getInstance().onPlayerJoin(player);
     }
 
     public static boolean isLoading(ServerLevel level) {
         return level != null && LOADS.containsKey(level.dimension());
+    }
+
+    /**
+     * Returns the map selected by the active mode/map launch flow.
+     *
+     * <p>This remains available through {@code OnGameStarted}, when SRE's map component may
+     * still expose the previous/default map name. Runtime systems which must select a
+     * per-map configuration at that exact lifecycle boundary should prefer this value and
+     * fall back to the map component for non-vote launches.</p>
+     */
+    public static @Nullable String selectedMapId(ServerLevel level) {
+        if (level == null) return null;
+        LoadState state = LOADS.get(level.dimension());
+        if (state == null || state.mapId == null || state.mapId.isBlank()) return null;
+        return state.mapId;
     }
 
     private static boolean isSreLoading(ServerLevel level) {

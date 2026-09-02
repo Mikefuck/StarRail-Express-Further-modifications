@@ -125,6 +125,11 @@ public class ConfigStore {
                     repo.setLobbyVoiceGroupEnabled(global.get("lobbyVoiceGroupEnabled").getAsBoolean());
                 }
 
+                if (global.has("blackoutGlobalCooldownSeconds")) {
+                    repo.setBlackoutGlobalCooldownSeconds(
+                            global.get("blackoutGlobalCooldownSeconds").getAsInt());
+                }
+
                 if (global.has("blackoutEffectEnhancementEnabled")) {
                     repo.setBlackoutEffectEnhancementEnabled(
                             global.get("blackoutEffectEnhancementEnabled").getAsBoolean());
@@ -202,6 +207,12 @@ public class ConfigStore {
                 repo.setMvpAnimations(MvpAnimationSettings.createDefault());
             }
 
+            if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
+                repo.setSceneMotion(SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion")));
+            } else {
+                repo.setSceneMotion(SceneMotionSettings.createDefault());
+            }
+
             LOGGER.info("任务配置已加载: {} 个任务, {} 个GameMode, {} 个小游戏",
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
@@ -239,11 +250,13 @@ public class ConfigStore {
         repo.setMinigameGlobalEnabled(true);
         repo.setKnifeDurabilityEnabled(false);
         repo.setLobbyVoiceGroupEnabled(true);
+        repo.setBlackoutGlobalCooldownSeconds(BlackoutGlobalCooldownRules.DEFAULT_SECONDS);
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
         repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
         repo.setMvpAnimations(MvpAnimationSettings.createDefault());
+        repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 
     /**
@@ -299,6 +312,7 @@ public class ConfigStore {
         global.addProperty("tempPowerPrice", repo.getTempPowerPrice());
         global.addProperty("knifeDurabilityEnabled", repo.isKnifeDurabilityEnabled());
         global.addProperty("lobbyVoiceGroupEnabled", repo.isLobbyVoiceGroupEnabled());
+        global.addProperty("blackoutGlobalCooldownSeconds", repo.getBlackoutGlobalCooldownSeconds());
         global.addProperty("blackoutEffectEnhancementEnabled", repo.isBlackoutEffectEnhancementEnabled());
         root.add("global", global);
 
@@ -342,6 +356,8 @@ public class ConfigStore {
 
         root.add("mvpAnimations", repo.getMvpAnimations().toJson());
 
+        root.add("sceneMotion", repo.getSceneMotion().toJson());
+
         return root;
     }
 
@@ -359,11 +375,13 @@ public class ConfigStore {
         }
         repo.setMinigameGlobalEnabled(true);
         repo.setLobbyVoiceGroupEnabled(true);
+        repo.setBlackoutGlobalCooldownSeconds(BlackoutGlobalCooldownRules.DEFAULT_SECONDS);
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
         repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
         repo.setMvpAnimations(MvpAnimationSettings.createDefault());
+        repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 
     public String toJsonString(ConfigRepository repo) {

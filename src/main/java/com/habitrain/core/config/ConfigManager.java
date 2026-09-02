@@ -240,6 +240,15 @@ public class ConfigManager implements ConfigQueryService {
         com.habitrain.core.game.sre.SREGameModeBase.applyLobbyGroupToggle(currentServer);
     }
 
+    public int getBlackoutGlobalCooldownSeconds() {
+        return repository.getBlackoutGlobalCooldownSeconds();
+    }
+
+    public void setBlackoutGlobalCooldownSeconds(int seconds) {
+        repository.setBlackoutGlobalCooldownSeconds(seconds);
+        store.markDirty();
+    }
+
     public boolean isBlackoutEffectEnhancementEnabled() {
         return repository.isBlackoutEffectEnhancementEnabled();
     }
@@ -389,5 +398,18 @@ public class ConfigManager implements ConfigQueryService {
             save();
         }
         return changed;
+    }
+
+    public SceneMotionSettings getSceneMotionSettings() {
+        return repository.getSceneMotion();
+    }
+
+    public void setSceneMotionSettings(SceneMotionSettings settings) {
+        repository.setSceneMotion(settings);
+        store.markDirty();
+    }
+
+    public void markSceneMotionDirty() {
+        store.markDirty();
     }
 }

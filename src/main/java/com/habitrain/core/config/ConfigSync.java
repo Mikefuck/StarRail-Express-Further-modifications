@@ -29,6 +29,7 @@ public class ConfigSync {
             int newTempPowerPrice = 100;
             boolean newKnifeDurabilityEnabled = false;
             boolean newLobbyVoiceGroupEnabled = true;
+            int newBlackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.DEFAULT_SECONDS;
             boolean newBlackoutEffectEnhancementEnabled = false;
             boolean newMgGlobal = true;
             ModeMapVoteSettings newModeMapVote = ModeMapVoteSettings.createDefault();
@@ -63,6 +64,10 @@ public class ConfigSync {
                 }
                 if (global.has("lobbyVoiceGroupEnabled")) {
                     newLobbyVoiceGroupEnabled = global.get("lobbyVoiceGroupEnabled").getAsBoolean();
+                }
+                if (global.has("blackoutGlobalCooldownSeconds")) {
+                    newBlackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.clampSeconds(
+                            global.get("blackoutGlobalCooldownSeconds").getAsInt());
                 }
                 if (global.has("blackoutEffectEnhancementEnabled")) {
                     newBlackoutEffectEnhancementEnabled =
@@ -118,6 +123,11 @@ public class ConfigSync {
                 newMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
             }
 
+            SceneMotionSettings newSceneMotion = SceneMotionSettings.createDefault();
+            if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
+                newSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
+            }
+
             repo.getMutableTaskConfigs().clear();
             repo.getMutableTaskConfigs().putAll(newTasks);
             repo.getMutableGameModeConfigs().clear();
@@ -131,6 +141,7 @@ public class ConfigSync {
             repo.setTempPowerPrice(newTempPowerPrice);
             repo.setKnifeDurabilityEnabled(newKnifeDurabilityEnabled);
             repo.setLobbyVoiceGroupEnabled(newLobbyVoiceGroupEnabled);
+            repo.setBlackoutGlobalCooldownSeconds(newBlackoutGlobalCooldownSeconds);
             repo.setBlackoutEffectEnhancementEnabled(newBlackoutEffectEnhancementEnabled);
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
@@ -139,6 +150,7 @@ public class ConfigSync {
                 repo.setRoleOverrides(newRoleOverrides);
             }
             repo.setMvpAnimations(newMvpAnimations);
+            repo.setSceneMotion(newSceneMotion);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
         }
@@ -167,6 +179,7 @@ public class ConfigSync {
             Integer newTempPowerPrice = null;
             Boolean newKnifeDurability = null;
             Boolean newLobbyVoice = null;
+            Integer newBlackoutGlobalCooldownSeconds = null;
             Boolean newBlackoutFx = null;
 
             if (root.has("global")) {
@@ -200,6 +213,10 @@ public class ConfigSync {
                 }
                 if (global.has("lobbyVoiceGroupEnabled")) {
                     newLobbyVoice = global.get("lobbyVoiceGroupEnabled").getAsBoolean();
+                }
+                if (global.has("blackoutGlobalCooldownSeconds")) {
+                    newBlackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.clampSeconds(
+                            global.get("blackoutGlobalCooldownSeconds").getAsInt());
                 }
                 if (global.has("blackoutEffectEnhancementEnabled")) {
                     newBlackoutFx = global.get("blackoutEffectEnhancementEnabled").getAsBoolean();
@@ -309,6 +326,11 @@ public class ConfigSync {
                 incomingMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
             }
 
+            SceneMotionSettings incomingSceneMotion = null;
+            if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
+                incomingSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
+            }
+
             // ---- stage 2: commit all temps to repo ----
             if (newDlcTarget != null) repo.setDlcProbabilityTarget(newDlcTarget);
             if (newShaderEnabled != null) repo.setShaderWhitelistEnabled(newShaderEnabled);
@@ -317,6 +339,9 @@ public class ConfigSync {
             if (newTempPowerPrice != null) repo.setTempPowerPrice(newTempPowerPrice);
             if (newKnifeDurability != null) repo.setKnifeDurabilityEnabled(newKnifeDurability);
             if (newLobbyVoice != null) repo.setLobbyVoiceGroupEnabled(newLobbyVoice);
+            if (newBlackoutGlobalCooldownSeconds != null) {
+                repo.setBlackoutGlobalCooldownSeconds(newBlackoutGlobalCooldownSeconds);
+            }
             if (newBlackoutFx != null) repo.setBlackoutEffectEnhancementEnabled(newBlackoutFx);
 
             if (taskPatches != null) {
@@ -351,6 +376,15 @@ public class ConfigSync {
                 existing.showRoleItems = incomingMvpAnimations.showRoleItems;
                 existing.speed = incomingMvpAnimations.speed;
                 existing.animations.putAll(incomingMvpAnimations.animations);
+            }
+            if (incomingSceneMotion != null) {
+                SceneMotionSettings existing = repo.getSceneMotion();
+                existing.schemaVersion = incomingSceneMotion.schemaVersion;
+                existing.enabled = incomingSceneMotion.enabled;
+                if (incomingSceneMotion.defaultMapKey != null) {
+                    existing.defaultMapKey = incomingSceneMotion.defaultMapKey;
+                }
+                existing.profiles.putAll(incomingSceneMotion.profiles);
             }
             return true;
         } catch (Exception e) {

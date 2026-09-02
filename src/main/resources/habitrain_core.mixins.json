@@ -50,6 +50,7 @@
         "ShopContentRoleOverrideMixin",
         "SRERoleItemsMixin",
         "KillerKnifeDurabilityMixin",
+        "SREBlackoutGlobalCooldownMixin",
         "SREBlackoutEffectEnhancementMixin",
         "FullTrainResetTaskAccessor",
         "OnlySomeBlockResetTaskAccessor",

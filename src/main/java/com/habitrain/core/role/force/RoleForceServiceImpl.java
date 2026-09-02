@@ -82,20 +82,33 @@ public final class RoleForceServiceImpl implements RoleForceApi {
         if (player == null) {
             return false;
         }
-        if (queued.contains(player)) {
-            return true;
-        }
+        boolean upstreamQueued = false;
         try {
             if (PlayerRoleWeightManager.ForcePlayerTeam.containsKey(player)) {
-                return true;
+                upstreamQueued = true;
             }
         } catch (RuntimeException ignored) {
         }
         try {
-            return Harpymodloader.FORCED_MODDED_ROLE_FLIP.containsKey(player);
+            if (Harpymodloader.FORCED_MODDED_ROLE_FLIP.containsKey(player)) {
+                upstreamQueued = true;
+            }
         } catch (RuntimeException ignored) {
-            return false;
         }
+        return reconcileQueueState(queued, player, upstreamQueued);
+    }
+
+    /**
+     * Reconciles the API-owned marker with the authoritative upstream queues.
+     * SRE consumes and clears those queues after role assignment, so retaining
+     * only the local marker would incorrectly block the player's later cards.
+     */
+    static boolean reconcileQueueState(Set<UUID> queued, UUID player, boolean upstreamQueued) {
+        if (upstreamQueued) {
+            return true;
+        }
+        queued.remove(player);
+        return false;
     }
 
     @Override

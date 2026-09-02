@@ -1,10 +1,12 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.client.config.ClientVisualPreferences;
+import com.habitrain.core.client.render.CustomTitlePanoramaRenderer;
 import net.exmo.sre.loading.StarRailExpressTitleScreen;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,7 +26,8 @@ import java.util.List;
  *
  * 1. 版本号追加 " | Mike任务api加载中"
  * 2. 隐藏右侧更新日志面板
- * 3. 在菜单列表「退出游戏」上方添加「回放」条目
+ * 3. 使用自定义主页背景（可选）
+ * 4. 移除 Discord 菜单项、替换 QQ 群链接并添加列车网站入口
  *
  * ★ 不使用 mixin 实例字段（它们不会被注入到目标类），
  *   全部通过 @Shadow 访问目标类的字段，或使用静态变量。
@@ -34,6 +37,7 @@ import java.util.List;
 public class StarRailExpressTitleScreenMixin {
 
     @Shadow private boolean showChangelog;
+    @Shadow private float panoramaFade;
 
     /** List<MenuEntry> */
     @Shadow private List menuEntries;
@@ -43,6 +47,20 @@ public class StarRailExpressTitleScreenMixin {
     @Shadow private float menuMaxScroll;
     @Shadow private int menuViewportTop;
     @Shadow private int menuViewportBottom;
+
+    @Unique
+    private static final int HABITRAIN$MENU_SPACING = 26;
+    @Unique
+    private static final String HABITRAIN$QQ_GROUP_URL = "https://qm.qq.com/q/SeuOMVpSk8";
+    @Unique
+    private static final String HABITRAIN$TRAIN_WEBSITE_URL = "https://www.kgpaly.cloud/train/";
+    @Unique
+    private static final Component HABITRAIN$QQ_ENTRY = Component.translatable("menu.sre.join_qq");
+    @Unique
+    private static final Component HABITRAIN$TRAIN_WEBSITE_ENTRY =
+            Component.translatable("menu.habitrain_core.train_website");
+    @Unique
+    private static final Component HABITRAIN$DISCORD_ENTRY = Component.translatable("menu.sre.join_discord");
 
     // ==================== 已有功能 ====================
 
@@ -61,51 +79,102 @@ public class StarRailExpressTitleScreenMixin {
         this.showChangelog = false;
     }
 
-    // ==================== 回放按钮（菜单列表） ====================
+    /**
+     * Runs after SRE's waiting/continue black-screen branch but before it chooses its video
+     * frames or bundled cube map. This preserves the loading gate while replacing only the
+     * visible rotating background.
+     */
+    @Inject(
+            method = "renderPanorama",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lio/wifi/starrailexpress/SREClientConfig;instance()Lio/wifi/starrailexpress/SREClientConfig;",
+                    shift = At.Shift.BEFORE),
+            cancellable = true,
+            require = 1)
+    private void habitrain$renderCustomPanorama(GuiGraphics graphics, float delta, CallbackInfo ci) {
+        if (!ClientVisualPreferences.isCustomTitlePanoramaEnabled()) return;
 
-    @Inject(method = "init", at = @At("TAIL"))
-    private void habitrain$addReplayEntry(CallbackInfo ci) {
-        doAddEntry();
+        StarRailExpressTitleScreen screen = (StarRailExpressTitleScreen) (Object) this;
+        CustomTitlePanoramaRenderer.render(
+                graphics, screen.width, screen.height, this.panoramaFade, delta);
+        ci.cancel();
     }
 
-    private static final int MENU_SPACING = 26;
+    // ==================== 社群入口（菜单列表） ====================
 
-    /** 实际的添加逻辑，与 mixin 框架无关 */
-    private void doAddEntry() {
+    @Inject(method = "init", at = @At("TAIL"))
+    private void habitrain$customizeCommunityEntries(CallbackInfo ci) {
+        habitrain$customizeCommunityEntries();
+    }
+
+    @Unique
+    private void habitrain$customizeCommunityEntries() {
         try {
-            Constructor<?> ctor = findMenuEntryCtor();
+            Constructor<?> ctor = habitrain$findMenuEntryCtor();
             if (ctor == null) {
-                HabiTrainCore.LOGGER.warn("[回放] 找不到 MenuEntry 构造函数");
+                HabiTrainCore.LOGGER.warn("[主页菜单] 找不到 MenuEntry 构造函数");
                 return;
             }
 
-            Object entry = ctor.newInstance(
-                    Component.literal("§6回放"),
-                    (Runnable) () -> openReplayViewer());
+            Field textField = ctor.getDeclaringClass().getDeclaredField("text");
+            textField.setAccessible(true);
+            boolean replacedQq = false;
+            boolean removedDiscord = false;
+            boolean websitePresent = false;
+            int qqEntryIndex = -1;
 
-            // 在「退出游戏」上方插入（即列表最后一个元素之前）
-            int idx = Math.max(0, menuEntries.size() - 1);
-            menuEntries.add(idx, entry);
+            for (int i = 0; i < menuEntries.size(); i++) {
+                Object entry = menuEntries.get(i);
+                Component text = (Component) textField.get(entry);
 
-            // 重新设置插入点及之后所有条目的坐标
-            for (int i = idx; i < menuEntries.size(); i++) {
-                setEntryPos(menuEntries.get(i), i, menuBaseX, menuBaseY);
+                if (HABITRAIN$DISCORD_ENTRY.equals(text)) {
+                    menuEntries.remove(i--);
+                    removedDiscord = true;
+                    continue;
+                }
+                if (HABITRAIN$TRAIN_WEBSITE_ENTRY.equals(text)) {
+                    websitePresent = true;
+                    continue;
+                }
+                if (HABITRAIN$QQ_ENTRY.equals(text)) {
+                    menuEntries.set(i, ctor.newInstance(
+                            text,
+                            (Runnable) () -> Util.getPlatform().openUri(HABITRAIN$QQ_GROUP_URL)));
+                    replacedQq = true;
+                    qqEntryIndex = i;
+                }
             }
 
-            // 重算滚动上限
-            int totalH = menuEntries.size() * MENU_SPACING;
+            if (qqEntryIndex >= 0 && !websitePresent) {
+                menuEntries.add(qqEntryIndex + 1, ctor.newInstance(
+                        HABITRAIN$TRAIN_WEBSITE_ENTRY,
+                        (Runnable) () -> Util.getPlatform().openUri(HABITRAIN$TRAIN_WEBSITE_URL)));
+            }
+
+            for (int i = 0; i < menuEntries.size(); i++) {
+                habitrain$setEntryPos(menuEntries.get(i), i, menuBaseX, menuBaseY);
+            }
+
+            int totalH = menuEntries.size() * HABITRAIN$MENU_SPACING;
             int viewH = menuViewportBottom - menuViewportTop;
             menuMaxScroll = Math.max(0, totalH - viewH);
 
-            HabiTrainCore.LOGGER.info("[回放] 已插入菜单列表（共 {} 项）", menuEntries.size());
+            if (!replacedQq) {
+                HabiTrainCore.LOGGER.warn("[主页菜单] 未找到 QQ 群菜单项，链接未替换且网站入口未添加");
+            }
+            if (!removedDiscord) {
+                HabiTrainCore.LOGGER.warn("[主页菜单] 未找到 Discord 菜单项");
+            }
         } catch (Exception e) {
-            HabiTrainCore.LOGGER.error("[回放] 添加失败", e);
+            HabiTrainCore.LOGGER.error("[主页菜单] 修改社群入口失败", e);
         }
     }
 
     // ==================== 反射工具 ====================
 
-    private static Constructor<?> findMenuEntryCtor() {
+    @Unique
+    private static Constructor<?> habitrain$findMenuEntryCtor() {
         for (Class<?> nested : StarRailExpressTitleScreen.class.getDeclaredClasses()) {
             if (nested.getSimpleName().equals("MenuEntry")) {
                 try {
@@ -113,44 +182,29 @@ public class StarRailExpressTitleScreenMixin {
                     ctor.setAccessible(true);
                     return ctor;
                 } catch (NoSuchMethodException e) {
-                    HabiTrainCore.LOGGER.error("[回放] MenuEntry 构造函数不存在", e);
+                    HabiTrainCore.LOGGER.error("[主页菜单] MenuEntry 构造函数不存在", e);
                 }
             }
         }
         return null;
     }
 
-    private static void setEntryPos(Object entry, int index, int baseX, int baseY) {
+    @Unique
+    private static void habitrain$setEntryPos(Object entry, int index, int baseX, int baseY) {
         try {
             Class<?> c = entry.getClass();
-            setInt(c, entry, "x", baseX);
-            setInt(c, entry, "y", baseY + index * MENU_SPACING);
-            setInt(c, entry, "index", index);
+            habitrain$setInt(c, entry, "x", baseX);
+            habitrain$setInt(c, entry, "y", baseY + index * HABITRAIN$MENU_SPACING);
+            habitrain$setInt(c, entry, "index", index);
         } catch (Exception e) {
-            HabiTrainCore.LOGGER.error("[回放] 设置条目坐标失败 index={}", index, e);
+            HabiTrainCore.LOGGER.error("[主页菜单] 设置条目坐标失败 index={}", index, e);
         }
     }
 
-    private static void setInt(Class<?> clz, Object obj, String name, int val) throws Exception {
+    @Unique
+    private static void habitrain$setInt(Class<?> clz, Object obj, String name, int val) throws Exception {
         Field f = clz.getDeclaredField(name);
         f.setAccessible(true);
         f.setInt(obj, val);
-    }
-
-    private static void openReplayViewer() {
-        if (!FabricLoader.getInstance().isModLoaded("replaymod")) {
-            HabiTrainCore.LOGGER.warn("[回放] ReplayMod 未安装");
-            return;
-        }
-        try {
-            Class<?> rc = Class.forName("com.replaymod.replay.ReplayModReplay");
-            Object mod = rc.getField("instance").get(null);
-            Class<?> vc = Class.forName("com.replaymod.replay.gui.screen.GuiReplayViewer");
-            Object viewer = vc.getConstructor(rc).newInstance(mod);
-            vc.getMethod("display").invoke(viewer);
-            HabiTrainCore.LOGGER.info("[回放] 已打开回放查看器");
-        } catch (Exception e) {
-            HabiTrainCore.LOGGER.error("[回放] 打开失败", e);
-        }
     }
 }

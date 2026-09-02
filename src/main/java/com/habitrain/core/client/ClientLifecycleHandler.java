@@ -122,6 +122,8 @@ public class ClientLifecycleHandler {
         // 监听 SRE 游戏开始事件 → 刷新游戏运行缓存 + 交还开局转场（游戏进入 ACTIVE）
         OnGameStartedClient.EVENT.register(() -> {
             Minecraft.getInstance().execute(() -> {
+                // 正式状态必须接管渲染，不能继续被设置页 preview 覆盖。
+                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().stopPreview();
                 GameRunningCache.invalidate();
                 VoteLaunchSession.onGameActive();
                 if (Minecraft.getInstance().screen
@@ -164,5 +166,6 @@ public class ClientLifecycleHandler {
         // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
         com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
         com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
+        com.habitrain.core.scene.client.SceneClientRuntime.reset("client_state_reset");
     }
 }

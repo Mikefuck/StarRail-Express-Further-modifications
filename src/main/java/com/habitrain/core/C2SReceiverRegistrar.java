@@ -58,11 +58,32 @@ public final class C2SReceiverRegistrar {
                     return;
                 }
                 final String filteredJson;
+                String sceneTargetMapKey = "";
                 try {
-                    filteredJson = ConfigUpdateAccessPolicy.filterConfigJson(scope, payload.getConfigJson());
+                    if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
+                        String currentMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
+                                .resolve(player.serverLevel()).mapKey();
+                        java.util.LinkedHashSet<String> allowedMapKeys = new java.util.LinkedHashSet<>(
+                                ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
+                        allowedMapKeys.addAll(ConfigManager.getInstance().getSceneMotionSettings().profiles.keySet());
+                        sceneTargetMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
+                                ConfigUpdateScope.sceneMapKeyFromConfigJson(payload.getConfigJson()),
+                                currentMapKey, allowedMapKeys);
+                        filteredJson = ConfigUpdateAccessPolicy.filterAdminSceneProfile(
+                                payload.getConfigJson(), sceneTargetMapKey,
+                                ConfigManager.getInstance().getSceneMotionSettings().toJson());
+                    } else {
+                        filteredJson = ConfigUpdateAccessPolicy.filterConfigJson(scope, payload.getConfigJson());
+                    }
                 } catch (RuntimeException e) {
                     player.sendSystemMessage(Component.literal("§c配置更新被拒绝：JSON 根节点无效"));
                     return;
+                }
+                // The selected map is tool-session state, not configuration content. Confirm it
+                // before duplicate suppression so switching to a map with an unchanged profile
+                // still updates subsequent tool uses and the client HUD.
+                if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
+                    syncSceneToolTarget(player, sceneTargetMapKey);
                 }
                 ConfigUpdateAdmitPolicy.Result admit = ConfigUpdateAdmitPolicy.admit(
                         filteredJson, LAST_APPLIED_CONFIG_JSON.get(player.getUUID()),
@@ -113,19 +134,21 @@ public final class C2SReceiverRegistrar {
                 FullConfigSyncPayload.broadcastToAll(context.server());
             });
         });
-        // C2S 地图介绍预览图：与完整 Mod 菜单相同（OP2 + 专用服 MenuGate）。
+        // C2S 地图介绍预览图：属于背包地图投票权限边界，只要求 OP2，不受完整菜单门控影响。
         ServerPlayNetworking.registerGlobalReceiver(MapVotePreviewUploadPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
-                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(
-                        ConfigUpdateScope.FULL_MOD_MENU,
-                        player.hasPermissions(2),
-                        context.server().isDedicatedServer(),
-                        MenuGateService.isEnabled(),
-                        MenuGateService.isAllowed(player));
-                if (!allowed) {
-                    player.sendSystemMessage(Component.literal("§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"));
+                var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
+                ConfigUpdateAccessPolicy.MapPreviewUploadAccess access =
+                        ConfigUpdateAccessPolicy.mapPreviewUploadAccess(
+                                player.hasPermissions(2), payload.mapId(), configMaps.keySet());
+                if (access == ConfigUpdateAccessPolicy.MapPreviewUploadAccess.OP2_REQUIRED) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：需要 OP2 权限"));
+                    return;
+                }
+                if (access == ConfigUpdateAccessPolicy.MapPreviewUploadAccess.MAP_NOT_CONFIGURED) {
+                    player.sendSystemMessage(Component.literal("§c预览图上传失败：地图不在服务器配置列表中"));
                     return;
                 }
                 if (!C2SRateLimiter.tryAcquire(player.getUUID(), "preview_upload", 2000)) {
@@ -145,7 +168,6 @@ public final class C2SReceiverRegistrar {
                     try {
                         ServerLevel overworld = context.server().overworld();
                         if (overworld != null) {
-                            var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
                             var profiles = com.habitrain.core.vote.MapVoteProfileStore.loadProfiles(
                                     overworld, configMaps.keySet(), configMaps);
                             if (!profiles.isEmpty()) {
@@ -363,6 +385,79 @@ public final class C2SReceiverRegistrar {
                             LOGGER.debug("玩家 {} 上报角色扩展握手 manifest",
                                     player.getName().getString());
                         }));
+
+        // C2S 场景资产分片请求：具体 Manifest 授权、offset 与速率校验由传输服务负责。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetChunkRequestC2S.TYPE, (payload, context) -> {
+                    ServerPlayer player = context.player();
+                    if (player != null && payload != null) {
+                        com.habitrain.core.scene.server.SceneTransferService.getInstance()
+                                .handleChunkRequest(player, payload);
+                    }
+                });
+
+        // 客户端只有在场景文件校验、解码与 GPU 网格预编译全部成功后才会上报 ready。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetReadyC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) return;
+                            com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
+                                    .handleReady(player, payload.sessionId(), payload.sha256(), payload.success());
+                        }));
+
+        // C2S 场景资产生成请求。绝不信任客户端 mapKey；捕获服务会解析服务端当前地图。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetBuildRequestC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) {
+                                return;
+                            }
+                            if (!player.hasPermissions(2)) {
+                                player.sendSystemMessage(Component.literal("§c需要 OP2 权限才能生成场景资产"));
+                                return;
+                            }
+                            if (!C2SRateLimiter.tryAcquire(player.getUUID(), "scene_build", 2000)) {
+                                player.sendSystemMessage(Component.literal("§c操作过于频繁，请稍候再试"));
+                                return;
+                            }
+                            com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                                    .startCapture(player, payload.mapKey());
+                        }));
+
+        // 地图箭头切换是场景工具会话状态，必须立即同步；不能依赖“保存配置”的回调，
+        // 因为集成服务器会跳过配置 C2S，导致 HUD 显示 map2 而下一次右键仍打开默认配置。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneToolMapSelectC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null || !player.hasPermissions(2)) return;
+
+                            String currentMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
+                                    .resolve(player.serverLevel()).mapKey();
+                            java.util.LinkedHashSet<String> allowedMapKeys = new java.util.LinkedHashSet<>(
+                                    ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
+                            allowedMapKeys.addAll(ConfigManager.getInstance().getSceneMotionSettings().profiles.keySet());
+                            try {
+                                String selectedMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
+                                        payload.mapKey(), currentMapKey, allowedMapKeys);
+                                syncSceneToolTarget(player, selectedMapKey);
+                            } catch (RuntimeException ignored) {
+                                player.sendSystemMessage(Component.literal("§c场景地图切换被拒绝：地图不存在或未配置"));
+                            }
+                        }));
+    }
+
+    private static void syncSceneToolTarget(ServerPlayer player, String mapKey) {
+        String dimension = player.serverLevel().dimension().location().toString();
+        var session = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
+                .retarget(player.getUUID(), dimension, mapKey);
+        com.habitrain.core.scene.model.SceneBounds bounds = session == null
+                ? com.habitrain.core.scene.model.SceneBounds.EMPTY : session.toBounds();
+        ServerPlayNetworking.send(player,
+                com.habitrain.core.scene.network.SceneSelectionStateS2C.fromBounds(
+                        dimension, mapKey, bounds, bounds.isEmpty() ? 0L : bounds.volume()));
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

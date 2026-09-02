@@ -279,6 +279,8 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutDeathHandler.register();
         BlackoutHornVoteHandler.register();
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopHandler.register();
+        com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().init();
+        com.habitrain.core.scene.item.HabiAdminItems.init();
         registerMoreSounds();
         initBetelSystem();
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",

@@ -42,7 +42,9 @@ public final class PayloadSenders {
         var client = Minecraft.getInstance();
         if (client.getConnection() == null) return;
         if (client.getSingleplayerServer() != null) return;
-        ClientPlayNetworking.send(new ConfigUpdatePayload(ConfigUpdateScope.attachToConfigJson(configJson, scope)));
+        String sceneMapKey = com.habitrain.core.client.gui.menu.ConfigUpdateContext.currentSceneMapKey();
+        ClientPlayNetworking.send(new ConfigUpdatePayload(
+                ConfigUpdateScope.attachToConfigJson(configJson, scope, sceneMapKey)));
     }
 
     /** 从客户端发送聘请警察请求到服务端。 */

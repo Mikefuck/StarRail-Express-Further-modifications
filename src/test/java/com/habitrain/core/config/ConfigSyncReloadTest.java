@@ -15,7 +15,7 @@ class ConfigSyncReloadTest {
 
         sync.loadFromJsonString(repo, """
                 {
-                  "global": {"tempPowerPrice": 100, "knifeDurabilityEnabled": false},
+                  "global": {"tempPowerPrice": 100, "knifeDurabilityEnabled": false, "blackoutGlobalCooldownSeconds": 45},
                   "tasks": {
                     "habitrain_core:pet_cat": {
                       "enabled": true,
@@ -27,7 +27,7 @@ class ConfigSyncReloadTest {
                 """);
         String diskSnapshot = """
                 {
-                  "global": {"tempPowerPrice": 100, "knifeDurabilityEnabled": false},
+                  "global": {"tempPowerPrice": 100, "knifeDurabilityEnabled": false, "blackoutGlobalCooldownSeconds": 45},
                   "tasks": {
                     "habitrain_core:pet_cat": {
                       "enabled": true,
@@ -40,7 +40,7 @@ class ConfigSyncReloadTest {
 
         sync.applySyncFromJson(repo, """
                 {
-                  "global": {"tempPowerPrice": 250, "knifeDurabilityEnabled": true},
+                  "global": {"tempPowerPrice": 250, "knifeDurabilityEnabled": true, "blackoutGlobalCooldownSeconds": 75},
                   "tasks": {
                     "habitrain_core:pet_cat": {
                       "enabled": false,
@@ -52,11 +52,13 @@ class ConfigSyncReloadTest {
                 """);
         assertEquals(250, repo.getTempPowerPrice());
         assertTrue(repo.isKnifeDurabilityEnabled());
+        assertEquals(75, repo.getBlackoutGlobalCooldownSeconds());
         assertFalse(repo.getTaskConfig("habitrain_core:pet_cat").enabled);
 
         sync.loadFromJsonString(repo, diskSnapshot);
         assertEquals(100, repo.getTempPowerPrice());
         assertFalse(repo.isKnifeDurabilityEnabled());
+        assertEquals(45, repo.getBlackoutGlobalCooldownSeconds());
         assertTrue(repo.getTaskConfig("habitrain_core:pet_cat").enabled);
         assertFalse(repo.getTaskConfig("habitrain_core:pet_cat").hasInstinctColor);
     }
