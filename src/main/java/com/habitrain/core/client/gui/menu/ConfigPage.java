@@ -13,6 +13,8 @@ import net.minecraft.client.gui.GuiGraphics;
 public interface ConfigPage {
     /** 是否有可修改选项（“其他”空态页返回 false → 不显示保存栏）。 */
     boolean canSave();
+    /** 当前草稿是否允许提交；默认不增加额外校验。 */
+    default boolean isSaveAllowed() { return canSave(); }
     /** 提交页面级待处理状态到配置模型（即时持久化；多数页面 no-op）。 */
     void save();
     /** 把聚焦/可编辑文本框写入配置模型（保存/切页/关闭前调用）。 */

@@ -93,12 +93,21 @@ public final class C2SReceiverRegistrar {
                     return;
                 }
                 // 背包 scope 会先剥离无关区域，不能借由伪造完整 JSON 修改其他配置。
+                java.util.Set<String> previousBackgroundAssets = configuredAdditionalSceneAssetKeys(
+                        ConfigManager.getInstance().getSceneMotionSettings());
                 boolean merged = ConfigManager.getInstance().mergeFromJsonString(filteredJson);
                 if (!merged) {
                     player.sendSystemMessage(Component.literal(
                             "§c配置合并失败：JSON 无效或字段类型错误，服务端配置未改动"));
                     LOGGER.warn("玩家 {} 的配置 merge 被拒绝（解析失败）", player.getName().getString());
                     return;
+                }
+                java.util.Set<String> currentBackgroundAssets = configuredAdditionalSceneAssetKeys(
+                        ConfigManager.getInstance().getSceneMotionSettings());
+                previousBackgroundAssets.removeAll(currentBackgroundAssets);
+                for (String removedAssetKey : previousBackgroundAssets) {
+                    com.habitrain.core.scene.server.SceneAssetStore.getInstance().deleteAsset(removedAssetKey);
+                    LOGGER.info("已删除被移除动态背景的正式资产: assetKey={}", removedAssetKey);
                 }
                 LAST_APPLIED_CONFIG_JSON.put(player.getUUID(), filteredJson);
                 ConfigManager.getInstance().save();
@@ -426,6 +435,28 @@ public final class C2SReceiverRegistrar {
                                     .startCapture(player, payload.mapKey());
                         }));
 
+        // 管理员客户端只报告私有暂存资产的烘焙结果；报告本身绝不触发发布。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneStagingReportC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) return;
+                            if (!C2SRateLimiter.tryAcquire(player.getUUID(), "scene_staging_report", 250)) return;
+                            com.habitrain.core.scene.server.SceneStagingService.getInstance()
+                                    .handleReport(player, payload);
+                        }));
+
+        // 只有第二个独立的管理员动作才能把已通过诊断的暂存资产提升为正式资产。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneStagingDecisionC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null || payload == null) return;
+                            if (!C2SRateLimiter.tryAcquire(player.getUUID(), "scene_staging_decision", 250)) return;
+                            com.habitrain.core.scene.server.SceneStagingService.getInstance()
+                                    .handleDecision(context.server(), player, payload);
+                        }));
+
         // 地图箭头切换是场景工具会话状态，必须立即同步；不能依赖“保存配置”的回调，
         // 因为集成服务器会跳过配置 C2S，导致 HUD 显示 map2 而下一次右键仍打开默认配置。
         ServerPlayNetworking.registerGlobalReceiver(
@@ -442,7 +473,10 @@ public final class C2SReceiverRegistrar {
                             try {
                                 String selectedMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
                                         payload.mapKey(), currentMapKey, allowedMapKeys);
-                                syncSceneToolTarget(player, selectedMapKey);
+                                String backgroundId = payload.backgroundId() != null && !payload.backgroundId().isBlank()
+                                        ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(payload.backgroundId())
+                                        : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                                syncSceneToolTarget(player, selectedMapKey, backgroundId);
                             } catch (RuntimeException ignored) {
                                 player.sendSystemMessage(Component.literal("§c场景地图切换被拒绝：地图不存在或未配置"));
                             }
@@ -450,14 +484,38 @@ public final class C2SReceiverRegistrar {
     }
 
     private static void syncSceneToolTarget(ServerPlayer player, String mapKey) {
+        var manager = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance();
+        syncSceneToolTarget(player, mapKey, manager.getEditorBackgroundId(player.getUUID(), mapKey));
+    }
+
+    private static void syncSceneToolTarget(ServerPlayer player, String mapKey, String backgroundId) {
         String dimension = player.serverLevel().dimension().location().toString();
-        var session = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
-                .retarget(player.getUUID(), dimension, mapKey);
-        com.habitrain.core.scene.model.SceneBounds bounds = session == null
-                ? com.habitrain.core.scene.model.SceneBounds.EMPTY : session.toBounds();
+        var manager = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance();
+        manager.selectEditorMap(player.getUUID(), mapKey);
+        manager.selectEditorBackground(player.getUUID(), mapKey, backgroundId);
+        ServerPlayNetworking.send(player,
+                new com.habitrain.core.scene.network.SceneToolTargetStateS2C(mapKey, backgroundId));
+        var session = manager.getSession(player.getUUID());
+        boolean selectionInDimension = session != null && dimension.equals(session.getDimension());
+        String selectionMapKey = selectionInDimension ? session.getMapKey() : mapKey;
+        com.habitrain.core.scene.model.SceneBounds bounds = selectionInDimension
+                ? session.toBounds() : com.habitrain.core.scene.model.SceneBounds.EMPTY;
         ServerPlayNetworking.send(player,
                 com.habitrain.core.scene.network.SceneSelectionStateS2C.fromBounds(
-                        dimension, mapKey, bounds, bounds.isEmpty() ? 0L : bounds.volume()));
+                        dimension, selectionMapKey, bounds, bounds.isEmpty() ? 0L : bounds.volume()));
+    }
+
+    private static java.util.Set<String> configuredAdditionalSceneAssetKeys(
+            com.habitrain.core.config.SceneMotionSettings settings) {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+        if (settings == null) return keys;
+        for (var mapEntry : settings.backgrounds.entrySet()) {
+            for (String backgroundId : mapEntry.getValue().keySet()) {
+                keys.add(com.habitrain.core.scene.model.SceneBackgroundKey.assetKey(
+                        mapEntry.getKey(), backgroundId));
+            }
+        }
+        return keys;
     }
 
     /** 购买后重发商店 Open payload 刷新客户端。 */

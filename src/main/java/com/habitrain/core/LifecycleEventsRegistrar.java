@@ -198,6 +198,7 @@ public final class LifecycleEventsRegistrar {
             com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll();
             com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll();
             com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown();
+            com.habitrain.core.scene.server.SceneStagingService.getInstance().shutdown();
             com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown();
             com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null);
         });
@@ -328,10 +329,13 @@ public final class LifecycleEventsRegistrar {
                 LAST_VIEW.put(id, new TrackedView(cam, dim));
                 sendCurrentRoleState(player);
                 if (dim != null) {
-                    com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
-                            .onPlayerChangeDimension(id, dim.location().toString());
-                    String mapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
-                            .resolve(player.serverLevel()).mapKey();
+                    var sceneSessions = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance();
+                    sceneSessions.onPlayerChangeDimension(id, dim.location().toString());
+                    String mapKey = sceneSessions.getEditorMapKey(id);
+                    if (mapKey == null || mapKey.isBlank()) {
+                        mapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
+                                .resolve(player.serverLevel()).mapKey();
+                    }
                     net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,
                             com.habitrain.core.scene.network.SceneSelectionStateS2C.cleared(
                                     dim.location().toString(), mapKey));
@@ -352,6 +356,7 @@ public final class LifecycleEventsRegistrar {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             try {
                 com.habitrain.core.scene.server.SceneCaptureService.getInstance().tick(server);
+                com.habitrain.core.scene.server.SceneStagingService.getInstance().tick(server);
                 if (!PENDING_ROLE_STATE.isEmpty()) {
                     for (java.util.UUID pendingId : PENDING_ROLE_STATE) {
                         sendCurrentRoleStateUuid(pendingId);
@@ -433,6 +438,10 @@ public final class LifecycleEventsRegistrar {
                 com.habitrain.core.C2SReceiverRegistrar.clearConfigUpdateHistory(player.getUUID());
                 com.habitrain.core.task.TaskManager.getInstance().unbindOwner(player.getUUID());
                 com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
+                com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                        .onPlayerDisconnect(player.getUUID());
+                com.habitrain.core.scene.server.SceneStagingService.getInstance()
                         .onPlayerDisconnect(player.getUUID());
                 com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
                         .onPlayerDisconnect(player.getUUID());

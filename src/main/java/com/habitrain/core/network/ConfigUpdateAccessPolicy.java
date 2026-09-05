@@ -4,6 +4,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.config.SceneMotionSettings;
+import com.habitrain.core.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.scene.model.SceneMotionMode;
+import com.habitrain.core.scene.model.SceneOrbitAxis;
+import com.habitrain.core.scene.model.SceneOrbitCenterMode;
+import com.habitrain.core.scene.model.SceneOrbitSettings;
 
 import java.util.Collection;
 
@@ -113,6 +119,17 @@ public final class ConfigUpdateAccessPolicy {
             throw new IllegalArgumentException("Current map profile is missing");
         }
         validateAdminProfile(submittedProfile.getAsJsonObject());
+        JsonObject submittedMapBackgrounds = null;
+        if (submittedScene.has("backgrounds") && submittedScene.get("backgrounds").isJsonObject()) {
+            JsonElement submittedMapElement = submittedScene.getAsJsonObject("backgrounds").get(currentMapKey);
+            if (submittedMapElement != null) {
+                if (!submittedMapElement.isJsonObject()) {
+                    throw new IllegalArgumentException("Current map backgrounds must be an object");
+                }
+                submittedMapBackgrounds = submittedMapElement.getAsJsonObject();
+                validateBackgrounds(submittedMapBackgrounds);
+            }
+        }
 
         JsonObject safeScene = authoritativeSceneMotion == null
                 ? new JsonObject() : authoritativeSceneMotion.deepCopy();
@@ -120,6 +137,14 @@ public final class ConfigUpdateAccessPolicy {
                 ? safeScene.getAsJsonObject("profiles") : new JsonObject();
         safeProfiles.add(currentMapKey, submittedProfile.deepCopy());
         safeScene.add("profiles", safeProfiles);
+        JsonObject safeBackgrounds = safeScene.has("backgrounds") && safeScene.get("backgrounds").isJsonObject()
+                ? safeScene.getAsJsonObject("backgrounds") : new JsonObject();
+        if (submittedMapBackgrounds == null || submittedMapBackgrounds.size() == 0) {
+            safeBackgrounds.remove(currentMapKey);
+        } else {
+            safeBackgrounds.add(currentMapKey, submittedMapBackgrounds.deepCopy());
+        }
+        safeScene.add("backgrounds", safeBackgrounds);
         JsonObject filtered = new JsonObject();
         filtered.add("sceneMotion", safeScene);
         return filtered.toString();
@@ -168,10 +193,70 @@ public final class ConfigUpdateAccessPolicy {
         requireRange(profile, "speedBlocksPerSecond", 0.0, 64.0);
         if (profile.has("loop")) {
             JsonObject loop = profile.getAsJsonObject("loop");
+            if (loop.has("distanceMode")) {
+                String mode = loop.get("distanceMode").getAsString();
+                if (!mode.equals(SceneLoopDistanceMode.AUTO.name())
+                        && !mode.equals(SceneLoopDistanceMode.CUSTOM.name())) {
+                    throw new IllegalArgumentException("Unsupported loop distanceMode");
+                }
+            }
             requireRange(loop, "distanceBlocks", 1.0, 4096.0);
             if (loop.has("copies") && loop.get("copies").getAsInt() != 2) {
                 throw new IllegalArgumentException("Loop copies must be 2");
             }
+        }
+        if (profile.has("motionMode")) {
+            String mode = profile.get("motionMode").getAsString();
+            if (!mode.equals(SceneMotionMode.LINEAR.name()) && !mode.equals(SceneMotionMode.ORBIT.name())) {
+                throw new IllegalArgumentException("Unsupported motionMode: " + mode);
+            }
+        }
+        if (profile.has("orbit")) {
+            if (!profile.get("orbit").isJsonObject()) {
+                throw new IllegalArgumentException("Orbit settings must be an object");
+            }
+            JsonObject orbit = profile.getAsJsonObject("orbit");
+            if (orbit.has("centerMode")) {
+                String cm = orbit.get("centerMode").getAsString();
+                if (!cm.equals(SceneOrbitCenterMode.WORLD_BLOCK.name())
+                        && !cm.equals(SceneOrbitCenterMode.MODEL_CENTER.name())) {
+                    throw new IllegalArgumentException("Unsupported orbit centerMode");
+                }
+            }
+            if (orbit.has("centerWorld")) {
+                if (!orbit.get("centerWorld").isJsonArray()) {
+                    throw new IllegalArgumentException("centerWorld must be an array");
+                }
+                var arr = orbit.getAsJsonArray("centerWorld");
+                if (arr.size() != 3) throw new IllegalArgumentException("centerWorld must have 3 coordinates");
+                for (int i = 0; i < 3; i++) {
+                    double coord = arr.get(i).getAsDouble();
+                    if (!Double.isFinite(coord) || Math.abs(coord) > 30_000_000.0) {
+                        throw new IllegalArgumentException("centerWorld coordinate out of world bounds");
+                    }
+                }
+            }
+            if (orbit.has("axis")) {
+                String axis = orbit.get("axis").getAsString();
+                if (!axis.equals(SceneOrbitAxis.X.name())
+                        && !axis.equals(SceneOrbitAxis.Y.name())
+                        && !axis.equals(SceneOrbitAxis.Z.name())) {
+                    throw new IllegalArgumentException("Unsupported orbit axis");
+                }
+            }
+            requireRange(orbit, "startAngleDegrees", 0.0, 360.0);
+            requireRange(orbit, "sweepDegrees", SceneOrbitSettings.MIN_SWEEP, SceneOrbitSettings.MAX_SWEEP);
+            requireRange(orbit, "angularSpeedDegreesPerSecond", SceneOrbitSettings.MIN_SPEED, SceneOrbitSettings.MAX_SPEED);
+            requireRange(orbit, "verticalBobAmplitudeBlocks", SceneOrbitSettings.MIN_BOB_AMPLITUDE, SceneOrbitSettings.MAX_BOB_AMPLITUDE);
+            requireRange(orbit, "radialBobAmplitudeBlocks", SceneOrbitSettings.MIN_BOB_AMPLITUDE, SceneOrbitSettings.MAX_BOB_AMPLITUDE);
+            requireRange(orbit, "bobCyclesPerSecond", SceneOrbitSettings.MIN_BOB_CYCLES, SceneOrbitSettings.MAX_BOB_CYCLES);
+            if (orbit.has("instanceCount")) {
+                int count = orbit.get("instanceCount").getAsInt();
+                if (count < SceneOrbitSettings.MIN_INSTANCES || count > SceneOrbitSettings.MAX_INSTANCES) {
+                    throw new IllegalArgumentException("instanceCount is outside allowed range");
+                }
+            }
+            requireRange(orbit, "instanceSpreadDegrees", SceneOrbitSettings.MIN_SPREAD, SceneOrbitSettings.MAX_SPREAD);
         }
         if (profile.has("render")) requireRange(profile.getAsJsonObject("render"), "maxDistanceBlocks", 32.0, 512.0);
         if (profile.has("outsideSound")) {
@@ -205,19 +290,57 @@ public final class ConfigUpdateAccessPolicy {
 
     private static void validateSceneMotion(JsonObject scene) {
         validateFinite(scene);
-        if (scene.has("schemaVersion") && scene.get("schemaVersion").getAsInt() != 1) {
+        if (scene.has("schemaVersion") && scene.get("schemaVersion").getAsInt() != 1
+                && scene.get("schemaVersion").getAsInt() != 2
+                && scene.get("schemaVersion").getAsInt() != SceneMotionSettings.CURRENT_SCHEMA_VERSION) {
             throw new IllegalArgumentException("Unsupported sceneMotion schemaVersion");
         }
-        if (!scene.has("profiles")) return;
-        if (!scene.get("profiles").isJsonObject()) throw new IllegalArgumentException("sceneMotion.profiles must be an object");
-        JsonObject profiles = scene.getAsJsonObject("profiles");
-        if (profiles.size() > 256) throw new IllegalArgumentException("Too many scene profiles");
-        for (var entry : profiles.entrySet()) {
-            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getKey().length() > 256
-                    || !entry.getValue().isJsonObject()) {
-                throw new IllegalArgumentException("Invalid scene profile entry");
+        if (scene.has("profiles")) {
+            if (!scene.get("profiles").isJsonObject()) throw new IllegalArgumentException("sceneMotion.profiles must be an object");
+            JsonObject profiles = scene.getAsJsonObject("profiles");
+            if (profiles.size() > 256) throw new IllegalArgumentException("Too many scene profiles");
+            for (var entry : profiles.entrySet()) {
+                if (entry.getKey() == null || entry.getKey().isBlank() || entry.getKey().length() > 256
+                        || !entry.getValue().isJsonObject()) {
+                    throw new IllegalArgumentException("Invalid scene profile entry");
+                }
+                validateAdminProfile(entry.getValue().getAsJsonObject());
             }
-            validateAdminProfile(entry.getValue().getAsJsonObject());
+        }
+        if (scene.has("backgrounds")) {
+            if (!scene.get("backgrounds").isJsonObject()) {
+                throw new IllegalArgumentException("sceneMotion.backgrounds must be an object");
+            }
+            JsonObject maps = scene.getAsJsonObject("backgrounds");
+            if (maps.size() > 256) throw new IllegalArgumentException("Too many scene background maps");
+            for (var mapEntry : maps.entrySet()) {
+                if (mapEntry.getKey() == null || mapEntry.getKey().isBlank()
+                        || mapEntry.getKey().length() > 256 || !mapEntry.getValue().isJsonObject()) {
+                    throw new IllegalArgumentException("Invalid scene background map entry");
+                }
+                validateBackgrounds(mapEntry.getValue().getAsJsonObject());
+            }
+        }
+    }
+
+    private static void validateBackgrounds(JsonObject backgrounds) {
+        if (backgrounds.size() > SceneMotionSettings.MAX_BACKGROUNDS_PER_MAP - 1) {
+            throw new IllegalArgumentException("A map may have at most five scene backgrounds including default");
+        }
+        for (var entry : backgrounds.entrySet()) {
+            if (entry.getKey() == null || !entry.getKey().matches("[a-z0-9_.-]{1,48}")
+                    || "__default__".equals(entry.getKey()) || !entry.getValue().isJsonObject()) {
+                throw new IllegalArgumentException("Invalid background id");
+            }
+            JsonObject background = entry.getValue().getAsJsonObject();
+            if (!background.has("name") || background.get("name").getAsString().isBlank()
+                    || background.get("name").getAsString().length() > 32) {
+                throw new IllegalArgumentException("Invalid background name");
+            }
+            if (!background.has("profile") || !background.get("profile").isJsonObject()) {
+                throw new IllegalArgumentException("Background profile is missing");
+            }
+            validateAdminProfile(background.getAsJsonObject("profile"));
         }
     }
 

@@ -16,6 +16,8 @@ public final class SceneProfileDraft {
     private SceneRotation rotationDegrees;
     private double phaseOffsetBlocks;
     private SceneLoopSettings loop;
+    private SceneMotionMode motionMode;
+    private SceneOrbitSettings orbit;
     private SceneRenderSettings render;
     private SceneSoundSettings outsideSound;
     private SceneShakeSettings shake;
@@ -39,7 +41,11 @@ public final class SceneProfileDraft {
         this.speedBlocksPerSecond = p.getSpeedBlocksPerSecond();
         this.rotationDegrees = p.getRotationDegrees();
         this.phaseOffsetBlocks = p.getPhaseOffsetBlocks();
-        this.loop = p.getLoop();
+        SceneLoopSettings sourceLoop = p.getLoop();
+        this.loop = new SceneLoopSettings(sourceLoop.isEnabled(), sourceLoop.getDistanceMode(),
+                sourceLoop.getDistanceBlocks(), sourceLoop.getCopies());
+        this.motionMode = p.getMotionMode();
+        this.orbit = p.getOrbit().copy();
         this.render = p.getRender();
         this.outsideSound = p.getOutsideSound();
         this.shake = p.getShake();
@@ -57,6 +63,8 @@ public final class SceneProfileDraft {
         p.setRotationDegrees(rotationDegrees);
         p.setPhaseOffsetBlocks(phaseOffsetBlocks);
         p.setLoop(loop);
+        p.setMotionMode(motionMode);
+        p.setOrbit(orbit);
         p.setRender(render);
         p.setOutsideSound(outsideSound);
         p.setShake(shake);
@@ -104,7 +112,17 @@ public final class SceneProfileDraft {
     public void setPhaseOffsetBlocks(double phaseOffsetBlocks) { this.phaseOffsetBlocks = phaseOffsetBlocks; }
 
     public SceneLoopSettings getLoop() { return loop; }
-    public void setLoop(SceneLoopSettings loop) { this.loop = loop; }
+    public void setLoop(SceneLoopSettings loop) {
+        SceneLoopSettings value = loop != null ? loop : SceneLoopSettings.createDefault();
+        this.loop = new SceneLoopSettings(value.isEnabled(), value.getDistanceMode(),
+                value.getDistanceBlocks(), value.getCopies());
+    }
+
+    public SceneMotionMode getMotionMode() { return motionMode != null ? motionMode : SceneMotionMode.LINEAR; }
+    public void setMotionMode(SceneMotionMode motionMode) { this.motionMode = motionMode != null ? motionMode : SceneMotionMode.LINEAR; }
+
+    public SceneOrbitSettings getOrbit() { return orbit != null ? orbit : SceneOrbitSettings.createDefault(); }
+    public void setOrbit(SceneOrbitSettings orbit) { this.orbit = orbit != null ? orbit.copy() : SceneOrbitSettings.createDefault(); }
 
     public SceneRenderSettings getRender() { return render; }
     public void setRender(SceneRenderSettings render) { this.render = render; }

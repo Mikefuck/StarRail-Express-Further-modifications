@@ -82,7 +82,10 @@ public class ConfigMenuScreen extends Screen {
      * 尚未赋值，不能提前创建持有字体引用的配置页面，因此先保存数据并在首次创建页面时注入。
      */
     private record PendingSceneSession(
-            String mapKey,
+            String editorMapKey,
+            String editorBackgroundId,
+            String runtimeMapKey,
+            String selectionMapKey,
             com.habitrain.core.scene.model.SceneProfile profile,
             com.habitrain.core.scene.model.SceneBounds selection,
             com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
@@ -133,14 +136,27 @@ public class ConfigMenuScreen extends Screen {
     }
 
     /** 场景配置器道具入口：直接定位到游戏内 -> 移动场景页。 */
-    public static ConfigMenuScreen openSceneMotion(Screen parent, String mapKey, com.habitrain.core.scene.model.SceneProfile profile,
-                                                  com.habitrain.core.scene.model.SceneBounds selection,
-                                                  com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+    public static ConfigMenuScreen openSceneMotion(Screen parent, String editorMapKey, String runtimeMapKey,
+                                                   String selectionMapKey,
+                                                   com.habitrain.core.scene.model.SceneProfile profile,
+                                                   com.habitrain.core.scene.model.SceneBounds selection,
+                                                   com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+        return openSceneMotion(parent, editorMapKey, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+                runtimeMapKey, selectionMapKey, profile, selection, descriptor);
+    }
+
+    public static ConfigMenuScreen openSceneMotion(Screen parent, String editorMapKey, String editorBackgroundId,
+                                                   String runtimeMapKey,
+                                                   String selectionMapKey,
+                                                   com.habitrain.core.scene.model.SceneProfile profile,
+                                                   com.habitrain.core.scene.model.SceneBounds selection,
+                                                   com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
         ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.SCENE_SETTINGS_ONLY);
         screen.topTab = TOP_IN_GAME;
         screen.subTab = 3;
-        screen.pendingSceneSession = new PendingSceneSession(mapKey, profile, selection, descriptor);
-        ConfigUpdateContext.setCurrentSceneMapKey(mapKey);
+        screen.pendingSceneSession = new PendingSceneSession(
+                editorMapKey, editorBackgroundId, runtimeMapKey, selectionMapKey, profile, selection, descriptor);
+        ConfigUpdateContext.setCurrentSceneMapKey(editorMapKey);
         return screen;
     }
 
@@ -170,7 +186,10 @@ public class ConfigMenuScreen extends Screen {
         if (pendingSceneSession != null
                 && pages[TOP_IN_GAME][3] instanceof com.habitrain.core.client.gui.menu.page.SceneMotionPage page) {
             page.setSessionData(
-                    pendingSceneSession.mapKey(),
+                    pendingSceneSession.editorMapKey(),
+                    pendingSceneSession.editorBackgroundId(),
+                    pendingSceneSession.runtimeMapKey(),
+                    pendingSceneSession.selectionMapKey(),
                     pendingSceneSession.profile(),
                     pendingSceneSession.selection(),
                     pendingSceneSession.descriptor());
@@ -256,7 +275,8 @@ public class ConfigMenuScreen extends Screen {
         g.disableScissor();
 
         if (showSaveBar) {
-            saveBar.render(g, font, contentX, contentW, height, accent, mx, my);
+            saveBar.render(g, font, contentX, contentW, height, accent,
+                    page.isSaveAllowed(), mx, my);
         }
     }
 
@@ -431,7 +451,8 @@ public class ConfigMenuScreen extends Screen {
             return true;
         }
 
-        if (currentPage().canSave() && saveBar.mouseClicked(mx, my, contentX(), contentW(), height)) {
+        if (currentPage().canSave() && saveBar.mouseClicked(mx, my, contentX(), contentW(), height,
+                currentPage().isSaveAllowed())) {
             MenuSounds.playClick();
             if (!remoteEditable || !MenuPermissions.canEditRemoteConfigs()) {
                 MenuPermissions.showDeniedMessage();
@@ -509,7 +530,7 @@ public class ConfigMenuScreen extends Screen {
         // widgets does not copy that draft into ConfigManager, so closing after previewing
         // used to save the old repository value. Keep the menu's existing auto-save-on-close
         // contract and perform the same page commit as the Save button.
-        if (page.canSave() && remoteEditable && MenuPermissions.canEditRemoteConfigs(configUpdateScope())) {
+        if (page.isSaveAllowed() && remoteEditable && MenuPermissions.canEditRemoteConfigs(configUpdateScope())) {
             page.save();
         }
         saveConfigNow();

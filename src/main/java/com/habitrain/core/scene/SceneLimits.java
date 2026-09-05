@@ -15,5 +15,13 @@ public final class SceneLimits {
     public static final long MAX_NON_AIR_BLOCKS = 2_000_000L;
     public static final long MAX_TRANSFER_BYTES = 64L * 1024L * 1024L;
 
+    public static final int MAX_BLOCK_PAYLOAD_BYTES = 256 * 1024; // 256 KiB
+    public static final long MAX_TOTAL_PAYLOAD_BYTES = 32L * 1024L * 1024L; // 32 MiB
+    public static final int MAX_VERTICES_PER_BLOCK = 4096;
+    public static final int MAX_MATERIALS_PER_BLOCK = 64;
+    public static final int MAX_PAYLOAD_STRING_LENGTH = 1024;
+    public static final int MAX_PAYLOAD_NBT_DEPTH = 3;
+    public static final int MAX_PAYLOAD_ARRAY_LENGTH = 1024;
+
     private SceneLimits() {}
 }

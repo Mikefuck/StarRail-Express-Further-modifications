@@ -24,6 +24,7 @@ public class HudRegistrar {
             BlackoutHudOverlay.render(g);
             BlackoutActiveTaskHud.render(g);
             BlackoutWelcomeRenderer.render(g);
+            com.habitrain.core.scene.client.SceneViewDistanceWarningHud.render(g);
         });
     }
 }

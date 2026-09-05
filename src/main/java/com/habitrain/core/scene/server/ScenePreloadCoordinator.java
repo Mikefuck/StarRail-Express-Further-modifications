@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -34,6 +36,8 @@ public final class ScenePreloadCoordinator {
 
     private static final class PlayerProgress {
         final long totalBytes;
+        final ConcurrentMap<String, Long> confirmedByHash = new ConcurrentHashMap<>();
+        final Set<String> readyHashes = ConcurrentHashMap.newKeySet();
         volatile long confirmedBytes;
         volatile boolean ready;
         volatile boolean failed;
@@ -48,15 +52,22 @@ public final class ScenePreloadCoordinator {
         final long id;
         final ResourceKey<Level> dimension;
         final String mapKey;
-        final SceneAssetDescriptor descriptor;
+        final Map<String, SceneAssetDescriptor> descriptorsByAssetKey;
+        final Set<String> expectedHashes;
+        final long totalBytes;
         final ConcurrentMap<UUID, PlayerProgress> players = new ConcurrentHashMap<>();
         volatile boolean loadingPhase = true;
 
-        Session(long id, ResourceKey<Level> dimension, String mapKey, SceneAssetDescriptor descriptor) {
+        Session(long id, ResourceKey<Level> dimension, String mapKey,
+                Map<String, SceneAssetDescriptor> descriptorsByAssetKey) {
             this.id = id;
             this.dimension = dimension;
             this.mapKey = mapKey;
-            this.descriptor = descriptor;
+            this.descriptorsByAssetKey = Map.copyOf(descriptorsByAssetKey);
+            this.expectedHashes = descriptorsByAssetKey.values().stream()
+                    .map(SceneAssetDescriptor::sha256).collect(java.util.stream.Collectors.toUnmodifiableSet());
+            this.totalBytes = descriptorsByAssetKey.values().stream()
+                    .mapToLong(SceneAssetDescriptor::compressedSize).sum();
         }
     }
 
@@ -71,25 +82,30 @@ public final class ScenePreloadCoordinator {
 
         String normalizedMapKey = mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
         var settings = ConfigManager.getInstance().getSceneMotionSettings();
-        var profile = settings.getProfile(normalizedMapKey);
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(normalizedMapKey);
-        if (!settings.enabled || profile == null || !profile.isEnabled()
-                || descriptor == null || !descriptor.isValid()) {
-            LOGGER.info("[ScenePreload] skipped dim={} map={} enabled={} profileEnabled={} assetValid={}",
-                    level.dimension().location(), normalizedMapKey, settings.enabled,
-                    profile != null && profile.isEnabled(), descriptor != null && descriptor.isValid());
+        Map<String, SceneAssetDescriptor> descriptors = new LinkedHashMap<>();
+        if (settings.enabled) {
+            for (var background : settings.getResolvedBackgrounds(normalizedMapKey)) {
+                if (!background.profile().isEnabled()) continue;
+                String assetKey = background.assetKey(normalizedMapKey);
+                SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
+                if (descriptor != null && descriptor.isValid()) descriptors.put(assetKey, descriptor);
+            }
+        }
+        if (descriptors.isEmpty()) {
+            LOGGER.info("[ScenePreload] skipped dim={} map={} enabled={} assets=0",
+                    level.dimension().location(), normalizedMapKey, settings.enabled);
             return false;
         }
 
         Session session = new Session(NEXT_SESSION_ID.incrementAndGet(), level.dimension(),
-                normalizedMapKey, descriptor);
+                normalizedMapKey, descriptors);
         sessions.put(level.dimension(), session);
         for (ServerPlayer player : level.players()) {
             enroll(session, player);
         }
-        LOGGER.info("[ScenePreload] begin session={} dim={} map={} players={} bytes={}",
+        LOGGER.info("[ScenePreload] begin session={} dim={} map={} players={} assets={} bytes={}",
                 session.id, level.dimension().location(), normalizedMapKey,
-                session.players.size(), descriptor.compressedSize());
+                session.players.size(), descriptors.size(), session.totalBytes);
         return true;
     }
 
@@ -103,14 +119,17 @@ public final class ScenePreloadCoordinator {
         if (session == null || player == null || player.serverLevel() == null
                 || !session.dimension.equals(player.serverLevel().dimension())) return;
         session.players.computeIfAbsent(player.getUUID(), ignored ->
-                new PlayerProgress(session.descriptor.compressedSize()));
+                new PlayerProgress(session.totalBytes));
         SceneTransferService transfer = SceneTransferService.getInstance();
         transfer.setBandwidthPhase(player.getUUID(), session.loadingPhase
                 ? SceneTransferService.BandwidthPhase.LOADING
                 : SceneTransferService.BandwidthPhase.MATCH);
-        transfer.authorize(player.getUUID(), session.descriptor.sha256(), session.descriptor.compressedSize());
-        ServerPlayNetworking.send(player,
-                new SceneAssetPrefetchS2C(session.id, session.mapKey, session.descriptor));
+        for (Map.Entry<String, SceneAssetDescriptor> entry : session.descriptorsByAssetKey.entrySet()) {
+            SceneAssetDescriptor descriptor = entry.getValue();
+            transfer.authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+            ServerPlayNetworking.send(player,
+                    new SceneAssetPrefetchS2C(session.id, entry.getKey(), descriptor));
+        }
     }
 
     /** The next requested offset proves that the previous bytes passed client CRC validation. */
@@ -119,8 +138,12 @@ public final class ScenePreloadCoordinator {
         if (session == null) return;
         PlayerProgress progress = session.players.get(player.getUUID());
         if (progress == null || progress.ready) return;
-        progress.confirmedBytes = Math.max(progress.confirmedBytes,
-                Math.min(progress.totalBytes, Math.max(0L, confirmedBytes)));
+        SceneAssetDescriptor descriptor = session.descriptorsByAssetKey.values().stream()
+                .filter(value -> value.sha256().equalsIgnoreCase(sha256)).findFirst().orElse(null);
+        if (descriptor == null) return;
+        progress.confirmedByHash.merge(descriptor.sha256(),
+                Math.min(descriptor.compressedSize(), Math.max(0L, confirmedBytes)), Math::max);
+        progress.confirmedBytes = progress.confirmedByHash.values().stream().mapToLong(Long::longValue).sum();
         int quarter = progress.totalBytes <= 0L ? 0
                 : (int) Math.min(3L, progress.confirmedBytes * 4L / progress.totalBytes);
         if (quarter > progress.lastLoggedQuarter) {
@@ -136,10 +159,12 @@ public final class ScenePreloadCoordinator {
         if (session == null || session.id != sessionId) return;
         PlayerProgress progress = session.players.get(player.getUUID());
         if (progress == null) return;
-        progress.failed = !success;
+        progress.failed = progress.failed || !success;
         if (success) {
-            progress.ready = true;
-            progress.confirmedBytes = progress.totalBytes;
+            progress.readyHashes.add(sha256.toLowerCase(java.util.Locale.ROOT));
+            progress.ready = progress.readyHashes.containsAll(session.expectedHashes.stream()
+                    .map(hash -> hash.toLowerCase(java.util.Locale.ROOT)).toList());
+            if (progress.ready) progress.confirmedBytes = progress.totalBytes;
         }
         LOGGER.info("[ScenePreload] client {} session={} player={} ready={} ({}/{})",
                 success ? "ready" : "failed", session.id, player.getGameProfile().getName(), success,
@@ -199,7 +224,8 @@ public final class ScenePreloadCoordinator {
     private Session sessionFor(ServerPlayer player, String sha256) {
         if (player == null || player.serverLevel() == null || sha256 == null) return null;
         Session session = sessions.get(player.serverLevel().dimension());
-        return session != null && session.descriptor.sha256().equalsIgnoreCase(sha256) ? session : null;
+        if (session == null) return null;
+        return session.expectedHashes.stream().anyMatch(hash -> hash.equalsIgnoreCase(sha256)) ? session : null;
     }
 
     private static int readyCount(Session session) {

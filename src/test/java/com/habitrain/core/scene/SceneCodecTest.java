@@ -90,9 +90,9 @@ public class SceneCodecTest {
         SceneAssetCodec.SectionData invalid = new SceneAssetCodec.SectionData(
                 0, 0, 0, List.of("minecraft:air", "minecraft:stone"),
                 indices, new byte[2048], new byte[2048]);
-        byte[] encoded = SceneAssetCodec.encode(new SceneAssetCodec.AssetData(
+        SceneAssetCodec.AssetData data = new SceneAssetCodec.AssetData(
                 1, "minecraft:overworld", new SceneBounds(0, 0, 0, 16, 16, 16),
-                "test", List.of(invalid)));
-        assertThrows(IOException.class, () -> SceneAssetCodec.decode(encoded));
+                "test", List.of(invalid));
+        assertThrows(IOException.class, () -> SceneAssetCodec.encode(data));
     }
 }

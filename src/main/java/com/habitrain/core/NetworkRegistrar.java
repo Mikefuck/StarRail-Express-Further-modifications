@@ -54,7 +54,9 @@ public final class NetworkRegistrar {
         RoleHandshakeReportPayload.register(); count++;
         com.habitrain.core.scene.network.SceneEditorOpenS2C.register(); count++;
         com.habitrain.core.scene.network.SceneSelectionStateS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneToolTargetStateS2C.register(); count++;
         com.habitrain.core.scene.network.SceneRuntimeStateS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C.register(); count++;
         com.habitrain.core.scene.network.SceneAssetManifestS2C.register(); count++;
         com.habitrain.core.scene.network.SceneAssetChunkRequestC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetChunkS2C.register(); count++;
@@ -63,6 +65,9 @@ public final class NetworkRegistrar {
         com.habitrain.core.scene.network.SceneAssetBuildRequestC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetBuildProgressS2C.register(); count++;
         com.habitrain.core.scene.network.SceneToolMapSelectC2S.register(); count++;
+        com.habitrain.core.scene.network.SceneStagingOfferS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneStagingReportC2S.register(); count++;
+        com.habitrain.core.scene.network.SceneStagingDecisionC2S.register(); count++;
         LOGGER.info("Registered {} HabiTrain network payload types", count);
     }
 }

@@ -8,6 +8,7 @@
     },
     "client": [
         "CustomTaskBlockRendererMixin",
+        "ClientChunkCacheMixin",
         "FrustumAccessor",
         "TaskBlockOverlayThroughWallMixin",
         "InstinctColorMixin",

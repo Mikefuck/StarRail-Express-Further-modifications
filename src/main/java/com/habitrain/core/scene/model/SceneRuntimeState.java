@@ -57,13 +57,11 @@ public final class SceneRuntimeState {
         if (!active) return 0.0;
         double elapsedSeconds = calculateElapsedSeconds(clientGameTime, partialTick);
         double speed = profile.getSpeedBlocksPerSecond();
-        double loopDist = profile.getLoop().distanceBlocks();
-        if (loopDist < 1e-4) loopDist = SceneLoopSettings.DEFAULT_DISTANCE;
-
-        double raw = speed * elapsedSeconds + profile.getPhaseOffsetBlocks();
-        double mod = raw % loopDist;
-        if (mod < 0.0) mod += loopDist;
-        return mod;
+        SceneLoopSettings loop = profile.getLoop();
+        double loopDist = SceneMotionMath.effectiveLoopDistance(
+                profile.getSourceBounds(), profile.getDirection(), loop);
+        return SceneMotionMath.phase(loop.isEnabled(), speed, elapsedSeconds,
+                profile.getPhaseOffsetBlocks(), loopDist);
     }
 
     /**

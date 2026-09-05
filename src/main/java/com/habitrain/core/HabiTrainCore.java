@@ -280,6 +280,7 @@ public class HabiTrainCore implements ModInitializer {
         BlackoutHornVoteHandler.register();
         com.habitrain.core.game.blackout.shop.BlackoutTaskShopHandler.register();
         com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().init();
+        com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.registerCommon();
         com.habitrain.core.scene.item.HabiAdminItems.init();
         registerMoreSounds();
         initBetelSystem();

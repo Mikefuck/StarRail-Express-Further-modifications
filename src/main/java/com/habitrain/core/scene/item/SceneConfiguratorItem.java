@@ -4,11 +4,14 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.game.sre.scene.SreSceneContextResolver;
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.scene.model.SceneBackgroundKey;
 import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.scene.model.SceneEditorMapPolicy;
 import com.habitrain.core.scene.model.SceneProfile;
 import com.habitrain.core.scene.network.SceneEditorOpenS2C;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneSelectionStateS2C;
+import com.habitrain.core.scene.network.SceneToolTargetStateS2C;
 import com.habitrain.core.scene.server.SceneAssetStore;
 import com.habitrain.core.scene.server.SceneSelectionSessionManager;
 import com.habitrain.core.scene.server.SceneTransferService;
@@ -49,7 +52,7 @@ public final class SceneConfiguratorItem extends Item {
 
         ServerLevel serverLevel = (ServerLevel) level;
         String dimKey = serverLevel.dimension().location().toString();
-        String mapKey = resolveToolMapKey(serverPlayer, serverLevel, dimKey);
+        String mapKey = resolveEditorMapKey(serverPlayer, serverLevel);
         BlockPos clickedPos = context.getClickedPos();
 
         if (serverPlayer.isShiftKeyDown()) {
@@ -101,7 +104,7 @@ public final class SceneConfiguratorItem extends Item {
 
         ServerLevel serverLevel = (ServerLevel) level;
         String dimKey = serverLevel.dimension().location().toString();
-        String mapKey = resolveToolMapKey(serverPlayer, serverLevel, dimKey);
+        String mapKey = resolveEditorMapKey(serverPlayer, serverLevel);
 
         if (serverPlayer.isShiftKeyDown()) {
             // Shift + 右键空气：清除选区
@@ -117,9 +120,36 @@ public final class SceneConfiguratorItem extends Item {
     }
 
     private void openEditorScreen(ServerPlayer player, ServerLevel level, String dimKey, String mapKey) {
-        SceneProfile profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(mapKey);
-        SceneBounds sessionBounds = SceneSelectionSessionManager.getInstance().getBounds(player.getUUID());
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        SceneSelectionSessionManager sessions = SceneSelectionSessionManager.getInstance();
+        var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
+        String requestedBg = sessions.getEditorBackgroundId(player.getUUID(), mapKey);
+        boolean exists = false;
+        for (var b : sceneSettings.getResolvedBackgrounds(mapKey)) {
+            if (b.id().equals(requestedBg)) {
+                exists = true;
+                break;
+            }
+        }
+        String backgroundId = exists ? requestedBg : SceneBackgroundKey.DEFAULT_ID;
+        if (!exists) {
+            sessions.selectEditorBackground(player.getUUID(), mapKey, backgroundId);
+        }
+        SceneProfile profile = sceneSettings.getBackgroundProfile(mapKey, backgroundId);
+        var selectionSession = sessions.getSession(player.getUUID());
+        boolean selectionInDimension = selectionSession != null
+                && dimKey.equals(selectionSession.getDimension());
+        String selectionMapKey = selectionInDimension ? selectionSession.getMapKey() : "";
+        SceneBounds sessionBounds = selectionInDimension ? selectionSession.toBounds() : SceneBounds.EMPTY;
+        var runtimeState = com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance()
+                .getRuntimeState(level);
+        String runtimeMapKey = runtimeState != null && runtimeState.isActive()
+                ? runtimeState.getMapKey() : "";
+
+        String assetKey = SceneBackgroundKey.assetKey(mapKey, backgroundId);
+        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
+        if (descriptor == null && SceneBackgroundKey.isDefault(backgroundId)) {
+            descriptor = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        }
 
         // The page can switch between every configured map, so it needs a manifest for every
         // existing map asset rather than only the map that happened to be selected on open.
@@ -134,32 +164,37 @@ public final class SceneConfiguratorItem extends Item {
 
         SceneEditorOpenS2C payload = new SceneEditorOpenS2C(
                 mapKey,
+                backgroundId,
+                runtimeMapKey,
+                selectionMapKey,
                 1,
                 profile.toJson().toString(),
                 sessionBounds,
                 descriptor
         );
 
+        ServerPlayNetworking.send(player, new SceneToolTargetStateS2C(mapKey, backgroundId));
         ServerPlayNetworking.send(player, payload);
     }
 
-    /** In an active match the real map wins; in the lobby retain the map selected in the tool UI. */
-    private String resolveToolMapKey(ServerPlayer player, ServerLevel level, String dimension) {
+    /** The remembered editor target wins; runtime/context maps only seed a new connection. */
+    private String resolveEditorMapKey(ServerPlayer player, ServerLevel level) {
         var runtimeState = com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance()
                 .getRuntimeState(level);
-        if (runtimeState != null && runtimeState.isActive()
-                && runtimeState.getMapKey() != null && !runtimeState.getMapKey().isBlank()) {
-            return runtimeState.getMapKey();
-        }
-        String resolvedMapKey = SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
-        if (!com.habitrain.core.config.SceneMotionSettings.DEFAULT_MAP_KEY.equals(resolvedMapKey)) {
-            return resolvedMapKey;
-        }
-        var session = SceneSelectionSessionManager.getInstance().getSession(player.getUUID());
-        if (session != null && dimension.equals(session.getDimension())
-                && session.getMapKey() != null && !session.getMapKey().isBlank()) {
-            return session.getMapKey();
-        }
-        return resolvedMapKey;
+        String runtimeMapKey = runtimeState != null && runtimeState.isActive()
+                ? runtimeState.getMapKey() : "";
+        String contextMapKey = SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
+        var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
+        java.util.LinkedHashSet<String> configuredMapKeys = new java.util.LinkedHashSet<>(
+                ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
+        configuredMapKeys.addAll(sceneSettings.profiles.keySet());
+        if (runtimeMapKey != null && !runtimeMapKey.isBlank()) configuredMapKeys.add(runtimeMapKey);
+        if (contextMapKey != null && !contextMapKey.isBlank()) configuredMapKeys.add(contextMapKey);
+
+        SceneSelectionSessionManager sessions = SceneSelectionSessionManager.getInstance();
+        String editorMapKey = SceneEditorMapPolicy.resolve(
+                sessions.getEditorMapKey(player.getUUID()), runtimeMapKey, contextMapKey, configuredMapKeys);
+        sessions.selectEditorMap(player.getUUID(), editorMapKey);
+        return editorMapKey;
     }
 }

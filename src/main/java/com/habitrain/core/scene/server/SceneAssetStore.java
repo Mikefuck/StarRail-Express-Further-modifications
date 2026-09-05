@@ -25,6 +25,7 @@ public final class SceneAssetStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneAssetStore.class.getSimpleName());
     private static final String DIR_NAME = "habitrain_scene_assets";
     private static final String INDEX_FILE_NAME = "index.json";
+    private static final String STAGING_DIR_NAME = "staging";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private static final SceneAssetStore INSTANCE = new SceneAssetStore();
@@ -34,6 +35,7 @@ public final class SceneAssetStore {
     }
 
     private File storageDir;
+    private File stagingDir;
     private final Map<String, SceneAssetDescriptor> mapIndex = new ConcurrentHashMap<>();
 
     private SceneAssetStore() {}
@@ -44,18 +46,30 @@ public final class SceneAssetStore {
     public synchronized void bindWorld(File worldDirectory) {
         if (worldDirectory == null) {
             this.storageDir = null;
+            this.stagingDir = null;
             this.mapIndex.clear();
             return;
         }
         this.storageDir = new File(worldDirectory, DIR_NAME);
+        this.stagingDir = new File(storageDir, STAGING_DIR_NAME);
         if (!storageDir.exists()) {
             storageDir.mkdirs();
         }
+        if (!stagingDir.exists()) {
+            stagingDir.mkdirs();
+        }
+        // Staging sessions are intentionally memory-only. A server restart can never
+        // promote an unauthenticated leftover from the previous process.
+        discardAllStagingFiles();
         loadIndex();
     }
 
     public File getStorageDir() {
         return storageDir;
+    }
+
+    public File getStagingDir() {
+        return stagingDir;
     }
 
     private synchronized void loadIndex() {
@@ -136,6 +150,135 @@ public final class SceneAssetStore {
         }
     }
 
+    /** Writes a diagnostic asset without touching the live descriptor index. */
+    public synchronized boolean stageAsset(String stagingId, byte[] compressedBytes,
+                                           SceneAssetDescriptor descriptor) {
+        if (stagingDir == null || !isValidStagingId(stagingId) || compressedBytes == null
+                || descriptor == null || !descriptor.isValid()
+                || compressedBytes.length != descriptor.compressedSize()) {
+            return false;
+        }
+        try {
+            if (!stagingDir.exists()) Files.createDirectories(stagingDir.toPath());
+            String verifyHash = SceneAssetCodec.calculateSha256(compressedBytes);
+            if (!verifyHash.equalsIgnoreCase(descriptor.sha256())) {
+                LOGGER.error("暂存资产哈希校验失败: stagingId={}, expected={}, actual={}",
+                        stagingId, descriptor.sha256(), verifyHash);
+                return false;
+            }
+            Path target = stagingPath(stagingId);
+            Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+            Files.deleteIfExists(temp);
+            try (FileOutputStream fos = new FileOutputStream(temp.toFile())) {
+                fos.write(compressedBytes);
+                fos.flush();
+                fos.getFD().sync();
+            }
+            try {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("写入暂存场景资产失败: stagingId=" + stagingId, e);
+            return false;
+        }
+    }
+
+    /**
+     * Promotes a verified staging file and changes the live descriptor only after the
+     * content-addressed file is durable and index.json was atomically replaced.
+     */
+    public synchronized boolean promoteStagedAsset(String stagingId, String mapKey,
+                                                   SceneAssetDescriptor descriptor) {
+        if (storageDir == null || !isValidStagingId(stagingId) || descriptor == null
+                || !descriptor.isValid()) return false;
+        String normalizedMapKey = normalizeMapKey(mapKey);
+        Path staged = stagingPath(stagingId);
+        if (!Files.isRegularFile(staged)) return false;
+        try {
+            byte[] bytes = Files.readAllBytes(staged);
+            if (bytes.length != descriptor.compressedSize()
+                    || !SceneAssetCodec.calculateSha256(bytes).equalsIgnoreCase(descriptor.sha256())) {
+                LOGGER.error("拒绝提升损坏的暂存资产: stagingId={}", stagingId);
+                return false;
+            }
+
+            Path live = storageDir.toPath().resolve(descriptor.sha256() + ".hscene");
+            if (!Files.isRegularFile(live)) {
+                Path temp = live.resolveSibling(live.getFileName() + ".promote.tmp");
+                Files.deleteIfExists(temp);
+                Files.copy(staged, temp, StandardCopyOption.REPLACE_EXISTING);
+                try (var channel = java.nio.channels.FileChannel.open(temp,
+                        java.nio.file.StandardOpenOption.WRITE)) {
+                    channel.force(true);
+                }
+                try {
+                    Files.move(temp, live, StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                    Files.move(temp, live, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } else {
+                byte[] liveBytes = Files.readAllBytes(live);
+                if (!SceneAssetCodec.calculateSha256(liveBytes).equalsIgnoreCase(descriptor.sha256())) {
+                    LOGGER.error("内容寻址资产文件与文件名哈希不符，拒绝提升: {}", live);
+                    return false;
+                }
+            }
+
+            SceneAssetDescriptor previous = mapIndex.put(normalizedMapKey, descriptor);
+            if (!saveIndex()) {
+                if (previous == null) mapIndex.remove(normalizedMapKey);
+                else mapIndex.put(normalizedMapKey, previous);
+                LOGGER.error("正式资产索引原子替换失败，已恢复旧 descriptor: mapKey={}", normalizedMapKey);
+                return false;
+            }
+            Files.deleteIfExists(staged);
+            LOGGER.info("暂存场景资产已原子提升: mapKey={}, stagingId={}, sha256={}",
+                    normalizedMapKey, stagingId, descriptor.shortHash());
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("提升暂存场景资产失败: stagingId=" + stagingId, e);
+            return false;
+        }
+    }
+
+    public synchronized boolean discardStagedAsset(String stagingId) {
+        if (stagingDir == null || !isValidStagingId(stagingId)) return false;
+        try {
+            return Files.deleteIfExists(stagingPath(stagingId));
+        } catch (IOException e) {
+            LOGGER.warn("删除暂存场景资产失败: stagingId={}", stagingId, e);
+            return false;
+        }
+    }
+
+    public synchronized File getStagingAssetFile(String stagingId) {
+        if (stagingDir == null || !isValidStagingId(stagingId)) return null;
+        File file = stagingPath(stagingId).toFile();
+        return file.isFile() ? file : null;
+    }
+
+    /** Deletes orphan staging files. Never traverses outside the dedicated staging directory. */
+    public synchronized int discardAllStagingFiles() {
+        if (stagingDir == null || !stagingDir.isDirectory()) return 0;
+        File[] files = stagingDir.listFiles(File::isFile);
+        if (files == null) return 0;
+        int removed = 0;
+        for (File file : files) {
+            try {
+                if (Files.deleteIfExists(file.toPath())) removed++;
+            } catch (IOException e) {
+                LOGGER.warn("清理孤立暂存资产失败: {}", file, e);
+            }
+        }
+        if (removed > 0) LOGGER.info("已清理 {} 个孤立暂存场景文件", removed);
+        return removed;
+    }
+
     /**
      * 获取指定 SHA-256 对应的资产文件。
      */
@@ -145,6 +288,23 @@ public final class SceneAssetStore {
         if (sha256.contains("/") || sha256.contains("\\") || sha256.contains("..")) return null;
         File file = new File(storageDir, sha256.toLowerCase() + ".hscene");
         return file.exists() ? file : null;
+    }
+
+    private Path stagingPath(String stagingId) {
+        return stagingDir.toPath().resolve(stagingId.toLowerCase(Locale.ROOT) + ".hscene");
+    }
+
+    private static boolean isValidStagingId(String stagingId) {
+        if (stagingId == null) return false;
+        try {
+            return UUID.fromString(stagingId).toString().equalsIgnoreCase(stagingId);
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
+    private static String normalizeMapKey(String mapKey) {
+        return mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
     }
 
     public SceneAssetDescriptor getDescriptor(String mapKey) {

@@ -519,20 +519,30 @@ public class NetworkReceiverRegistrar {
                                     ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
                             configuredMapKeys.addAll(sceneSettings.profiles.keySet());
                             var sceneRuntime = com.habitrain.core.scene.client.SceneRenderRuntime.getInstance();
-                            var runtimeState = sceneRuntime.getCurrentState();
-                            String runtimeMapKey = runtimeState != null && runtimeState.isActive()
-                                    ? runtimeState.getMapKey() : "";
+                            if (payload.editorMapKey() != null && !payload.editorMapKey().isBlank()) {
+                                configuredMapKeys.add(payload.editorMapKey());
+                            }
                             String initialMapKey = com.habitrain.core.scene.model.SceneEditorMapPolicy.resolve(
-                                    payload.mapKey(), runtimeMapKey,
-                                    com.habitrain.core.scene.client.SceneToolHud.getInstance().getCurrentMapKey(),
+                                    payload.editorMapKey(), payload.runtimeMapKey(), "",
                                     configuredMapKeys);
-                            var initialProfile = initialMapKey.equals(payload.mapKey())
-                                    ? payload.parseProfile() : sceneSettings.getProfile(initialMapKey).copy();
-                            var initialDescriptor = initialMapKey.equals(payload.mapKey())
-                                    ? payload.assetDescriptor() : sceneRuntime.getManifest(initialMapKey);
+                            String initialBackgroundId = payload.editorBackgroundId();
+                            if (initialBackgroundId == null || initialBackgroundId.isBlank()) {
+                                initialBackgroundId = com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                            }
+                            var initialProfile = initialMapKey.equals(payload.editorMapKey())
+                                    ? payload.parseProfile() : sceneSettings.getBackgroundProfile(initialMapKey, initialBackgroundId).copy();
+                            String assetKey = com.habitrain.core.scene.model.SceneBackgroundKey.assetKey(initialMapKey, initialBackgroundId);
+                            var initialDescriptor = initialMapKey.equals(payload.editorMapKey())
+                                    ? payload.assetDescriptor() : sceneRuntime.getManifest(assetKey);
+                            if (initialDescriptor == null && com.habitrain.core.scene.model.SceneBackgroundKey.isDefault(initialBackgroundId)) {
+                                initialDescriptor = sceneRuntime.getManifest(initialMapKey);
+                            }
                             mc.setScreen(com.habitrain.core.client.gui.menu.ConfigMenuScreen.openSceneMotion(
                                     mc.screen,
                                     initialMapKey,
+                                    initialBackgroundId,
+                                    payload.runtimeMapKey(),
+                                    payload.selectionMapKey(),
                                     initialProfile,
                                     payload.sessionSelection(),
                                     initialDescriptor
@@ -549,12 +559,35 @@ public class NetworkReceiverRegistrar {
                                     .updateSelection(payload.toBounds());
                         }));
 
+        // 24b) 场景工具当前编辑目标同步（页面关闭后 HUD 仍以服务端会话为准）
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneToolTargetStateS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            var settings = ConfigManager.getInstance().getSceneMotionSettings();
+                            com.habitrain.core.client.gui.menu.page.SceneMotionPage
+                                    .rememberAuthoritativeEditorTarget(
+                                            payload.mapKey(), payload.backgroundId());
+                            String backgroundName = com.habitrain.core.scene.model.SceneBackgroundKey
+                                    .isDefault(payload.backgroundId())
+                                    ? net.minecraft.network.chat.Component.translatable(
+                                            "screen.habitrain_core.scene_motion.background_default").getString()
+                                    : settings.getBackgroundName(payload.mapKey(), payload.backgroundId());
+                            com.habitrain.core.scene.client.SceneToolHud.getInstance()
+                                    .updateSelectionTarget(payload.mapKey(), payload.backgroundId(), backgroundName);
+                        }));
+
         // 25) 场景运行时状态同步（零Tick移动渲染 / 音效 / 微震）
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneRuntimeStateS2C.TYPE, (payload, ctx) ->
                         ctx.client().execute(() ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .updateRuntimeState(payload.state())));
+
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
+                                        .updateAdditionalRuntimeStates(payload.states())));
 
         // 26) 场景资产 Manifest 下发（触发按需下载）
         ClientPlayNetworking.registerGlobalReceiver(
@@ -581,6 +614,8 @@ public class NetworkReceiverRegistrar {
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetBuildProgressS2C.TYPE, (payload, ctx) ->
                         ctx.client().execute(() -> {
+                            com.habitrain.core.scene.client.SceneStagingClientController.getInstance()
+                                    .handleProgress(payload.mapKey(), payload.state());
                             var player = ctx.client().player;
                             if (player != null) {
                                 player.displayClientMessage(
@@ -589,5 +624,12 @@ public class NetworkReceiverRegistrar {
                                 );
                             }
                         }));
+
+        // 诊断暂存资产只会由服务端发给发起扫描的管理员。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneStagingOfferS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneStagingClientController.getInstance()
+                                        .acceptOffer(payload)));
     }
 }

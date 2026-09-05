@@ -14,6 +14,13 @@ public final class SceneMotionMath {
                                 double recommendedDistance,
                                 double effectiveDistance) {}
 
+    public enum SeamRelation {
+        UNKNOWN,
+        SEAMLESS,
+        OVERLAP,
+        GAP
+    }
+
     /**
      * Resolves the configured step used by a pair of scene copies.
      *
@@ -60,6 +67,40 @@ public final class SceneMotionMath {
         double recommended = clamp(projectedExtent,
                 SceneLoopSettings.MIN_DISTANCE, SceneLoopSettings.MAX_DISTANCE);
         return new LoopDistances(requested, recommended, requested);
+    }
+
+    /** Resolves AUTO/CUSTOM without overwriting the stored last custom value. */
+    public static LoopDistances resolveLoopDistances(SceneBounds bounds, double[] direction,
+                                                     SceneLoopSettings settings) {
+        SceneLoopSettings loop = settings != null ? settings : SceneLoopSettings.createDefault();
+        LoopDistances custom = resolveLoopDistances(bounds, direction, loop.getDistanceBlocks());
+        double recommended = hasRecommendationContext(bounds, direction)
+                ? custom.recommendedDistance() : SceneLoopSettings.DEFAULT_DISTANCE;
+        double effective = loop.getDistanceMode() == SceneLoopDistanceMode.AUTO
+                ? recommended : custom.configuredDistance();
+        return new LoopDistances(custom.configuredDistance(), recommended, effective);
+    }
+
+    public static double effectiveLoopDistance(SceneBounds bounds, double[] direction,
+                                               SceneLoopSettings settings) {
+        return resolveLoopDistances(bounds, direction, settings).effectiveDistance();
+    }
+
+    public static SeamRelation seamRelation(SceneBounds bounds, double[] direction,
+                                            SceneLoopSettings settings) {
+        if (bounds == null || bounds.isEmpty()) return SeamRelation.UNKNOWN;
+        LoopDistances distances = resolveLoopDistances(bounds, direction, settings);
+        double delta = distances.effectiveDistance() - distances.recommendedDistance();
+        if (Math.abs(delta) <= 1.0e-6) return SeamRelation.SEAMLESS;
+        return delta < 0.0 ? SeamRelation.OVERLAP : SeamRelation.GAP;
+    }
+
+    private static boolean hasRecommendationContext(SceneBounds bounds, double[] direction) {
+        if (bounds == null || bounds.isEmpty() || direction == null || direction.length < 3) return false;
+        double dx = finiteOr(direction[0], 0.0);
+        double dy = finiteOr(direction[1], 0.0);
+        double dz = finiteOr(direction[2], 0.0);
+        return dx * dx + dy * dy + dz * dz >= EPSILON * EPSILON;
     }
 
     /** Looping profiles wrap; single-pass profiles keep moving instead of teleporting back. */

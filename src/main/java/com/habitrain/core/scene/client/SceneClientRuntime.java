@@ -14,7 +14,9 @@ public final class SceneClientRuntime {
         SceneShakeController.getInstance().updateSettings(null, false);
         SceneToolHud.getInstance().updateState("", null, 0L);
         SceneToolSelectionRenderer.getInstance().updateSelection(null);
+        com.habitrain.core.client.gui.menu.page.SceneMotionPage.clearRememberedEditorTarget();
         SceneOriginPlacementController.getInstance().reset();
+        SceneStagingClientController.getInstance().reset();
     }
 
     /** 结束设置页预览，并恢复服务端正式状态对应的声音和微震。 */
@@ -22,7 +24,7 @@ public final class SceneClientRuntime {
         SceneRenderRuntime runtime = SceneRenderRuntime.getInstance();
         runtime.stopPreview();
         var state = runtime.getCurrentState();
-        if (state != null && state.isActive() && runtime.isRuntimeMeshReady()) {
+        if (state != null && state.isActive()) {
             SceneAmbientSoundController.getInstance().playSound(state.getProfile().getOutsideSound());
             SceneShakeController.getInstance().updateSettings(state.getProfile().getShake(), true);
         } else {

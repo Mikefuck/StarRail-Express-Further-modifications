@@ -115,6 +115,37 @@ class ConfigUpdateAccessPolicyTest {
     }
 
     @Test
+    void adminSceneToolCanReplaceOnlyCurrentMapsNamedBackgroundList() {
+        JsonObject authoritative = parse("""
+                {"schemaVersion":3,"profiles":{"map_a":{},"map_b":{}},"backgrounds":{
+                  "map_a":{"old":{"name":"旧背景","profile":{}}},
+                  "map_b":{"kept":{"name":"保留背景","profile":{}}}}}
+                """);
+        String submitted = """
+                {"sceneMotion":{"schemaVersion":3,"profiles":{"map_a":{}},"backgrounds":{
+                  "map_a":{"new":{"name":"新背景","profile":{"enabled":true}}},
+                  "map_b":{}}}}
+                """;
+        JsonObject filtered = parse(ConfigUpdateAccessPolicy.filterAdminSceneProfile(
+                submitted, "map_a", authoritative)).getAsJsonObject("sceneMotion");
+        assertTrue(filtered.getAsJsonObject("backgrounds").getAsJsonObject("map_a").has("new"));
+        assertFalse(filtered.getAsJsonObject("backgrounds").getAsJsonObject("map_a").has("old"));
+        assertTrue(filtered.getAsJsonObject("backgrounds").getAsJsonObject("map_b").has("kept"));
+    }
+
+    @Test
+    void fullMenuRejectsMoreThanFiveBackgroundsIncludingDefault() {
+        String json = """
+                {"sceneMotion":{"schemaVersion":3,"profiles":{"map":{}},"backgrounds":{"map":{
+                  "a":{"name":"A","profile":{}},"b":{"name":"B","profile":{}},
+                  "c":{"name":"C","profile":{}},"d":{"name":"D","profile":{}},
+                  "e":{"name":"E","profile":{}}}}}}
+                """;
+        assertThrows(IllegalArgumentException.class, () ->
+                ConfigUpdateAccessPolicy.filterConfigJson(ConfigUpdateScope.FULL_MOD_MENU, json));
+    }
+
+    @Test
     void adminSceneToolRejectsZeroDirectionAndWrongLoopCopies() {
         JsonObject authoritative = parse("{\"profiles\":{}}");
         assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterAdminSceneProfile(
@@ -132,6 +163,21 @@ class ConfigUpdateAccessPolicyTest {
                   "loop":{"distanceBlocks":512,"copies":2}
                 }}}}
                 """;
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, invalid));
+    }
+
+    @Test
+    void sceneLoopDistanceModeAcceptsSchemaTwoAndRejectsUnknownValues() {
+        String valid = """
+                {"sceneMotion":{"schemaVersion":2,"profiles":{"map":{
+                  "direction":[1,0,0],"loop":{"distanceMode":"AUTO","distanceBlocks":80,"copies":2}
+                }}}}
+                """;
+        assertDoesNotThrow(() -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, valid));
+
+        String invalid = valid.replace("AUTO", "MAGIC");
         assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
                 ConfigUpdateScope.FULL_MOD_MENU, invalid));
     }
@@ -167,6 +213,52 @@ class ConfigUpdateAccessPolicyTest {
                 "{\"sceneMotion\":{}}", ConfigUpdateScope.ADMIN_SCENE_TOOL, "map_b");
         assertEquals(ConfigUpdateScope.ADMIN_SCENE_TOOL, ConfigUpdateScope.fromConfigJson(json));
         assertEquals("map_b", ConfigUpdateScope.sceneMapKeyFromConfigJson(json));
+    }
+
+    @Test
+    void sceneOrbitSettingsAcceptValidAndRejectOutOfRangeOrMalformedValues() {
+        String valid = """
+                {"sceneMotion":{"schemaVersion":2,"profiles":{"map":{
+                  "motionMode":"ORBIT",
+                  "orbit":{
+                    "centerMode":"WORLD_BLOCK",
+                    "centerWorld":[120.5, 64.5, -30.5],
+                    "axis":"Y",
+                    "startAngleDegrees":0.0,
+                    "sweepDegrees":180.0,
+                    "clockwise":true,
+                    "angularSpeedDegreesPerSecond":30.0,
+                    "verticalBobAmplitudeBlocks":0.5,
+                    "radialBobAmplitudeBlocks":0.25,
+                    "bobCyclesPerSecond":0.2,
+                    "instanceCount":4,
+                    "instanceSpreadDegrees":360.0,
+                    "rotateModelWithOrbit":true
+                  }
+                }}}}
+                """;
+        assertDoesNotThrow(() -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, valid));
+
+        // Invalid motionMode
+        String badMotionMode = valid.replace("\"ORBIT\"", "\"WARP\"");
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, badMotionMode));
+
+        // Invalid axis
+        String badAxis = valid.replace("\"axis\":\"Y\"", "\"axis\":\"W\"");
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, badAxis));
+
+        // Invalid instanceCount (e.g. 0 or 17)
+        String badInstances = valid.replace("\"instanceCount\":4", "\"instanceCount\":0");
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, badInstances));
+
+        // Non-finite value in centerWorld
+        String badCoord = valid.replace("120.5", "1e40");
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.filterConfigJson(
+                ConfigUpdateScope.FULL_MOD_MENU, badCoord));
     }
 
     private static JsonObject parse(String json) {

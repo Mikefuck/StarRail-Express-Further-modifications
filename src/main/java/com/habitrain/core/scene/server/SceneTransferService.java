@@ -53,7 +53,9 @@ public final class SceneTransferService {
 
     /** 记录每位玩家当前是否有未完成的在途分片请求 */
     private final Map<UUID, Long> lastRequestTime = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, Map<String, Long>> manifestAllowlist = new ConcurrentHashMap<>();
+    private record TransferAuthorization(long compressedSize, File stagingFile, String stagingId) {}
+
+    private final ConcurrentMap<UUID, Map<String, TransferAuthorization>> manifestAllowlist = new ConcurrentHashMap<>();
     private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Long> nextPlayerSendNanos = new ConcurrentHashMap<>();
     private final Map<UUID, BandwidthPhase> bandwidthPhases = new ConcurrentHashMap<>();
@@ -76,8 +78,9 @@ public final class SceneTransferService {
             return;
         }
 
-        Long authorizedSize = manifestAllowlist.getOrDefault(playerId, Map.of()).get(sha256.toLowerCase());
-        if (authorizedSize == null) {
+        TransferAuthorization authorization = manifestAllowlist.getOrDefault(playerId, Map.of())
+                .get(sha256.toLowerCase());
+        if (authorization == null) {
             LOGGER.warn("玩家 {} 请求了未由 Manifest 授权的场景资产: {}", player.getName().getString(), sha256);
             return;
         }
@@ -94,7 +97,9 @@ public final class SceneTransferService {
             return;
         }
 
-        File file = SceneAssetStore.getInstance().getAssetFile(sha256);
+        File file = authorization.stagingFile() != null
+                ? authorization.stagingFile()
+                : SceneAssetStore.getInstance().getAssetFile(sha256);
         if (file == null || !file.exists()) {
             LOGGER.debug("玩家 {} 请求了不存在的场景资产: {}", player.getName().getString(), sha256);
             inFlight.remove(playerId);
@@ -102,7 +107,7 @@ public final class SceneTransferService {
         }
 
         long fileLen = file.length();
-        if (offset >= fileLen || fileLen > MAX_FILE_SIZE || fileLen != authorizedSize) {
+        if (offset >= fileLen || fileLen > MAX_FILE_SIZE || fileLen != authorization.compressedSize()) {
             LOGGER.warn("玩家 {} 请求的 offset 超出文件大小: offset={}, fileLen={}", player.getName().getString(), offset, fileLen);
             inFlight.remove(playerId);
             return;
@@ -151,7 +156,42 @@ public final class SceneTransferService {
         if (playerId == null || sha256 == null || !sha256.matches("[0-9a-fA-F]{64}")
                 || compressedSize <= 0 || compressedSize > MAX_FILE_SIZE) return;
         manifestAllowlist.computeIfAbsent(playerId, ignored -> new ConcurrentHashMap<>())
-                .put(sha256.toLowerCase(), compressedSize);
+                .put(sha256.toLowerCase(), new TransferAuthorization(compressedSize, null, ""));
+    }
+
+    /** Grants one administrator access to one staging file; no other player is authorized. */
+    public void authorizeStaging(UUID playerId, String stagingId, String sha256, long compressedSize) {
+        if (playerId == null || stagingId == null || sha256 == null
+                || !sha256.matches("[0-9a-fA-F]{64}")
+                || compressedSize <= 0 || compressedSize > MAX_FILE_SIZE) return;
+        File stagingFile = SceneAssetStore.getInstance().getStagingAssetFile(stagingId);
+        if (stagingFile == null || stagingFile.length() != compressedSize) return;
+        manifestAllowlist.computeIfAbsent(playerId, ignored -> new ConcurrentHashMap<>())
+                .put(sha256.toLowerCase(),
+                        new TransferAuthorization(compressedSize, stagingFile, stagingId));
+    }
+
+    public void revokeStaging(String stagingId) {
+        if (stagingId == null || stagingId.isBlank()) return;
+        for (Map<String, TransferAuthorization> authorizations : manifestAllowlist.values()) {
+            for (Map.Entry<String, TransferAuthorization> entry : Map.copyOf(authorizations).entrySet()) {
+                TransferAuthorization authorization = entry.getValue();
+                if (!stagingId.equals(authorization.stagingId())) continue;
+                File liveFile = SceneAssetStore.getInstance().getAssetFile(entry.getKey());
+                if (liveFile != null && liveFile.length() == authorization.compressedSize()) {
+                    authorizations.replace(entry.getKey(), authorization,
+                            new TransferAuthorization(authorization.compressedSize(), null, ""));
+                } else {
+                    authorizations.remove(entry.getKey(), authorization);
+                }
+            }
+        }
+    }
+
+    boolean hasStagingAuthorization(UUID playerId, String stagingId, String sha256) {
+        TransferAuthorization authorization = manifestAllowlist.getOrDefault(playerId, Map.of())
+                .get(sha256 == null ? "" : sha256.toLowerCase());
+        return authorization != null && stagingId != null && stagingId.equals(authorization.stagingId());
     }
 
     public void setBandwidthPhase(UUID playerId, BandwidthPhase phase) {

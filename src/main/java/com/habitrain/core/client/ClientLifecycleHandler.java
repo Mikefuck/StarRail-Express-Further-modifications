@@ -62,12 +62,14 @@ public class ClientLifecycleHandler {
             boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
             resetState(ClientSessionResetPolicy.clearEspCachesOnDisconnect(integratedHost),
                     ClientSessionResetPolicy.reloadLocalConfigOnDisconnect(integratedHost));
+            com.habitrain.core.scene.client.SceneProjectionDiagnostics.reset();
             com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
         });
 
         // 客户端 tick：报幕 tick（每帧执行，独立于光影监测）
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             BlackoutWelcomeRenderer.tick();
+            com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().tick(client);
         });
 
         // 配置保存回调：修改后自动同步到服务端（仅 OP 会生效）
@@ -124,6 +126,7 @@ public class ClientLifecycleHandler {
             Minecraft.getInstance().execute(() -> {
                 // 正式状态必须接管渲染，不能继续被设置页 preview 覆盖。
                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().stopPreview();
+                com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().onRoundStarted();
                 GameRunningCache.invalidate();
                 VoteLaunchSession.onGameActive();
                 if (Minecraft.getInstance().screen
@@ -166,6 +169,7 @@ public class ClientLifecycleHandler {
         // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
         com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
         com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
+        com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().reset();
         com.habitrain.core.scene.client.SceneClientRuntime.reset("client_state_reset");
     }
 }

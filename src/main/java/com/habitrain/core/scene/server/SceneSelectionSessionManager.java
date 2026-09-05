@@ -66,6 +66,9 @@ public final class SceneSelectionSessionManager {
     public record SelectionResult(SelectionStep step, SelectionSession session, SceneBounds bounds) {}
 
     private final Map<UUID, SelectionSession> sessions = new ConcurrentHashMap<>();
+    private final Map<UUID, String> editorMapKeys = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, String>> editorBackgroundIds = new ConcurrentHashMap<>();
+    private final Map<UUID, String> editorSessionIds = new ConcurrentHashMap<>();
 
     private SceneSelectionSessionManager() {}
 
@@ -80,6 +83,7 @@ public final class SceneSelectionSessionManager {
             return new SelectionResult(SelectionStep.CLEARED, null, SceneBounds.EMPTY);
         }
         SelectionSession session = sessions.computeIfAbsent(playerId, id -> new SelectionSession(id, dimension, mapKey));
+        rotateEditorSession(playerId);
         // 若维度或地图切换，则重置选区
         if (!Objects.equals(session.dimension, dimension) || !Objects.equals(session.mapKey, mapKey)) {
             session.dimension = dimension;
@@ -111,6 +115,7 @@ public final class SceneSelectionSessionManager {
      */
     public SelectionResult clear(UUID playerId) {
         if (playerId == null) return new SelectionResult(SelectionStep.CLEARED, null, SceneBounds.EMPTY);
+        rotateEditorSession(playerId);
         SelectionSession removed = sessions.remove(playerId);
         return new SelectionResult(SelectionStep.CLEARED, removed, SceneBounds.EMPTY);
     }
@@ -130,24 +135,61 @@ public final class SceneSelectionSessionManager {
         return session != null ? session.toBounds() : SceneBounds.EMPTY;
     }
 
-    /** Switches the administrator tool to another configured map and clears incompatible selection points. */
-    public SelectionSession retarget(UUID playerId, String dimension, String mapKey) {
-        if (playerId == null) return null;
-        SelectionSession session = sessions.computeIfAbsent(playerId,
-                id -> new SelectionSession(id, dimension, mapKey));
-        if (!Objects.equals(session.dimension, dimension) || !Objects.equals(session.mapKey, mapKey)) {
-            session.dimension = dimension != null ? dimension : "";
-            session.mapKey = mapKey != null ? mapKey : "";
-            session.pointA = null;
-            session.pointB = null;
+    /** Remembers the map being edited without changing the independently owned temporary selection. */
+    public void selectEditorMap(UUID playerId, String mapKey) {
+        if (playerId == null) return;
+        String normalized = mapKey == null ? "" : mapKey.trim();
+        if (normalized.isEmpty()) {
+            editorMapKeys.remove(playerId);
+            editorSessionIds.remove(playerId);
+        } else {
+            String previous = editorMapKeys.put(playerId, normalized);
+            if (!Objects.equals(previous, normalized) || !editorSessionIds.containsKey(playerId)) {
+                rotateEditorSession(playerId);
+            }
         }
-        session.touch();
-        return session;
+    }
+
+    public String getEditorMapKey(UUID playerId) {
+        if (playerId == null) return "";
+        return editorMapKeys.getOrDefault(playerId, "");
+    }
+
+    public void selectEditorBackground(UUID playerId, String mapKey, String backgroundId) {
+        if (playerId == null) return;
+        String normalizedMap = mapKey == null ? "" : mapKey.trim();
+        if (normalizedMap.isEmpty()) return;
+        String normalizedBg = backgroundId != null && !backgroundId.isBlank()
+                ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(backgroundId)
+                : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        editorBackgroundIds.computeIfAbsent(playerId, id -> new ConcurrentHashMap<>())
+                .put(normalizedMap, normalizedBg);
+    }
+
+    public String getEditorBackgroundId(UUID playerId, String mapKey) {
+        if (playerId == null) return com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        String normalizedMap = mapKey == null ? "" : mapKey.trim();
+        Map<String, String> mapBgs = editorBackgroundIds.get(playerId);
+        if (mapBgs == null) return com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        return mapBgs.getOrDefault(normalizedMap, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID);
+    }
+
+    /** Opaque connection-local token used to invalidate pending staging confirmations. */
+    public String getEditorSessionId(UUID playerId) {
+        if (playerId == null) return "";
+        return editorSessionIds.getOrDefault(playerId, "");
+    }
+
+    private void rotateEditorSession(UUID playerId) {
+        if (playerId != null) editorSessionIds.put(playerId, UUID.randomUUID().toString());
     }
 
     public void onPlayerDisconnect(UUID playerId) {
         if (playerId != null) {
             sessions.remove(playerId);
+            editorMapKeys.remove(playerId);
+            editorBackgroundIds.remove(playerId);
+            editorSessionIds.remove(playerId);
         }
     }
 
@@ -156,6 +198,7 @@ public final class SceneSelectionSessionManager {
         SelectionSession session = sessions.get(playerId);
         if (session != null && !Objects.equals(session.dimension, newDimension)) {
             sessions.remove(playerId);
+            rotateEditorSession(playerId);
         }
     }
 
@@ -165,6 +208,9 @@ public final class SceneSelectionSessionManager {
 
     public void clearAll() {
         sessions.clear();
+        editorMapKeys.clear();
+        editorBackgroundIds.clear();
+        editorSessionIds.clear();
     }
 
     private static boolean isExpired(SelectionSession s, long timeoutMs) {

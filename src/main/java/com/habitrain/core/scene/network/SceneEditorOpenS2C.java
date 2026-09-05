@@ -23,23 +23,45 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
             new Type<>(HabiTrainCore.id("scene_editor_open"));
 
     private static final int MAX_STRING_LENGTH = 1048576;
+    private static final int PROTOCOL_MAGIC = 0x48534345; // HSCE
+    public static final int PROTOCOL_VERSION = 3;
 
-    private final String mapKey;
+    private final String editorMapKey;
+    private final String editorBackgroundId;
+    private final String runtimeMapKey;
+    private final String selectionMapKey;
     private final int profileRevision;
     private final String profileJson;
     private final SceneBounds sessionSelection;
     private final SceneAssetDescriptor assetDescriptor;
 
-    public SceneEditorOpenS2C(String mapKey, int profileRevision, String profileJson,
+    public SceneEditorOpenS2C(String editorMapKey, String runtimeMapKey, String selectionMapKey,
+                              int profileRevision, String profileJson,
                               SceneBounds sessionSelection, SceneAssetDescriptor assetDescriptor) {
-        this.mapKey = mapKey != null ? mapKey : "__default__";
+        this(editorMapKey, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+                runtimeMapKey, selectionMapKey, profileRevision, profileJson, sessionSelection, assetDescriptor);
+    }
+
+    public SceneEditorOpenS2C(String editorMapKey, String editorBackgroundId,
+                              String runtimeMapKey, String selectionMapKey,
+                              int profileRevision, String profileJson,
+                              SceneBounds sessionSelection, SceneAssetDescriptor assetDescriptor) {
+        this.editorMapKey = normalizeMapKey(editorMapKey, "__default__");
+        this.editorBackgroundId = editorBackgroundId != null && !editorBackgroundId.isBlank()
+                ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(editorBackgroundId)
+                : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        this.runtimeMapKey = normalizeMapKey(runtimeMapKey, "");
+        this.selectionMapKey = normalizeMapKey(selectionMapKey, "");
         this.profileRevision = profileRevision;
         this.profileJson = profileJson != null ? profileJson : "{}";
         this.sessionSelection = sessionSelection != null ? sessionSelection : SceneBounds.EMPTY;
         this.assetDescriptor = assetDescriptor != null ? assetDescriptor : SceneAssetDescriptor.EMPTY;
     }
 
-    public String mapKey() { return mapKey; }
+    public String editorMapKey() { return editorMapKey; }
+    public String editorBackgroundId() { return editorBackgroundId; }
+    public String runtimeMapKey() { return runtimeMapKey; }
+    public String selectionMapKey() { return selectionMapKey; }
     public int profileRevision() { return profileRevision; }
     public String profileJson() { return profileJson; }
     public SceneBounds sessionSelection() { return sessionSelection; }
@@ -57,7 +79,20 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
     public static final StreamCodec<ByteBuf, SceneEditorOpenS2C> CODEC = new StreamCodec<>() {
         @Override
         public SceneEditorOpenS2C decode(ByteBuf buf) {
-            String mapKey = readString(buf);
+            int magic = buf.readInt();
+            if (magic != PROTOCOL_MAGIC) {
+                throw new DecoderException("Unsupported legacy scene editor open payload");
+            }
+            int protocolVersion = buf.readInt();
+            if (protocolVersion != 2 && protocolVersion != PROTOCOL_VERSION) {
+                throw new DecoderException("Unsupported scene editor protocol version: " + protocolVersion);
+            }
+            String editorMapKey = readString(buf);
+            String editorBackgroundId = protocolVersion >= 3
+                    ? readString(buf)
+                    : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+            String runtimeMapKey = readString(buf);
+            String selectionMapKey = readString(buf);
             int revision = buf.readInt();
             String json = readString(buf);
             int minX = buf.readInt();
@@ -77,12 +112,18 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
             long created = buf.readLong();
             SceneAssetDescriptor descriptor = new SceneAssetDescriptor(hash, uncomp, comp, sections, version, fp, created);
 
-            return new SceneEditorOpenS2C(mapKey, revision, json, bounds, descriptor);
+            return new SceneEditorOpenS2C(editorMapKey, editorBackgroundId, runtimeMapKey, selectionMapKey,
+                    revision, json, bounds, descriptor);
         }
 
         @Override
         public void encode(ByteBuf buf, SceneEditorOpenS2C payload) {
-            writeString(buf, payload.mapKey);
+            buf.writeInt(PROTOCOL_MAGIC);
+            buf.writeInt(PROTOCOL_VERSION);
+            writeString(buf, payload.editorMapKey);
+            writeString(buf, payload.editorBackgroundId);
+            writeString(buf, payload.runtimeMapKey);
+            writeString(buf, payload.selectionMapKey);
             buf.writeInt(payload.profileRevision);
             writeString(buf, payload.profileJson);
             buf.writeInt(payload.sessionSelection.minX());
@@ -101,6 +142,11 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
             buf.writeLong(payload.assetDescriptor.createdAt());
         }
     };
+
+    private static String normalizeMapKey(String value, String fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        return value.trim();
+    }
 
     private static String readString(ByteBuf buf) {
         int len = buf.readInt();

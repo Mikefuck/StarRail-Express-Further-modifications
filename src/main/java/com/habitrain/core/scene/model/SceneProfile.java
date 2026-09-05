@@ -23,6 +23,8 @@ public final class SceneProfile {
     private SceneRotation rotationDegrees;
     private double phaseOffsetBlocks;
     private SceneLoopSettings loop;
+    private SceneMotionMode motionMode;
+    private SceneOrbitSettings orbit;
     private SceneRenderSettings render;
     private SceneSoundSettings outsideSound;
     private SceneShakeSettings shake;
@@ -38,6 +40,8 @@ public final class SceneProfile {
         this.rotationDegrees = SceneRotation.ZERO;
         this.phaseOffsetBlocks = 0.0;
         this.loop = SceneLoopSettings.createDefault();
+        this.motionMode = SceneMotionMode.LINEAR;
+        this.orbit = SceneOrbitSettings.createDefault();
         this.render = SceneRenderSettings.createDefault();
         this.outsideSound = SceneSoundSettings.createDefault();
         this.shake = SceneShakeSettings.createDefault();
@@ -59,13 +63,32 @@ public final class SceneProfile {
         c.rotationDegrees = this.rotationDegrees;
         c.phaseOffsetBlocks = this.phaseOffsetBlocks;
         c.loop = this.loop;
+        c.motionMode = this.motionMode;
+        c.orbit = this.orbit != null ? this.orbit.copy() : SceneOrbitSettings.createDefault();
         c.render = this.render;
         c.outsideSound = this.outsideSound;
         c.shake = this.shake;
         return c;
     }
 
+    /** Copies inherited defaults while making a newly created map use automatic spacing. */
+    public SceneProfile copyForNewProfile() {
+        SceneProfile copy = copy();
+        SceneLoopSettings inherited = copy.getLoop();
+        copy.loop = new SceneLoopSettings(inherited.isEnabled(), SceneLoopDistanceMode.AUTO,
+                inherited.getDistanceBlocks(), inherited.getCopies());
+        copy.motionMode = this.motionMode;
+        copy.orbit = this.orbit != null ? this.orbit.copy() : SceneOrbitSettings.createDefault();
+        return copy;
+    }
+
     // --- Getters & Setters ---
+
+    public SceneMotionMode getMotionMode() { return motionMode != null ? motionMode : SceneMotionMode.LINEAR; }
+    public void setMotionMode(SceneMotionMode motionMode) { this.motionMode = motionMode != null ? motionMode : SceneMotionMode.LINEAR; }
+
+    public SceneOrbitSettings getOrbit() { return orbit != null ? orbit : SceneOrbitSettings.createDefault(); }
+    public void setOrbit(SceneOrbitSettings orbit) { this.orbit = orbit != null ? orbit : SceneOrbitSettings.createDefault(); }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -166,6 +189,8 @@ public final class SceneProfile {
         json.add("rotationDegrees", getRotationDegrees().toJson());
         json.addProperty("phaseOffsetBlocks", phaseOffsetBlocks);
         json.add("loop", getLoop().toJson());
+        json.addProperty("motionMode", getMotionMode().name());
+        json.add("orbit", getOrbit().toJson());
         json.add("render", getRender().toJson());
         json.add("outsideSound", getOutsideSound().toJson());
         json.add("shake", getShake().toJson());
@@ -213,6 +238,16 @@ public final class SceneProfile {
         if (json.has("loop") && json.get("loop").isJsonObject()) {
             p.loop = SceneLoopSettings.fromJson(json.getAsJsonObject("loop"));
         }
+        if (json.has("motionMode")) {
+            try {
+                p.setMotionMode(SceneMotionMode.valueOf(json.get("motionMode").getAsString().trim().toUpperCase()));
+            } catch (IllegalArgumentException ignored) {
+                p.setMotionMode(SceneMotionMode.LINEAR);
+            }
+        }
+        if (json.has("orbit") && json.get("orbit").isJsonObject()) {
+            p.setOrbit(SceneOrbitSettings.fromJson(json.getAsJsonObject("orbit")));
+        }
         if (json.has("render") && json.get("render").isJsonObject()) {
             p.render = SceneRenderSettings.fromJson(json.getAsJsonObject("render"));
         }
@@ -239,6 +274,8 @@ public final class SceneProfile {
                 Arrays.equals(direction, that.direction) &&
                 Objects.equals(rotationDegrees, that.rotationDegrees) &&
                 Objects.equals(loop, that.loop) &&
+                motionMode == that.motionMode &&
+                Objects.equals(orbit, that.orbit) &&
                 Objects.equals(render, that.render) &&
                 Objects.equals(outsideSound, that.outsideSound) &&
                 Objects.equals(shake, that.shake);
@@ -246,7 +283,8 @@ public final class SceneProfile {
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(enabled, dimension, sourceBounds, speedBlocksPerSecond, rotationDegrees, phaseOffsetBlocks, loop, render, outsideSound, shake);
+        int result = Objects.hash(enabled, dimension, sourceBounds, speedBlocksPerSecond, rotationDegrees,
+                phaseOffsetBlocks, loop, motionMode, orbit, render, outsideSound, shake);
         result = 31 * result + Arrays.hashCode(displayOrigin);
         result = 31 * result + Arrays.hashCode(pivotLocal);
         result = 31 * result + Arrays.hashCode(direction);

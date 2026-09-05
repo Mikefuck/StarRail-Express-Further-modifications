@@ -52,6 +52,10 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                 context -> com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance().render(context));
         com.habitrain.core.scene.client.SceneToolHud.init();
         com.habitrain.core.scene.client.SceneOriginPlacementController.init();
+        com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().init();
+        net.fabricmc.fabric.api.resource.ResourceManagerHelper.get(net.minecraft.server.packs.PackType.CLIENT_RESOURCES)
+                .registerReloadListener(new com.habitrain.core.scene.client.SceneResourceReloadListener());
+        com.habitrain.core.scene.client.compat.builtin.BuiltinClientSceneAdapters.registerClient();
 
         // 投稿职业客户端钩子（替罪羊本能伪装等）
         HabiRoleClientHooks.init();

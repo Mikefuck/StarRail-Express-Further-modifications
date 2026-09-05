@@ -6,7 +6,9 @@ import com.habitrain.core.config.SceneMotionSettings;
 import com.habitrain.core.game.sre.scene.SreSceneContextResolver;
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.scene.model.SceneBackgroundKey;
 import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneRuntimeStateS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -17,6 +19,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,6 +39,7 @@ public final class SceneRuntimeCoordinator {
 
     private SceneContextResolver contextResolver = SreSceneContextResolver.INSTANCE;
     private final Map<String, SceneRuntimeState> levelRuntimeStates = new ConcurrentHashMap<>();
+    private final Map<String, List<SceneRuntimeState>> levelAdditionalRuntimeStates = new ConcurrentHashMap<>();
     private final AtomicInteger profileRevision = new AtomicInteger(1);
 
     private SceneRuntimeCoordinator() {}
@@ -61,15 +66,18 @@ public final class SceneRuntimeCoordinator {
         String mapKey = ctx.mapKey();
         SceneProfile profile = settings.getProfile(mapKey);
 
-        if (!profile.isEnabled()) {
+        boolean anyBackgroundEnabled = settings.getResolvedBackgrounds(mapKey).stream()
+                .anyMatch(background -> background.profile().isEnabled());
+        if (!anyBackgroundEnabled && !profile.getOutsideSound().isEnabled() && !profile.getShake().isEnabled()) {
             LOGGER.debug("地图 {} 的移动场景未启用", mapKey);
             return;
         }
 
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        SceneAssetDescriptor descriptor = profile.isEnabled()
+                ? SceneAssetStore.getInstance().getDescriptor(mapKey) : null;
         String assetHash = descriptor != null ? descriptor.sha256() : "";
 
-        if (descriptor == null || !descriptor.isValid()) {
+        if (profile.isEnabled() && (descriptor == null || !descriptor.isValid())) {
             ServerPlayer progressRecipient = level.players().stream()
                     .filter(player -> player.hasPermissions(2))
                     .findFirst()
@@ -97,6 +105,9 @@ public final class SceneRuntimeCoordinator {
 
         String dimKey = level.dimension().location().toString();
         levelRuntimeStates.put(dimKey, state);
+        List<SceneRuntimeState> additionalStates = createAdditionalStates(
+                settings, mapKey, startTime, level);
+        levelAdditionalRuntimeStates.put(dimKey, additionalStates);
 
         LOGGER.info("移动场景启动: mapKey={}, startTime={}, assetHash={}", mapKey, startTime, descriptor != null ? descriptor.shortHash() : "NONE");
 
@@ -112,6 +123,7 @@ public final class SceneRuntimeCoordinator {
         SceneRuntimeStateS2C statePayload = new SceneRuntimeStateS2C(state);
         for (ServerPlayer player : level.players()) {
             ServerPlayNetworking.send(player, statePayload);
+            ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(additionalStates));
         }
     }
 
@@ -120,11 +132,13 @@ public final class SceneRuntimeCoordinator {
         ScenePreloadCoordinator.getInstance().reset(level);
         String dimKey = level.dimension().location().toString();
         SceneRuntimeState oldState = levelRuntimeStates.remove(dimKey);
+        levelAdditionalRuntimeStates.remove(dimKey);
         if (oldState != null && oldState.isActive()) {
             LOGGER.info("移动场景停止: dimension={}", dimKey);
             SceneRuntimeStateS2C inactivePayload = new SceneRuntimeStateS2C(SceneRuntimeState.INACTIVE);
             for (ServerPlayer player : level.players()) {
                 ServerPlayNetworking.send(player, inactivePayload);
+                ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(List.of()));
             }
         }
     }
@@ -142,6 +156,18 @@ public final class SceneRuntimeCoordinator {
                 ServerPlayNetworking.send(player, new SceneAssetManifestS2C(state.getMapKey(), descriptor));
             }
             ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(state));
+            List<SceneRuntimeState> additional = levelAdditionalRuntimeStates.getOrDefault(dimKey, List.of());
+            for (SceneRuntimeState additionalState : additional) {
+                SceneAssetDescriptor additionalDescriptor = SceneAssetStore.getInstance()
+                        .getDescriptor(additionalState.getMapKey());
+                if (additionalDescriptor != null && additionalDescriptor.isValid()) {
+                    SceneTransferService.getInstance().authorize(player.getUUID(),
+                            additionalDescriptor.sha256(), additionalDescriptor.compressedSize());
+                    ServerPlayNetworking.send(player,
+                            new SceneAssetManifestS2C(additionalState.getMapKey(), additionalDescriptor));
+                }
+            }
+            ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(additional));
         }
     }
 
@@ -176,6 +202,29 @@ public final class SceneRuntimeCoordinator {
             LOGGER.info("移动场景资产已热更新到当前对局: mapKey={}, dimension={}, assetHash={}",
                     mapKey, dimensionKey, descriptor.shortHash());
         }
+        for (ServerLevel level : server.getAllLevels()) {
+            String dimensionKey = level.dimension().location().toString();
+            List<SceneRuntimeState> currentAdditional = levelAdditionalRuntimeStates.get(dimensionKey);
+            if (currentAdditional == null || currentAdditional.isEmpty()) continue;
+            boolean changed = false;
+            List<SceneRuntimeState> refreshed = new ArrayList<>(currentAdditional.size());
+            for (SceneRuntimeState current : currentAdditional) {
+                if (Objects.equals(current.getMapKey(), mapKey)) {
+                    refreshed.add(new SceneRuntimeState(true, current.getStartGameTime(),
+                            profileRevision.incrementAndGet(), current.getMapKey(), descriptor.sha256(),
+                            current.getProfile().copy()));
+                    changed = true;
+                } else {
+                    refreshed.add(current);
+                }
+            }
+            if (changed) {
+                levelAdditionalRuntimeStates.put(dimensionKey, List.copyOf(refreshed));
+                for (ServerPlayer player : level.players()) {
+                    ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(refreshed));
+                }
+            }
+        }
     }
 
     /**
@@ -199,6 +248,8 @@ public final class SceneRuntimeCoordinator {
 
         String dimKey = level.dimension().location().toString();
         levelRuntimeStates.put(dimKey, state);
+        List<SceneRuntimeState> additionalStates = createAdditionalStates(settings, mapKey, startTime, level);
+        levelAdditionalRuntimeStates.put(dimKey, additionalStates);
 
         if (descriptor != null && descriptor.isValid()) {
             SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(mapKey, descriptor);
@@ -211,6 +262,7 @@ public final class SceneRuntimeCoordinator {
         SceneRuntimeStateS2C statePayload = new SceneRuntimeStateS2C(state);
         for (ServerPlayer player : level.players()) {
             ServerPlayNetworking.send(player, statePayload);
+            ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(additionalStates));
         }
         return true;
     }
@@ -235,10 +287,36 @@ public final class SceneRuntimeCoordinator {
         if (player == null) return;
         SceneTransferService.getInstance().onPlayerDisconnect(player.getUUID());
         ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(SceneRuntimeState.INACTIVE));
+        ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(List.of()));
         onPlayerJoin(player);
     }
 
     public void resetAll() {
         levelRuntimeStates.clear();
+        levelAdditionalRuntimeStates.clear();
+    }
+
+    private List<SceneRuntimeState> createAdditionalStates(SceneMotionSettings settings, String mapKey,
+                                                           long startTime, ServerLevel level) {
+        List<SceneRuntimeState> states = new ArrayList<>();
+        for (SceneMotionSettings.ResolvedBackground background : settings.getResolvedBackgrounds(mapKey)) {
+            if (background.fallback() || !background.profile().isEnabled()) continue;
+            String assetKey = SceneBackgroundKey.assetKey(mapKey, background.id());
+            SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
+            String hash = descriptor != null && descriptor.isValid() ? descriptor.sha256() : "";
+            SceneRuntimeState state = new SceneRuntimeState(true, startTime,
+                    profileRevision.incrementAndGet(), assetKey, hash, background.profile().copy());
+            states.add(state);
+            if (descriptor == null || !descriptor.isValid()) {
+                LOGGER.warn("地图 {} 的附加动态背景 {} 已启用但缺少资产；请用配置器生成", mapKey, background.name());
+                continue;
+            }
+            SceneAssetManifestS2C manifest = new SceneAssetManifestS2C(assetKey, descriptor);
+            for (ServerPlayer player : level.players()) {
+                SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+                ServerPlayNetworking.send(player, manifest);
+            }
+        }
+        return List.copyOf(states);
     }
 }

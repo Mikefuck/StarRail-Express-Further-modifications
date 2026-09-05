@@ -61,6 +61,20 @@ public final class CustomTaskBlockScanner {
             CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
             return;
         }
+
+        // 优先从磁盘加载缓存，避免因区块未就绪扫出空条目
+        if (areas.mapName != null && !areas.mapName.isBlank()) {
+            Map<BlockPos, Set<Integer>> diskData = CustomTaskBlockDiskCache.load(serverLevel, areas.mapName);
+            if (!diskData.isEmpty()) {
+                CustomTaskBlockCache.loadFromSnapshot(diskData);
+                SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis());
+                CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
+                LOGGER.info("[CustomTaskBlockScanner] 命中磁盘缓存，已恢复地图 {} 的 {} 个自定义任务方块并广播",
+                        areas.mapName, diskData.size());
+                return;
+            }
+        }
+
         scan(serverLevel, areas, areaBox, scanKey);
     }
 
@@ -152,8 +166,6 @@ public final class CustomTaskBlockScanner {
             return;
         }
 
-        CustomTaskBlockCache.clear();
-
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         int minX = areaBox.minX();
         int minY = areaBox.minY();
@@ -162,11 +174,21 @@ public final class CustomTaskBlockScanner {
         int maxY = areaBox.maxY();
         int maxZ = areaBox.maxZ();
 
+        // 确保所有扫描范围内的区块处于加载状态，避免开局无玩家时被跳过
         for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
             for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
-                if (!serverLevel.hasChunk(chunkX, chunkZ)) {
-                    continue;
+                try {
+                    serverLevel.getChunk(chunkX, chunkZ);
+                } catch (Exception ignored) {
                 }
+            }
+        }
+
+        Map<BlockPos, Set<Integer>> scannedBlocks = new HashMap<>();
+        Map<BlockPos, Block> scannedBlockTypes = new HashMap<>();
+
+        for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
+            for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
                 int x0 = Math.max(minX, chunkX << 4);
                 int x1 = Math.min(maxX, (chunkX << 4) + 15);
                 int z0 = Math.max(minZ, chunkZ << 4);
@@ -189,14 +211,20 @@ public final class CustomTaskBlockScanner {
                                     ConsumableClassificationPolicy.Kind kind =
                                             FoodDrinkConsumableClassifier.classify(item0);
                                     if (kind == ConsumableClassificationPolicy.Kind.DRINK) {
-                                        if (foodPlatterDrinkTypeId > 0
-                                                && CustomTaskBlockCache.put(cursor, foodPlatterDrinkTypeId, block)) {
-                                            totalAddedCount++;
+                                        if (foodPlatterDrinkTypeId > 0) {
+                                            BlockPos immutable = cursor.immutable();
+                                            if (scannedBlocks.computeIfAbsent(immutable, k -> new HashSet<>()).add(foodPlatterDrinkTypeId)) {
+                                                scannedBlockTypes.put(immutable, block);
+                                                totalAddedCount++;
+                                            }
                                         }
                                     } else if (kind == ConsumableClassificationPolicy.Kind.EAT) {
-                                        if (foodPlatterEatTypeId > 0
-                                                && CustomTaskBlockCache.put(cursor, foodPlatterEatTypeId, block)) {
-                                            totalAddedCount++;
+                                        if (foodPlatterEatTypeId > 0) {
+                                            BlockPos immutable = cursor.immutable();
+                                            if (scannedBlocks.computeIfAbsent(immutable, k -> new HashSet<>()).add(foodPlatterEatTypeId)) {
+                                                scannedBlockTypes.put(immutable, block);
+                                                totalAddedCount++;
+                                            }
                                         }
                                     }
                                 }
@@ -205,19 +233,51 @@ public final class CustomTaskBlockScanner {
 
                             Set<Integer> typeIds = blockToTypeIds.get(block);
                             if (typeIds != null) {
+                                BlockPos immutable = cursor.immutable();
                                 boolean anyAccepted = false;
                                 for (int typeId : typeIds) {
-                                    if (CustomTaskBlockCache.put(cursor, typeId, block)) {
+                                    if (scannedBlocks.computeIfAbsent(immutable, k -> new HashSet<>()).add(typeId)) {
                                         anyAccepted = true;
                                     }
                                 }
                                 if (anyAccepted) {
+                                    scannedBlockTypes.put(immutable, block);
                                     totalAddedCount++;
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        if (totalAddedCount == 0) {
+            // 防空快照保护：如果扫出来是 0，先尝试读取磁盘缓存
+            if (areas.mapName != null && !areas.mapName.isBlank()) {
+                Map<BlockPos, Set<Integer>> diskData = CustomTaskBlockDiskCache.load(serverLevel, areas.mapName);
+                if (!diskData.isEmpty()) {
+                    CustomTaskBlockCache.loadFromSnapshot(diskData);
+                    SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis());
+                    CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
+                    LOGGER.warn("[CustomTaskBlockScanner] 扫描地图 {} 得到 0 条目，已安全回退至磁盘缓存 ({} 条目)",
+                            areas.mapName, diskData.size());
+                    return;
+                }
+            }
+            LOGGER.warn("[CustomTaskBlockScanner] 扫描地图 {} 得到 0 条目 (未找到匹配的任务方块)", scanKey.mapName());
+            CustomTaskBlockCache.clear();
+        } else {
+            // 扫描成功，装填入 CustomTaskBlockCache
+            CustomTaskBlockCache.clear();
+            for (var entry : scannedBlocks.entrySet()) {
+                Block block = scannedBlockTypes.get(entry.getKey());
+                for (int typeId : entry.getValue()) {
+                    CustomTaskBlockCache.put(entry.getKey(), typeId, block);
+                }
+            }
+            // 保存至磁盘持久化缓存
+            if (areas.mapName != null && !areas.mapName.isBlank()) {
+                CustomTaskBlockDiskCache.save(serverLevel, areas.mapName, scannedBlocks);
             }
         }
 

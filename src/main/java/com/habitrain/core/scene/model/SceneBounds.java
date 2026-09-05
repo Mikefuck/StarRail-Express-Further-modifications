@@ -71,6 +71,11 @@ public final class SceneBounds {
         return sizeX() <= 0 || sizeY() <= 0 || sizeZ() <= 0;
     }
 
+    public SceneBounds inflate(int amount) {
+        if (isEmpty()) return this;
+        return new SceneBounds(minX - amount, minY - amount, minZ - amount, maxX + amount, maxY + amount, maxZ + amount);
+    }
+
     public int minSectionX() { return SectionPos.blockToSectionCoord(minX); }
     public int minSectionY() { return SectionPos.blockToSectionCoord(minY); }
     public int minSectionZ() { return SectionPos.blockToSectionCoord(minZ); }
