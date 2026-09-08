@@ -1,6 +1,7 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.VoteLaunchOverlayState;
+import com.habitrain.core.client.RepairModeClientState;
 import io.wifi.starrailexpress.client.util.MyBackgroundAmbience;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.sounds.SoundManager;
@@ -24,7 +25,8 @@ public abstract class VoteLaunchAmbientSoundBlockMixin {
     private void habitrain$deferSceneAmbienceDuringLaunch(LocalPlayer player,
                                                           SoundManager soundManager,
                                                           CallbackInfoReturnable<Boolean> cir) {
-        if (VoteLaunchOverlayState.isAmbientSoundBlockingNow()) {
+        if (RepairModeClientState.isLocalRepairer()
+                || VoteLaunchOverlayState.isAmbientSoundBlockingNow()) {
             cir.setReturnValue(false);
         }
     }

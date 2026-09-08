@@ -1,6 +1,7 @@
 package com.habitrain.core.scene.client;
 
 import com.habitrain.core.scene.model.SceneSoundSettings;
+import com.habitrain.core.client.RepairModeClientState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
@@ -24,7 +25,7 @@ public final class SceneAmbientSoundController {
 
     private MovingSceneLoopSound currentSound = null;
 
-    private static final class MovingSceneLoopSound extends AbstractTickableSoundInstance {
+    static final class MovingSceneLoopSound extends AbstractTickableSoundInstance {
         private final float targetVolume;
         private final int fadeTicks;
         private int currentTicks = 0;
@@ -37,12 +38,25 @@ public final class SceneAmbientSoundController {
             this.targetVolume = volume;
             this.pitch = pitch;
             this.fadeTicks = Math.max(1, fadeTicks);
-            this.volume = 0.01f;
+            this.volume = RepairModeClientState.isLocalRepairer() ? 0.0f : 0.01f;
             this.relative = true;
         }
 
         @Override
+        public boolean canStartSilent() {
+            // 维修时收到的新场景从零音量开始，退出维修后仍可正常淡入。
+            return true;
+        }
+
+        @Override
         public void tick() {
+            // 保留正式场景/预览各自的生命周期，维修结束后自然恢复；
+            // 已经开始淡出的旧实例仍须走完清理，不能因维修静音而滞留。
+            if (RepairModeClientState.isLocalRepairer() && !fadingOut) {
+                currentTicks = 0;
+                this.volume = 0.0f;
+                return;
+            }
             if (fadingOut) {
                 currentTicks--;
                 this.volume = (float) Math.max(0.0, targetVolume * (currentTicks / (double) fadeTicks));
@@ -56,6 +70,9 @@ public final class SceneAmbientSoundController {
                 } else {
                     this.volume = targetVolume;
                 }
+            }
+            if (RepairModeClientState.isLocalRepairer()) {
+                this.volume = 0.0f;
             }
         }
 
