@@ -8,19 +8,19 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 import java.util.UUID;
 
-/** C2S request created from the Greed backpack player selector. */
-public record GreedTradeSelectPayload(UUID partnerId) implements CustomPacketPayload {
-    public static final Type<GreedTradeSelectPayload> TYPE =
-            new Type<>(HabiTrainCore.id("greed_trade_select"));
-    public static final StreamCodec<FriendlyByteBuf, GreedTradeSelectPayload> CODEC =
-            StreamCodec.ofMember(GreedTradeSelectPayload::write, GreedTradeSelectPayload::new);
+/** C2S target selected from Sloth's backpack roster. */
+public record SlothSleepTargetPayload(UUID targetId) implements CustomPacketPayload {
+    public static final Type<SlothSleepTargetPayload> TYPE =
+            new Type<>(HabiTrainCore.id("sloth_sleep_target"));
+    public static final StreamCodec<FriendlyByteBuf, SlothSleepTargetPayload> CODEC =
+            StreamCodec.ofMember(SlothSleepTargetPayload::write, SlothSleepTargetPayload::new);
 
-    private GreedTradeSelectPayload(FriendlyByteBuf buf) {
+    private SlothSleepTargetPayload(FriendlyByteBuf buf) {
         this(buf.readUUID());
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeUUID(partnerId);
+        buf.writeUUID(targetId);
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
+import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
 import io.wifi.starrailexpress.api.RoleMethodDispatcher;
 import io.wifi.starrailexpress.api.SRERole;
@@ -129,6 +130,11 @@ public class RoleMethodDispatcherMixin {
             RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
         } catch (Throwable t) {
             LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
+        }
+        try {
+            SlothComponent.onAnyTaskFinished(player, quest);
+        } catch (Throwable t) {
+            LOGGER.debug("[Sloth] finish-quest tracking failed", t);
         }
         if (!headTakeover) {
             return;
@@ -277,11 +283,7 @@ public class RoleMethodDispatcherMixin {
         // 仅在 HEAD 未 cancel（原 SRE 逻辑正常执行）时运行；HEAD cancel 路径已在其分支内
         // 直接调用 habitrain$postQuestEffects。SRE 原版已发自己的情绪，此处不再发自定义
         // 情绪，避免双发（P2-28）。
-        try {
-            if (player == null || player.level() == null || player.level().isClientSide) return;
-            RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
-        } catch (Throwable t) {
-            LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
-        }
+        if (player == null || player.level() == null || player.level().isClientSide) return;
+        habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, false);
     }
 }

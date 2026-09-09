@@ -16,7 +16,6 @@ import com.habitrain.core.api.role.v2.behavior.WinOutcome;
 import com.habitrain.core.api.role.v2.behavior.WinPatch;
 import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import com.habitrain.core.api.role.v2.definition.PatchPriority;
-import com.habitrain.core.game.sre.role.sins.win.SlothWinPolicy;
 import io.wifi.starrailexpress.util.ShopEntry;
 import com.habitrain.core.role.behavior.HookType;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
@@ -796,28 +795,6 @@ class RoleEventDispatcherTest {
         assertTrue(fold.denied(), "pride-style DENY must surface");
         assertEquals(WinPatchOp.DECLARE_CUSTOM, fold.patch().op());
         assertEquals(List.of(winner), fold.patch().winners());
-    }
-
-    @Test
-    void foldWinBlackoutDoesNotInstantEndViaSlothPolicy() {
-        UUID winner = UUID.fromString("00000000-0000-0000-0000-0000000000b1");
-        RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
-                .win(new RoleWinHooks() {
-                    @Override
-                    public WinPatch evaluateWin(net.minecraft.server.level.ServerLevel level,
-                                                String proposed, boolean loose, RoleHookContext ctx) {
-                        if (!SlothWinPolicy.shouldDeclare(proposed, true, false, false)) {
-                            return WinPatch.noChange();
-                        }
-                        return WinPatch.declareCustom("sin_sloth", List.of(winner), "懒惰劫持了结算");
-                    }
-                }).build());
-        WinFoldResult blackout = RoleEventDispatcher.INSTANCE.foldWin(null, "BLACKOUT", false);
-        assertFalse(blackout.hasPatch(), "foldWin(BLACKOUT) must not DECLARE_CUSTOM via sloth");
-        assertNull(blackout.toWinResult());
-        WinFoldResult killers = RoleEventDispatcher.INSTANCE.foldWin(null, "KILLERS", false);
-        assertEquals(WinPatchOp.DECLARE_CUSTOM, killers.patch().op());
-        assertEquals("sin_sloth", killers.patch().customId());
     }
 
     // ------------------------------------------------------------------

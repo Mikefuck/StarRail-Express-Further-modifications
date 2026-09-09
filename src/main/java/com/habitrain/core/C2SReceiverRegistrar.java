@@ -307,26 +307,14 @@ public final class C2SReceiverRegistrar {
                 OptionVoteManager.cast(level, voter.getUUID(), payload.voteId(), payload.optionId());
             });
         });
-        // C2S 贪婪匿名交易确认/取消（与 /habi_api greed_trade 等价）
-        ServerPlayNetworking.registerGlobalReceiver(GreedTradeActionPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                String action = payload.action() == null ? "" : payload.action().trim().toLowerCase();
-                String sid = payload.sessionId() == null ? "" : payload.sessionId();
-                if ("confirm".equals(action)) {
-                    com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.confirm(player, sid);
-                } else if ("cancel".equals(action)) {
-                    com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.cancel(player, sid);
-                }
-            });
-        });
-        ServerPlayNetworking.registerGlobalReceiver(GreedTradeSelectPayload.TYPE, (payload, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(SlothSleepRosterRequestPayload.TYPE, (payload, context) ->
+                context.server().execute(() -> sendSlothSleepRoster(context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(SlothSleepTargetPayload.TYPE, (payload, context) ->
                 context.server().execute(() -> {
-                    ServerPlayer player = context.player();
-                    if (player != null) {
-                        com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager
-                                .openSelectedTrade(player, payload.partnerId());
+                    ServerPlayer sloth = context.player();
+                    if (sloth != null) {
+                        com.habitrain.core.game.sre.role.sins.component.SlothComponent
+                                .tryInduceSleep(sloth, payload.targetId());
                     }
                 }));
         ServerPlayNetworking.registerGlobalReceiver(RoleActionC2SPayload.TYPE, (payload, context) ->
@@ -481,6 +469,16 @@ public final class C2SReceiverRegistrar {
                                 player.sendSystemMessage(Component.literal("§c场景地图切换被拒绝：地图不存在或未配置"));
                             }
                         }));
+    }
+
+    private static void sendSlothSleepRoster(ServerPlayer sloth) {
+        if (sloth == null) return;
+        var entries = com.habitrain.core.game.sre.role.sins.component.SlothComponent
+                .eligibleTargets(sloth).stream()
+                .map(player -> new SlothSleepRosterPayload.Entry(
+                        player.getUUID(), player.getGameProfile().getName()))
+                .toList();
+        ServerPlayNetworking.send(sloth, new SlothSleepRosterPayload(entries));
     }
 
     private static void syncSceneToolTarget(ServerPlayer player, String mapKey) {

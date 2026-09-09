@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.blackout.BlackoutMode;
+import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.*;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
@@ -73,6 +74,24 @@ public abstract class GenerateTaskMixin {
 
     @Inject(method = "generateTaskInternal", at = @At("HEAD"), cancellable = true, remap = false)
     private void onGenerateTaskInternal(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            try {
+                SlothComponent sloth = SlothComponent.KEY.get(serverPlayer);
+                if (sloth.hasForcedSleepTask()) {
+                    SREPlayerTaskComponent.TrainTask forced =
+                            createTaskInstance(SREPlayerTaskComponent.Task.SLEEP);
+                    if (forced != null) {
+                        sloth.consumeForcedSleepTask();
+                        LOGGER.info("[Sloth] forced next task to SLEEP for {}",
+                                serverPlayer.getGameProfile().getName());
+                        cir.setReturnValue(forced);
+                        return;
+                    }
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("[Sloth] forced sleep task generation failed", t);
+            }
+        }
         LOGGER.debug("[HabiDebug] ===== genTask CALLED! tasks.size={}, timesGotten={} =====",
                 tasks.size(), timesGotten.size());
 

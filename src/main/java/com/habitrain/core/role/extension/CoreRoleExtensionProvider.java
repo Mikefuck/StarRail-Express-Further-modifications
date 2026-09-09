@@ -224,12 +224,6 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
-                .skill(RoleSkillSpec.of(RoleSkill.skill(
-                        EnvyComponent.MARK_SKILL_ID,
-                        "skill.habitrain_core.sin_envy.mark",
-                        EnvyComponent::useMark
-                ).cooldownSeconds(EnvyComponent.MARK_CD_SECONDS)
-                        .showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new NormalRole(d.key().location(),
                         d.presentation().color(), false, true,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
@@ -279,19 +273,12 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder()
                         .defaultMax(1)
-                        .needPlayerCount(13)
                         .build())
                 .compatibility(RoleCompatibilityProfile.builder()
                         .componentKey(GreedComponent.KEY)
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
-                .skill(RoleSkillSpec.of(RoleSkill.skill(
-                        GreedComponent.STEAL_SKILL_ID,
-                        "skill.habitrain_core.sin_greed.steal",
-                        GreedComponent::useSteal
-                ).cooldownSeconds(GreedComponent.STEAL_CD_SECONDS)
-                        .showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new GreedRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
@@ -365,10 +352,10 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .canSeeCoin()
                         .build())
                 .skill(RoleSkillSpec.of(RoleSkill.skill(
-                        HabiTrainCore.id("sin_sloth_awake"),
-                        "skill.habitrain_core.sin_sloth.awake",
-                        SlothComponent::useAwake
-                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
+                        HabiTrainCore.id("sin_sloth_drowsiness"),
+                        "skill.habitrain_core.sin_sloth.drowsiness",
+                        SlothComponent::useDrowsiness
+                ).cooldownSeconds(30).showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new SlothRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))

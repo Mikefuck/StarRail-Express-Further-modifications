@@ -58,6 +58,52 @@ public final class SwiftWindComponent implements RoleComponent {
         return killCount;
     }
 
+    /** Plan the entire grant before mutating slots: a full bar must not partially grant free knives. */
+    public static boolean givePsychoKnives(Player player) {
+        ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
+        if (knife.isEmpty() || player.level().isClientSide) return false;
+        ItemStack[] planned = new ItemStack[9];
+        int remaining = 5;
+        for (int slot = 0; slot < planned.length; slot++) {
+            planned[slot] = player.getInventory().getItem(slot).copy();
+            if (planned[slot].is(io.wifi.starrailexpress.index.TMMItems.BAT)) planned[slot] = ItemStack.EMPTY;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            for (int slot = 0; slot < planned.length && remaining > 0; slot++) {
+                ItemStack stack = planned[slot];
+                if (pass == 0 && !stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, knife)) {
+                    int added = Math.min(remaining, Math.max(0, stack.getMaxStackSize() - stack.getCount()));
+                    stack.grow(added);
+                    remaining -= added;
+                } else if (pass == 1 && stack.isEmpty()) {
+                    int added = Math.min(remaining, knife.getMaxStackSize());
+                    planned[slot] = knife.copyWithCount(added);
+                    remaining -= added;
+                }
+            }
+        }
+        if (remaining > 0) return false;
+        for (int slot = 0; slot < planned.length; slot++) player.getInventory().setItem(slot, planned[slot]);
+        org.agmas.noellesroles.utils.MCItemsUtils.clearItem(player, io.wifi.starrailexpress.index.TMMItems.BAT);
+        player.getInventory().setChanged();
+        player.containerMenu.broadcastChanges();
+        return true;
+    }
+
+    public static boolean hasPsychoKnife(Player player) {
+        ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
+        if (knife.isEmpty()) return false;
+        for (int slot = 0; slot < 9; slot++) {
+            if (player.getInventory().getItem(slot).is(knife.getItem())) return true;
+        }
+        return player.getOffhandItem().is(knife.getItem());
+    }
+
+    public static void refreshPsychoKnifeCooldown(Player player) {
+        ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
+        if (!knife.isEmpty()) player.getCooldowns().removeCooldown(knife.getItem());
+    }
+
     public void onAnyKill() {
         killCount++;
         sync();

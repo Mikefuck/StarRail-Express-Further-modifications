@@ -1,68 +1,63 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
 import com.habitrain.core.game.sre.role.HabiRoles;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
+import com.habitrain.core.game.sre.role.sins.win.SlothWinPolicy;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
+import io.wifi.starrailexpress.cca.SREArmorPlayerComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
-import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.game.GameUtils;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.StringTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
+import org.agmas.noellesroles.game.roles.innocence.noise_maker.NoiseMakerPlayerComponent;
 import org.jetbrains.annotations.NotNull;
 import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
 import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * 懒惰：安全时正常；安全结束沉睡 + 护盾；破盾狂暴；整局一次主动醒爆炸。
- * <p>
- * 护盾使用内部计数（不依赖 {@code SREArmorPlayerComponent} 多叠语义）。
+ * 懒惰·贝露菲格露重做版。
+ *
+ * <p>组件挂在所有玩家身上：普通玩家保存睡觉任务次数、下一任务强制标记与被沉睡状态；
+ * 懒惰本人额外负责技能和三人沉睡后的上床胜利判定。</p>
  */
 public final class SlothComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<SlothComponent> KEY =
             ComponentRegistry.getOrCreate(HabiTrainCore.id("sin_sloth"), SlothComponent.class);
 
-    public static final int SHIELD_BREAK_BERSERK_TICKS = 200; // 10s
-    public static final int ACTIVE_BERSERK_TICKS = 600; // 30s
-    public static final double EXPLODE_RADIUS = 5.0;
-    public static final int KILLS_PER_SHIELD = 2;
-    public static final ResourceLocation SLOTH_EXPLODE = HabiTrainCore.id("sloth_explode");
+    public static final double DROWSINESS_RADIUS = 5.0D;
+    public static final int REQUIRED_SLEEP_TASKS = 2;
+    public static final int REQUIRED_SIMULTANEOUS_SLEEPERS = 3;
 
     private final Player player;
 
-    private boolean sleeping;
-    private int shields;
-    private final Set<UUID> attackers = new HashSet<>();
-    private boolean onceAwakeUsed;
-    private long berserkUntilGameTime;
-    private int killsInBerserk;
-    /** true = open berserk (skill); false = limited to attackers (shield break). */
-    private boolean openBerserk;
-    private boolean enteredSleepThisRound;
+    private boolean forceNextSleepTask;
+    private int completedSleepTasks;
+    private boolean inducedSleeping;
+    private UUID inducedBySloth;
+    private boolean slothWinTriggered;
     private double sleepX;
     private double sleepY;
     private double sleepZ;
     private float sleepYaw;
     private float sleepPitch;
+    private BlockPos sleepPos = BlockPos.ZERO;
 
     public SlothComponent(Player player) {
         this.player = player;
@@ -73,331 +68,271 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         return player;
     }
 
-    public boolean isSleeping() {
-        return sleeping;
+    public boolean hasForcedSleepTask() {
+        return forceNextSleepTask;
     }
 
-    public int getShields() {
-        return shields;
-    }
-
-    public Set<UUID> getAttackers() {
-        return attackers;
-    }
-
-    public boolean isOnceAwakeUsed() {
-        return onceAwakeUsed;
-    }
-
-    public boolean isBerserk(ServerLevel level) {
-        if (level == null) return false;
-        return level.getGameTime() < berserkUntilGameTime;
-    }
-
-    public boolean isOpenBerserk(ServerLevel level) {
-        return isBerserk(level) && openBerserk;
-    }
-
-    public boolean canAttackTarget(ServerLevel level, UUID targetId) {
-        if (targetId == null) return false;
-        if (!isBerserk(level)) return false;
-        if (openBerserk) return true;
-        return attackers.contains(targetId);
-    }
-
-    public boolean isInputLocked() {
-        return sleeping;
-    }
-
-    /** Enter sleep with shields = ceil(alive/2). Clears attackers. */
-    public void enterSleep(ServerPlayer self, ServerLevel level) {
-        if (self == null || level == null) return;
-        int alive = countAlive(level);
-        int nextShields = Math.max(1, (alive + 1) / 2); // ceil(alive/2), min 1
-        sleeping = true;
-        shields = nextShields;
-        attackers.clear();
-        berserkUntilGameTime = 0;
-        killsInBerserk = 0;
-        openBerserk = false;
-        enteredSleepThisRound = true;
-        captureSleepAnchor(self);
-        KEY.sync(self);
-        self.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_sloth.sleep", shields),
-                true
-        );
-        HabiTrainCore.LOGGER.info("[Sloth] {} enter sleep shields={} alive={}",
-                self.getGameProfile().getName(), shields, alive);
-    }
-
-    /**
-     * Conventional hit while sleeping: absorb with shield, record attacker.
-     *
-     * @return {@code false} to cancel death; {@code true} allow death (not sleeping / no shields).
-     */
-    public boolean onShieldHit(ServerPlayer self, ServerPlayer attacker) {
-        if (self == null || !sleeping) return true;
-        if (!(self.level() instanceof ServerLevel level)) return true;
-
-        if (attacker != null && !attacker.getUUID().equals(self.getUUID())) {
-            attackers.add(attacker.getUUID());
-        }
-
-        if (shields > 0) {
-            shields--;
-        }
-
-        self.setHealth(self.getMaxHealth());
-
-        if (shields <= 0) {
-            shields = 0;
-            wakeBerserk(self, level, SHIELD_BREAK_BERSERK_TICKS, false);
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_sloth.shield_break"),
-                    true
-            );
-        } else {
-            KEY.sync(self);
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_sloth.shield_hit", shields),
-                    true
-            );
-            if (attacker != null) {
-                attacker.displayClientMessage(
-                        Component.translatable("message.habitrain_core.sin_sloth.attacker_hit", shields),
-                        true
-                );
-            }
-        }
-        return false;
-    }
-
-    private void wakeBerserk(ServerPlayer self, ServerLevel level, int ticks, boolean open) {
-        sleeping = false;
-        openBerserk = open;
-        killsInBerserk = 0;
-        berserkUntilGameTime = level.getGameTime() + ticks;
-        KEY.sync(self);
-        self.displayClientMessage(
-                Component.translatable(
-                        open
-                                ? "message.habitrain_core.sin_sloth.berserk_open"
-                                : "message.habitrain_core.sin_sloth.berserk_limited",
-                        ticks / 20
-                ),
-                true
-        );
-        // Trigger vanilla Habi psycho mode so the stock countdown / bat appear.
-        try {
-            boolean started = SREPlayerShopComponent.usePsychoMode_time(self, ticks, 1);
-            if (!started) {
-                SREPlayerShopComponent.usePsychoMode(self);
-            }
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Sloth] usePsychoMode failed for {}",
-                    self.getGameProfile().getName(), t);
-        }
-        HabiTrainCore.LOGGER.info("[Sloth] {} wake berserk open={} ticks={}",
-                self.getGameProfile().getName(), open, ticks);
-    }
-
-    /** Called when sloth kills someone during berserk. */
-    public void onBerserkKill(ServerPlayer self) {
-        if (self == null || !(self.level() instanceof ServerLevel level)) return;
-        if (!isBerserk(level)) return;
-        killsInBerserk++;
-        if (killsInBerserk > 0 && killsInBerserk % KILLS_PER_SHIELD == 0) {
-            shields++;
-            self.displayClientMessage(
-                    Component.translatable(
-                            "message.habitrain_core.sin_sloth.berserk_shield",
-                            shields, killsInBerserk
-                    ),
-                    true
-            );
-        } else {
-            self.displayClientMessage(
-                    Component.translatable(
-                            "message.habitrain_core.sin_sloth.berserk_kill",
-                            killsInBerserk
-                    ),
-                    true
-            );
-        }
-        KEY.sync(self);
-    }
-
-    /**
-     * Once-per-game active skill: sleep + shield≥1 → consume shields, explode, open berserk 30s.
-     */
-    public static boolean useAwake(RoleSkill.RoleSkillContext ctx) {
-        ServerPlayer self = ctx.player();
-        if (self == null || self.isSpectator()) return false;
-        if (!(self.level() instanceof ServerLevel level)) return false;
-
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.SLOTH)) {
+    /** Consumes the one-shot task override only after a real SLEEP instance was created. */
+    public boolean consumeForcedSleepTask() {
+        if (!forceNextSleepTask) {
             return false;
         }
-
-        SlothComponent c = KEY.get(self);
-        if (c == null) return false;
-        if (c.onceAwakeUsed) {
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_sloth.skill_used"), true);
-            return false;
-        }
-        if (!c.sleeping || c.shields < 1) {
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_sloth.skill_need_sleep"), true);
-            return false;
-        }
-
-        c.onceAwakeUsed = true;
-        c.shields = 0;
-        c.attackers.clear();
-        c.sleeping = false;
-        explodeNearby(self, level);
-        c.wakeBerserk(self, level, ACTIVE_BERSERK_TICKS, true);
-        KEY.sync(self);
-        self.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_sloth.skill_awake"),
-                true
-        );
+        forceNextSleepTask = false;
+        sync();
         return true;
     }
 
-    private static void explodeNearby(ServerPlayer self, ServerLevel level) {
-        Vec3 origin = self.position();
-        double r2 = EXPLODE_RADIUS * EXPLODE_RADIUS;
-        ResourceLocation reason = SLOTH_EXPLODE;
-        try {
-            if (GameConstants.DeathReasons.GRENADE != null) {
-                reason = GameConstants.DeathReasons.GRENADE;
-            }
-        } catch (Throwable ignored) {
-        }
-
-        for (ServerPlayer other : level.players()) {
-            if (other == null || other == self) continue;
-            if (other.isSpectator()) continue;
-            try {
-                if (GameUtils.isPlayerEliminated(other)) continue;
-            } catch (Throwable ignored) {
-            }
-            if (other.distanceToSqr(origin) > r2) continue;
-            try {
-                GameUtils.killPlayer(other, true, self, reason);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Sloth] explode kill failed for {}",
-                        other.getGameProfile().getName(), t);
-            }
-        }
-
-        try {
-            level.playSound(null, self.getX(), self.getY(), self.getZ(),
-                    SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 4.0f, 1.0f);
-        } catch (Throwable t) {
-            try {
-                level.playSound(null, self.getX(), self.getY(), self.getZ(),
-                        SoundEvents.GENERIC_EXPLODE, SoundSource.PLAYERS, 4.0f, 1.0f);
-            } catch (Throwable ignored) {
-            }
-        }
-        HabiTrainCore.LOGGER.info("[Sloth] {} active explode r={}",
-                self.getGameProfile().getName(), EXPLODE_RADIUS);
+    public int getCompletedSleepTasks() {
+        return completedSleepTasks;
     }
 
-    private void endBerserkResleep(ServerPlayer self, ServerLevel level) {
-        if (self == null || level == null) return;
-        if (self.isSpectator()) {
-            sleeping = false;
-            berserkUntilGameTime = 0;
-            openBerserk = false;
-            KEY.sync(self);
+    public boolean isEligibleSleepTarget() {
+        return completedSleepTasks >= REQUIRED_SLEEP_TASKS && !inducedSleeping;
+    }
+
+    public boolean isInducedSleeping() {
+        return inducedSleeping;
+    }
+
+    public UUID getInducedBySloth() {
+        return inducedBySloth;
+    }
+
+    /** G skill: mark every other living player within five blocks. */
+    public static boolean useDrowsiness(RoleSkill.RoleSkillContext ctx) {
+        ServerPlayer self = ctx.player();
+        if (self == null || self.isSpectator() || !(self.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        if (!canAct(self, level)) {
+            return false;
+        }
+
+        double radiusSq = DROWSINESS_RADIUS * DROWSINESS_RADIUS;
+        int affected = 0;
+        for (ServerPlayer target : level.players()) {
+            if (target == self || target.isSpectator() || target.distanceToSqr(self) > radiusSq) {
+                continue;
+            }
+            try {
+                if (!GameUtils.isPlayerAliveAndSurvival(target)) {
+                    continue;
+                }
+                SlothComponent component = KEY.get(target);
+                component.forceNextSleepTask = true;
+                component.sync();
+                target.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_sloth.task_forced"), true);
+                affected++;
+            } catch (Throwable t) {
+                HabiTrainCore.LOGGER.warn("[Sloth] failed to force sleep task for {}",
+                        target.getGameProfile().getName(), t);
+            }
+        }
+
+        if (affected <= 0) {
+            self.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_sloth.no_nearby_players"), true);
+            return false;
+        }
+        self.displayClientMessage(
+                Component.translatable("message.habitrain_core.sin_sloth.skill_success", affected), true);
+        return true;
+    }
+
+    /** Called once by the centralized finish-quest path for every player's completed task. */
+    public static void onAnyTaskFinished(Player taskPlayer, String quest) {
+        if (!(taskPlayer instanceof ServerPlayer serverPlayer) || !isSleepQuest(quest)
+                || !isRoundRunning(serverPlayer.serverLevel())
+                || !GameUtils.isPlayerAliveAndSurvival(serverPlayer)
+                || isSleepingSloth(serverPlayer)) {
             return;
         }
-        int next = Math.max(1, shields);
-        sleeping = true;
-        shields = next;
-        attackers.clear();
-        killsInBerserk = 0;
-        openBerserk = false;
-        berserkUntilGameTime = 0;
-        captureSleepAnchor(self);
-        KEY.sync(self);
-        self.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_sloth.resleep", shields),
-                true
-        );
-        HabiTrainCore.LOGGER.info("[Sloth] {} re-sleep shields={}",
-                self.getGameProfile().getName(), shields);
-    }
-
-    public static void onSafeTimeEnd(ServerLevel level) {
-        if (level == null || SevenSins.SLOTH == null) return;
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || !game.isRunning()) return;
-
-        for (ServerPlayer p : level.players()) {
-            if (p == null || p.isSpectator()) continue;
-            if (!HabiRoles.isHabiRole(p, SevenSins.SLOTH)) continue;
-            try {
-                SlothComponent c = KEY.get(p);
-                if (c == null) continue;
-                if (c.enteredSleepThisRound || c.sleeping || c.isBerserk(level)) continue;
-                c.enterSleep(p, level);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Sloth] enterSleep failed for {}",
-                        p.getGameProfile().getName(), t);
-            }
-        }
-    }
-
-    public static int countAlive(ServerLevel level) {
-        if (level == null) return 0;
-        java.util.List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty()) {
-            return blackoutAlive.size();
-        }
         try {
-            long c = GameUtils.getAlivePlayerCount(level);
-            if (c > 0) return (int) c;
-        } catch (Throwable ignored) {
+            SlothComponent component = KEY.get(serverPlayer);
+            component.completedSleepTasks++;
+            component.sync();
+            if (component.completedSleepTasks == REQUIRED_SLEEP_TASKS) {
+                serverPlayer.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_sloth.target_unlocked"), true);
+            }
+            HabiTrainCore.LOGGER.info("[Sloth] {} completed sleep task count={}",
+                    serverPlayer.getGameProfile().getName(), component.completedSleepTasks);
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] sleep task completion tracking failed", t);
         }
-        int n = 0;
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        for (ServerPlayer p : level.players()) {
-            if (p == null || p.isSpectator()) continue;
-            if (game != null && game.getRole(p) == null) continue;
+    }
+
+    private static boolean isSleepQuest(String quest) {
+        if (quest == null || quest.isBlank()) {
+            return false;
+        }
+        String normalized = quest.trim();
+        int colon = normalized.indexOf(':');
+        if (colon >= 0 && colon + 1 < normalized.length()) {
+            normalized = normalized.substring(colon + 1);
+        }
+        return "sleep".equalsIgnoreCase(normalized);
+    }
+
+    /** Server-authoritative roster used by the backpack selector. */
+    public static List<ServerPlayer> eligibleTargets(ServerPlayer sloth) {
+        if (sloth == null || !(sloth.level() instanceof ServerLevel level) || !canAct(sloth, level)) {
+            return List.of();
+        }
+        List<ServerPlayer> result = new ArrayList<>();
+        for (ServerPlayer target : level.players()) {
+            if (target == sloth || target.isSpectator()) {
+                continue;
+            }
             try {
-                if (GameUtils.isPlayerEliminated(p)) continue;
+                if (!GameUtils.isPlayerAliveAndSurvival(target)) {
+                    continue;
+                }
+                SlothComponent component = KEY.get(target);
+                if (component.isEligibleSleepTarget()) {
+                    result.add(target);
+                }
             } catch (Throwable ignored) {
             }
-            n++;
         }
-        return n;
+        result.sort(Comparator.comparing(p -> p.getGameProfile().getName(), String.CASE_INSENSITIVE_ORDER));
+        return List.copyOf(result);
     }
 
-    public static boolean isSleepingSloth(Player p) {
-        if (p == null) return false;
+    /** Validates the clicked roster entry again and puts that player into endless induced sleep. */
+    public static boolean tryInduceSleep(ServerPlayer sloth, UUID targetId) {
+        if (sloth == null || targetId == null || !(sloth.level() instanceof ServerLevel level)
+                || !canAct(sloth, level)) {
+            return false;
+        }
+        ServerPlayer target = level.getServer().getPlayerList().getPlayer(targetId);
+        if (target == null || target == sloth || target.level() != level || target.isSpectator()) {
+            sloth.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_sloth.target_invalid"), true);
+            return false;
+        }
         try {
-            SlothComponent c = KEY.get(p);
-            return c != null && c.sleeping;
+            if (!GameUtils.isPlayerAliveAndSurvival(target)) {
+                sloth.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_sloth.target_invalid"), true);
+                return false;
+            }
+            SlothComponent component = KEY.get(target);
+            if (!component.isEligibleSleepTarget()) {
+                sloth.displayClientMessage(
+                        Component.translatable("message.habitrain_core.sin_sloth.target_invalid"), true);
+                return false;
+            }
+            component.enterInducedSleep(target, sloth);
+            return true;
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] failed to induce sleep target={}", targetId, t);
+            sloth.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_sloth.target_invalid"), true);
+            return false;
+        }
+    }
+
+    private void enterInducedSleep(ServerPlayer target, ServerPlayer sloth) {
+        inducedSleeping = true;
+        inducedBySloth = sloth.getUUID();
+        target.closeContainer();
+        target.stopUsingItem();
+        captureSleepAnchor(target);
+        SREArmorPlayerComponent.KEY.get(target).addArmor();
+        ensureSleepingPose(target);
+        sleepX = target.getX();
+        sleepY = target.getY();
+        sleepZ = target.getZ();
+        sync();
+        target.displayClientMessage(
+                Component.translatable("message.habitrain_core.sin_sloth.enter_sleep"), true);
+        sloth.displayClientMessage(
+                Component.translatable("message.habitrain_core.sin_sloth.target_slept",
+                        target.getGameProfile().getName()), true);
+        HabiTrainCore.LOGGER.info("[Sloth] {} induced endless sleep on {}",
+                sloth.getGameProfile().getName(), target.getGameProfile().getName());
+    }
+
+    /** Called after the granted armor layer is consumed by the upstream shield pipeline. */
+    public static void onShieldBroken(Player victim) {
+        if (!(victim instanceof ServerPlayer serverVictim)) {
+            return;
+        }
+        try {
+            SlothComponent component = KEY.get(serverVictim);
+            if (component.inducedSleeping) {
+                component.wakeFromShieldBreak(serverVictim);
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] wake after shield break failed", t);
+        }
+    }
+
+    private void wakeFromShieldBreak(ServerPlayer target) {
+        inducedSleeping = false;
+        inducedBySloth = null;
+        target.stopSleeping();
+        sync();
+        target.displayClientMessage(
+                Component.translatable("message.habitrain_core.sin_sloth.wake_anger"), true);
+
+        // Reuse the real upstream Noisemaker ability: sound, glow, shockwave, stun and voice range stay identical.
+        try {
+            NoiseMakerPlayerComponent.KEY.get(target).useAbility();
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Sloth] failed to trigger Noisemaker wake-up ability for {}",
+                    target.getGameProfile().getName(), t);
+        }
+        HabiTrainCore.LOGGER.info("[Sloth] {} woke after shield break and triggered Noisemaker ability",
+                target.getGameProfile().getName());
+    }
+
+    /** Compatibility name retained for existing lock hooks; now means any induced sleeper. */
+    public static boolean isSleepingSloth(Player target) {
+        if (target == null) {
+            return false;
+        }
+        try {
+            return KEY.get(target).inducedSleeping;
         } catch (Throwable t) {
             return false;
         }
     }
 
-    public static boolean isSlothPlayer(ServerLevel level, ServerPlayer p) {
-        if (level == null || p == null || SevenSins.SLOTH == null) return false;
+    public static boolean isSlothPlayer(ServerLevel level, ServerPlayer player) {
+        if (level == null || player == null || SevenSins.SLOTH == null) {
+            return false;
+        }
         try {
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            return HabiRoles.isHabiRole(p, SevenSins.SLOTH);
+            return HabiRoles.isHabiRole(player, SevenSins.SLOTH);
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    private static boolean canAct(ServerPlayer player, ServerLevel level) {
+        return isRoundRunning(level) && isSlothPlayer(level, player)
+                && GameUtils.isPlayerAliveAndSurvival(player) && !isSleepingSloth(player);
+    }
+
+    public static int countInducedSleepers(ServerLevel level, UUID slothId) {
+        if (level == null || slothId == null) {
+            return 0;
+        }
+        int count = 0;
+        for (ServerPlayer candidate : level.players()) {
+            try {
+                SlothComponent component = KEY.get(candidate);
+                if (component.inducedSleeping && slothId.equals(component.inducedBySloth)
+                        && !candidate.isSpectator() && GameUtils.isPlayerAliveAndSurvival(candidate)) {
+                    count++;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return count;
     }
 
     @Override
@@ -407,115 +342,119 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     @Override
     public void clear() {
-        sleeping = false;
-        shields = 0;
-        attackers.clear();
-        onceAwakeUsed = false;
-        berserkUntilGameTime = 0;
-        killsInBerserk = 0;
-        openBerserk = false;
-        enteredSleepThisRound = false;
+        boolean wasSleeping = inducedSleeping;
+        inducedSleeping = false;
+        if (wasSleeping && player.isSleeping()) {
+            player.stopSleeping();
+        }
+        forceNextSleepTask = false;
+        completedSleepTasks = 0;
+        inducedSleeping = false;
+        inducedBySloth = null;
+        slothWinTriggered = false;
         sleepX = sleepY = sleepZ = 0.0D;
         sleepYaw = sleepPitch = 0.0F;
+        sleepPos = BlockPos.ZERO;
+        sync();
     }
 
     @Override
     public void serverTick() {
-        if (player.level().isClientSide) return;
-        if (!(player instanceof ServerPlayer self)) return;
-        if (!(self.level() instanceof ServerLevel level)) return;
+        if (!(player instanceof ServerPlayer self) || !(self.level() instanceof ServerLevel level)) {
+            return;
+        }
 
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        boolean isSloth = HabiRoles.isHabiRole(self, SevenSins.SLOTH);
-        if (!isSloth || self.isSpectator()) {
-            if (sleeping) {
-                sleeping = false;
+        if (!isRoundRunning(level)) {
+            if (inducedSleeping || forceNextSleepTask || completedSleepTasks != 0 || slothWinTriggered) {
+                clear();
             }
             return;
         }
 
-        long now = level.getGameTime();
-
-        // Berserk expiry → re-sleep with accumulated shields
-        if (berserkUntilGameTime > 0 && now >= berserkUntilGameTime) {
-            endBerserkResleep(self, level);
-        }
-
-        if (sleeping) {
-            self.setDeltaMovement(Vec3.ZERO);
-            self.hurtMarked = true;
-            self.hasImpulse = true;
-            try {
-                self.setJumping(false);
-            } catch (Throwable ignored) {
-            }
-            // 仅在位置/朝向实际偏离睡眠点时才传送：每 tick 无条件 teleportTo
-            // 会持续广播位置/旋转包（review L6）。
-            if (self.distanceToSqr(sleepX, sleepY, sleepZ) > 0.04
-                    || self.getYRot() != sleepYaw || self.getXRot() != sleepPitch) {
-                self.teleportTo(sleepX, sleepY, sleepZ);
-                self.setYRot(sleepYaw);
-                self.setXRot(sleepPitch);
-            }
-            // No action-bar countdown: vanilla psycho HUD already covers berserk timer.
-        }
-    }
-
-    @Override
-    public void writeToSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        tag.putBoolean("Sleeping", sleeping);
-        tag.putInt("Shields", shields);
-        tag.putBoolean("OnceAwakeUsed", onceAwakeUsed);
-        tag.putLong("BerserkUntil", berserkUntilGameTime);
-        tag.putInt("KillsInBerserk", killsInBerserk);
-        tag.putBoolean("OpenBerserk", openBerserk);
-        tag.putBoolean("EnteredSleep", enteredSleepThisRound);
-        tag.putDouble("SleepX", sleepX);
-        tag.putDouble("SleepY", sleepY);
-        tag.putDouble("SleepZ", sleepZ);
-        tag.putFloat("SleepYaw", sleepYaw);
-        tag.putFloat("SleepPitch", sleepPitch);
-        ListTag list = new ListTag();
-        for (UUID id : attackers) {
-            list.add(StringTag.valueOf(id.toString()));
-        }
-        tag.put("Attackers", list);
-    }
-
-    @Override
-    public void readFromSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        sleeping = tag.getBoolean("Sleeping");
-        shields = tag.getInt("Shields");
-        onceAwakeUsed = tag.getBoolean("OnceAwakeUsed");
-        berserkUntilGameTime = tag.getLong("BerserkUntil");
-        killsInBerserk = tag.getInt("KillsInBerserk");
-        openBerserk = tag.getBoolean("OpenBerserk");
-        enteredSleepThisRound = tag.getBoolean("EnteredSleep");
-        sleepX = tag.getDouble("SleepX");
-        sleepY = tag.getDouble("SleepY");
-        sleepZ = tag.getDouble("SleepZ");
-        sleepYaw = tag.getFloat("SleepYaw");
-        sleepPitch = tag.getFloat("SleepPitch");
-        attackers.clear();
-        if (tag.contains("Attackers", Tag.TAG_LIST)) {
-            ListTag list = tag.getList("Attackers", Tag.TAG_STRING);
-            for (int i = 0; i < list.size(); i++) {
-                try {
-                    attackers.add(UUID.fromString(list.getString(i)));
-                } catch (Throwable ignored) {
-                }
+        if (inducedSleeping) {
+            if (!GameUtils.isPlayerAliveAndSurvival(self)) {
+                releaseWithoutWakeAbility(self);
+            } else {
+                lockInducedSleeper(self);
             }
         }
+
+        if (isSlothPlayer(level, self)) {
+            checkSlothBedWin(self, level);
+        }
     }
 
-    @Override
-    public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        // 局内状态只走 writeToSyncNbt，不写入 playerdata。
+    private static boolean isRoundRunning(ServerLevel level) {
+        try {
+            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+            return game != null && game.isRunning();
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
-    @Override
-    public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        // 忽略旧版残留；JOIN/init 会 clear 后再按本局角色初始化。
+    private void lockInducedSleeper(ServerPlayer self) {
+        self.setDeltaMovement(Vec3.ZERO);
+        self.hurtMarked = true;
+        self.hasImpulse = true;
+        try {
+            self.setJumping(false);
+        } catch (Throwable ignored) {
+        }
+        if (self.distanceToSqr(sleepX, sleepY, sleepZ) > 0.04D
+                || self.getYRot() != sleepYaw || self.getXRot() != sleepPitch) {
+            self.teleportTo(sleepX, sleepY, sleepZ);
+            self.setYRot(sleepYaw);
+            self.setXRot(sleepPitch);
+        }
+        ensureSleepingPose(self);
+    }
+
+    private void ensureSleepingPose(ServerPlayer self) {
+        if (!self.isSleeping()) {
+            self.startSleeping(sleepPos);
+        }
+    }
+
+    private void releaseWithoutWakeAbility(ServerPlayer self) {
+        inducedSleeping = false;
+        inducedBySloth = null;
+        if (self.isSleeping()) {
+            self.stopSleeping();
+        }
+        sync();
+    }
+
+    private void checkSlothBedWin(ServerPlayer self, ServerLevel level) {
+        if (slothWinTriggered || self.isSpectator() || inducedSleeping) {
+            return;
+        }
+        int sleepers = countInducedSleepers(level, self.getUUID());
+        boolean lyingInRealBed = isLyingInRealBed(self, level);
+        if (!SlothWinPolicy.shouldDeclare(sleepers, lyingInRealBed,
+                GameUtils.isPlayerAliveAndSurvival(self), slothWinTriggered)) {
+            return;
+        }
+
+        slothWinTriggered = true;
+        sync();
+        self.displayClientMessage(
+                Component.translatable("message.habitrain_core.sin_sloth.win_ready"), true);
+        if (com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level)
+                .filter(mode -> mode instanceof com.habitrain.core.game.blackout.BlackoutMode).isPresent()) {
+            BlackoutVictoryChecker.endGameSlothCustom(level, self);
+        } else {
+            SinVictoryHooks.triggerSlothWin(level, self);
+        }
+    }
+
+    private static boolean isLyingInRealBed(ServerPlayer self, ServerLevel level) {
+        if (!self.isSleeping()) {
+            return false;
+        }
+        return self.getSleepingPos()
+                .map(pos -> level.getBlockState(pos).is(BlockTags.BEDS))
+                .orElse(false);
     }
 
     private void captureSleepAnchor(ServerPlayer self) {
@@ -524,5 +463,55 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         sleepZ = self.getZ();
         sleepYaw = self.getYRot();
         sleepPitch = self.getXRot();
+        sleepPos = self.blockPosition();
+    }
+
+    private void sync() {
+        try {
+            KEY.sync(player);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    public void writeToSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        tag.putBoolean("ForceNextSleepTask", forceNextSleepTask);
+        tag.putInt("CompletedSleepTasks", completedSleepTasks);
+        tag.putBoolean("InducedSleeping", inducedSleeping);
+        if (inducedBySloth != null) {
+            tag.putUUID("InducedBySloth", inducedBySloth);
+        }
+        tag.putBoolean("SlothWinTriggered", slothWinTriggered);
+        tag.putDouble("SleepX", sleepX);
+        tag.putDouble("SleepY", sleepY);
+        tag.putDouble("SleepZ", sleepZ);
+        tag.putFloat("SleepYaw", sleepYaw);
+        tag.putFloat("SleepPitch", sleepPitch);
+        tag.putLong("SleepPos", sleepPos.asLong());
+    }
+
+    @Override
+    public void readFromSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        forceNextSleepTask = tag.getBoolean("ForceNextSleepTask");
+        completedSleepTasks = tag.getInt("CompletedSleepTasks");
+        inducedSleeping = tag.getBoolean("InducedSleeping");
+        inducedBySloth = tag.hasUUID("InducedBySloth") ? tag.getUUID("InducedBySloth") : null;
+        slothWinTriggered = tag.getBoolean("SlothWinTriggered");
+        sleepX = tag.getDouble("SleepX");
+        sleepY = tag.getDouble("SleepY");
+        sleepZ = tag.getDouble("SleepZ");
+        sleepYaw = tag.getFloat("SleepYaw");
+        sleepPitch = tag.getFloat("SleepPitch");
+        sleepPos = tag.contains("SleepPos") ? BlockPos.of(tag.getLong("SleepPos")) : BlockPos.ZERO;
+    }
+
+    @Override
+    public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        // Round-local state only.
+    }
+
+    @Override
+    public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        // Ignore stale playerdata from older role implementations.
     }
 }

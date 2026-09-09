@@ -23,9 +23,6 @@ import java.util.UUID;
  * Forced roles ({@code FORCED_MODDED_ROLE_FLIP}) are never demoted by spawn gates.
  */
 public final class SevenSinsMutex {
-    /** Greed only appears naturally when participant count is greater than this. */
-    public static final int GREED_MIN_PLAYERS_EXCLUSIVE = 12;
-
     private SevenSinsMutex() {}
 
     static void beforeAssign(ServerLevel level, Map<Player, SRERole> map) {
@@ -40,20 +37,6 @@ public final class SevenSinsMutex {
             if (!lustEligible(level, map)) {
                 map.put(entry.getKey(), fallbackNonSin(role));
                 HabiTrainCore.LOGGER.info("[SevenSins] lust removed (natural): no valid lover pair");
-            }
-        }
-
-        // Natural Greed only when players > 12.
-        int participants = map.size();
-        for (var entry : new ArrayList<>(map.entrySet())) {
-            SRERole role = entry.getValue();
-            if (role == null || !SevenSins.GREED_ID.equals(role.getIdentifier())) continue;
-            if (isForcedSin(entry, forced)) continue;
-            if (participants <= GREED_MIN_PLAYERS_EXCLUSIVE) {
-                map.put(entry.getKey(), fallbackNonSin(role));
-                HabiTrainCore.LOGGER.info(
-                        "[SevenSins] greed removed (natural): participants {} <= {}",
-                        participants, GREED_MIN_PLAYERS_EXCLUSIVE);
             }
         }
 

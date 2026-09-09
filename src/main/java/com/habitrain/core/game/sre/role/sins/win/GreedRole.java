@@ -19,7 +19,7 @@ public final class GreedRole extends CustomWinnerRole {
 
     @Override
     public List<ShopEntry> getShopEntries() {
-        return SevenSinShops.greedShop();
+        return SevenSinShops.empty();
     }
 
     @Override

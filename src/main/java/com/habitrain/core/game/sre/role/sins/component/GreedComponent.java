@@ -4,13 +4,10 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
-import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
-import com.habitrain.core.game.sre.role.sins.component.EnvyComponent;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
 import io.wifi.starrailexpress.api.RoleComponent;
-import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.core.HolderLookup;
@@ -22,7 +19,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -38,22 +34,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * 贪婪：绑定收纳袋；G 偷准星目标随机一件物品（25s CD）；
- * 袋内不同种类数 &gt; 开局人数即独立胜；失袋 force 死。
- * <p>
- * 收集方式：右键袋 + 另一手物品 → 记种类并写入袋内容。
- */
+/** Greed's bound collection and round state. */
 public final class GreedComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<GreedComponent> KEY =
             ComponentRegistry.getOrCreate(HabiTrainCore.id("sin_greed"), GreedComponent.class);
-
-    public static final ResourceLocation GREED_LOST_POUCH = HabiTrainCore.id("greed_lost_pouch");
-    public static final ResourceLocation STEAL_SKILL_ID = HabiTrainCore.id("sin_greed_steal");
-    public static final int STEAL_CD_SECONDS = 25;
-    public static final double STEAL_RANGE = 8.0;
 
     private final Player player;
 
@@ -64,12 +49,9 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     private final List<ItemStack> storedItems = new ArrayList<>();
     private boolean pouchGiven;
     private boolean collectionComplete;
-    private boolean lostPouchKilled;
-    private int graceTicks = 40; // 2s after assign before lost-pouch death
-    /** 上次袋子 NBT 重算的游戏刻（review L7：解析昂贵，5 tick 一次足够）。 */
-    private long lastPouchResyncTick = Long.MIN_VALUE;
-    private long lastPouchPresenceTick = Long.MIN_VALUE;
-    private boolean lastPouchPresent = true;
+    private long lastPouchResyncTick = -1;
+    private boolean estateDistributed;
+    private int incomeRemainder;
 
     public GreedComponent(Player player) {
         this.player = player;
@@ -105,7 +87,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     }
 
     /**
-     * Trade/API: add a collected type id and physical stack to pouch storage.
+     * Add a collected type id and physical stack to pouch storage.
      *
      * @return true if the type was newly added
      */
@@ -142,32 +124,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         return fresh;
     }
 
-    /** Exact-stack restore used only for transaction rollback. */
-    public void restoreStoredItem(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || GreedPouchItem.isGreedPouch(stack)) return;
-        storedItems.add(stack.copyWithCount(1));
-        rebuildCollectedTypes();
-        if (player != null) KEY.sync(player);
-        if (player instanceof ServerPlayer self) syncPhysicalPouch(self);
-    }
-
-    /** Trade SELL: remove and return one exact stored stack of this item ID. */
-    public ItemStack removeStoredItem(String itemId) {
-        if (itemId == null || itemId.isEmpty()) return ItemStack.EMPTY;
-        for (int i = 0; i < storedItems.size(); i++) {
-            ItemStack stack = storedItems.get(i);
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
-            if (id != null && itemId.equals(id.toString())) {
-                ItemStack removed = storedItems.remove(i);
-                rebuildCollectedTypes();
-                if (player != null) KEY.sync(player);
-                if (player instanceof ServerPlayer self) syncPhysicalPouch(self);
-                return removed;
-            }
-        }
-        return ItemStack.EMPTY;
-    }
-
     @Override
     public void init() {
         clear();
@@ -194,116 +150,29 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         storedItems.clear();
         pouchGiven = false;
         collectionComplete = false;
-        lostPouchKilled = false;
-        graceTicks = 40;
-        lastPouchResyncTick = Long.MIN_VALUE;
-        lastPouchPresenceTick = Long.MIN_VALUE;
-        lastPouchPresent = true;
+        lastPouchResyncTick = -1;
+        estateDistributed = false;
+        incomeRemainder = 0;
     }
 
     /**
-     * Win when pouch kinds &gt; start player count → need start+1 distinct kinds.
+     * Win when kinds exceed half the starting population.
      */
     public static int computeTarget(ServerLevel level) {
         int start = resolveStartPlayers(level);
-        return Math.max(1, start + 1);
+        return GreedPolicy.collectionTarget(start);
     }
 
-    /** G skill: steal one random transferable item from crosshair target. */
-    public static boolean useSteal(RoleSkill.RoleSkillContext ctx) {
-        ServerPlayer self = ctx.player();
-        if (self == null || self.isSpectator()) return false;
-        if (!(self.level() instanceof ServerLevel level)) return false;
-
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || !HabiRoles.isHabiRole(self, SevenSins.GREED)) {
-            return false;
-        }
-        GreedComponent greed = KEY.get(self);
-        if (greed == null || !greed.pouchGiven) {
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_greed.no_pouch"),
-                    true
-            );
-            return false;
-        }
-
-        ServerPlayer target = ServerAimTargeting.resolve(self, ctx.target(), STEAL_RANGE);
-        if (target == null || target.getUUID().equals(self.getUUID()) || target.isSpectator()) {
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_greed.steal_no_target"),
-                    true
-            );
-            return false;
-        }
-        try {
-            if (GameUtils.isPlayerEliminated(target)) {
-                self.displayClientMessage(
-                        Component.translatable("message.habitrain_core.sin_greed.steal_no_target"),
-                        true
-                );
-                return false;
-            }
-        } catch (Throwable ignored) {
-        }
-
-        ItemStack taken = takeRandomTransferable(target, self);
-        if (taken == null || taken.isEmpty()) {
-            self.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_greed.steal_empty"),
-                    true
-            );
-            return false;
-        }
-        if (!self.getInventory().add(taken)) {
-            self.drop(taken, false);
-        }
-        self.displayClientMessage(
-                Component.translatable(
-                        "message.habitrain_core.sin_greed.steal_ok",
-                        taken.getHoverName().getString(),
-                        target.getGameProfile().getName()
-                ),
-                true
-        );
-        target.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_greed.steal_victim"),
-                true
-        );
-        HabiTrainCore.LOGGER.info("[Greed] {} stole {} from {}",
-                self.getGameProfile().getName(),
-                taken.getHoverName().getString(),
-                target.getGameProfile().getName());
+    public boolean claimEstate() {
+        if (estateDistributed) return false;
+        estateDistributed = true;
         return true;
     }
 
-    private static ItemStack takeRandomTransferable(ServerPlayer victim, ServerPlayer recipient) {
-        Inventory inv = victim.getInventory();
-        List<int[]> slots = new ArrayList<>(); // [kind, index] kind 0=main 1=off
-        for (int i = 0; i < inv.items.size(); i++) {
-            ItemStack stack = inv.items.get(i);
-            if (EnvyComponent.isTransferable(stack, recipient)) {
-                slots.add(new int[]{0, i});
-            }
-        }
-        for (int i = 0; i < inv.offhand.size(); i++) {
-            ItemStack stack = inv.offhand.get(i);
-            if (EnvyComponent.isTransferable(stack, recipient)) {
-                slots.add(new int[]{1, i});
-            }
-        }
-        if (slots.isEmpty()) return ItemStack.EMPTY;
-        int[] pick = slots.get(ThreadLocalRandom.current().nextInt(slots.size()));
-        ItemStack stack = pick[0] == 0 ? inv.items.get(pick[1]) : inv.offhand.get(pick[1]);
-        if (stack == null || stack.isEmpty()) return ItemStack.EMPTY;
-        ItemStack taken = stack.copyWithCount(1);
-        stack.shrink(1);
-        if (stack.isEmpty()) {
-            if (pick[0] == 0) inv.items.set(pick[1], ItemStack.EMPTY);
-            else inv.offhand.set(pick[1], ItemStack.EMPTY);
-        }
-        inv.setChanged();
-        return taken;
+    public int tax(int amount, boolean innocent) {
+        var share = GreedPolicy.incomeShare(amount, innocent, incomeRemainder);
+        incomeRemainder = share.remainder();
+        return share.coins();
     }
 
     private static int resolveStartPlayers(ServerLevel level) {
@@ -358,7 +227,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
         pouchGiven = true;
         GreedPouchItem.setStoredItems(pouch, storedItems, sp.registryAccess());
-        graceTicks = 40;
         HabiTrainCore.LOGGER.info("[Greed] gave bound pouch to {} target={}",
                 sp.getGameProfile().getName(), targetCount);
     }
@@ -403,15 +271,15 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
 
         // The exact item now exists in pouch storage; remove it from the offered hand.
-        other.shrink(1);
+        if (fresh) other.shrink(1);
         checkAndTriggerWin(self);
         return true;
     }
 
     public void checkAndTriggerWin(ServerPlayer self) {
-        if (self == null || collectionComplete || lostPouchKilled) return;
+        if (self == null || collectionComplete || !GreedEconomy.isActive(self)) return;
         if (targetCount <= 0) return;
-        // targetCount = startPlayers + 1  ⇔  kinds > startPlayers
+        // The threshold remains fixed for this round.
         if (collectedTypeIds.size() < targetCount) return;
         collectionComplete = true;
         KEY.sync(self);
@@ -434,8 +302,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     public void serverTick() {
         if (!(player instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel level)) return;
-        if (sp.isSpectator() || !sp.isAlive()) return;
-        if (lostPouchKilled || collectionComplete) return;
+        if (!GreedEconomy.isActive(sp) || collectionComplete) return;
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         boolean isGreed = false;
@@ -463,38 +330,11 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             targetCount = computeTarget(level);
         }
 
-        if (graceTicks > 0) {
-            graceTicks--;
-            return;
-        }
-
-        if (level.getGameTime() - lastPouchPresenceTick >= 5) {
-            lastPouchPresenceTick = level.getGameTime();
-            lastPouchPresent = GreedPouchItem.playerHasOwnPouch(sp);
-        }
-        if (!lastPouchPresent) {
-            lostPouchKilled = true;
-            KEY.sync(sp);
-            sp.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_greed.lost_pouch"),
-                    false
-            );
-            HabiTrainCore.LOGGER.info("[Greed] {} lost pouch → forceKill",
-                    sp.getGameProfile().getName());
-            try {
-                GameUtils.forceKillPlayer(sp, true, null, GREED_LOST_POUCH);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Greed] forceKillPlayer failed, fallback killPlayer", t);
-                GameUtils.killPlayer(sp, true, null, GREED_LOST_POUCH);
-            }
-            return;
-        }
-
         // Vanilla bundle UI inserts only update BUNDLE_CONTENTS and offers no
         // insertion event, so the win counter must be polled from the physical
         // pouch — but not every tick: the NBT parse (CustomData.copyTag + 逐条
         // parse + 多次集合分配) runs every 5 ticks instead (review L7).
-        if (level.getGameTime() - lastPouchResyncTick >= 5) {
+        if (lastPouchResyncTick < 0 || level.getGameTime() - lastPouchResyncTick >= 5) {
             lastPouchResyncTick = level.getGameTime();
             resyncFromPhysicalPouch(sp);
         }
@@ -642,7 +482,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         tag.putInt("Target", targetCount);
         tag.putBoolean("PouchGiven", pouchGiven);
         tag.putBoolean("Complete", collectionComplete);
-        tag.putBoolean("LostKill", lostPouchKilled);
         ListTag list = new ListTag();
         for (ItemStack stack : storedItems) {
             if (stack != null && !stack.isEmpty()) {
@@ -657,7 +496,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         targetCount = tag.getInt("Target");
         pouchGiven = tag.getBoolean("PouchGiven");
         collectionComplete = tag.getBoolean("Complete");
-        lostPouchKilled = tag.getBoolean("LostKill");
         collectedTypeIds.clear();
         storedItems.clear();
         ListTag list = tag.getList("StoredItems", Tag.TAG_COMPOUND);

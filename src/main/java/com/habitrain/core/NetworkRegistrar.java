@@ -38,9 +38,9 @@ public final class NetworkRegistrar {
         MapVoteProgressPayload.register(); count++;
         MapVoteStartConfirmedPayload.register(); count++;
         GameEndTransitionPayload.register(); count++;
-        GreedTradeActionPayload.register(); count++;
-        GreedTradePromptPayload.register(); count++;
-        GreedTradeSelectPayload.register(); count++;
+        SlothSleepRosterRequestPayload.register(); count++;
+        SlothSleepTargetPayload.register(); count++;
+        SlothSleepRosterPayload.register(); count++;
         EliminatedRestTogglePayload.register(); count++;
         EliminatedRestPromptPayload.register(); count++;
         MenuGatePayload.register(); count++;

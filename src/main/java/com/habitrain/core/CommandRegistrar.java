@@ -7,7 +7,6 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.config.ModeMapVoteSettings;
-import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.network.MenuGatePayload;
@@ -52,7 +51,7 @@ public final class CommandRegistrar {
                         )
                 );
             }
-            // /habi_api 命令族（OP：blackout/list/vote；玩家：greed_trade 兼容回退）
+            // /habi_api 命令族（OP：blackout/list/vote）
             dispatcher.register(Commands.literal("habi_api")
                     .then(Commands.literal("blackout")
                             .requires(source -> source.hasPermission(2))
@@ -469,29 +468,10 @@ public final class CommandRegistrar {
                                             }))
                             )
                     )
-                    // 贪婪匿名交易双确认的命令兼容回退
-                    .then(Commands.literal("greed_trade")
-                            .then(Commands.literal("confirm")
-                                    .then(Commands.argument("session", StringArgumentType.string())
-                                            .executes(ctx -> {
-                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                                String sid = StringArgumentType.getString(ctx, "session");
-                                                GreedTradeManager.confirm(player, sid);
-                                                return 1;
-                                            })))
-                            .then(Commands.literal("cancel")
-                                    .then(Commands.argument("session", StringArgumentType.string())
-                                            .executes(ctx -> {
-                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                                String sid = StringArgumentType.getString(ctx, "session");
-                                                GreedTradeManager.cancel(player, sid);
-                                                return 1;
-                                            })))
-                    )
               );
             dispatcher.register(roleApiRootCommand());
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|greed_trade|menugate, /habitrain roleapi");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|menugate, /habitrain roleapi");
     }
 
     private static java.util.UUID playerIdOrNull(MinecraftServer server, String name) {

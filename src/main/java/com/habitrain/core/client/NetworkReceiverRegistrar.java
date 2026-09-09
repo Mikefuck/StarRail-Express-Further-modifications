@@ -29,7 +29,6 @@ import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
-import com.habitrain.core.network.GreedTradePromptPayload;
 import com.habitrain.core.network.MenuGatePayload;
 import com.habitrain.core.network.MapVoteLaunchAbortPayload;
 import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
@@ -400,11 +399,23 @@ public class NetworkReceiverRegistrar {
                     VoteLaunchOverlayState.scheduleGrace(0L);
                 }));
 
-        // 17) 贪婪匿名交易提示 — 打开专用双确认界面
-        ClientPlayNetworking.registerGlobalReceiver(GreedTradePromptPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> ctx.client().setScreen(
-                        new com.habitrain.core.client.gui.GreedTradePromptScreen(
-                                ctx.client().screen, payload))));
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.SlothSleepRosterPayload.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() -> {
+                            if (ctx.client().player == null) return;
+                            if (!(ctx.client().screen instanceof io.wifi.starrailexpress.client.gui.screen.ingame.LimitedInventoryScreen)) return;
+                            try {
+                                if (!com.habitrain.core.game.sre.role.HabiRoles.isHabiRole(
+                                        ctx.client().player,
+                                        com.habitrain.core.game.sre.role.sins.SevenSins.SLOTH)) {
+                                    return;
+                                }
+                            } catch (Throwable ignored) {
+                                return;
+                            }
+                            ctx.client().setScreen(
+                                    new com.habitrain.core.client.gui.SlothSleepSelectScreen(payload.entries()));
+                        }));
 
         // 18) 对局结束转场 — STOPPING 时先发静态遮挡，赛后环境应用完成后再发动画阶段。
         //     对局结束是权威事件，无条件接管当前画面（此时不可能有投票屏；

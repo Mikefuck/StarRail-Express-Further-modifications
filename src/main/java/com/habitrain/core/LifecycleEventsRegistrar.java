@@ -10,7 +10,6 @@ import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
 import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.blackout.BlackoutTimerSystem;
-import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
@@ -177,7 +176,6 @@ public final class LifecycleEventsRegistrar {
             // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
             EnvironmentController.clearRuntimeState();
             com.habitrain.core.game.sre.SREWeatherController.resetAll();
-            GreedTradeManager.clearAll();
             // 电话会话 / 汽笛确认窗：集成服同 JVM 重启后 static 不重置
             com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.clearAll();
             com.habitrain.core.game.blackout.BlackoutHornVoteHandler.clearAll();
@@ -410,8 +408,6 @@ public final class LifecycleEventsRegistrar {
                 // 清除效果归属追踪数据
                 EffectOwnershipTracker.clearPlayer(player.getUUID());
                 SlownessReapplyManager.unregisterAllLevels(player.getUUID());
-                // 贪婪匿名交易：断线立即取消 session，避免对方卡 UI 等到超时
-                GreedTradeManager.onPlayerDisconnect(server, player.getUUID());
                 // 维修人员模式：断线自动解锁其锁定的地图并恢复参与状态/游戏模式
                 com.habitrain.core.game.sre.RepairModeManager.onPlayerDisconnect(player.getUUID(), server);
                 GameModeRegistry.resolveActiveForPlayer(player)

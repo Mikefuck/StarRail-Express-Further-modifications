@@ -50,6 +50,9 @@ public final class HabiRoleShops {
     /** 默剧杀手商店刀价。 */
     public static final int MIME_KILLER_KNIFE_PRICE = 200;
 
+    /** 默剧杀手商店：开锁器。 */
+    public static final int MIME_KILLER_LOCKPICK_PRICE = 80;
+
     public static void register() {
         ShopContent.customEntries.put(HabiRoles.FLOWER_GIRL_ID, flowerGirlShop());
         ShopContent.customEntries.put(HabiRoles.SWIFT_WIND_ID, swiftWindShop());
@@ -63,7 +66,7 @@ public final class HabiRoleShops {
             ShopContent.customEntries.put(SevenSins.PRIDE_ID, SevenSinShops.prideShop());
         }
         if (SevenSins.GREED_ID != null) {
-            ShopContent.customEntries.put(SevenSins.GREED_ID, SevenSinShops.greedShop());
+        ShopContent.customEntries.put(SevenSins.GREED_ID, SevenSinShops.empty());
         }
         if (SevenSins.GLUTTONY_ID != null) {
             ShopContent.customEntries.put(SevenSins.GLUTTONY_ID, SevenSinShops.gluttonyShop());
@@ -76,7 +79,7 @@ public final class HabiRoleShops {
 
     public static List<ShopEntry> flowerGirlShop() {
         List<ShopEntry> shop = new ArrayList<>();
-        shop.add(new ShopEntry(HabiRoleItems.createBouquet(1), 150, ShopEntry.Type.TOOL) {
+        shop.add(new ShopEntry(HabiRoleItems.createBouquet(1), 200, ShopEntry.Type.TOOL) {
             @Override
             public boolean onBuy(@NotNull Player player) {
                 ItemStack stack = HabiRoleItems.createBouquet(1);
@@ -101,6 +104,19 @@ public final class HabiRoleShops {
 
     public static List<ShopEntry> swiftWindShop() {
         List<ShopEntry> shop = new ArrayList<>();
+        shop.add(new ShopEntry(TMMItems.PSYCHO_MODE.getDefaultInstance(),
+                io.wifi.starrailexpress.SREConfig.instance().psychoModePrice, ShopEntry.Type.WEAPON) {
+            @Override
+            public boolean canBuy(@NotNull Player player) {
+                return !player.getCooldowns().isOnCooldown(TMMItems.PSYCHO_MODE)
+                        && io.wifi.starrailexpress.cca.SREPlayerPsychoComponent.KEY.get(player).getPsychoTicks() <= 0;
+            }
+
+            @Override
+            public boolean onBuy(@NotNull Player player) {
+                return canBuy(player) && SREPlayerShopComponent.usePsychoMode(player);
+            }
+        });
         shop.add(new ShopEntry(TMMItems.BLACKOUT.getDefaultInstance(), 100, ShopEntry.Type.TOOL) {
             @Override
             public boolean onBuy(@NotNull Player player) {
@@ -120,7 +136,7 @@ public final class HabiRoleShops {
     }
 
     /**
-     * 默剧杀手：仅刀 200 + 狂暴（基础 500，折扣由 DynamicShop flatReduction 驱动）。
+     * 默剧杀手：刀 200 + 狂暴（基础 500，折扣由 DynamicShop flatReduction 驱动）+ 开锁器 80。
      */
     public static List<ShopEntry> mimeKillerShop() {
         List<ShopEntry> shop = new ArrayList<>();
@@ -145,6 +161,7 @@ public final class HabiRoleShops {
                 return ok;
             }
         });
+        shop.add(new ShopEntry(TMMItems.LOCKPICK.getDefaultInstance(), MIME_KILLER_LOCKPICK_PRICE, ShopEntry.Type.TOOL));
         return shop;
     }
 }

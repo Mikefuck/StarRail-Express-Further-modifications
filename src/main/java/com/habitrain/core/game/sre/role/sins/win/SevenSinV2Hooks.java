@@ -18,15 +18,14 @@ import java.util.List;
 /**
  * v2 {@link RoleWinHooks} for the seven sins. Replaces the
  * {@code AllowGameEnd} first-wins listener in {@link SinVictoryHooks} so
- * pride/sloth/lust participate in the central dispatcher fold. Registered
+ * pride/lust participate in the central dispatcher fold. Sloth's rewritten
+ * bed win is triggered directly by its component. Registered
  * through the provider-scoped {@link RoleExtensionRegistrar} of
  * {@link com.habitrain.core.role.extension.CoreRoleExtensionProvider} (audit
  * P1-1: no process-global write path).
  *
- * <p>Helpers stay on {@link SinVictoryHooks}. {@code CustomWinnerRole.checkWin}
- * remains as the SRE framework fallback. Pride {@code allowGameEnd} still
- * gates {@code proposed=BLACKOUT}; sloth {@code evaluateWin} does not steal
- * that probe (only {@code KILLERS}/{@code PASSENGERS}/{@code TIME}).
+ * <p>Helpers stay on {@link SinVictoryHooks}. Pride {@code allowGameEnd} still
+ * gates {@code proposed=BLACKOUT}.</p>
  */
 public final class SevenSinV2Hooks {
 
@@ -36,12 +35,10 @@ public final class SevenSinV2Hooks {
         if (registrar == null) {
             throw new IllegalArgumentException("registrar must not be null");
         }
-        registrar.hooks(RoleKey.of(SevenSins.SLOTH_ID), RoleHooks.builder().win(SLOTH).build());
         registrar.hooks(RoleKey.of(SevenSins.LUST_ID), RoleHooks.builder().win(LUST).build());
         registrar.hooks(RoleKey.of(SevenSins.GREED_ID), RoleHooks.builder().win(GREED).build());
-        // Pride last so evaluateWin DECLARE_CUSTOM overwrites sloth when only pride remains.
         registrar.hooks(RoleKey.of(SevenSins.PRIDE_ID), RoleHooks.builder().win(PRIDE).build());
-        HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/sloth/lust/greed)");
+        HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/lust/greed)");
     }
 
     /** Pride DENY/last-survivor still see the blackout per-second probe. */
@@ -75,26 +72,6 @@ public final class SevenSinV2Hooks {
             return WinPatch.declareCustom("sin_pride",
                     pride == null ? List.of() : List.of(pride.getUUID()),
                     "傲慢成为最后的幸存者");
-        }
-    };
-
-    private static final RoleWinHooks SLOTH = new RoleWinHooks() {
-        @Override
-        public WinPatch evaluateWin(@Nullable ServerLevel level, @Nullable String proposed,
-                                    boolean loose, RoleHookContext ctx) {
-            if (level == null) {
-                return WinPatch.noChange();
-            }
-            if (!SlothWinPolicy.shouldDeclare(proposed,
-                    SinVictoryHooks.isSlothAlive(level),
-                    SinVictoryHooks.isPrideBlocking(level),
-                    SinVictoryHooks.isOnlyPrideAlive(level))) {
-                return WinPatch.noChange();
-            }
-            ServerPlayer sloth = SinVictoryHooks.findAliveSlothPlayer(level);
-            return WinPatch.declareCustom("sin_sloth",
-                    sloth == null ? List.of() : List.of(sloth.getUUID()),
-                    "懒惰劫持了结算");
         }
     };
 

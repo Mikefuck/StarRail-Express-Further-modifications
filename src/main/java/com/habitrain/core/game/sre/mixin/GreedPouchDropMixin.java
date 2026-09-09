@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 取消所有者对绑定贪婪袋的主动丢弃（Q / drop 路径）。
  * <p>
  * 关键：1.21 {@code ServerPlayer.drop(boolean)} 先 {@code Inventory.removeFromSelected}
- * 再调 {@code Player.drop(ItemStack,…)}。若只 cancel 后者，槽位已空 → 袋消失 → 失袋即死。
+ * 再调 {@code Player.drop(ItemStack,…)}。若只 cancel 后者，槽位已空，会导致袋子消失。
  * 必须在 {@code ServerPlayer.drop(Z)} HEAD 先 cancel。
  */
 @Mixin(ServerPlayer.class)

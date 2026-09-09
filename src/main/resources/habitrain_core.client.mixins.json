@@ -7,6 +7,7 @@
         "defaultRequire": 1
     },
     "client": [
+        "SlothBlackScreenMixin",
         "CustomTaskBlockRendererMixin",
         "ClientChunkCacheMixin",
         "FrustumAccessor",
@@ -26,7 +27,7 @@
         "UnifiedSkillHudReadyShiftMixin",
         "SlothScreenLockMixin",
         "ScreenWidgetAccessor",
-        "GreedBackpackTradeMixin",
+        "SlothBackpackSleepMixin",
         "TaskSettingsMenuEntriesMixin",
         "TaskSettingsBackpackPermissionMixin",
         "TaskSettingsWaitingButtonMixin",

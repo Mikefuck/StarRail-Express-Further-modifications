@@ -99,15 +99,15 @@ public final class PayloadSenders {
         ClientPlayNetworking.send(new com.habitrain.core.network.RoleConfigUpdatePayload(configJson));
     }
 
-    /** 从客户端回复贪婪交易提示（接受/拒绝/取消）。未连接时静默跳过（review M9）。 */
-    public static void sendGreedTradeAction(String action, String sessionId) {
+    /** Requests the server-authoritative list shown when Sloth opens the backpack. */
+    public static void requestSlothSleepRoster() {
         if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.GreedTradeActionPayload(action, sessionId));
+        ClientPlayNetworking.send(new com.habitrain.core.network.SlothSleepRosterRequestPayload());
     }
 
-    /** 从客户端选择贪婪交易对象。未连接（断线瞬间的按钮回调）时静默跳过（review M9）。 */
-    public static void sendGreedTradeSelect(UUID targetPlayerId) {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.GreedTradeSelectPayload(targetPlayerId));
+    /** Selects one eligible player for Sloth's endless sleep. */
+    public static void sendSlothSleepTarget(UUID targetPlayerId) {
+        if (Minecraft.getInstance().getConnection() == null || targetPlayerId == null) return;
+        ClientPlayNetworking.send(new com.habitrain.core.network.SlothSleepTargetPayload(targetPlayerId));
     }
 }

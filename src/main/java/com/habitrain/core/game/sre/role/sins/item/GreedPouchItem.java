@@ -38,7 +38,7 @@ public final class GreedPouchItem {
         ItemStack stack = new ItemStack(Items.BUNDLE, 1);
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("贪婪收纳袋"));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("绑定：不可丢弃；失袋即死"),
+                Component.literal("绑定：不可丢弃；种类数超过开局人数一半获胜"),
                 Component.literal("把偷来的物品放进袋内即计入种类"),
                 Component.literal("也可：主/副手持袋，另一手持物右键吸收")
         )));

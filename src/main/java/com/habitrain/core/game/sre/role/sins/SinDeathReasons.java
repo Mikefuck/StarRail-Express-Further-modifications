@@ -38,7 +38,6 @@ public final class SinDeathReasons {
             GameConstants.DeathReasons.DISCONNECT,
             GameConstants.DeathReasons.VOODOO,
             GameConstants.DeathReasons.GOD_COMMAND,
-            ResourceLocation.fromNamespaceAndPath("habitrain_core", "greed_lost_pouch"),
             ResourceLocation.fromNamespaceAndPath("habitrain_core", "wrath_exhaustion")
     );
 

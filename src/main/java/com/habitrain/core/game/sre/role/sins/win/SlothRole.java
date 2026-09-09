@@ -1,8 +1,8 @@
 package com.habitrain.core.game.sre.role.sins.win;
 
-import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
 import io.wifi.starrailexpress.api.CustomWinnerRole;
+import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.game.GameUtils.WinStatus;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.resources.ResourceLocation;
@@ -24,34 +24,20 @@ public final class SlothRole extends CustomWinnerRole {
 
     @Override
     public WinStatus checkWin(ServerPlayer player, WinStatus winStatus) {
-        // Side-effect free: faction ends are hijacked in SinVictoryHooks.AllowGameEnd.
-        if (player == null || !(player.level() instanceof ServerLevel level)) {
-            return WinStatus.NOT_MODIFY;
-        }
-        if (SinVictoryHooks.isPrideBlocking(level)) {
-            return WinStatus.NOT_MODIFY;
-        }
-        if (SinVictoryHooks.isSlothAlive(level)
-                && (winStatus == WinStatus.PASSENGERS
-                || winStatus == WinStatus.KILLERS)) {
-            return WinStatus.CUSTOM;
-        }
+        // Rewritten Sloth never steals a faction/timer settlement.
         return WinStatus.NOT_MODIFY;
     }
 
     @Override
     public boolean didPlayerWin(ServerPlayer player, boolean original, WinStatus winStatus) {
-        if (original) {
-            return true;
-        }
         if (winStatus != WinStatus.CUSTOM || player == null) {
             return false;
         }
         if (!(player.level() instanceof ServerLevel level)) {
             return false;
         }
-        return SevenSins.SLOTH != null
-                && SevenSins.SLOTH_ID.equals(getIdentifier())
-                && SinVictoryHooks.isSlothAlive(level);
+        SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+        return roundEnd.CustomWinnerPlayers != null
+                && roundEnd.CustomWinnerPlayers.contains(player.getUUID());
     }
 }

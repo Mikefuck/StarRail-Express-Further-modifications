@@ -285,6 +285,27 @@ public final class SinVictoryHooks {
     }
 
     /**
+     * Instant rewritten Sloth win after three induced sleepers and a real bed lie-down.
+     */
+    public static void triggerSlothWin(ServerLevel level, ServerPlayer sloth) {
+        if (level == null || sloth == null || SevenSins.SLOTH == null) return;
+        try {
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            if (roundEnd != null) {
+                if (roundEnd.CustomWinnerPlayers == null) {
+                    roundEnd.CustomWinnerPlayers = new ArrayList<>();
+                } else {
+                    roundEnd.CustomWinnerPlayers.clear();
+                }
+                roundEnd.CustomWinnerPlayers.add(sloth.getUUID());
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[SinVictoryHooks] set CustomWinnerPlayers for sloth failed", t);
+        }
+        triggerCustomSinWin(level, SevenSins.SLOTH, sloth);
+    }
+
+    /**
      * Instant greed collection win (SRE custom). Blackout dual-write is done by caller
      * via {@code BlackoutVictoryChecker.endGameGreedCustom} to avoid package cycles.
      */

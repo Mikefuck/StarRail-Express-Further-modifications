@@ -6,7 +6,6 @@ import com.habitrain.core.betel.BetelTickEngine;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
-import com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager;
 import com.habitrain.core.task.GameLifecycleHandler;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -43,13 +42,6 @@ public class ModTickHandler {
             // 5s (100 ticks): 自动检测服务端地图定义与档案文件修改，若修改则自动重载并全量同步给客户端
             if (voteTickCounter % 100 == 0) {
                 com.habitrain.core.vote.MapFileMonitor.checkAndSync(server);
-            }
-
-            // Greed anonymous trade session timeouts
-            try {
-                GreedTradeManager.tick(server);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[ModTick] GreedTradeManager.tick failed", t);
             }
 
             tickMoreMods(server);

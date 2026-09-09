@@ -26,8 +26,7 @@ class BlackoutVictoryCheckerWinPolicyTest {
 
     @Test
     void customIdsMapToSevenSinsPaths() {
-        assertEquals(ResourceLocation.parse("habitrain_core:sin_sloth"),
-                BlackoutVictoryChecker.resolveCustomSinId("sin_sloth"));
+        assertNull(BlackoutVictoryChecker.resolveCustomSinId("sin_sloth"));
         assertEquals(ResourceLocation.parse("habitrain_core:sin_pride"),
                 BlackoutVictoryChecker.resolveCustomSinId("habitrain_core:sin_pride"));
         assertEquals(ResourceLocation.parse("habitrain_core:sin_lust"),

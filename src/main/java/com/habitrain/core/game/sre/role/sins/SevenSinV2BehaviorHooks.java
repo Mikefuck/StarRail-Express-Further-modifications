@@ -61,7 +61,6 @@ public final class SevenSinV2BehaviorHooks {
                 .build());
         registrar.hooks(RoleKey.of(SevenSins.ENVY_ID), RoleHooks.builder()
                 .lifecycle(ENVY_LIFE)
-                .interaction(ENVY_INTERACTION)
                 .combat(ENVY_COMBAT)
                 .build());
         registrar.hooks(RoleKey.of(SevenSins.WRATH_ID), RoleHooks.builder()
@@ -72,6 +71,13 @@ public final class SevenSinV2BehaviorHooks {
         registrar.hooks(RoleKey.of(SevenSins.GREED_ID), RoleHooks.builder()
                 .lifecycle(GREED_LIFE)
                 .interaction(GREED_INTERACTION)
+                .combat(new RoleCombatHooks() {
+                    @Override
+                    public void onDeath(ServerPlayer player, net.minecraft.resources.ResourceLocation reason,
+                                        RoleHookContext ctx) {
+                        com.habitrain.core.game.sre.role.sins.component.GreedEconomy.distributeEstate(player);
+                    }
+                })
                 .build());
         registrar.hooks(RoleKey.of(SevenSins.GLUTTONY_ID), RoleHooks.builder()
                 .lifecycle(GLUTTONY_LIFE)
@@ -81,8 +87,6 @@ public final class SevenSinV2BehaviorHooks {
                 .build());
         registrar.hooks(RoleKey.of(SevenSins.SLOTH_ID), RoleHooks.builder()
                 .lifecycle(SLOTH_LIFE)
-                .interaction(SLOTH_INTERACTION)
-                .combat(SLOTH_COMBAT)
                 .build());
 
         HabiTrainCore.LOGGER.info(
@@ -127,7 +131,7 @@ public final class SevenSinV2BehaviorHooks {
 
         @Override
         public void onGameTrueStart(ServerLevel level, RoleHookContext ctx) {
-            WrathComponent.onSafeTimeEnd(level);
+            WrathComponent.onRoundReady(level);
         }
 
         @Override
@@ -215,11 +219,6 @@ public final class SevenSinV2BehaviorHooks {
         }
 
         @Override
-        public void onGameTrueStart(ServerLevel level, RoleHookContext ctx) {
-            SlothComponent.onSafeTimeEnd(level);
-        }
-
-        @Override
         public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
                                    RoleHookContext ctx) {
             SevenSinsMutex.beforeAssign(level, roles);
@@ -230,64 +229,32 @@ public final class SevenSinV2BehaviorHooks {
     // Interaction
     // ------------------------------------------------------------------
 
-    private static final RoleInteractionHooks ENVY_INTERACTION = new RoleInteractionHooks() {
-        @Override
-        public InteractionResult attackEntity(ServerPlayer player, Entity target,
-                                              InteractionHand hand, RoleHookContext ctx) {
-            if (!(target instanceof ServerPlayer targetPlayer)) {
-                return InteractionResult.PASS;
-            }
-            if (!(player.level() instanceof ServerLevel level)) {
-                return InteractionResult.PASS;
-            }
-            try {
-                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-                if (game == null || !HabiRoles.isHabiRole(player, SevenSins.ENVY)) {
-                    return InteractionResult.PASS;
-                }
-                EnvyComponent envy = EnvyComponent.KEY.get(player);
-                if (envy != null && !envy.canHarm(targetPlayer)) {
-                    player.displayClientMessage(
-                            Component.literal(envy.getMarkedUuid() == null
-                                    ? "§c[嫉妒] 未标记目标，无法攻击。"
-                                    : "§c[嫉妒] 只能攻击当前标记的目标。"),
-                            true
-                    );
-                    return InteractionResult.FAIL;
-                }
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Envy] attack gate failed", t);
-            }
-            return InteractionResult.PASS;
-        }
-    };
-
     private static final RoleInteractionHooks WRATH_INTERACTION = new RoleInteractionHooks() {
         @Override
-        public InteractionResult attackEntity(ServerPlayer player, Entity target,
-                                              InteractionHand hand, RoleHookContext ctx) {
-            if (!(target instanceof ServerPlayer targetPlayer)) {
-                return InteractionResult.PASS;
-            }
-            if (!(player.level() instanceof ServerLevel level)) {
-                return InteractionResult.PASS;
-            }
+        public InteractionResult attackBlock(ServerPlayer player, net.minecraft.core.BlockPos pos,
+                                             InteractionHand hand, RoleHookContext ctx) {
             try {
-                if (!WrathComponent.isWrathPlayer(level, targetPlayer)) {
-                    return InteractionResult.PASS;
-                }
-                WrathComponent wrath = WrathComponent.KEY.get(targetPlayer);
-                if (wrath != null && wrath.onHitByGood(targetPlayer, player)) {
-                    return InteractionResult.FAIL;
-                }
+                WrathComponent wrath = WrathComponent.KEY.get(player);
+                return wrath == null
+                        ? InteractionResult.PASS
+                        : wrath.tryPryDoorWithBat(player, pos, hand);
             } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Wrath] melee hit gate failed", t);
+                HabiTrainCore.LOGGER.warn("[Wrath] bat door-pry failed", t);
+                return InteractionResult.PASS;
             }
-            return InteractionResult.PASS;
         }
     };
 
     private static final RoleInteractionHooks GREED_INTERACTION = new RoleInteractionHooks() {
+        @Override
+        public InteractionResult useEntity(ServerPlayer player, @Nullable Entity target,
+                                           InteractionHand hand, RoleHookContext ctx) {
+            if (!(target instanceof ServerPlayer other)) return InteractionResult.PASS;
+            if (hand != InteractionHand.MAIN_HAND) return InteractionResult.FAIL;
+            return com.habitrain.core.game.sre.role.sins.component.GreedInventoryMenu.open(player, other)
+                    ? InteractionResult.SUCCESS : InteractionResult.FAIL;
+        }
+
         @Override
         public InteractionResult useItem(ServerPlayer player, ItemStack stack,
                                          InteractionHand hand, RoleHookContext ctx) {
@@ -314,96 +281,6 @@ public final class SevenSinV2BehaviorHooks {
                 HabiTrainCore.LOGGER.warn("[Greed] absorb failed", t);
             }
             return InteractionResult.PASS;
-        }
-    };
-
-    private static final RoleInteractionHooks SLOTH_INTERACTION = new RoleInteractionHooks() {
-        @Override
-        public InteractionResult useItem(ServerPlayer player, ItemStack stack,
-                                         InteractionHand hand, RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-                return InteractionResult.FAIL;
-            }
-            return InteractionResult.PASS;
-        }
-
-        @Override
-        public InteractionResult useBlock(ServerPlayer player,
-                                          net.minecraft.world.phys.BlockHitResult hit,
-                                          InteractionHand hand, RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-                return InteractionResult.FAIL;
-            }
-            return InteractionResult.PASS;
-        }
-
-        @Override
-        public InteractionResult useEntity(ServerPlayer player, Entity target,
-                                           InteractionHand hand, RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-                return InteractionResult.FAIL;
-            }
-            return InteractionResult.PASS;
-        }
-
-        @Override
-        public InteractionResult attackEntity(ServerPlayer player, Entity target,
-                                              InteractionHand hand, RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-                return InteractionResult.FAIL;
-            }
-            if (player instanceof ServerPlayer attacker
-                    && target instanceof ServerPlayer targetPlayer
-                    && SlothComponent.isSleepingSloth(targetPlayer)) {
-                SlothComponent sloth = SlothComponent.KEY.get(targetPlayer);
-                if (sloth != null) {
-                    sloth.onShieldHit(targetPlayer, attacker);
-                    return InteractionResult.FAIL;
-                }
-            }
-            if (player.level() instanceof ServerLevel level) {
-                try {
-                    if (SlothComponent.isSlothPlayer(level, player)) {
-                        SlothComponent sloth = SlothComponent.KEY.get(player);
-                        if (sloth != null
-                                && sloth.isBerserk(level)
-                                && !sloth.isOpenBerserk(level)
-                                && !sloth.canAttackTarget(level, target.getUUID())) {
-                            player.displayClientMessage(
-                                    Component.translatable("message.habitrain_core.sin_sloth.not_attacker"),
-                                    true
-                            );
-                            return InteractionResult.FAIL;
-                        }
-                    }
-                } catch (Throwable t) {
-                    HabiTrainCore.LOGGER.warn("[Sloth] limited berserk attack gate failed", t);
-                }
-            }
-            return InteractionResult.PASS;
-        }
-
-        @Override
-        public InteractionResult attackBlock(ServerPlayer player,
-                                             net.minecraft.core.BlockPos pos,
-                                             InteractionHand hand, RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-                return InteractionResult.FAIL;
-            }
-            return InteractionResult.PASS;
-        }
-
-        @Override
-        public void breakBlock(ServerPlayer player, net.minecraft.core.BlockPos pos,
-                               RoleHookContext ctx) {
-            if (SlothComponent.isSleepingSloth(player)) {
-                notifySleepLock(player);
-            }
         }
     };
 
@@ -456,179 +333,28 @@ public final class SevenSinV2BehaviorHooks {
 
     private static final RoleCombatHooks ENVY_COMBAT = new RoleCombatHooks() {
         @Override
-        public Decision allowKillByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
-                                          net.minecraft.resources.ResourceLocation deathReason,
-                                          RoleHookContext ctx) {
-            if (killer == null || SevenSins.ENVY == null
-                    || !(killer.level() instanceof ServerLevel level)) {
-                return Decision.PASS;
-            }
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !HabiRoles.isHabiRole(killer, SevenSins.ENVY)) {
-                return Decision.PASS;
-            }
-            try {
-                EnvyComponent envy = EnvyComponent.KEY.get(killer);
-                if (envy == null) {
-                    return Decision.PASS;
-                }
-                if (envy.getMarkedUuid() == null) {
-                    victim.setHealth(victim.getMaxHealth());
-                    killer.displayClientMessage(
-                            Component.literal("§c[嫉妒] 未标记目标，无法击杀。"), true);
-                    return Decision.DENY;
-                }
-                if (!envy.isMark(victim)) {
-                    victim.setHealth(victim.getMaxHealth());
-                    killer.displayClientMessage(
-                            Component.literal("§c[嫉妒] 只能击杀当前标记的目标。"), true);
-                    return Decision.DENY;
-                }
-                int envyBal = shopBalance(killer);
-                int targetBal = shopBalance(victim);
-                if (envyBal > targetBal) {
-                    victim.setHealth(victim.getMaxHealth());
-                    killer.displayClientMessage(
-                            Component.literal("§c[嫉妒] 你比对方更有钱（你 " + envyBal
-                                    + " > 对方 " + targetBal + "），无法击杀标记。"),
-                            true
-                    );
-                    victim.displayClientMessage(
-                            Component.literal("§e[嫉妒] 对方比你更有钱，标记未能致命。"),
-                            true
-                    );
-                    return Decision.DENY;
-                }
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Envy] killer gate failed", t);
-            }
-            return Decision.PASS;
-        }
-
-        @Override
         public void onKill(ServerPlayer victim, @Nullable ServerPlayer killer,
                            net.minecraft.resources.ResourceLocation deathReason, RoleHookContext ctx) {
             if (killer == null) {
                 return;
             }
             try {
-                EnvyComponent envy = EnvyComponent.KEY.get(killer);
-                if (envy != null && envy.isMark(victim)) {
-                    handleEnvyMarkLoot(killer, victim);
-                    envy.setMarkedUuid(null);
-                }
+                handleEnvyKillLoot(killer, victim);
             } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Envy] mark loot failed", t);
+                HabiTrainCore.LOGGER.warn("[Envy] guaranteed kill loot failed", t);
             }
         }
     };
 
     private static final RoleCombatHooks WRATH_COMBAT = new RoleCombatHooks() {
         @Override
-        public Decision allowDeathByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
-                                           net.minecraft.resources.ResourceLocation deathReason,
-                                           RoleHookContext ctx) {
-            if (SevenSins.WRATH == null || !(victim.level() instanceof ServerLevel level)) {
-                return Decision.PASS;
-            }
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !HabiRoles.isHabiRole(victim, SevenSins.WRATH)) {
-                return Decision.PASS;
-            }
-            if (SinDeathReasons.isForcePath(deathReason) || !(killer instanceof ServerPlayer killerSp)) {
-                return Decision.PASS;
-            }
+        public void onAnyDeath(ServerPlayer dead,
+                               net.minecraft.resources.ResourceLocation deathReason,
+                               RoleHookContext ctx) {
             try {
-                WrathComponent wrath = WrathComponent.KEY.get(victim);
-                if (wrath != null && wrath.onHitByGood(victim, killerSp)) {
-                    return Decision.DENY;
-                }
+                WrathComponent.onAnyPlayerDeath(dead);
             } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Wrath] onHitByGood failed", t);
-            }
-            return Decision.PASS;
-        }
-    };
-
-    private static final RoleCombatHooks SLOTH_COMBAT = new RoleCombatHooks() {
-        @Override
-        public Decision allowDeathByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
-                                           net.minecraft.resources.ResourceLocation deathReason,
-                                           RoleHookContext ctx) {
-            if (SevenSins.SLOTH == null || !(victim.level() instanceof ServerLevel level)) {
-                return Decision.PASS;
-            }
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !HabiRoles.isHabiRole(victim, SevenSins.SLOTH)) {
-                return Decision.PASS;
-            }
-            if (!SinDeathReasons.isForcePath(deathReason)
-                    && SinDeathReasons.isConventionalWeapon(deathReason)) {
-                try {
-                    SlothComponent sloth = SlothComponent.KEY.get(victim);
-                    if (sloth != null && sloth.isSleeping()) {
-                        ServerPlayer atk = killer instanceof ServerPlayer sp ? sp : null;
-                        if (!sloth.onShieldHit(victim, atk)) {
-                            return Decision.DENY;
-                        }
-                    }
-                } catch (Throwable t) {
-                    HabiTrainCore.LOGGER.warn("[Sloth] shield absorb failed", t);
-                }
-            }
-            return Decision.PASS;
-        }
-
-        @Override
-        public Decision allowKillByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
-                                          net.minecraft.resources.ResourceLocation deathReason,
-                                          RoleHookContext ctx) {
-            if (killer == null || SevenSins.SLOTH == null
-                    || !(killer.level() instanceof ServerLevel level)) {
-                return Decision.PASS;
-            }
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || !HabiRoles.isHabiRole(killer, SevenSins.SLOTH)) {
-                return Decision.PASS;
-            }
-            try {
-                SlothComponent sloth = SlothComponent.KEY.get(killer);
-                if (sloth == null) {
-                    return Decision.PASS;
-                }
-                if (sloth.isSleeping()) {
-                    victim.setHealth(victim.getMaxHealth());
-                    return Decision.DENY;
-                }
-                if (sloth.isBerserk(level) && !sloth.isOpenBerserk(level)
-                        && !sloth.canAttackTarget(level, victim.getUUID())) {
-                    victim.setHealth(victim.getMaxHealth());
-                    killer.displayClientMessage(
-                            Component.translatable("message.habitrain_core.sin_sloth.not_attacker"),
-                            true
-                    );
-                    return Decision.DENY;
-                }
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Sloth] attack gate failed", t);
-            }
-            return Decision.PASS;
-        }
-
-        @Override
-        public void onKill(ServerPlayer victim, @Nullable ServerPlayer killer,
-                           net.minecraft.resources.ResourceLocation deathReason, RoleHookContext ctx) {
-            if (killer == null) {
-                return;
-            }
-            try {
-                SlothComponent sloth = SlothComponent.KEY.get(killer);
-                ServerLevel level = (ServerLevel) killer.level();
-                if (sloth != null && sloth.isBerserk(level)) {
-                    sloth.onBerserkKill(killer);
-                }
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[Sloth] onBerserkKill failed", t);
+                HabiTrainCore.LOGGER.warn("[Wrath] teammate-death handling failed", t);
             }
         }
     };
@@ -637,44 +363,29 @@ public final class SevenSinV2BehaviorHooks {
     // Helpers (kept in the v2 class; chat-lock-only SevenSinEvents remains)
     // ------------------------------------------------------------------
 
-    private static void notifySleepLock(ServerPlayer player) {
-        player.displayClientMessage(
-                Component.translatable("message.habitrain_core.sin_sloth.input_locked"),
-                true
-        );
-    }
-
-    private static int shopBalance(ServerPlayer player) {
-        try {
-            SREPlayerShopComponent shop = SREPlayerShopComponent.KEY.get(player);
-            return shop != null ? shop.balance : 0;
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
-    private static void handleEnvyMarkLoot(ServerPlayer envy, ServerPlayer victim) {
+    private static void handleEnvyKillLoot(ServerPlayer envy, ServerPlayer victim) {
         List<SlotRef> candidates = new ArrayList<>();
         Inventory inv = victim.getInventory();
-        if (EnvyComponent.isTransferable(victim.getMainHandItem(), envy)) {
-            candidates.add(new SlotRef(SlotKind.MAIN, inv.selected));
-        }
         for (int i = 0; i < inv.offhand.size(); i++) {
             ItemStack stack = inv.offhand.get(i);
-            if (EnvyComponent.isTransferable(stack, envy)) {
+            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
                 candidates.add(new SlotRef(SlotKind.OFF, i));
             }
         }
         for (int i = 0; i < inv.items.size(); i++) {
-            if (i == inv.selected) {
-                continue;
-            }
             ItemStack stack = inv.items.get(i);
-            if (EnvyComponent.isTransferable(stack, envy)) {
+            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
                 candidates.add(new SlotRef(SlotKind.MAIN, i));
             }
         }
+        for (int i = 0; i < inv.armor.size(); i++) {
+            ItemStack stack = inv.armor.get(i);
+            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
+                candidates.add(new SlotRef(SlotKind.ARMOR, i));
+            }
+        }
 
+        boolean itemGranted = false;
         while (!candidates.isEmpty()) {
             int idx = ThreadLocalRandom.current().nextInt(candidates.size());
             SlotRef pick = candidates.remove(idx);
@@ -682,48 +393,48 @@ public final class SevenSinV2BehaviorHooks {
             if (taken == null || taken.isEmpty() || taken.is(Items.AIR)) {
                 continue;
             }
+            Component itemName = taken.getHoverName().copy();
             if (!envy.getInventory().add(taken)) {
                 envy.drop(taken, false);
             }
             envy.displayClientMessage(
-                    Component.literal("§a[嫉妒] 从标记目标夺得 " + taken.getHoverName().getString() + "。"),
+                    Component.translatable("message.habitrain_core.sin_envy.item_gain",
+                            itemName),
                     true
             );
             inv.setChanged();
-            return;
+            itemGranted = true;
+            break;
         }
 
-        int victimBal = shopBalance(victim);
-        int steal = Math.min(EnvyComponent.COIN_STEAL_MAX, Math.max(0, victimBal));
-        if (steal <= 0) {
-            envy.displayClientMessage(Component.literal("§e[嫉妒] 标记目标无可掠夺物与金币。"), true);
-            return;
+        if (!itemGranted) {
+            envy.displayClientMessage(
+                    Component.translatable("message.habitrain_core.sin_envy.no_item"), true);
         }
+
         try {
-            SREPlayerShopComponent vShop = SREPlayerShopComponent.KEY.get(victim);
             SREPlayerShopComponent eShop = SREPlayerShopComponent.KEY.get(envy);
-            if (vShop != null) {
-                vShop.setBalance(Math.max(0, vShop.balance - steal));
-            }
             if (eShop != null) {
-                eShop.addToBalance(steal);
+                eShop.addToBalance(EnvyComponent.KILL_BONUS_COINS);
             }
             envy.displayClientMessage(
-                    Component.literal("§a[嫉妒] 从标记目标掠夺 " + steal + " 金币。"),
+                    Component.translatable("message.habitrain_core.sin_envy.coin_gain",
+                            EnvyComponent.KILL_BONUS_COINS),
                     true
             );
         } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Envy] coin steal failed", t);
+            HabiTrainCore.LOGGER.warn("[Envy] guaranteed coin grant failed", t);
         }
     }
 
-    private enum SlotKind { MAIN, OFF }
+    private enum SlotKind { MAIN, OFF, ARMOR }
 
     private record SlotRef(SlotKind kind, int index) {
         ItemStack takeOne(Inventory inv) {
             ItemStack stack = switch (kind) {
                 case MAIN -> inv.items.get(index);
                 case OFF -> inv.offhand.get(index);
+                case ARMOR -> inv.armor.get(index);
             };
             if (stack == null || stack.isEmpty() || stack.is(Items.AIR)) {
                 return ItemStack.EMPTY;
@@ -737,6 +448,7 @@ public final class SevenSinV2BehaviorHooks {
                 switch (kind) {
                     case MAIN -> inv.items.set(index, ItemStack.EMPTY);
                     case OFF -> inv.offhand.set(index, ItemStack.EMPTY);
+                    case ARMOR -> inv.armor.set(index, ItemStack.EMPTY);
                 }
             }
             return taken;

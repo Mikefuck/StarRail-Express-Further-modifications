@@ -106,11 +106,6 @@ public class GameLifecycleHandler {
             try {
                 com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue.clearAll();
             } catch (Throwable ignored) {}
-            // GreedTradeManager.clearAll → sessions + GreedDealTracker.clearAll()
-            try {
-                com.habitrain.core.game.sre.role.sins.trade.GreedTradeManager.clearAll();
-            } catch (Throwable ignored) {}
-
             // 清除任务池缓存，确保下一局任务重新计算
             TaskPoolBuilder.invalidateAll();
             // 兜底清空活跃/假任务，防止非内置模式或异常路径泄漏到下一局

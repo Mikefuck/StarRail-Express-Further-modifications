@@ -107,10 +107,6 @@ public class BlackoutVictoryChecker {
             if (endFromFactionOrTimerProposal(level, "KILLERS")) {
                 return;
             }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
-                return;
-            }
             mode.setLastWinningFaction(level, null);
             endGame(level, WinResult.noWinner("同归于尽"), "双方同归于尽，游戏结束。");
             return;
@@ -120,10 +116,6 @@ public class BlackoutVictoryChecker {
         // timer 分支反判为 GOOD 胜。
         if (goodRemaining <= 0 && badRemaining > 0) {
             if (endFromFactionOrTimerProposal(level, "KILLERS")) {
-                return;
-            }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
                 return;
             }
             mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.BAD);
@@ -137,10 +129,6 @@ public class BlackoutVictoryChecker {
             if (endFromFactionOrTimerProposal(level, "PASSENGERS")) {
                 return;
             }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
-                return;
-            }
             mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.GOOD);
             endGame(level, WinResult.noWinner("杀手全灭"), "§a好人阵营获胜！所有杀手已被消灭");
             return;
@@ -148,10 +136,6 @@ public class BlackoutVictoryChecker {
         // Timer can still end if pride is alive, but only after wipe outcomes above.
         if (BlackoutTimerSystem.isTimeUp(level)) {
             if (endFromFactionOrTimerProposal(level, "TIME")) {
-                return;
-            }
-            if (SinVictoryHooks.isSlothAlive(level)) {
-                endGameSlothCustom(level);
                 return;
             }
             mode.setLastWinningFaction(level, BlackoutRoleManager.Faction.GOOD);
@@ -195,7 +179,7 @@ public class BlackoutVictoryChecker {
             path = path.substring(colon + 1);
         }
         return switch (path) {
-            case "sin_sloth", "sin_pride", "sin_lust", "sin_greed" ->
+            case "sin_pride", "sin_lust", "sin_greed" ->
                     ResourceLocation.fromNamespaceAndPath("habitrain_core", path);
             default -> null;
         };
@@ -204,8 +188,6 @@ public class BlackoutVictoryChecker {
     private void endGameCustomSin(ServerLevel level, ResourceLocation sinId) {
         if (SevenSins.PRIDE_ID.equals(sinId)) {
             endGamePrideCustom(level);
-        } else if (SevenSins.SLOTH_ID.equals(sinId)) {
-            endGameSlothCustom(level);
         } else if (SevenSins.GREED_ID.equals(sinId)) {
             endGameGreedCustomInstance(level, SinVictoryHooks.findAliveGreedPlayer(level));
         } else if (SevenSins.LUST_ID.equals(sinId)) {
@@ -251,22 +233,47 @@ public class BlackoutVictoryChecker {
         }
     }
 
-    private void endGameSlothCustom(ServerLevel level) {
+    private void endGameSlothCustomInstance(ServerLevel level, ServerPlayer winner) {
         if (mode.isGameEnded(level)) return;
         mode.setLastWinningFaction(level, null);
         mode.setGameEnded(level, true);
-        String message = "§9懒惰·贝露菲格露获胜！在阵营胜负中窃取了胜利。";
+        String message = "§9懒惰·贝露菲格露获胜！三名玩家沉睡时，懒惰已安然入眠。";
         mode.setPendingEndMessage(level, message);
         mode.setPendingWinResult(level, WinResult.noWinner("懒惰独立胜"));
         if (level == null) return;
         try {
             populateRoundEndDataCustomSin(level, SevenSins.SLOTH_ID);
+            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
+            roundEnd.CustomWinnerPlayers = new java.util.ArrayList<>(java.util.List.of(winner.getUUID()));
+            for (UUID id : BlackoutRoleManager.getRoleHistory(level).keySet()) {
+                roundEnd.setPlayerWin(id, id.equals(winner.getUUID()));
+            }
+            for (ServerPlayer participant : level.players()) {
+                roundEnd.setPlayerWin(participant.getUUID(), participant.getUUID().equals(winner.getUUID()));
+            }
+            roundEnd.sync();
             mode.setPendingEndMessage(level, null);
             HabiTrainCore.LOGGER.info("[Blackout] game end: {}", message);
             stopSreMatch(level);
         } catch (Exception e) {
             HabiTrainCore.LOGGER.error("endGameSlothCustom failed", e);
             com.habitrain.core.api.GameModeRegistry.stop(level, WinResult.noWinner("懒惰独立胜"));
+        }
+    }
+
+    /** Instant Sloth bed win. No-op unless this level is running Blackout. */
+    public static void endGameSlothCustom(ServerLevel level, ServerPlayer winner) {
+        if (level == null || winner == null) return;
+        try {
+            var activeOpt = com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level);
+            if (activeOpt.isEmpty() || !(activeOpt.get() instanceof BlackoutMode blackout)) return;
+            if (blackout.isGameEnded(level)) return;
+            var checker = blackout.getVictoryChecker(level);
+            if (checker != null) {
+                checker.endGameSlothCustomInstance(level, winner);
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.debug("[Blackout] instant Sloth win skipped: {}", t.toString());
         }
     }
 
