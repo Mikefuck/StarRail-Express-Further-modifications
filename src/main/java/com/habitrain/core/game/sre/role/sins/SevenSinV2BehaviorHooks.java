@@ -348,6 +348,14 @@ public final class SevenSinV2BehaviorHooks {
 
     private static final RoleCombatHooks WRATH_COMBAT = new RoleCombatHooks() {
         @Override
+        public Decision allowDeathByKiller(ServerPlayer victim, @Nullable ServerPlayer killer,
+                                           net.minecraft.resources.ResourceLocation deathReason,
+                                           RoleHookContext ctx) {
+            return WrathComponent.isMeleeImmune(victim) && SinDeathReasons.isMeleeWeapon(deathReason)
+                    ? Decision.DENY : Decision.PASS;
+        }
+
+        @Override
         public void onAnyDeath(ServerPlayer dead,
                                net.minecraft.resources.ResourceLocation deathReason,
                                RoleHookContext ctx) {

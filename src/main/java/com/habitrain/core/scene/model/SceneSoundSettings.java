@@ -45,7 +45,7 @@ public final class SceneSoundSettings {
     }
 
     public static SceneSoundSettings createDefault() {
-        return new SceneSoundSettings(true, DEFAULT_SOUND_ID, DEFAULT_VOLUME, DEFAULT_PITCH, DEFAULT_FADE_TICKS);
+        return new SceneSoundSettings(false, DEFAULT_SOUND_ID, DEFAULT_VOLUME, DEFAULT_PITCH, DEFAULT_FADE_TICKS);
     }
 
     public boolean isEnabled() { return enabled; }
@@ -70,7 +70,7 @@ public final class SceneSoundSettings {
 
     public static SceneSoundSettings fromJson(JsonObject json) {
         if (json == null) return createDefault();
-        boolean enabled = !json.has("enabled") || json.get("enabled").getAsBoolean();
+        boolean enabled = json.has("enabled") && json.get("enabled").getAsBoolean();
         String soundId = json.has("soundId") ? json.get("soundId").getAsString() : DEFAULT_SOUND_ID;
         float volume = json.has("volume") ? json.get("volume").getAsFloat() : DEFAULT_VOLUME;
         float pitch = json.has("pitch") ? json.get("pitch").getAsFloat() : DEFAULT_PITCH;

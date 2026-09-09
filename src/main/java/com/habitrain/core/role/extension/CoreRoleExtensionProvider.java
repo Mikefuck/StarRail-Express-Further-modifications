@@ -249,6 +249,8 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .componentKey(WrathComponent.KEY)
                         .canSeeCoin()
                         .build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct()
+                        .instinctNightVision().canSeeTeammateKiller().build())
                 .roleFactory(d -> new NormalRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
@@ -261,7 +263,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                     public List<ShopEntry> getShopEntries() {
                         return SevenSinShops.empty();
                     }
-                })
+                }.setToggledOnInstinctType(io.wifi.starrailexpress.api.InstinctType.KILLER_INSTINCT))
                 .maxSprintTime(Integer.MAX_VALUE)
                 .canSeeTime(true)
                 .build());
@@ -344,6 +346,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
         SevenSins.SLOTH = registrar.add(RoleDefinition.builder(SevenSins.SLOTH_ID)
                 .presentation(RolePresentation.builder()
                         .color(rgb(100, 100, 140))
+                        .moodType(SRERole.MoodType.FAKE)
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
                 .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
@@ -359,7 +362,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 .roleFactory(d -> new SlothRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))
-                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .maxSprintTime(Integer.MAX_VALUE)
                 .build());
     }
 }

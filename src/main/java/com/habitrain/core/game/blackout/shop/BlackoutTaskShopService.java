@@ -77,6 +77,10 @@ public final class BlackoutTaskShopService {
         if (level == null || player == null || entry == null) return "无效请求";
         if (!isBlackoutRunning(level)) return "非停电模式";
         if (player.isSpectator() || !BlackoutRoleManager.isInteractable(level, player.getUUID())) return "已淘汰";
+        if (entry.kind() != BlackoutTaskShopCatalog.Kind.TEMP_POWER
+                && com.habitrain.core.game.sre.role.sins.component.SlothComponent.KEY.get(player).hasForcedSleepTask()) {
+            return "请先完成懒惰施加的睡觉任务";
+        }
         // C2S 必须先在红色电话处打开过商店，且仍在交互距离内
         String gate = com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.validate(
                 com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.Kind.TASK_SHOP, level, player);

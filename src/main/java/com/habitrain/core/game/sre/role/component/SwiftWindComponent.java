@@ -37,6 +37,7 @@ public final class SwiftWindComponent implements RoleComponent {
     public static final int DASH_BLOCKS = 6;
     public static final int THROWING_KNIFE_CD_SECONDS = 60;
     public static final int STARTING_BALANCE = 100;
+    private static final String PSYCHO_KNIFE_TAG = "habitrain_swift_wind_psycho_knife";
     /** 对齐 SmokeGrenadeEntity 烟雾参数。 */
     public static final double SMOKE_RADIUS = 4.0;
     public static final int SMOKE_DURATION_TICKS = 200;
@@ -62,6 +63,7 @@ public final class SwiftWindComponent implements RoleComponent {
     public static boolean givePsychoKnives(Player player) {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (knife.isEmpty() || player.level().isClientSide) return false;
+        HabiRoleItems.putFlag(knife, PSYCHO_KNIFE_TAG, true);
         ItemStack[] planned = new ItemStack[9];
         int remaining = 5;
         for (int slot = 0; slot < planned.length; slot++) {
@@ -104,6 +106,17 @@ public final class SwiftWindComponent implements RoleComponent {
         if (!knife.isEmpty()) player.getCooldowns().removeCooldown(knife.getItem());
     }
 
+    public static void clearPsychoKnives(Player player) {
+        if (player.level().isClientSide) return;
+        io.wifi.starrailexpress.util.SREItemUtils.clearItem(player,
+                stack -> HabiRoleItems.hasFlag(stack, PSYCHO_KNIFE_TAG));
+        if (HabiRoleItems.hasFlag(player.containerMenu.getCarried(), PSYCHO_KNIFE_TAG)) {
+            player.containerMenu.setCarried(ItemStack.EMPTY);
+        }
+        player.getInventory().setChanged();
+        player.containerMenu.broadcastChanges();
+    }
+
     public void onAnyKill() {
         killCount++;
         sync();
@@ -114,6 +127,9 @@ public final class SwiftWindComponent implements RoleComponent {
         // 立刻获得飞刀
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (!knife.isEmpty()) {
+            if (io.wifi.starrailexpress.cca.SREPlayerPsychoComponent.KEY.get(self).getPsychoTicks() > 0) {
+                HabiRoleItems.putFlag(knife, PSYCHO_KNIFE_TAG, true);
+            }
             if (!self.getInventory().add(knife.copy())) {
                 self.drop(knife.copy(), false);
             }

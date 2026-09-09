@@ -263,7 +263,7 @@ public final class ProviderRegistrationTransaction {
         RoleCapabilityServiceImpl.RegistrationSnapshot capabilitySnapshot = capabilityService.snapshotForTransaction();
         try {
             for (RoleDefinition def : stagedAdds) {
-                registry.registerAdd(stagedAddRoles.get(def.key().location()));
+                registry.registerAdd(stagedAddRoles.get(def.key().location()), def);
             }
             for (RolePatch patch : stagedModifies) {
                 registry.modify(providerId, patch);

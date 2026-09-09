@@ -89,7 +89,7 @@ public final class HabiRoleShops {
                 return true;
             }
         });
-        shop.add(new ShopEntry(HabiRoleItems.createPepperSpray(), 75, ShopEntry.Type.TOOL) {
+        shop.add(new ShopEntry(HabiRoleItems.createPepperSpray(), 150, ShopEntry.Type.TOOL) {
             @Override
             public boolean onBuy(@NotNull Player player) {
                 ItemStack stack = HabiRoleItems.createPepperSpray();

@@ -84,6 +84,9 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
                         container.getEntrypoint().getClass().getName(), e);
             }
         }
+        // Common initialization also runs on remote clients, which never start a server.
+        // Publish only committed declarations, after all provider transactions have finished.
+        RoleExtensionRegistry.INSTANCE.registerDeclaredSkills();
         LOGGER.info("Loaded {} role extension provider(s)", count());
     }
 

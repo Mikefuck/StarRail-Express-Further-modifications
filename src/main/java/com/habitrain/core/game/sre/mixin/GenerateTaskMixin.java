@@ -74,24 +74,7 @@ public abstract class GenerateTaskMixin {
 
     @Inject(method = "generateTaskInternal", at = @At("HEAD"), cancellable = true, remap = false)
     private void onGenerateTaskInternal(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
-        if (player instanceof ServerPlayer serverPlayer) {
-            try {
-                SlothComponent sloth = SlothComponent.KEY.get(serverPlayer);
-                if (sloth.hasForcedSleepTask()) {
-                    SREPlayerTaskComponent.TrainTask forced =
-                            createTaskInstance(SREPlayerTaskComponent.Task.SLEEP);
-                    if (forced != null) {
-                        sloth.consumeForcedSleepTask();
-                        LOGGER.info("[Sloth] forced next task to SLEEP for {}",
-                                serverPlayer.getGameProfile().getName());
-                        cir.setReturnValue(forced);
-                        return;
-                    }
-                }
-            } catch (Throwable t) {
-                LOGGER.warn("[Sloth] forced sleep task generation failed", t);
-            }
-        }
+        if (habitrain$forceSleep(cir)) return;
         LOGGER.debug("[HabiDebug] ===== genTask CALLED! tasks.size={}, timesGotten={} =====",
                 tasks.size(), timesGotten.size());
 
@@ -154,6 +137,24 @@ public abstract class GenerateTaskMixin {
         }
 
         cir.setReturnValue(selected);
+    }
+
+    // These public paths may bypass generateTaskInternal (e.g. the manic modifier).
+    @Inject(method = {"generateTask", "generateParallelTask"}, at = @At("HEAD"), cancellable = true)
+    private void habitrain$guardAllGeneration(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
+        habitrain$forceSleep(cir);
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private boolean habitrain$forceSleep(CallbackInfoReturnable<SREPlayerTaskComponent.TrainTask> cir) {
+        if (!(player instanceof ServerPlayer serverPlayer)
+                || !SlothComponent.KEY.get(serverPlayer).hasForcedSleepTask()) return false;
+        // Never replace an existing sleep task: that would reset the time already slept.
+        // SlothComponent replaces existing tasks immediately and maintains this lock until completion.
+        cir.setReturnValue(tasks.isEmpty()
+                ? new SREPlayerTaskComponent.SleepTask(io.wifi.starrailexpress.game.GameConstants.SLEEP_TASK_DURATION)
+                : null);
+        return true;
     }
 
     private void maybeWarnEmptyPool(FactionFilter.FactionContext ctx, String mapName, Set<String> disabledTasks) {

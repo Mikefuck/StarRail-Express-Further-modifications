@@ -29,6 +29,9 @@ public final class SevenSinEvents {
         if (registered) return;
         registered = true;
 
+        io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(SlothComponent::resetRound);
+        io.wifi.starrailexpress.event.OnGameEnd.EVENT.register((level, game) -> SlothComponent.resetRound(level));
+
         try {
             ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
                 if (SlothComponent.isSleepingSloth(sender)) {

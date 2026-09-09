@@ -16,7 +16,7 @@ public final class GreedPolicy {
     }
 
     public static int collectionTarget(int players) {
-        return Math.max(1, players / 2 + 1);
+        return Math.max(1, (int) Math.ceil(players / 3.0) - 1);
     }
 
     public static int doubledUnitPrice(int price, int bundleCount) {

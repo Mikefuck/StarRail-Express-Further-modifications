@@ -315,6 +315,7 @@ public final class C2SReceiverRegistrar {
                     if (sloth != null) {
                         com.habitrain.core.game.sre.role.sins.component.SlothComponent
                                 .tryInduceSleep(sloth, payload.targetId());
+                        sendSlothSleepRoster(sloth);
                     }
                 }));
         ServerPlayNetworking.registerGlobalReceiver(RoleActionC2SPayload.TYPE, (payload, context) ->

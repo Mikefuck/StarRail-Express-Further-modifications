@@ -36,6 +36,13 @@ public final class HabiRoleClientHooks {
         if (registered) return;
         registered = true;
         CommonInstinctEvents.ALIVE_COMMON_AFTER_EVENT.register(HabiRoleClientHooks::sinInstinctHighlight);
+        // WrathDoorAttackMixin lets this callback run past the adventure restriction.
+        net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+            if (world.isClientSide && WrathComponent.canPryDoorWithBat(player, pos)) {
+                return net.minecraft.world.InteractionResult.SUCCESS;
+            }
+            return net.minecraft.world.InteractionResult.PASS;
+        });
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {
             renderWrathHud(graphics);
             renderInducedSleepOverlay(graphics);

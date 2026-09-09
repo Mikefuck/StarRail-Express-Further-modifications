@@ -84,7 +84,9 @@ public class HabiTrainCore implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("哈比列车核心 (HabiTrain Core) 初始化中...");
+        LOGGER.info("哈比列车核心 (HabiTrain Core) {} 初始化中...",
+                net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer(MOD_ID)
+                        .orElseThrow().getMetadata().getVersion().getFriendlyString());
         // 1. 配置系统
         ConfigManager.getInstance().load();
         // Core is the single authoritative implementation of eat/drink in every SRE mode.

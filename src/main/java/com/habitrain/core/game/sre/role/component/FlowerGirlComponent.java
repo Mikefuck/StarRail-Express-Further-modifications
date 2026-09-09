@@ -47,7 +47,7 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     public static final int GOLD_REWARD = 50;
     /** 赠送花束技能冷却（成功赠送 / 目标已有花束 共用）。 */
     public static final int GIFT_CD_SECONDS = 30;
-    public static final int MELEE_IMMUNE_SECONDS = 10;
+    public static final int MELEE_IMMUNE_SECONDS = 5;
     public static final int PEPPER_SPRAY_CD_SECONDS = 30;
 
     private final Player player;

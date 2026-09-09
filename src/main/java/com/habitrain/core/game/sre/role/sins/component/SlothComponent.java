@@ -10,6 +10,10 @@ import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREArmorPlayerComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
+import io.wifi.starrailexpress.cca.SREPlayerMinigameTaskComponent;
+import io.wifi.starrailexpress.game.GameConstants;
+import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -29,13 +33,17 @@ import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.WeakHashMap;
 import java.util.UUID;
 
 /**
  * 懒惰·贝露菲格露重做版。
  *
  * <p>组件挂在所有玩家身上：普通玩家保存睡觉任务次数、下一任务强制标记与被沉睡状态；
- * 懒惰本人额外负责技能和三人沉睡后的上床胜利判定。</p>
+ * 懒惰本人额外负责技能和开局人数五分之一同时沉睡后的上床胜利判定。</p>
  */
 public final class SlothComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<SlothComponent> KEY =
@@ -44,12 +52,15 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     public static final double DROWSINESS_RADIUS = 5.0D;
     public static final int REQUIRED_SLEEP_TASKS = 2;
     public static final int REQUIRED_SIMULTANEOUS_SLEEPERS = 3;
+    // The player CCA is cleared on reconnect/role initialization. Eligibility belongs to the round.
+    private static final Map<ServerLevel, Set<UUID>> INDUCED_THIS_ROUND = new WeakHashMap<>();
 
     private final Player player;
 
     private boolean forceNextSleepTask;
     private int completedSleepTasks;
     private boolean inducedSleeping;
+    private boolean inducedThisRound;
     private UUID inducedBySloth;
     private boolean slothWinTriggered;
     private double sleepX;
@@ -68,11 +79,28 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         return player;
     }
 
+    @Override
+    public boolean shouldSyncWith(ServerPlayer recipient) {
+        // Attackers also need the sleep flag to raycast the same body as the server.
+        return recipient.level() == player.level();
+    }
+
+    @Override
+    public void writeToSyncNbtWithPlayer(CompoundTag tag, HolderLookup.Provider registries,
+                                       ServerPlayer recipient) {
+        if (recipient == player) {
+            writeToSyncNbt(tag, registries);
+        } else {
+            // Task progress and the identity of the Sloth remain private.
+            tag.putBoolean("InducedSleeping", inducedSleeping);
+        }
+    }
+
     public boolean hasForcedSleepTask() {
         return forceNextSleepTask;
     }
 
-    /** Consumes the one-shot task override only after a real SLEEP instance was created. */
+    /** Release the lock only on successful sleep completion, never on assignment. */
     public boolean consumeForcedSleepTask() {
         if (!forceNextSleepTask) {
             return false;
@@ -87,7 +115,17 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     }
 
     public boolean isEligibleSleepTarget() {
-        return completedSleepTasks >= REQUIRED_SLEEP_TASKS && !inducedSleeping;
+        return SlothSleepPolicy.canInduce(completedSleepTasks, inducedSleeping, wasInducedThisRound());
+    }
+
+    private boolean wasInducedThisRound() {
+        return inducedThisRound || player.level() instanceof ServerLevel level
+                && INDUCED_THIS_ROUND.getOrDefault(level, Set.of()).contains(player.getUUID());
+    }
+
+    public static void resetRound(ServerLevel level) {
+        INDUCED_THIS_ROUND.remove(level);
+        for (ServerPlayer participant : level.players()) KEY.get(participant).clear();
     }
 
     public boolean isInducedSleeping() {
@@ -119,7 +157,11 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
                     continue;
                 }
                 SlothComponent component = KEY.get(target);
+                if (component.inducedSleeping || component.forceNextSleepTask) {
+                    continue;
+                }
                 component.forceNextSleepTask = true;
+                component.enforceForcedSleepTask(target);
                 component.sync();
                 target.displayClientMessage(
                         Component.translatable("message.habitrain_core.sin_sloth.task_forced"), true);
@@ -140,6 +182,37 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         return true;
     }
 
+    /** Replace all current task channels without completing/rewarding the displaced tasks. */
+    private void enforceForcedSleepTask(ServerPlayer target) {
+        SREPlayerTaskComponent tasks = SREPlayerTaskComponent.KEY.get(target);
+        SREPlayerMinigameTaskComponent minigames = SREPlayerMinigameTaskComponent.KEY.get(target);
+        TaskManager manager = TaskManager.getInstance();
+        boolean alreadySleepingTask = tasks.tasks.size() == 1
+                && tasks.tasks.get(SREPlayerTaskComponent.Task.SLEEP) instanceof SREPlayerTaskComponent.SleepTask;
+        if (alreadySleepingTask && !tasks.parallelTaskGenerated
+                && minigames.pendingMinigameTasks == 0 && minigames.sabotageMinigameId == null
+                && manager.getActiveTask(target.getUUID()) == null
+                && manager.getFakeTask(target.getUUID()) == null) {
+            return;
+        }
+        var existingSleep = tasks.tasks.get(SREPlayerTaskComponent.Task.SLEEP);
+        target.closeContainer();
+        manager.cancelAllTrackedTasks(target);
+        org.agmas.noellesroles.scene.SceneTaskManager.clear(target);
+        tasks.tasks.clear();
+        tasks.tasks.put(SREPlayerTaskComponent.Task.SLEEP,
+                existingSleep instanceof SREPlayerTaskComponent.SleepTask ? existingSleep
+                        : new SREPlayerTaskComponent.SleepTask(GameConstants.SLEEP_TASK_DURATION));
+        tasks.currentTaskAge = 0;
+        tasks.parallelTaskGenerated = false;
+        tasks.parallelTaskTypes.clear();
+        tasks.sync();
+        minigames.pendingMinigameTasks = 0;
+        minigames.targetMinigameId = null;
+        minigames.sabotageMinigameId = null;
+        minigames.sync();
+    }
+
     /** Called once by the centralized finish-quest path for every player's completed task. */
     public static void onAnyTaskFinished(Player taskPlayer, String quest) {
         if (!(taskPlayer instanceof ServerPlayer serverPlayer) || !isSleepQuest(quest)
@@ -150,6 +223,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         }
         try {
             SlothComponent component = KEY.get(serverPlayer);
+            component.consumeForcedSleepTask();
             component.completedSleepTasks++;
             component.sync();
             if (component.completedSleepTasks == REQUIRED_SLEEP_TASKS) {
@@ -235,6 +309,8 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     }
 
     private void enterInducedSleep(ServerPlayer target, ServerPlayer sloth) {
+        inducedThisRound = true;
+        INDUCED_THIS_ROUND.computeIfAbsent(target.serverLevel(), ignored -> new HashSet<>()).add(target.getUUID());
         inducedSleeping = true;
         inducedBySloth = sloth.getUUID();
         target.closeContainer();
@@ -242,6 +318,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         captureSleepAnchor(target);
         SREArmorPlayerComponent.KEY.get(target).addArmor();
         ensureSleepingPose(target);
+        target.refreshDimensions();
         sleepX = target.getX();
         sleepY = target.getY();
         sleepZ = target.getZ();
@@ -349,6 +426,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         }
         forceNextSleepTask = false;
         completedSleepTasks = 0;
+        inducedThisRound = false;
         inducedSleeping = false;
         inducedBySloth = null;
         slothWinTriggered = false;
@@ -365,10 +443,14 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         }
 
         if (!isRoundRunning(level)) {
-            if (inducedSleeping || forceNextSleepTask || completedSleepTasks != 0 || slothWinTriggered) {
+            if (inducedSleeping || inducedThisRound || forceNextSleepTask || completedSleepTasks != 0 || slothWinTriggered) {
                 clear();
             }
             return;
+        }
+
+        if (forceNextSleepTask && GameUtils.isPlayerAliveAndSurvival(self)) {
+            enforceForcedSleepTask(self);
         }
 
         if (inducedSleeping) {
@@ -431,7 +513,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         }
         int sleepers = countInducedSleepers(level, self.getUUID());
         boolean lyingInRealBed = isLyingInRealBed(self, level);
-        if (!SlothWinPolicy.shouldDeclare(sleepers, lyingInRealBed,
+        if (!SlothWinPolicy.shouldDeclare(sleepers, GreedComponent.resolveStartPlayers(level), lyingInRealBed,
                 GameUtils.isPlayerAliveAndSurvival(self), slothWinTriggered)) {
             return;
         }
@@ -478,6 +560,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         tag.putBoolean("ForceNextSleepTask", forceNextSleepTask);
         tag.putInt("CompletedSleepTasks", completedSleepTasks);
         tag.putBoolean("InducedSleeping", inducedSleeping);
+        tag.putBoolean("InducedThisRound", wasInducedThisRound());
         if (inducedBySloth != null) {
             tag.putUUID("InducedBySloth", inducedBySloth);
         }
@@ -492,9 +575,11 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     @Override
     public void readFromSyncNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        boolean wasSleeping = inducedSleeping;
         forceNextSleepTask = tag.getBoolean("ForceNextSleepTask");
         completedSleepTasks = tag.getInt("CompletedSleepTasks");
         inducedSleeping = tag.getBoolean("InducedSleeping");
+        inducedThisRound = tag.getBoolean("InducedThisRound");
         inducedBySloth = tag.hasUUID("InducedBySloth") ? tag.getUUID("InducedBySloth") : null;
         slothWinTriggered = tag.getBoolean("SlothWinTriggered");
         sleepX = tag.getDouble("SleepX");
@@ -503,6 +588,8 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         sleepYaw = tag.getFloat("SleepYaw");
         sleepPitch = tag.getFloat("SleepPitch");
         sleepPos = tag.contains("SleepPos") ? BlockPos.of(tag.getLong("SleepPos")) : BlockPos.ZERO;
+        // Pose and CCA packets can arrive in either order; refresh after the flag changes too.
+        if (wasSleeping != inducedSleeping) player.refreshDimensions();
     }
 
     @Override

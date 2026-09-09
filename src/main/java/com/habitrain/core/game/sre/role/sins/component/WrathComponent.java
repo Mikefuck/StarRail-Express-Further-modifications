@@ -12,7 +12,6 @@ import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.content.block.SmallDoorBlock;
 import io.wifi.starrailexpress.content.block_entity.SmallDoorBlockEntity;
 import io.wifi.starrailexpress.game.GameUtils;
-import io.wifi.starrailexpress.index.TMMItems;
 import io.wifi.starrailexpress.index.TMMSounds;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -45,7 +44,7 @@ import java.util.UUID;
  * {@code max(1, 开局杀手数 - 1)} 阈值就立即触发一次原版狂暴。
  *
  * <p>每层愤怒提供一级速度与急迫，效果等级最高为 III。狂暴期间获得
- * 完全击退抗性，并可手持原版狂暴球棒左键直接撬开列车门。</p>
+ * 近战免疫与完全击退抗性，并可左键直接撬开列车门。</p>
  */
 public final class WrathComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<WrathComponent> KEY =
@@ -213,7 +212,9 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
 
     public InteractionResult tryPryDoorWithBat(ServerPlayer self, BlockPos clickedPos, InteractionHand hand) {
         if (self == null || clickedPos == null || hand == null) return InteractionResult.PASS;
-        if (!isPsychoActive(self) || !self.getItemInHand(hand).is(TMMItems.BAT)) {
+        if (hand != InteractionHand.MAIN_HAND || !canPryDoorWithBat(self, clickedPos)
+                || !self.canInteractWithBlock(clickedPos, 0.0D)
+                || !self.level().getWorldBorder().isWithinBounds(clickedPos)) {
             return InteractionResult.PASS;
         }
         if (!(self.level() instanceof ServerLevel level)) return InteractionResult.PASS;
@@ -246,7 +247,19 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         return InteractionResult.SUCCESS;
     }
 
-    private static boolean isPsychoActive(ServerPlayer self) {
+    public static boolean canPryDoorWithBat(Player self, BlockPos pos) {
+        return self != null && pos != null && isMeleeImmune(self)
+                && !SlothComponent.isSleepingSloth(self)
+                && self.getMainHandItem().is(io.wifi.starrailexpress.index.TMMItems.BAT)
+                && self.level().getBlockState(pos).getBlock() instanceof SmallDoorBlock;
+    }
+
+    public static boolean isMeleeImmune(Player self) {
+        return self != null && !self.isSpectator() && HabiRoles.isHabiRole(self, SevenSins.WRATH)
+                && SREGameWorldComponent.KEY.get(self.level()).isRunning() && isPsychoActive(self);
+    }
+
+    private static boolean isPsychoActive(Player self) {
         try {
             SREPlayerPsychoComponent psycho = SREPlayerPsychoComponent.KEY.get(self);
             return psycho != null && psycho.getPsychoTicks() > 0;

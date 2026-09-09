@@ -96,8 +96,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     }
 
     public boolean addStoredItem(ServerPlayer self, ItemStack actualItem, boolean announce) {
-        if (self == null || actualItem == null || actualItem.isEmpty() || collectionComplete
-                || GreedPouchItem.isGreedPouch(actualItem)) {
+        if (self == null || collectionComplete || !GreedPouchItem.canStore(actualItem)) {
             return false;
         }
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(actualItem.getItem());
@@ -156,7 +155,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     }
 
     /**
-     * Win when kinds exceed half the starting population.
+     * Win at ceil(starting population / 3) - 1 kinds, with at least one kind required.
      */
     public static int computeTarget(ServerLevel level) {
         int start = resolveStartPlayers(level);
@@ -175,7 +174,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         return share.coins();
     }
 
-    private static int resolveStartPlayers(ServerLevel level) {
+    static int resolveStartPlayers(ServerLevel level) {
         if (level == null) return 1;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
@@ -238,6 +237,10 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
      */
     public boolean tryAbsorbOtherHand(ServerPlayer self, ItemStack other) {
         if (self == null || other == null || other.isEmpty()) return false;
+        if (!GreedPouchItem.canStore(other)) {
+            self.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.forbidden_item"), true);
+            return true;
+        }
         if (GreedPouchItem.isGreedPouch(other)) return false;
         if (other.is(Items.AIR)) return false;
         if (collectionComplete) return false;
@@ -446,7 +449,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     }
 
     private static void addStoredById(Map<String, ItemStack> target, ItemStack stack) {
-        if (stack == null || stack.isEmpty() || GreedPouchItem.isGreedPouch(stack)) return;
+        if (!GreedPouchItem.canStore(stack)) return;
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (id != null) target.putIfAbsent(id.toString(), stack.copyWithCount(1));
     }
@@ -521,7 +524,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
     private void rebuildCollectedTypes() {
         collectedTypeIds.clear();
         for (ItemStack stack : storedItems) {
-            if (stack == null || stack.isEmpty()) continue;
+            if (!GreedPouchItem.canStore(stack)) continue;
             ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
             if (id != null) collectedTypeIds.add(id.toString());
         }

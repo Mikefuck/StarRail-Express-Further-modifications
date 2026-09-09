@@ -17,7 +17,7 @@ import java.util.Objects;
  * 移动场景系统根配置（保存在 config/habitrain_core.json 的 sceneMotion 节点）。
  */
 public final class SceneMotionSettings {
-    public static final int CURRENT_SCHEMA_VERSION = 3;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
     public static final String DEFAULT_MAP_KEY = "__default__";
     public static final int MAX_BACKGROUNDS_PER_MAP = 5;
 

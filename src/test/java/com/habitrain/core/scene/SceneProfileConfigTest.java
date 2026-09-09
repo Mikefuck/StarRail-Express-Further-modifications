@@ -190,7 +190,7 @@ public class SceneProfileConfigTest {
                 new SceneBackgroundConfig("窗外群山", mountains)));
 
         SceneMotionSettings loaded = SceneMotionSettings.fromJson(settings.toJson());
-        assertEquals(3, loaded.schemaVersion);
+        assertEquals(SceneMotionSettings.CURRENT_SCHEMA_VERSION, loaded.schemaVersion);
         assertEquals(2, loaded.getResolvedBackgrounds("map_a").size());
         assertEquals("窗外群山", loaded.getBackgroundName("map_a", "mountains"));
         assertEquals(12.0, loaded.getBackgroundProfile("map_a", "mountains")
@@ -220,7 +220,7 @@ public class SceneProfileConfigTest {
                   "distanceMode":"CUSTOM","distanceBlocks":80.0,"copies":2}}}}
                 """).getAsJsonObject();
         SceneMotionSettings loaded = SceneMotionSettings.fromJson(schemaTwo);
-        assertEquals(3, loaded.schemaVersion);
+        assertEquals(SceneMotionSettings.CURRENT_SCHEMA_VERSION, loaded.schemaVersion);
         assertTrue(loaded.backgrounds.isEmpty());
         assertEquals(23.0, loaded.getProfile("map_a").getSpeedBlocksPerSecond(), 0.001);
     }

@@ -10,12 +10,19 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Keep the upstream armour, global count and stop lifecycle, replacing only Swift Wind's weapon and duration. */
 @Mixin(value = SREPlayerPsychoComponent.class, remap = false)
 public abstract class SwiftWindPsychoMixin {
+    @ModifyVariable(method = "startPsycho_time", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private int habitrain$thirtySecondFrenzy(int time) {
+        Player player = ((SREPlayerPsychoComponent) (Object) this).getPlayer();
+        return HabiRoles.isHabiRole(player, HabiRoles.SWIFT_WIND) ? 30 * 20 : time;
+    }
+
     @Redirect(method = "startPsycho_time", at = @At(value = "INVOKE",
             target = "Lio/wifi/starrailexpress/api/SRERole;onPsychoGiveItem(Lnet/minecraft/world/entity/player/Player;Lio/wifi/starrailexpress/cca/SREPlayerPsychoComponent;)Z"))
     private boolean habitrain$giveKnives(SRERole role, Player player, SREPlayerPsychoComponent psycho) {
@@ -41,9 +48,13 @@ public abstract class SwiftWindPsychoMixin {
         if (psycho.getPsychoTicks() <= 0 || !HabiRoles.isHabiRole(player, HabiRoles.SWIFT_WIND)) return;
         if (!SwiftWindComponent.hasPsychoKnife(player)) {
             psycho.stopPsychoAndSync();
-        } else if (psycho.psychoTicks <= 2) {
-            // The upstream tick still handles death/game end, but cannot expire while knives remain.
-            psycho.psychoTicks = 2;
         }
+    }
+
+    @Inject(method = "stopPsycho", at = @At("HEAD"))
+    private void habitrain$clearFrenzyKnives(CallbackInfoReturnable<Integer> cir) {
+        Player player = ((SREPlayerPsychoComponent) (Object) this).getPlayer();
+        // The role may already have changed when the upstream stop lifecycle runs.
+        SwiftWindComponent.clearPsychoKnives(player);
     }
 }

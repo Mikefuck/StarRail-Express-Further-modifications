@@ -38,7 +38,7 @@ public final class GreedPouchItem {
         ItemStack stack = new ItemStack(Items.BUNDLE, 1);
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("贪婪收纳袋"));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("绑定：不可丢弃；种类数超过开局人数一半获胜"),
+                Component.literal("绑定：不可丢弃；种类数达到开局人数的三分之一减一获胜（向上取整，至少1种）"),
                 Component.literal("把偷来的物品放进袋内即计入种类"),
                 Component.literal("也可：主/副手持袋，另一手持物右键吸收")
         )));
@@ -63,6 +63,22 @@ public final class GreedPouchItem {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         if (data != null && data.copyTag().getBoolean(TAG_GREED_POUCH)) return true;
         return false;
+    }
+
+    /** Shared by hand absorption, vanilla bundle clicks and collection accounting. */
+    public static boolean canStore(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty() || isGreedPouch(stack)) return false;
+        var item = stack.getItem();
+        if (item instanceof io.wifi.starrailexpress.content.item.KeyItem
+                || item instanceof io.wifi.starrailexpress.content.item.NoteItem
+                || stack.is(Items.PAPER)) return false;
+        String path = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).getPath();
+        // Also cover the Wathe bridge's plain Item letter/key registrations.
+        if (path.equals("key") || path.endsWith("_key") || path.equals("letter")
+                || path.equals("note")) return false;
+        return !stack.has(DataComponents.FOOD)
+                && stack.getUseAnimation() != net.minecraft.world.item.UseAnim.EAT
+                && stack.getUseAnimation() != net.minecraft.world.item.UseAnim.DRINK;
     }
 
     public static @Nullable UUID getOwnerUuid(@Nullable ItemStack stack) {

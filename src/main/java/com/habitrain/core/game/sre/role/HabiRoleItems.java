@@ -43,7 +43,7 @@ public final class HabiRoleItems {
         ItemStack stack = new ItemStack(Items.HONEY_BOTTLE, 1);
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("防狼喷雾"));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("使用后 10 秒内免疫近战击杀"),
+                Component.literal("使用后 5 秒内免疫近战击杀"),
                 Component.literal("冷却 30 秒")
         )));
         putFlag(stack, TAG_PEPPER_SPRAY, true);

@@ -413,8 +413,9 @@ public class NetworkReceiverRegistrar {
                             } catch (Throwable ignored) {
                                 return;
                             }
-                            ctx.client().setScreen(
-                                    new com.habitrain.core.client.gui.SlothSleepSelectScreen(payload.entries()));
+                            if (ctx.client().screen instanceof com.habitrain.core.client.gui.SlothSleepRosterView view) {
+                                view.habitrain$setSleepTargets(payload.entries());
+                            }
                         }));
 
         // 18) 对局结束转场 — STOPPING 时先发静态遮挡，赛后环境应用完成后再发动画阶段。

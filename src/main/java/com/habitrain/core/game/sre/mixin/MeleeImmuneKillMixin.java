@@ -31,6 +31,12 @@ public class MeleeImmuneKillMixin {
         if (victim == null || forceDeath) return;
         if (deathReason == null) return;
 
+        if (com.habitrain.core.game.sre.role.sins.component.WrathComponent.isMeleeImmune(victim)
+                && SinDeathReasons.isMeleeWeapon(deathReason)) {
+            ci.cancel();
+            return;
+        }
+
         // Pride aura conventional-weapon immunity (non-force).
         if (PrideComponent.isPrideWeaponImmune(victim)
                 && !SinDeathReasons.isForcePath(deathReason)

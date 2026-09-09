@@ -41,6 +41,16 @@ public final class SinDeathReasons {
             ResourceLocation.fromNamespaceAndPath("habitrain_core", "wrath_exhaustion")
     );
 
+    private static final Set<ResourceLocation> MELEE = immutableNonNullSet(
+            GameConstants.DeathReasons.KNIFE, GameConstants.DeathReasons.BAT,
+            GameConstants.DeathReasons.NUNCHUCK, GameConstants.DeathReasons.PUPPETEER_KNIFE,
+            GameConstants.DeathReasons.BATON_KILL, GameConstants.DeathReasons.FIRE_AXE,
+            GameConstants.DeathReasons.NINJA_KNIFE_KILL, GameConstants.DeathReasons.GENERAL_ATTACK);
+
+    public static boolean isMeleeWeapon(ResourceLocation reason) {
+        return reason != null && MELEE.contains(reason);
+    }
+
     private static final Set<ResourceLocation> REGISTERED_POISON =
             ConcurrentHashMap.newKeySet();
 

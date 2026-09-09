@@ -52,6 +52,8 @@ public final class RoleExtensionRegistry {
     // Not final so unit tests can seed the managed/compiled sets via reflection
     // (mirroring how tests seed RoleOverrideEngine.snapshot).
     private Map<ResourceLocation, SRERole> managedRoles = new LinkedHashMap<>();
+    // Factory-created roles need their declarations too: they are not ManagedSRERole instances.
+    private final Map<ResourceLocation, RoleDefinition> addedDefinitions = new LinkedHashMap<>();
     private Map<ResourceLocation, ManagedSRERole> compiledReplacements = new LinkedHashMap<>();
 
     /**
@@ -147,6 +149,7 @@ public final class RoleExtensionRegistry {
         SRERole role = ManagedSRERole.compile(def);
         // Record before TMMRoles so the legacy-scan mixin skips this ADD.
         managedRoles.put(id, role);
+        addedDefinitions.put(id, def);
         TMMRoles.registerRole(role);
         tmmAccessible = true;
         LOGGER.info("Registered ADD role {}", id);
@@ -160,7 +163,7 @@ public final class RoleExtensionRegistry {
      * The same instance is stored and registered so object identity
      * ({@code HabiRoles.X == TMMRoles.getRole(id)}) is preserved.
      */
-    synchronized SRERole registerAdd(SRERole role) {
+    synchronized SRERole registerAdd(SRERole role, RoleDefinition definition) {
         ResourceLocation id = role.identifier();
         if (frozen) {
             throw new IllegalStateException("Role extension registry is frozen");
@@ -169,6 +172,7 @@ public final class RoleExtensionRegistry {
             throw new IllegalArgumentException("ADD role already registered: " + id);
         }
         managedRoles.put(id, role);
+        addedDefinitions.put(id, definition);
         TMMRoles.registerRole(role);
         tmmAccessible = true;
         LOGGER.info("Registered ADD role {}", id);
@@ -198,6 +202,7 @@ public final class RoleExtensionRegistry {
         boolean capture = captureTmm || tmmAccessible;
         return new RegistrationSnapshot(
                 new LinkedHashMap<>(managedRoles),
+                new LinkedHashMap<>(addedDefinitions),
                 new LinkedHashMap<>(compiledReplacements),
                 new ArrayList<>(patches),
                 new ArrayList<>(replacements),
@@ -238,6 +243,8 @@ public final class RoleExtensionRegistry {
             TMMRoles.COMPONENT_KEYS.addAll(snapshot.componentKeys());
         }
         this.managedRoles = new LinkedHashMap<>(snapshot.managedRoles());
+        this.addedDefinitions.clear();
+        this.addedDefinitions.putAll(snapshot.addedDefinitions());
         this.compiledReplacements = new LinkedHashMap<>(snapshot.compiledReplacements());
         this.patches.clear();
         this.patches.addAll(snapshot.patches());
@@ -639,12 +646,15 @@ public final class RoleExtensionRegistry {
      * {@link io.wifi.starrailexpress.api.RoleSkill.Definition}. Skipped in unit
      * tests that never touched {@code TMMRoles}.
      */
-    private void registerDeclaredSkills() {
+    void registerDeclaredSkills() {
         if (!tmmAccessible) {
             return;
         }
         for (SRERole managed : managedRoles.values()) {
-            if (managed instanceof ManagedSRERole mm) {
+            RoleDefinition definition = addedDefinitions.get(managed.identifier());
+            if (definition != null) {
+                registerSkills(managed.identifier(), definition.skills());
+            } else if (managed instanceof ManagedSRERole mm) {
                 registerSkills(managed.identifier(), mm.skills());
             }
         }
@@ -1324,6 +1334,7 @@ public final class RoleExtensionRegistry {
 
     record RegistrationSnapshot(
             Map<ResourceLocation, SRERole> managedRoles,
+            Map<ResourceLocation, RoleDefinition> addedDefinitions,
             Map<ResourceLocation, ManagedSRERole> compiledReplacements,
             List<ManagedPatch> patches,
             List<ManagedReplacement> replacements,

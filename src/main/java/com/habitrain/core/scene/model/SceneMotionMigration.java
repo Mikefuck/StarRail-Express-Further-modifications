@@ -10,17 +10,18 @@ public final class SceneMotionMigration {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneMotionMigration.class);
     public static final int LOOP_DISTANCE_MODE_SCHEMA = 2;
     public static final int MULTI_BACKGROUND_SCHEMA = 3;
+    public static final int OPT_IN_SOUND_SCHEMA = 4;
 
     private SceneMotionMigration() {}
 
     /**
-     * Migrates schema 1 to schema 2 on a deep copy. Every historical profile becomes CUSTOM so
-     * its previously stored distance keeps producing the same scene spacing.
+     * Migrates on a deep copy: preserves legacy spacing, adds named backgrounds, and removes
+     * the automatic default train loop from profiles without enabled backgrounds.
      */
     public static JsonObject migrateToCurrent(JsonObject source) {
         JsonObject migrated = source == null ? new JsonObject() : source.deepCopy();
         int sourceVersion = readSchemaVersion(migrated);
-        if (sourceVersion >= MULTI_BACKGROUND_SCHEMA) return migrated;
+        if (sourceVersion >= OPT_IN_SOUND_SCHEMA) return migrated;
 
         JsonObject profiles = migrated.has("profiles") && migrated.get("profiles").isJsonObject()
                 ? migrated.getAsJsonObject("profiles") : null;
@@ -36,10 +37,42 @@ public final class SceneMotionMigration {
         if (!migrated.has("backgrounds") || !migrated.get("backgrounds").isJsonObject()) {
             migrated.add("backgrounds", new JsonObject());
         }
-        migrated.addProperty("schemaVersion", MULTI_BACKGROUND_SCHEMA);
+        if (profiles != null) {
+            for (var entry : profiles.entrySet()) {
+                if (!entry.getValue().isJsonObject()) continue;
+                JsonObject profile = entry.getValue().getAsJsonObject();
+                if (profile.has("enabled") && profile.get("enabled").getAsBoolean()) continue;
+                JsonObject backgrounds = migrated.getAsJsonObject("backgrounds");
+                JsonObject mapBackgrounds = backgrounds.has(entry.getKey())
+                        && backgrounds.get(entry.getKey()).isJsonObject()
+                        ? backgrounds.getAsJsonObject(entry.getKey()) : null;
+                boolean activeBackground = mapBackgrounds != null && mapBackgrounds.entrySet().stream()
+                        .anyMatch(background -> background.getValue().isJsonObject()
+                                && hasEnabledBackground(background.getValue().getAsJsonObject()));
+                if (activeBackground) continue;
+                SceneSoundSettings sound = profile.has("outsideSound")
+                        && profile.get("outsideSound").isJsonObject()
+                        ? SceneSoundSettings.fromJson(profile.getAsJsonObject("outsideSound"))
+                        : SceneSoundSettings.createDefault();
+                // Repair the old automatically generated train loop, preserving custom sound settings.
+                if (sound.getSoundId().equals(SceneSoundSettings.DEFAULT_SOUND_ID)
+                        && sound.volume() == SceneSoundSettings.DEFAULT_VOLUME
+                        && sound.pitch() == SceneSoundSettings.DEFAULT_PITCH
+                        && sound.getFadeTicks() == SceneSoundSettings.DEFAULT_FADE_TICKS) {
+                    profile.add("outsideSound", SceneSoundSettings.createDefault().toJson());
+                }
+            }
+        }
+        migrated.addProperty("schemaVersion", OPT_IN_SOUND_SCHEMA);
         LOGGER.info("移动场景配置迁移完成: sceneMotion.schemaVersion {} -> {}",
-                sourceVersion, MULTI_BACKGROUND_SCHEMA);
+                sourceVersion, OPT_IN_SOUND_SCHEMA);
         return migrated;
+    }
+
+    private static boolean hasEnabledBackground(JsonObject background) {
+        JsonObject profile = background.has("profile") && background.get("profile").isJsonObject()
+                ? background.getAsJsonObject("profile") : background;
+        return profile.has("enabled") && profile.get("enabled").getAsBoolean();
     }
 
     private static int readSchemaVersion(JsonObject root) {

@@ -8,21 +8,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SlothWinPolicyTest {
 
     @Test
-    void exactlyThreeSleepersAndRealBedAreReady() {
-        assertTrue(SlothWinPolicy.shouldDeclare(3, true, true, false));
-        assertTrue(SlothWinPolicy.shouldDeclare(4, true, true, false));
+    void populationThresholdRoundsUpAndRequiresAtLeastOneSleeper() {
+        assertTrue(SlothWinPolicy.shouldDeclare(2, 10, true, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(2, 11, true, true, false));
+        assertTrue(SlothWinPolicy.shouldDeclare(3, 11, true, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(3, 16, true, true, false));
+        assertTrue(SlothWinPolicy.shouldDeclare(4, 16, true, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(0, 0, true, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(0, 1, true, true, false));
     }
 
     @Test
-    void fewerThanThreeSleepersCannotWin() {
-        assertFalse(SlothWinPolicy.shouldDeclare(0, true, true, false));
-        assertFalse(SlothWinPolicy.shouldDeclare(2, true, true, false));
+    void oneFifthOfFifteenPlayersAndRealBedAreReady() {
+        assertTrue(SlothWinPolicy.shouldDeclare(3, 15, true, true, false));
+        assertTrue(SlothWinPolicy.shouldDeclare(4, 15, true, true, false));
+    }
+
+    @Test
+    void fewerThanOneFifthCannotWin() {
+        assertFalse(SlothWinPolicy.shouldDeclare(0, 15, true, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(2, 15, true, true, false));
     }
 
     @Test
     void requiresLivingSlothRealBedAndOneShotGate() {
-        assertFalse(SlothWinPolicy.shouldDeclare(3, false, true, false));
-        assertFalse(SlothWinPolicy.shouldDeclare(3, true, false, false));
-        assertFalse(SlothWinPolicy.shouldDeclare(3, true, true, true));
+        assertFalse(SlothWinPolicy.shouldDeclare(3, 15, false, true, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(3, 15, true, false, false));
+        assertFalse(SlothWinPolicy.shouldDeclare(3, 15, true, true, true));
     }
 }

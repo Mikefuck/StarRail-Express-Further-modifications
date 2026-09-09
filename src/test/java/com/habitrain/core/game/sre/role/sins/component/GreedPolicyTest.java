@@ -5,10 +5,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GreedPolicyTest {
     @Test
-    void collectionStrictlyExceedsHalfForEvenAndOddPopulations() {
-        assertEquals(7, GreedPolicy.collectionTarget(12));
-        assertEquals(7, GreedPolicy.collectionTarget(13));
-        assertEquals(8, GreedPolicy.collectionTarget(14));
+    void collectionRequiresRoundedUpThirdMinusOneWithMinimumOne() {
+        assertEquals(3, GreedPolicy.collectionTarget(12));
+        assertEquals(4, GreedPolicy.collectionTarget(13));
+        assertEquals(4, GreedPolicy.collectionTarget(14));
+        assertEquals(4, GreedPolicy.collectionTarget(15));
+        assertEquals(5, GreedPolicy.collectionTarget(16));
+        assertEquals(1, GreedPolicy.collectionTarget(0));
+        assertEquals(1, GreedPolicy.collectionTarget(3));
         assertEquals(1, GreedPolicy.collectionTarget(1));
     }
 
