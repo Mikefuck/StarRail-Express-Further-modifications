@@ -18,9 +18,6 @@ public final class EnvyComponent implements RoleComponent {
     public static final ComponentKey<EnvyComponent> KEY =
             ComponentRegistry.getOrCreate(HabiTrainCore.id("sin_envy"), EnvyComponent.class);
 
-    /** Every confirmed Envy kill grants this many bonus coins. */
-    public static final int KILL_BONUS_COINS = 100;
-
     private final Player player;
 
     public EnvyComponent(Player player) {

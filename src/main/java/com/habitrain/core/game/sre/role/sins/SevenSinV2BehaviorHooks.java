@@ -19,7 +19,6 @@ import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -420,19 +419,6 @@ public final class SevenSinV2BehaviorHooks {
                     Component.translatable("message.habitrain_core.sin_envy.no_item"), true);
         }
 
-        try {
-            SREPlayerShopComponent eShop = SREPlayerShopComponent.KEY.get(envy);
-            if (eShop != null) {
-                eShop.addToBalance(EnvyComponent.KILL_BONUS_COINS);
-            }
-            envy.displayClientMessage(
-                    Component.translatable("message.habitrain_core.sin_envy.coin_gain",
-                            EnvyComponent.KILL_BONUS_COINS),
-                    true
-            );
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Envy] guaranteed coin grant failed", t);
-        }
     }
 
     private enum SlotKind { MAIN, OFF, ARMOR }

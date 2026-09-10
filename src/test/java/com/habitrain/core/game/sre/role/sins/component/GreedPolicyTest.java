@@ -28,16 +28,16 @@ class GreedPolicyTest {
             }
             assertEquals(GreedPolicy.incomeShare(101, innocent, 0),
                     new GreedPolicy.IncomeShare(total, remainder));
-            assertEquals(innocent ? 50 : 25, total);
+            assertEquals(20, total);
         }
     }
 
     @Test
     void factionChangePreservesFractionalIncomeAndLargeRewardsDoNotOverflow() {
         var neutral = GreedPolicy.incomeShare(3, false, 0);
-        var civilian = GreedPolicy.incomeShare(1, true, neutral.remainder());
+        var civilian = GreedPolicy.incomeShare(3, true, neutral.remainder());
         assertEquals(new GreedPolicy.IncomeShare(1, 1), civilian);
-        assertEquals(1073741823, GreedPolicy.incomeShare(Integer.MAX_VALUE, true, 0).coins());
+        assertEquals(429496729, GreedPolicy.incomeShare(Integer.MAX_VALUE, true, 0).coins());
     }
 
     @Test

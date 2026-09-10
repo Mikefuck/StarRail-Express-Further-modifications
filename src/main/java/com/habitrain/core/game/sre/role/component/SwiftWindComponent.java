@@ -7,6 +7,7 @@ import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREAbilityPlayerComponent;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -36,6 +37,7 @@ public final class SwiftWindComponent implements RoleComponent {
 
     public static final int DASH_BLOCKS = 6;
     public static final int THROWING_KNIFE_CD_SECONDS = 60;
+    public static final int PSYCHO_THROWING_KNIFE_CD_TICKS = 5 * 20;
     public static final int STARTING_BALANCE = 100;
     private static final String PSYCHO_KNIFE_TAG = "habitrain_swift_wind_psycho_knife";
     /** 对齐 SmokeGrenadeEntity 烟雾参数。 */
@@ -63,7 +65,7 @@ public final class SwiftWindComponent implements RoleComponent {
     public static boolean givePsychoKnives(Player player) {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (knife.isEmpty() || player.level().isClientSide) return false;
-        HabiRoleItems.putFlag(knife, PSYCHO_KNIFE_TAG, true);
+        markPsychoKnife(knife);
         ItemStack[] planned = new ItemStack[9];
         int remaining = 5;
         for (int slot = 0; slot < planned.length; slot++) {
@@ -92,6 +94,12 @@ public final class SwiftWindComponent implements RoleComponent {
         return true;
     }
 
+    private static void markPsychoKnife(ItemStack knife) {
+        HabiRoleItems.putFlag(knife, PSYCHO_KNIFE_TAG, true);
+        // Only frenzy grants stack; use the same components for kill refunds so they merge.
+        knife.set(DataComponents.MAX_STACK_SIZE, 64);
+    }
+
     public static boolean hasPsychoKnife(Player player) {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (knife.isEmpty()) return false;
@@ -104,6 +112,11 @@ public final class SwiftWindComponent implements RoleComponent {
     public static void refreshPsychoKnifeCooldown(Player player) {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (!knife.isEmpty()) player.getCooldowns().removeCooldown(knife.getItem());
+    }
+
+    public static boolean isPsychoActive(Player player) {
+        return HabiRoles.isHabiRole(player, HabiRoles.SWIFT_WIND)
+                && io.wifi.starrailexpress.cca.SREPlayerPsychoComponent.KEY.get(player).getPsychoTicks() > 0;
     }
 
     public static void clearPsychoKnives(Player player) {
@@ -128,13 +141,17 @@ public final class SwiftWindComponent implements RoleComponent {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (!knife.isEmpty()) {
             if (io.wifi.starrailexpress.cca.SREPlayerPsychoComponent.KEY.get(self).getPsychoTicks() > 0) {
-                HabiRoleItems.putFlag(knife, PSYCHO_KNIFE_TAG, true);
+                markPsychoKnife(knife);
             }
             if (!self.getInventory().add(knife.copy())) {
                 self.drop(knife.copy(), false);
             }
             Item item = knife.getItem();
-            self.getCooldowns().addCooldown(item, THROWING_KNIFE_CD_SECONDS * 20);
+            if (isPsychoActive(self)) {
+                self.getCooldowns().removeCooldown(item);
+            } else {
+                self.getCooldowns().addCooldown(item, THROWING_KNIFE_CD_SECONDS * 20);
+            }
         }
         // 累计 2 杀刷新逐风
         if (knifeKills >= 2 || killCount >= 2) {

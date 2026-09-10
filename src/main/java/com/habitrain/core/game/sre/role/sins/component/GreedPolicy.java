@@ -6,8 +6,9 @@ public final class GreedPolicy {
     public record IncomeShare(int coins, int remainder) {}
 
     public static IncomeShare incomeShare(int amount, boolean innocent, int remainder) {
-        long quarters = (long) amount * (innocent ? 2 : 1) + remainder;
-        return new IncomeShare((int) (quarters / 4), (int) (quarters % 4));
+        // Keep the faction parameter for compatibility; every faction now pays 20%.
+        long fifths = (long) amount + remainder;
+        return new IncomeShare((int) (fifths / 5), (int) (fifths % 5));
     }
 
     public static int estateShare(int coins, int survivors, int index) {

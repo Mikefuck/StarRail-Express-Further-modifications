@@ -37,6 +37,7 @@
         "MimeKnifeSoundMixin",
         "SwiftWindPsychoMixin",
         "SwiftWindThrowCooldownMixin",
+        "SwiftWindThrowingKnifeHitMixin",
         "WrathNoisemakerKnockbackMixin",
         "PlayerBodyEntityTickMixin",
         "HumilityTaskCompleteMixin",
