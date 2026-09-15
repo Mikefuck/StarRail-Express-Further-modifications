@@ -50,13 +50,11 @@ class ConfigSyncReloadTest {
                   }
                 }
                 """);
-        assertEquals(250, repo.getTempPowerPrice());
         assertTrue(repo.isKnifeDurabilityEnabled());
         assertEquals(75, repo.getBlackoutGlobalCooldownSeconds());
         assertFalse(repo.getTaskConfig("habitrain_core:pet_cat").enabled);
 
         sync.loadFromJsonString(repo, diskSnapshot);
-        assertEquals(100, repo.getTempPowerPrice());
         assertFalse(repo.isKnifeDurabilityEnabled());
         assertEquals(45, repo.getBlackoutGlobalCooldownSeconds());
         assertTrue(repo.getTaskConfig("habitrain_core:pet_cat").enabled);

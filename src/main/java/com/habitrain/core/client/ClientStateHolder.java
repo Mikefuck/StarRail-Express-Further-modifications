@@ -5,8 +5,7 @@ import java.lang.reflect.Method;
 /**
  * 客户端光影包监测相关静态可变状态持有者。
  * <p>
- * 与 {@link com.habitrain.core.client.gui.ClientBlackoutState} 互补，
- * 后者管理停电模式相关状态。本类仅持有包级可访问的 static 字段，
+ * 本类仅持有包级可访问的 static 字段，
  * 供同一包内的 {@link ShaderMonitor} 读写。
  */
 public final class ClientStateHolder {

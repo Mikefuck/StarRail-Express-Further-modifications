@@ -5,7 +5,7 @@ import com.habitrain.core.api.TaskDefinition;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CoreConsumableTasksTest {
@@ -23,9 +23,7 @@ class CoreConsumableTasksTest {
         assertEquals(CoreConsumableTasks.DRINK_BLOCK_TYPE_ID, drink.getBlockTypeId());
         assertTrue(eat.canRepeat());
         assertTrue(drink.canRepeat());
-        assertNotNull(eat.getTimeImpact());
-        assertNotNull(drink.getTimeImpact());
-        assertEquals(10, eat.getTimeImpact().deltaSeconds());
-        assertEquals(10, drink.getTimeImpact().deltaSeconds());
+        assertNull(eat.getTimeImpact());
+        assertNull(drink.getTimeImpact());
     }
 }

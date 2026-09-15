@@ -77,6 +77,7 @@ public class ConfigStore {
 
         try {
             JsonObject root = loaded.value();
+            dirty |= RemovedModeConfigMigration.prune(root);
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
@@ -110,11 +111,6 @@ public class ConfigStore {
                 if (global.has("sheriffCountDivisor")) {
                     int div = global.get("sheriffCountDivisor").getAsInt();
                     if (div > 0) repo.setSheriffCountDivisor(div);
-                }
-
-                if (global.has("tempPowerPrice")) {
-                    int price = global.get("tempPowerPrice").getAsInt();
-                    if (price >= 0) repo.setTempPowerPrice(price);
                 }
 
                 if (global.has("knifeDurabilityEnabled")) {
@@ -229,7 +225,6 @@ public class ConfigStore {
             quarantineCorruptConfig();
             // 恢复流程必须重置与 load() 开头相同的完整默认值序列：JSON 在 global
             // 段中途抛错时，此前已 set 的项（如 knifeDurabilityEnabled /
-            // sheriffCountDivisor / tempPowerPrice）会残留半解析值并被写入
             // "默认"配置（review M19）。
             applyDefaults(repo);
             createDefaultConfig(repo);
@@ -246,7 +241,6 @@ public class ConfigStore {
         repo.setShaderWhitelistEnabled(false);
         repo.setShaderWhitelist(List.of());
         repo.setSheriffCountDivisor(6);
-        repo.setTempPowerPrice(100);
         repo.setMinigameGlobalEnabled(true);
         repo.setKnifeDurabilityEnabled(false);
         repo.setLobbyVoiceGroupEnabled(true);
@@ -309,7 +303,6 @@ public class ConfigStore {
         for (String name : repo.getShaderWhitelist()) whitelistArray.add(name);
         global.add("shaderWhitelist", whitelistArray);
         global.addProperty("sheriffCountDivisor", repo.getSheriffCountDivisor());
-        global.addProperty("tempPowerPrice", repo.getTempPowerPrice());
         global.addProperty("knifeDurabilityEnabled", repo.isKnifeDurabilityEnabled());
         global.addProperty("lobbyVoiceGroupEnabled", repo.isLobbyVoiceGroupEnabled());
         global.addProperty("blackoutGlobalCooldownSeconds", repo.getBlackoutGlobalCooldownSeconds());
@@ -358,6 +351,7 @@ public class ConfigStore {
 
         root.add("sceneMotion", repo.getSceneMotion().toJson());
 
+        RemovedModeConfigMigration.prune(root);
         return root;
     }
 
@@ -418,5 +412,4 @@ public class ConfigStore {
         }
         return boost;
     }
-
 }

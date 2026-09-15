@@ -2,8 +2,6 @@ package com.habitrain.core.game.sre;
 
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
-import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -82,20 +80,8 @@ public final class ActiveModeForPlayer {
         return count == 1 ? Optional.of(only) : Optional.empty();
     }
 
-    static boolean belongsToBlackoutRound(boolean alive, boolean hasRoleHistory) {
-        return alive || hasRoleHistory;
-    }
-
     private static boolean playerInRound(GameMode mode, ServerLevel level, UUID playerId) {
-        if (mode instanceof BlackoutMode) {
-            try {
-                boolean alive = BlackoutRoleManager.isAlive(level, playerId);
-                boolean history = BlackoutRoleManager.getRoleHistoryEntry(level, playerId) != null;
-                return belongsToBlackoutRound(alive, history);
-            } catch (Throwable t) {
-                return false;
-            }
-        }
+
         try {
             SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
             return gw != null && gw.getRole(playerId) != null;

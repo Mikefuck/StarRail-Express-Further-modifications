@@ -2,10 +2,6 @@ package com.habitrain.core;
 
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MenuGateService;
-import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
-import com.habitrain.core.network.BlackoutPhoneOpenPayload;
-import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.network.*;
 import com.habitrain.core.util.SubtitleNotifier;
 import com.habitrain.core.vote.OptionVoteManager;
@@ -222,81 +218,9 @@ public final class C2SReceiverRegistrar {
                 }
             });
         });
-        // C2S 电话聘请警察接收器
-        ServerPlayNetworking.registerGlobalReceiver(BlackoutHirePolicePayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                ServerLevel level = player.serverLevel();
-                if (level == null) return;
 
-                Component error = BlackoutPoliceHireService.tryHire(level, player);
 
-                // 发送聘请结果回执，客户端据此更新 statusText
-                if (error != null) {
-                    ServerPlayNetworking.send(player, new BlackoutHireResultPayload(false, error.getString()));
-                    SubtitleNotifier.sendTop(
-                            player, Component.empty(), error, 60);
-                } else {
-                    ServerPlayNetworking.send(player, new BlackoutHireResultPayload(true, ""));
-                    SubtitleNotifier.sendTop(
-                            player, Component.empty(), Component.literal("§a已成功聘请警察！"), 60);
-                }
 
-                // 同时刷新电话状态（更新余额、已聘请状态等）
-                boolean unlocked = BlackoutPoliceHireService.isPhoneUnlocked(level);
-                int remainingLock = BlackoutPoliceHireService.getRemainingLockSeconds(level);
-                int balance = 0;
-                try {
-                    var shop = io.wifi.starrailexpress.cca.SREPlayerShopComponent.KEY.get(player);
-                    if (shop != null) balance = shop.balance;
-                } catch (Exception e) {
-                    LOGGER.warn("读取玩家 {} 的商店余额时失败", player.getName().getString(), e);
-                }
-                boolean hasHired = BlackoutPoliceHireService.hasHired(level, player.getUUID());
-                int sheriffCount = BlackoutRoleManager.getSheriffCount(level);
-                int killerCount = BlackoutRoleManager.getRemainingBad(level);
-                ServerPlayNetworking.send(player, new BlackoutPhoneOpenPayload(
-                        unlocked, remainingLock, balance, hasHired, sheriffCount, killerCount));
-            });
-        });
-        // C2S 通用投票接收器（用于放逐投票等）
-        ServerPlayNetworking.registerGlobalReceiver(BlackoutVoteCastPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer voter = context.player();
-                if (voter == null) return;
-                ServerLevel level = voter.serverLevel();
-                if (level == null) return;
-                if (VotePurpose.EXILE.equals(payload.purpose())) {
-                    BlackoutExileVoteManager.castVote(level, voter.getUUID(), payload.targetPlayerId());
-                }
-            });
-        });
-        // C2S 停电任务商店购买接收器
-        ServerPlayNetworking.registerGlobalReceiver(BlackoutTaskShopBuyPayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                ServerLevel level = player.serverLevel();
-                if (level == null) return;
-
-                com.habitrain.core.game.blackout.shop.BlackoutTaskShopCatalog.Entry entry =
-                        com.habitrain.core.game.blackout.shop.BlackoutTaskShopCatalog.findByKey(payload.entryKey());
-                if (entry == null) {
-                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(false, "无效条目"));
-                    return;
-                }
-                String error = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.tryPurchase(level, player, entry);
-                if (error != null) {
-                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(false, error));
-                    SubtitleNotifier.sendTop(player, Component.empty(), Component.literal("§c" + error), 60);
-                } else {
-                    ServerPlayNetworking.send(player, new BlackoutTaskShopResultPayload(true, ""));
-                }
-                // 刷新商店 Open 状态（余额/可买性变化）
-                refreshShopOpen(level, player);
-            });
-        });
         // C2S 通用选项投票接收器（模式/地图等）；voteId 不匹配时 manager 内 no-op
         ServerPlayNetworking.registerGlobalReceiver(OptionVoteCastPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -517,22 +441,4 @@ public final class C2SReceiverRegistrar {
         return keys;
     }
 
-    /** 购买后重发商店 Open payload 刷新客户端。 */
-    private static void refreshShopOpen(ServerLevel level, ServerPlayer player) {
-        var entries = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.visibleEntries(level, player);
-        int balance = 0;
-        try {
-            var shop = io.wifi.starrailexpress.cca.SREPlayerShopComponent.KEY.get(player);
-            if (shop != null) balance = shop.balance;
-        } catch (Exception ignored) {}
-        boolean destroyed = com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.isGeneratorDestroyed(level);
-        boolean restoreUsed = com.habitrain.core.game.blackout.shop.BlackoutTaskShopState.isRestoreUsed(level);
-        var out = new java.util.ArrayList<BlackoutTaskShopOpenPayload.Entry>();
-        for (var e : entries) {
-            String reason = com.habitrain.core.game.blackout.shop.BlackoutTaskShopService.purchaseBlockReason(level, player, e);
-            out.add(new BlackoutTaskShopOpenPayload.Entry(e.key(), e.displayName(), e.resolvePrice(),
-                    reason == null, reason == null ? "" : reason));
-        }
-        ServerPlayNetworking.send(player, new BlackoutTaskShopOpenPayload(balance, destroyed, restoreUsed, out));
-    }
 }

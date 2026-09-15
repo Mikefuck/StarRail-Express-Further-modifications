@@ -3,7 +3,7 @@ package com.habitrain.core.client.gui;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.habitrain.core.client.BlackoutKeyHandler;
+import com.habitrain.core.client.VoteKeyHandler;
 import com.habitrain.core.client.cache.ClientMapIntroCache;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.network.MapVoteProfilePayload;
@@ -1695,7 +1695,7 @@ public class OptionVoteScreen extends Screen {
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE
-                || BlackoutKeyHandler.matchesOpenVoteKey(keyCode, scanCode)) {
+                || VoteKeyHandler.matchesOpenVoteKey(keyCode, scanCode)) {
             hideByUser();
             return true;
         }

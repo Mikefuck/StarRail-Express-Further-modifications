@@ -15,8 +15,8 @@ import org.jetbrains.annotations.Nullable;
  *       the winner set.</li>
  * </ol>
  *
- * <p>{@code proposed} is the upstream {@code WinStatus} name, or
- * {@code "BLACKOUT"} on the blackout checker path.
+ * <p>{@code proposed} is the upstream {@code WinStatus} name.
+ * Other modes may provide their own outcome names.
  */
 public interface RoleWinHooks {
 

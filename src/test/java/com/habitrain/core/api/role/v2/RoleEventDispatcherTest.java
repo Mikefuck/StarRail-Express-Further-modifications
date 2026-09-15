@@ -676,7 +676,7 @@ class RoleEventDispatcherTest {
                         return WinPatch.replaceWinners(List.of(b));
                     }
                 }).build());
-        WinPatch folded = RoleEventDispatcher.INSTANCE.dispatchEvaluateWin(null, "BLACKOUT", false);
+        WinPatch folded = RoleEventDispatcher.INSTANCE.dispatchEvaluateWin(null, "CUSTOM", false);
         assertEquals(WinPatchOp.REPLACE_WINNERS, folded.op());
         assertEquals(List.of(b), folded.winners());
     }
@@ -699,14 +699,14 @@ class RoleEventDispatcherTest {
     }
 
     @Test
-    void checkBlackoutWinReturnsNullWhenNoPatch() {
+    void foldWinReturnsNullWhenNoPatch() {
         RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
                 .win(new RoleWinHooks() {}).build());
-        assertNull(RoleEventDispatcher.INSTANCE.checkBlackoutWin(null));
+        assertNull(RoleEventDispatcher.INSTANCE.foldWin(null, "CUSTOM", false).toWinResult());
     }
 
     @Test
-    void checkBlackoutWinReturnsCustomResult() {
+    void foldWinReturnsCustomResult() {
         UUID winner = UUID.fromString("00000000-0000-0000-0000-00000000000a");
         RoleHookRegistry.INSTANCE.register(ROLE, RoleHooks.builder()
                 .win(new RoleWinHooks() {
@@ -717,7 +717,7 @@ class RoleEventDispatcherTest {
                                 List.of(winner), "custom win");
                     }
                 }).build());
-        WinResult result = RoleEventDispatcher.INSTANCE.checkBlackoutWin(null);
+        WinResult result = RoleEventDispatcher.INSTANCE.foldWin(null, "CUSTOM", false).toWinResult();
         assertEquals(List.of(winner), result.getWinners());
         assertEquals("custom win", result.getReason());
     }

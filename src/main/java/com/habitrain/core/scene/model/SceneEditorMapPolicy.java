@@ -30,6 +30,7 @@ public final class SceneEditorMapPolicy {
 
     private static boolean isConfigured(String mapKey, Collection<String> configuredMapKeys) {
         return !mapKey.isEmpty() && (SceneMotionSettings.DEFAULT_MAP_KEY.equals(mapKey)
+                || SceneMotionSettings.LOBBY_MAP_KEY.equals(mapKey)
                 || configuredMapKeys != null && configuredMapKeys.contains(mapKey));
     }
 

@@ -76,6 +76,7 @@ public final class MapVoteLoadCoordinator {
         st.mapId = mapId == null ? "" : mapId;
         st.modeId = modeId == null ? "" : modeId;
         LOADS.put(level.dimension(), st);
+        com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().onMatchPreparing(level);
         ScenePreloadCoordinator.getInstance().begin(level, st.mapId);
         LOGGER.info("[MapVoteLoad] load begin dim={} map={} mode={}",
                 level.dimension().location(), st.mapId, st.modeId);

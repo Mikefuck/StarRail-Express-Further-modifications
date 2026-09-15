@@ -18,6 +18,7 @@ public class ConfigSync {
     public void loadFromJsonString(ConfigRepository repo, String json) {
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            RemovedModeConfigMigration.prune(root);
 
             Map<String, TaskConfigEntry> newTasks = new HashMap<>();
             Map<String, GameModeConfigScope> newModes = new HashMap<>();
@@ -26,7 +27,6 @@ public class ConfigSync {
             float newDlcTarget = 0.5f;
             boolean newShaderEnabled = false;
             int newSheriffDivisor = 6;
-            int newTempPowerPrice = 100;
             boolean newKnifeDurabilityEnabled = false;
             boolean newLobbyVoiceGroupEnabled = true;
             int newBlackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.DEFAULT_SECONDS;
@@ -55,10 +55,7 @@ public class ConfigSync {
                     int div = global.get("sheriffCountDivisor").getAsInt();
                     if (div > 0) newSheriffDivisor = div;
                 }
-                if (global.has("tempPowerPrice")) {
-                    int price = global.get("tempPowerPrice").getAsInt();
-                    if (price >= 0) newTempPowerPrice = price;
-                }
+
                 if (global.has("knifeDurabilityEnabled")) {
                     newKnifeDurabilityEnabled = global.get("knifeDurabilityEnabled").getAsBoolean();
                 }
@@ -138,7 +135,6 @@ public class ConfigSync {
             repo.setShaderWhitelistEnabled(newShaderEnabled);
             repo.setShaderWhitelist(newShaderWhitelist);
             repo.setSheriffCountDivisor(newSheriffDivisor);
-            repo.setTempPowerPrice(newTempPowerPrice);
             repo.setKnifeDurabilityEnabled(newKnifeDurabilityEnabled);
             repo.setLobbyVoiceGroupEnabled(newLobbyVoiceGroupEnabled);
             repo.setBlackoutGlobalCooldownSeconds(newBlackoutGlobalCooldownSeconds);
@@ -170,13 +166,13 @@ public class ConfigSync {
     public boolean mergeFromJsonString(ConfigRepository repo, String json) {
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            RemovedModeConfigMigration.prune(root);
 
             // ---- stage 1: parse into temps (no repo writes) ----
             Float newDlcTarget = null;
             Boolean newShaderEnabled = null;
             List<String> newShaderWhitelist = null;
             Integer newSheriffDivisor = null;
-            Integer newTempPowerPrice = null;
             Boolean newKnifeDurability = null;
             Boolean newLobbyVoice = null;
             Integer newBlackoutGlobalCooldownSeconds = null;
@@ -204,10 +200,7 @@ public class ConfigSync {
                     int div = global.get("sheriffCountDivisor").getAsInt();
                     if (div > 0) newSheriffDivisor = div;
                 }
-                if (global.has("tempPowerPrice")) {
-                    int price = global.get("tempPowerPrice").getAsInt();
-                    if (price >= 0) newTempPowerPrice = price;
-                }
+
                 if (global.has("knifeDurabilityEnabled")) {
                     newKnifeDurability = global.get("knifeDurabilityEnabled").getAsBoolean();
                 }
@@ -336,7 +329,6 @@ public class ConfigSync {
             if (newShaderEnabled != null) repo.setShaderWhitelistEnabled(newShaderEnabled);
             if (newShaderWhitelist != null) repo.setShaderWhitelist(newShaderWhitelist);
             if (newSheriffDivisor != null) repo.setSheriffCountDivisor(newSheriffDivisor);
-            if (newTempPowerPrice != null) repo.setTempPowerPrice(newTempPowerPrice);
             if (newKnifeDurability != null) repo.setKnifeDurabilityEnabled(newKnifeDurability);
             if (newLobbyVoice != null) repo.setLobbyVoiceGroupEnabled(newLobbyVoice);
             if (newBlackoutGlobalCooldownSeconds != null) {

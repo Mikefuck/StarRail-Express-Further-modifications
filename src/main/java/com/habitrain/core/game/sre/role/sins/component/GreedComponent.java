@@ -2,8 +2,6 @@ package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
-import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
@@ -189,11 +187,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             }
         } catch (Throwable ignored) {
         }
-        try {
-            int blackout = BlackoutRoleManager.getRoleHistory(level).size();
-            if (blackout > 0) return blackout;
-        } catch (Throwable ignored) {
-        }
+
         try {
             int ready = GameUtils.getParticipatingPlayerCount(level);
             if (ready > 0) return ready;
@@ -294,11 +288,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         HabiTrainCore.LOGGER.info("[Greed] collection complete {} ({}/{})",
                 self.getGameProfile().getName(), collectedTypeIds.size(), targetCount);
         SinVictoryHooks.triggerGreedWin(level, self);
-        try {
-            BlackoutVictoryChecker.endGameGreedCustom(level, self);
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.debug("[Greed] blackout end skipped", t);
-        }
     }
 
     @Override
@@ -315,14 +304,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
             }
         } catch (Throwable ignored) {
         }
-        if (!isGreed) {
-            try {
-                if (SevenSins.GREED_ID.equals(BlackoutRoleManager.getRoleHistoryEntry(level, sp.getUUID()))) {
-                    isGreed = true;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
+
         if (!isGreed) return;
 
         if (!pouchGiven && targetCount > 0) {

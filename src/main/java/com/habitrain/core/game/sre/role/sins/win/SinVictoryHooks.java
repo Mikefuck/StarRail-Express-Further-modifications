@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.role.sins.win;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.component.GreedComponent;
 import io.wifi.starrailexpress.api.SRERole;
@@ -22,8 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Shared sin win hooks for SRE murder ({@link AllowGameEnd}) and Blackout
- * ({@link com.habitrain.core.game.blackout.BlackoutVictoryChecker}).
+ * Shared sin win hooks for SRE murder ({@link AllowGameEnd}).
  */
 public final class SinVictoryHooks {
     private static boolean registered;
@@ -34,7 +32,7 @@ public final class SinVictoryHooks {
         if (registered) return;
         registered = true;
         // AllowGameEnd is now owned by v2 RoleWinHooks (SevenSinV2Hooks).
-        // Helpers stay public for BlackoutVictoryChecker and CustomWinnerRole.checkWin.
+        // Helpers stay public for CustomWinnerRole.checkWin.
         HabiTrainCore.LOGGER.info(
                 "[SevenSins] SinVictoryHooks helpers ready (AllowGameEnd migrated to v2 RoleWinHooks)");
     }
@@ -42,7 +40,6 @@ public final class SinVictoryHooks {
     // review L13：曾存在 prependOurAllowGameEndHandler（反射重排事件监听）与
     // onAllowGameEnd（返回 NONE 阻断）两个无调用者的遗留路径；AllowGameEnd 语义
     // 已由 v2 RoleWinHooks（SevenSinV2Hooks）接管，二者已删除，防止未来被误接线。
-
 
     /**
      * Pride is still alive and at least one other assigned/alive participant remains.
@@ -138,21 +135,6 @@ public final class SinVictoryHooks {
         PridePresence out = new PridePresence();
         if (level == null) return out;
 
-        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty()) {
-            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
-            for (UUID id : blackoutAlive) {
-                ResourceLocation roleId = history.get(id);
-                if (SevenSins.PRIDE_ID.equals(roleId)) {
-                    out.prideAlive = true;
-                    out.prideId = id;
-                } else {
-                    out.otherAlive = true;
-                }
-            }
-            return out;
-        }
-
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         if (game == null || !game.isRunning()) {
             return out;
@@ -175,19 +157,6 @@ public final class SinVictoryHooks {
         SlothPresence out = new SlothPresence();
         if (level == null) return out;
 
-        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty()) {
-            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
-            for (UUID id : blackoutAlive) {
-                if (SevenSins.SLOTH_ID.equals(history.get(id))) {
-                    out.slothAlive = true;
-                    out.slothId = id;
-                    break;
-                }
-            }
-            return out;
-        }
-
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         if (game == null || !game.isRunning()) {
             return out;
@@ -208,19 +177,6 @@ public final class SinVictoryHooks {
     private static LustPresence scanLust(ServerLevel level) {
         LustPresence out = new LustPresence();
         if (level == null) return out;
-
-        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty()) {
-            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
-            for (UUID id : blackoutAlive) {
-                if (SevenSins.LUST_ID.equals(history.get(id))) {
-                    out.lustAlive = true;
-                    out.lustId = id;
-                    break;
-                }
-            }
-            return out;
-        }
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         if (game == null || !game.isRunning()) {
@@ -306,8 +262,7 @@ public final class SinVictoryHooks {
     }
 
     /**
-     * Instant greed collection win (SRE custom). Blackout dual-write is done by caller
-     * via {@code BlackoutVictoryChecker.endGameGreedCustom} to avoid package cycles.
+     * Instant greed collection win (SRE custom).
      */
     public static void triggerGreedWin(ServerLevel level, ServerPlayer greed) {
         if (level == null) return;
@@ -336,27 +291,6 @@ public final class SinVictoryHooks {
     private static GreedPresence scanGreed(ServerLevel level) {
         GreedPresence out = new GreedPresence();
         if (level == null || level.getServer() == null) return out;
-
-        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty()) {
-            Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
-            for (UUID id : blackoutAlive) {
-                if (SevenSins.GREED_ID.equals(history.get(id))) {
-                    out.greedAlive = true;
-                    out.greedId = id;
-                    ServerPlayer sp = level.getServer().getPlayerList().getPlayer(id);
-                    if (sp != null) {
-                        try {
-                            GreedComponent g = GreedComponent.KEY.get(sp);
-                            out.complete = g != null && g.isCollectionComplete();
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    break;
-                }
-            }
-            return out;
-        }
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         if (game == null || !game.isRunning()) {

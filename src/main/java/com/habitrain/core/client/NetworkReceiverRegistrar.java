@@ -2,13 +2,6 @@ package com.habitrain.core.client;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.cache.ActiveTaskCache;
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
-import com.habitrain.core.client.gui.BlackoutPhoneHireScreen;
-import com.habitrain.core.client.gui.BlackoutTaskShopScreen;
-import com.habitrain.core.client.gui.BlackoutVoteScreen;
-import com.habitrain.core.client.gui.BlackoutVoteState;
-import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
-import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.client.gui.GameEndOverlayState;
 import com.habitrain.core.client.gui.OptionVoteScreen;
 import com.habitrain.core.client.gui.OptionVoteState;
@@ -21,11 +14,6 @@ import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.network.ActiveTaskPayload;
-import com.habitrain.core.network.BlackoutAnnouncePayload;
-import com.habitrain.core.network.BlackoutHireResultPayload;
-import com.habitrain.core.network.BlackoutPhoneOpenPayload;
-import com.habitrain.core.network.BlackoutTimerPayload;
-import com.habitrain.core.network.BlackoutVotePayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
@@ -146,93 +134,6 @@ public class NetworkReceiverRegistrar {
         });
 
         // =========================================================
-        //  停电模式 — S2C 接收器
-        // =========================================================
-
-        // 6) 时间同步
-        // remaining<=0 且 endTimeTick==0：局终/重置包 → 拆 HUD
-        // remaining<=0 但 endTimeTick>0：仍在对局时钟内（极短瞬间）→ 更新，不拆 active
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutTimerPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                boolean sessionReset = payload.totalTimeRemaining() <= 0 && payload.endTimeTick() <= 0L;
-                if (sessionReset) {
-                    BlackoutHudOverlay.reset();
-                    BlackoutWelcomeRenderer.reset();
-                    ClientBlackoutState.setBlackoutModeActive(false);
-                    return;
-                }
-
-                ClientBlackoutState.setBlackoutModeActive(true);
-                BlackoutHudOverlay.updateTime(
-                    Math.max(0, payload.totalTimeRemaining()),
-                    payload.endTimeTick(),
-                    payload.blackoutActive(),
-                    payload.phase());
-            });
-        });
-
-        // 7) 电话打开状态 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutPhoneOpenPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
-                    phoneScreen.updateState(payload);
-                } else {
-                    ctx.client().setScreen(new BlackoutPhoneHireScreen(ctx.client().screen, payload));
-                }
-            });
-        });
-
-        // 9) 电话聘请结果 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutHireResultPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof BlackoutPhoneHireScreen phoneScreen) {
-                    phoneScreen.onHireResult(payload);
-                }
-            });
-        });
-
-        // 10) 开局报幕 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutAnnouncePayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                BlackoutWelcomeRenderer.startWelcome(
-                    payload.roleName(), payload.subtitle(), payload.goal());
-            });
-        });
-
-        // 11) 通用投票（放逐等） S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(BlackoutVotePayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                BlackoutVoteState.update(payload);
-                // Tip-only UX: never auto-open the vote screen (1Hz rebroadcast would re-force it).
-                // Player opens via keybind; close only when vote ends if screen is open.
-                if (!payload.active() && ctx.client().screen instanceof BlackoutVoteScreen) {
-                    ctx.client().setScreen(null);
-                }
-            });
-        });
-
-        // 12) 停电任务商店打开 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutTaskShopOpenPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof BlackoutTaskShopScreen shopScreen) {
-                    shopScreen.updateState(payload);
-                } else {
-                    BlackoutTaskShopScreen screen = new BlackoutTaskShopScreen(ctx.client().screen);
-                    screen.updateState(payload);
-                    ctx.client().setScreen(screen);
-                }
-            });
-        });
-
-        // 13) 停电任务商店购买结果 S2C 接收器
-        ClientPlayNetworking.registerGlobalReceiver(com.habitrain.core.network.BlackoutTaskShopResultPayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof BlackoutTaskShopScreen shopScreen) {
-                    shopScreen.onPurchaseResult(payload.success(), payload.reason());
-                }
-            });
-        });
-
         // 14) 通用选项投票（模式/地图等） S2C 接收器
         ClientPlayNetworking.registerGlobalReceiver(OptionVotePayload.TYPE, (payload, ctx) -> {
             ctx.client().execute(() -> {

@@ -2,7 +2,7 @@
 
 ## 项目概要
 
-Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API、自定义游戏模式 (停电模式) 和增强功能。
+Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API、游戏模式桥接 和增强功能。
 
 ## 构建 & 运行
 
@@ -29,10 +29,10 @@ bash gradlew clean build
 ## 重要架构
 
 - **一个 mod ID**: `habitrain_core`。`assets/habitrain_taskapi/` 仅含 lang/icon 文件，历史遗留。
-- **包结构**: `com.habitrain.core.api/`（公开 API）→ `task/`（引擎）→ `game/sre|blackout/`（模式实现）→ `network/`（网络同步）→ `config/`（JSON 配置）→ `client/`（GUI + 客户端 mixin）→ `betel/`（槟榔系统）
+- **包结构**: `com.habitrain.core.api/`（公开 API）→ `task/`（引擎）→ `game/sre/`（模式实现）→ `network/`（网络同步）→ `config/`（JSON 配置）→ `client/`（GUI + 客户端 mixin）→ `betel/`（槟榔系统）
 - **入口点**: `HabiTrainCore` (main) → `HabiTrainCoreClient` (client) → `ModMenuIntegration` (modmenu)
 - **API 类名已重命名**: `HabiTaskRegistry` → `TaskRegistry`，`HabiTaskDefinition` → `TaskDefinition`，`HabiTaskInstance` → `TaskInstance`，`HabiTaskCategory` → `TaskCategory`
-- **GameModeRegistry**: 注册/管理游戏模式 (SRE谋杀/修机/停电)
+- **GameModeRegistry**: 注册/管理游戏模式 (SRE谋杀/修机等上游模式)
 - **TaskRegistry**: DLC 模组通过此 API 注册自定义任务（`builder` 模式）
 - **ConfigManager**: JSON 文件 `config/habitrain_core.json`，配置变更自动保存
 - **颜色格式**: API 使用 `int ARGB`（已从 `java.awt.Color` 重构），DLC 可使用 `instinctColor(r, g, b, a)` 辅助方法
@@ -41,17 +41,14 @@ bash gradlew clean build
 ## 命令
 
 - `/instantgroup [range]` — OP 将范围内玩家加入临时语音群组（需 voicechat）
-- `/habi_api blackout` — OP 手动启动停电模式
 - `/habi_api list` — OP 列出已注册模式
-- `/habi_api buy_gun` — 玩家购买沙漠之鹰（停电模式）
-- `/habi_api buy_ammo` — 玩家购买弹药（停电模式）
 
 ## 关键约定
 
 - Mixin 包: `game.sre.mixin` (服务端) / `client.mixin` (客户端)
 - 网络 payload 用 Fabric API `CustomPacketPayload` + `StreamCodec` 模式，UTF-8 charset
 - Iris 光影检测通过反射，无编译期依赖；客户端轮询上报，服务端白名单踢出
-- 槟榔模组成瘾系统被强制开启 (`initBetelSystem` 覆盖配置)
+- 槟榔模组成瘾系统遵循其自身配置（Core 不再强制覆盖）
 - ExtraSlotComponent 每玩家每 tick 调用 `serverTick()`
 - task tick: `TaskInstance.tick(player)` → onTick → completion check → onComplete/fail
 
@@ -64,8 +61,6 @@ bash gradlew clean build
 | `ConfigUpdatePayload` | C2S | OP 通过 ModMenu 修改配置后同步（服务端校验 OP 权限） |
 | `ShaderConfigPayload` | S2C | 同步光影白名单配置 |
 | `ShaderInfoPayload` | C2S | 客户端上报当前使用的光影包名 |
-| `BlackoutTimerPayload` | S2C | 停电模式倒计时同步 |
-| `BlackoutAnnouncePayload` | S2C | 开局报幕（角色/目标信息） |
 | `FullConfigSyncPayload` | S2C | 同步完整服务端配置 |
 | `GameEndTransitionPayload` | S2C | 同步对局结束过渡与 MVP 数据 |
 | `OptionVotePayload` / `OptionVoteCastPayload` | S2C / C2S | 通用选项投票 |

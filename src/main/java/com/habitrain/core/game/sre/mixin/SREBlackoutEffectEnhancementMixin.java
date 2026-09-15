@@ -14,8 +14,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
  * 玩家固定施加 200 tick（10 秒）黑暗+失明，而普通商店停电的灯灭时长可达 25 秒
  * （SREConfig.blackoutMaxDuration），黑暗覆盖不全。
  *
- * <p>开关开启后：普通停电（灯灭 &gt; 200 tick，含商店 25 秒停电与 API Blackout 模式
- * 永久停电）的黑暗+失明延长到 400 tick（20 秒）；忍者商店「关灯」
+ * <p>开关开启后：普通停电（灯灭 &gt; 200 tick，含商店 25 秒停电）的黑暗+失明延长到 400 tick（20 秒）；忍者商店「关灯」
  * （useBlackoutWithMultiplier 0.4，灯灭恰 200 tick）保持 200 tick（10 秒）。
  *
  * <p>注入点：{@code playBlackoutSound()} 内两个

@@ -23,7 +23,6 @@
         "SubtitleHUDPrefixFixMixin",
         "InstinctKillerTeamMixin",
         "InstinctSheriffGateMixin",
-        "BlackoutTimeRendererMixin",
         "EntityRendererMixin",
         "PlayerBodyEntityMixin",
         "MimeBodyHideMixin",

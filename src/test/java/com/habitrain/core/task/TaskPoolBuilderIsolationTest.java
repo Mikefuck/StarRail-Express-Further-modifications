@@ -13,15 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TaskPoolBuilderIsolationTest {
 
     @Test
-    void emptyMurderPoolDoesNotFallBackToBlackoutTasks() {
-        TaskCategory blackoutGood = new TaskCategory(
-                "habitrain:blackout_good", "停电好人", "habitrain:blackout");
-        TaskDefinition blackoutEat = new TaskDefinition.Builder("habitrain_core", "blackout_eat")
-                .category(blackoutGood)
+    void emptyMurderPoolDoesNotFallBackToOtherModeTasks() {
+        TaskCategory other_modeGood = new TaskCategory(
+                "habitrain:other_mode_good", "其他模式", "habitrain:other_mode");
+        TaskDefinition other_modeEat = new TaskDefinition.Builder("habitrain_core", "other_mode_eat")
+                .category(other_modeGood)
                 .build();
 
         List<TaskDefinition> selected = TaskPoolBuilder.selectCandidates(
-                List.of(blackoutEat), id -> true, TaskCategory.MURDER,
+                List.of(other_modeEat), id -> true, TaskCategory.MURDER,
                 null, null, Set.of(), null);
 
         assertTrue(selected.isEmpty());

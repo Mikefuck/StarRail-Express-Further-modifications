@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.blackout.BlackoutVictoryChecker;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.win.SinVictoryHooks;
@@ -522,12 +521,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         sync();
         self.displayClientMessage(
                 Component.translatable("message.habitrain_core.sin_sloth.win_ready"), true);
-        if (com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level)
-                .filter(mode -> mode instanceof com.habitrain.core.game.blackout.BlackoutMode).isPresent()) {
-            BlackoutVictoryChecker.endGameSlothCustom(level, self);
-        } else {
-            SinVictoryHooks.triggerSlothWin(level, self);
-        }
+        SinVictoryHooks.triggerSlothWin(level, self);
     }
 
     private static boolean isLyingInRealBed(ServerPlayer self, ServerLevel level) {

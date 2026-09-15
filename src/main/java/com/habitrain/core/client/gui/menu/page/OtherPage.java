@@ -10,8 +10,6 @@ import com.habitrain.core.client.gui.menu.ui.ScrollArea;
 import com.habitrain.core.config.ConfigManager;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,11 +22,9 @@ public class OtherPage implements ConfigPage {
 
     private final Font font;
     private final boolean editable;
-    private final EditBox tempPowerField;
     private final ScrollArea area = new ScrollArea(0, 0, 1, 1);
     private final List<Hit> hits = new ArrayList<>();
 
-    private int tempPowerPrice;
     private boolean knifeDurabilityEnabled;
     private boolean lobbyVoiceGroupEnabled;
     private boolean blackoutEffectEnhancementEnabled;
@@ -39,29 +35,16 @@ public class OtherPage implements ConfigPage {
         this.font = font;
         this.editable = editable;
         ConfigManager config = ConfigManager.getInstance();
-        tempPowerPrice = config.getTempPowerPrice();
         knifeDurabilityEnabled = config.isKnifeDurabilityEnabled();
         lobbyVoiceGroupEnabled = config.isLobbyVoiceGroupEnabled();
         blackoutEffectEnhancementEnabled = config.isBlackoutEffectEnhancementEnabled();
-
-        tempPowerField = new EditBox(font, -10000, -10000, 72, 16, Component.literal(""));
-        tempPowerField.setMaxLength(6);
-        tempPowerField.setFilter(value -> value.isEmpty() || value.matches("\\d*"));
-        tempPowerField.setValue(String.valueOf(tempPowerPrice));
-        tempPowerField.setEditable(editable);
     }
 
     @Override public boolean canSave() { return true; }
     @Override public void save() {}
 
     @Override
-    public void flushPending() {
-        if (!editable) return;
-        try {
-            tempPowerPrice = Math.max(0, Integer.parseInt(tempPowerField.getValue().trim()));
-            ConfigManager.getInstance().setTempPowerPrice(tempPowerPrice);
-        } catch (NumberFormatException ignored) {}
-    }
+    public void flushPending() {}
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
@@ -74,8 +57,6 @@ public class OtherPage implements ConfigPage {
         int cardX = x + PAD;
         int cardW = Math.max(180, w - PAD * 2 - 5);
 
-        cy = renderPriceCard(g, mx, my, delta, cardX, cy, cardW);
-        cy += GAP;
         cy = renderToggleCard(g, cardX, cy, cardW, 1,
                 "杀手刀耐久规则",
                 "开启后使用上游耐久；关闭后杀手刀保持无限耐久",
@@ -97,24 +78,6 @@ public class OtherPage implements ConfigPage {
         g.disableScissor();
     }
 
-    private int renderPriceCard(GuiGraphics g, int mx, int my, float delta,
-                                int x, int y, int w) {
-        MenuTheme.panel(g, x, y, w, CARD_H);
-        g.fill(x, y, x + 2, y + CARD_H, MenuTheme.ACCENT_AMBER);
-        g.drawString(font, "停电模式 · 临时电源价格", x + 12, y + 12,
-                MenuTheme.TEXT_PRIMARY, false);
-        g.drawString(font, "红色电话商店中的提灯价格；默认 100", x + 12, y + 28,
-                MenuTheme.TEXT_SECONDARY, false);
-        g.drawString(font, "价格", x + 12, y + 50, MenuTheme.TEXT_SECONDARY, false);
-        tempPowerField.setX(x + 52);
-        tempPowerField.setY(y + 46);
-        tempPowerField.setWidth(72);
-        tempPowerField.render(g, mx, my, delta);
-        g.drawString(font, "点击底部保存后提交输入值", x + 134, y + 50,
-                MenuTheme.TEXT_DIM, false);
-        return y + CARD_H;
-    }
-
     private int renderToggleCard(GuiGraphics g, int x, int y, int w, int action,
                                  String title, String description, boolean value,
                                  String onText, String offText) {
@@ -132,8 +95,6 @@ public class OtherPage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (tempPowerField.mouseClicked(mx, my, btn)) return true;
-        tempPowerField.setFocused(false);
         for (Hit hit : hits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
             if (!editable) {
@@ -163,12 +124,8 @@ public class OtherPage implements ConfigPage {
                                            int x, int y, int w, int h) { return area.mouseScrolled(sy); }
 
     @Override
-    public boolean keyPressed(int key, int scan, int mod) {
-        return tempPowerField.isFocused() && tempPowerField.keyPressed(key, scan, mod);
-    }
+    public boolean keyPressed(int key, int scan, int mod) { return false; }
 
     @Override
-    public boolean charTyped(char ch, int mod) {
-        return tempPowerField.isFocused() && tempPowerField.charTyped(ch, mod);
-    }
+    public boolean charTyped(char ch, int mod) { return false; }
 }

@@ -9,12 +9,12 @@ import org.agmas.harpymodloader.SREDisableManager;
 import java.util.List;
 
 /**
- * 当前模式（谋杀/停电）随机转职池的统一准入过滤器。
+ * 当前模式（谋杀等模式）随机转职池的统一准入过滤器。
  * <p>
  * 对齐上游谋杀模式建池过滤（{@code RoleRotationWorldComponent} /
  * {@code SREMurderGameMode#getAllRoles} / {@code RoleAssignmentPool}），
  * 所有「随机把玩家变成另一个角色」的池（替罪羊转杀手、Mike 代码修改、
- * 暴怒转职、停电雇警等）都必须走这里，避免把其他模式角色、修机模式角色、
+ * 暴怒转职等）都必须走这里，避免把其他模式角色、修机模式角色、
  * 已被上游禁用的角色、或被标记不可被随机到的角色抽进池里。
  */
 public final class SreRolePoolFilter {
@@ -52,7 +52,7 @@ public final class SreRolePoolFilter {
             if (SREDisableManager.isRoleDisabled(role)) return false;
         } catch (Throwable t) {
             // fail-closed：禁用 API 异常时保守排除，防止已禁用角色被抽中。
-            // 空池由各调用方安全处理（Mike/替罪羊/暴怒/停电雇警均有空池分支）。
+            // 空池由各调用方安全处理（Mike/替罪羊/暴怒均有空池分支）。
             HabiTrainCore.LOGGER.warn("[RolePoolFilter] isRoleDisabled check failed, role excluded", t);
             return false;
         }

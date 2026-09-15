@@ -3,7 +3,6 @@ package com.habitrain.core.game.sre;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.content.block.FoodPlatterBlock;
@@ -110,7 +109,7 @@ public final class CustomTaskBlockScanner {
             int blockTypeId = def.getBlockTypeId();
             if (HabiTrainCore.TASK_EAT.equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
             else if (HabiTrainCore.TASK_DRINK.equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
-            if (blockTypeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) continue;
+            if (blockTypeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) continue;
 
             boolean anyResolved = false;
             if (def.getScanBlocks() != null) {
@@ -145,17 +144,6 @@ public final class CustomTaskBlockScanner {
 
         if (blockToTypeIds.isEmpty()) {
             LOGGER.info("[MapScannerMixin] 没有可扫描的自定义任务方块");
-        }
-
-        Block phoneBlock = BlackoutOverlayTypes.getStreetPhoneBlock();
-        if (phoneBlock != null && phoneBlock != Blocks.AIR) {
-            blockToTypeIds.computeIfAbsent(phoneBlock, k -> new HashSet<>()).add(BlackoutOverlayTypes.STREET_PHONE);
-        }
-
-        Block rotaryPhoneBlock = BlackoutOverlayTypes.getRotaryPhoneRedBlock();
-        if (rotaryPhoneBlock != null && rotaryPhoneBlock != Blocks.AIR) {
-            blockToTypeIds.computeIfAbsent(rotaryPhoneBlock, k -> new HashSet<>())
-                    .add(BlackoutOverlayTypes.ROTARY_PHONE_RED);
         }
 
         if (blockToTypeIds.isEmpty()) {

@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
@@ -14,9 +13,7 @@ import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerProgressionComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
-import io.wifi.starrailexpress.game.GameConstants;
 import io.wifi.starrailexpress.progression.ProgressionDataManager;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,8 +28,6 @@ public class RoleMethodDispatcherMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleMethodDispatcherMixin");
 
-    /** 与 SREConfig.civilianTaskReward 默认值对齐；运行时优先反射读配置。 */
-    private static final int FALLBACK_CIVILIAN_TASK_REWARD = 50;
 
     @Shadow(remap = false)
     private static SRERole getCurrentRole(Player player) {
@@ -57,24 +52,6 @@ public class RoleMethodDispatcherMixin {
         return config;
     }
 
-    /** 当前是否处于 habitrain 停电模式（仅限该模式改杀手任务金）。 */
-    private static boolean isBlackoutMode(Player player) {
-        if (!(player.level() instanceof ServerLevel level)) return false;
-        return GameModeRegistry.getActiveForLevel(level)
-                .map(gm -> "habitrain:blackout".equals(gm.getId()))
-                .orElse(false);
-    }
-
-    /**
-     * 真正的杀手（非警长/vigilante）。
-     * 警长 canUseKiller=true 但仍算好人，应继续走 SRE 平民奖励分支。
-     */
-    private static boolean isTrueKiller(Player player) {
-        SRERole role = getCurrentRole(player);
-        if (role == null) return false;
-        if (role.isVigilanteTeam()) return false;
-        return role.isKiller();
-    }
 
     private static boolean isMimeKiller(Player player) {
         try {
@@ -82,38 +59,6 @@ public class RoleMethodDispatcherMixin {
         } catch (Throwable t) {
             return false;
         }
-    }
-
-    /**
-     * 读取 SRE 平民任务金配置。
-     * 不直接依赖 {@code SREConfig} 类型（autoconfig ConfigData 不在 compile classpath）。
-     */
-    private static int readCivilianTaskReward() {
-        try {
-            Class<?> cfgClass = Class.forName("io.wifi.starrailexpress.SREConfig");
-            Object instance = cfgClass.getMethod("instance").invoke(null);
-            Object value = cfgClass.getField("civilianTaskReward").get(instance);
-            if (value instanceof Number n) {
-                return n.intValue();
-            }
-        } catch (Throwable t) {
-            LOGGER.debug("[Reward] 无法读取 SREConfig.civilianTaskReward，使用默认 {}", FALLBACK_CIVILIAN_TASK_REWARD, t);
-        }
-        return FALLBACK_CIVILIAN_TASK_REWARD;
-    }
-
-    /**
-     * 对齐 SRE 原版平民完成任务金币：
-     * {@code (civilianTaskReward + streakBonus) * parallelMultiplier}
-     */
-    private static int civilianGoldFormula(int taskStreak, boolean isParallelTask) {
-        int streakBonus = Math.min(
-                taskStreak * GameConstants.STREAK_BONUS_PER_LEVEL,
-                GameConstants.MAX_STREAK_BONUS);
-        float rewardMultiplier = isParallelTask
-                ? GameConstants.PARALLEL_TASK_REWARD_MULTIPLIER
-                : 1f;
-        return (int) ((readCivilianTaskReward() + streakBonus) * rewardMultiplier);
     }
 
     /**
@@ -243,34 +188,6 @@ public class RoleMethodDispatcherMixin {
             return;
         }
 
-        // 停电模式：杀手本人完成任务时，金币按好人公式发放（替换 killerTaskIncome 分支）。
-        // 警长/vigilante 不进此分支，继续走 SRE 平民奖励。
-        if (isBlackoutMode(player) && isTrueKiller(player)) {
-            var progressionOpt = SREPlayerProgressionComponent.KEY.maybeGet(player);
-            if (progressionOpt.isEmpty()) {
-                return;
-            }
-            try {
-                ci.cancel();
-                ProgressionDataManager.onRoundQuestFinished(player, quest);
-                progressionOpt.get().onRoundQuestFinished(quest);
-                SRERole role = getCurrentRole(player);
-                if (role != null) {
-                    int actualReward = civilianGoldFormula(taskStreak, isParallelTask);
-                    SREPlayerShopComponent.KEY.maybeGet(player).ifPresent(shop -> {
-                        shop.addToBalance(actualReward);
-                        LOGGER.info("[Reward] 停电杀手任务金对齐好人: {} (streak={}, 并列={}) 给 {}",
-                                actualReward, taskStreak, isParallelTask, player.getName().getString());
-                    });
-                    role.onFinishQuest(player, quest);
-                }
-            } catch (Exception e) {
-                LOGGER.error("[Reward] 停电杀手任务金发放失败", e);
-            }
-            if (ci.isCancelled()) {
-                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
-            }
-        }
     }
 
     @Inject(

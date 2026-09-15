@@ -16,7 +16,9 @@ class SwiftWindThrowCooldownMixinTest {
     void selectorMatchesExactlyTheRegisteredThrowReceiverInTheActualDependency() throws Exception {
         Inject injection = null;
         for (var method : SwiftWindThrowCooldownMixin.class.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(Inject.class)) injection = method.getAnnotation(Inject.class);
+            if (method.getName().equals("habitrain$guardThrowReceiver")) {
+                injection = method.getAnnotation(Inject.class);
+            }
         }
         assertNotNull(injection);
         assertTrue(injection.cancellable());

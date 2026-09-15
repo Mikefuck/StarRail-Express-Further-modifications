@@ -223,7 +223,8 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .componentKey(EnvyComponent.KEY)
                         .canSeeCoin()
                         .build())
-                .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
+                .visibility(RoleVisibilityProfile.builder().canUseInstinct()
+                        .instinctNightVision().build())
                 .roleFactory(d -> new NormalRole(d.key().location(),
                         d.presentation().color(), false, true,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()) {
@@ -233,6 +234,7 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                     }
                 })
                 .maxSprintTime(Integer.MAX_VALUE)
+                .canSeeTime(true)
                 .build());
 
         SevenSins.WRATH = registrar.add(RoleDefinition.builder(SevenSins.WRATH_ID)

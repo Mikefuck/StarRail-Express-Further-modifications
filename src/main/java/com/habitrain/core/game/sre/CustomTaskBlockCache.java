@@ -3,7 +3,6 @@ package com.habitrain.core.game.sre;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -162,7 +161,7 @@ public class CustomTaskBlockCache {
     }
 
     private static int groupCount(Block block, int typeId) {
-        if (block != null && !CustomTaskBlockIndexLimits.isUncappedType(typeId)) {
+        if (block != null) {
             AtomicInteger n = COUNT_BY_BLOCK.get(block);
             return n == null ? 0 : n.get();
         }
@@ -184,24 +183,7 @@ public class CustomTaskBlockCache {
     }
 
     private static Block resolveBlock(Set<Integer> typeIds, Map<Integer, Block> uniqueBlocks) {
-        if (typeIds.contains(BlackoutOverlayTypes.STREET_PHONE)) {
-            Block phone = BlackoutOverlayTypes.getStreetPhoneBlock();
-            if (phone != null && phone != Blocks.AIR) {
-                return phone;
-            }
-        }
-        if (typeIds.contains(BlackoutOverlayTypes.ROTARY_PHONE_RED)) {
-            Block rotary = BlackoutOverlayTypes.getRotaryPhoneRedBlock();
-            if (rotary != null && rotary != Blocks.AIR) {
-                return rotary;
-            }
-        }
-        if (typeIds.contains(BlackoutOverlayTypes.HORN)) {
-            Block horn = BlackoutOverlayTypes.getHornBlock();
-            if (horn != null && horn != Blocks.AIR) {
-                return horn;
-            }
-        }
+
         Block found = null;
         for (int typeId : typeIds) {
             Block unique = uniqueBlocks.get(typeId);
@@ -229,7 +211,7 @@ public class CustomTaskBlockCache {
         Map<Integer, Set<Block>> collected = new HashMap<>();
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int typeId = def.getBlockTypeId();
-            if (typeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+            if (typeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
                 continue;
             }
             if (def.getScanBlocks() != null) {
@@ -252,9 +234,6 @@ public class CustomTaskBlockCache {
                 }
             }
         }
-        addIfPresent(collected, BlackoutOverlayTypes.STREET_PHONE, BlackoutOverlayTypes.getStreetPhoneBlock());
-        addIfPresent(collected, BlackoutOverlayTypes.ROTARY_PHONE_RED, BlackoutOverlayTypes.getRotaryPhoneRedBlock());
-        addIfPresent(collected, BlackoutOverlayTypes.HORN, BlackoutOverlayTypes.getHornBlock());
 
         Map<Integer, Block> unique = new HashMap<>();
         for (var entry : collected.entrySet()) {
@@ -265,9 +244,5 @@ public class CustomTaskBlockCache {
         return unique;
     }
 
-    private static void addIfPresent(Map<Integer, Set<Block>> collected, int typeId, Block block) {
-        if (block != null && block != Blocks.AIR) {
-            collected.computeIfAbsent(typeId, t -> new HashSet<>()).add(block);
-        }
-    }
+
 }

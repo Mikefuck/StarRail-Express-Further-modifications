@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * 维修员（已通过 {@link ParticipationComponent} 标记为不参与）也会被拉进对局队伍，
  * 聊天栏可见「已将N名成员加入队伍」，且可能被依赖队伍身份的后续逻辑当作参战成员。
  * 修机模式（{@code RepairGameSetup}）之外，谋杀/传统/发现/鹅鸭杀等全部继承
- * {@code SREMurderGameMode} 的玩法都走这一入口（含停电模式 {@code SREBlackoutGameMode}）。</p>
+ * {@code SREMurderGameMode} 的玩法都走这一入口。</p>
  *
  * <p>当名单里存在维修员时，本 mixin 在 {@code HEAD} 短路并按「过滤后的玩家名列表」重放
  * 上游三条命令（建队/入队/隐身可见关闭），其余情况（无维修员）完全保持上游原逻辑。

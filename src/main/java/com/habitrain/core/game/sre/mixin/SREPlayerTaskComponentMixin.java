@@ -88,10 +88,6 @@ public abstract class SREPlayerTaskComponentMixin {
         Player player = getPlayer();
         if (player == null) return;
 
-        // 停电模式任务系统独立化后，杀手双任务（假任务）机制已关闭：
-        // 杀手默认只走原版 SRE 任务，坏人专属任务通过红色电话商店购买。
-        // 原来的 generateParallelTask() 强制派发已移除。
-
         PerPlayerTaskTicker.tick(player);
     }
 

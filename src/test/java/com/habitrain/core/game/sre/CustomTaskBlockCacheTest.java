@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre;
 
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,12 +38,12 @@ class CustomTaskBlockCacheTest {
 
     @Test
     void putRefusesAfterGlobalCap() {
-        int phoneType = BlackoutOverlayTypes.STREET_PHONE;
+        int cap = CustomTaskBlockIndexLimits.DEFAULT_TYPE_CAP;
         int global = CustomTaskBlockCache.MAX_ENTRIES;
         for (int i = 0; i < global; i++) {
-            assertTrue(CustomTaskBlockCache.put(new BlockPos(i, 1, 0), phoneType));
+            assertTrue(CustomTaskBlockCache.put(new BlockPos(i, 1, 0), 100 + i / cap));
         }
-        assertFalse(CustomTaskBlockCache.put(new BlockPos(global, 1, 0), phoneType));
+        assertFalse(CustomTaskBlockCache.put(new BlockPos(global, 1, 0), 100 + global / cap));
         assertEquals(global, CustomTaskBlockCache.size());
     }
 

@@ -1,6 +1,6 @@
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.client.BlackoutKeyHandler;
+import com.habitrain.core.client.VoteKeyHandler;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
@@ -762,7 +762,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if ((keyCode == GLFW.GLFW_KEY_ESCAPE
-                || BlackoutKeyHandler.matchesOpenVoteKey(keyCode, scanCode))
+                || VoteKeyHandler.matchesOpenVoteKey(keyCode, scanCode))
                 && VoteLaunchSession.canHide()) {
             hideByUser();
             return true;

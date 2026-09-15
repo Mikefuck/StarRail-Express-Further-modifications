@@ -17,8 +17,7 @@ import net.fabricmc.api.Environment;
  *   <li>{@link ClientLifecycleHandler} - JOIN/DISCONNECT/游戏结束/配置保存生命周期</li>
  * </ul>
  * <p>
- * 静态可变状态存放于 {@link ClientStateHolder}（光影监测）与
- * {@link com.habitrain.core.client.gui.ClientBlackoutState}（停电模式）。
+ * 光影监测状态存放于 {@link ClientStateHolder}。
  */
 @Environment(EnvType.CLIENT)
 public class HabiTrainCoreClient implements ClientModInitializer {

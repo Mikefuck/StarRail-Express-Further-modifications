@@ -8,7 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * Result of the single victory fold used by both the SRE murder
- * {@code AllowGameEnd} listener and the blackout checker.
+ * {@code AllowGameEnd} listener.
  *
  * <p>Fold order (G10 P1.4):
  * <ol>

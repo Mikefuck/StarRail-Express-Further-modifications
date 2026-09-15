@@ -17,18 +17,8 @@ public final class NetworkRegistrar {
         ConfigUpdatePayload.register(); count++;
         ShaderConfigPayload.register(); count++;
         ShaderInfoPayload.register(); count++;
-        BlackoutTimerPayload.register(); count++;
-        BlackoutAnnouncePayload.register(); count++;
-        BlackoutPhoneOpenPayload.register(); count++;
-        BlackoutHirePolicePayload.register(); count++;
-        BlackoutHireResultPayload.register(); count++;
-        BlackoutVotePayload.register(); count++;
-        BlackoutVoteCastPayload.register(); count++;
         CustomTaskBlockPayload.register(); count++;
         FullConfigSyncPayload.register(); count++;
-        BlackoutTaskShopOpenPayload.register(); count++;
-        BlackoutTaskShopBuyPayload.register(); count++;
-        BlackoutTaskShopResultPayload.register(); count++;
         OptionVotePayload.register(); count++;
         OptionVoteCastPayload.register(); count++;
         MapVoteProfilePayload.register(); count++;

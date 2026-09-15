@@ -2,7 +2,6 @@ package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -123,22 +122,19 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
         double rangeSq = AURA_RANGE * AURA_RANGE;
         int count = 0;
         // 用 hasAnyAlive 替代 getAllAlive 列表拷贝（review L3）。
-        boolean blackout = BlackoutRoleManager.hasAnyAlive(level);
         for (ServerPlayer other : level.players()) {
             if (other == self || other.isSpectator()) continue;
             if (self.distanceToSqr(other) > rangeSq) continue;
-            if (!isAliveParticipant(level, game, other, blackout)) continue;
+            if (!isAliveParticipant(level, game, other)) continue;
             count++;
         }
         return count;
     }
 
     private static boolean isAliveParticipant(ServerLevel level, SREGameWorldComponent game,
-                                             ServerPlayer p, boolean blackout) {
+                                             ServerPlayer p) {
         if (p == null || p.isSpectator()) return false;
-        if (blackout) {
-            return BlackoutRoleManager.isAlive(level, p.getUUID());
-        }
+
         if (game == null || !game.isRunning()) return false;
         return game.getRole(p) != null;
     }

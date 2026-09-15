@@ -289,6 +289,8 @@ public class SceneMotionPage implements ConfigPage {
         if (!drafts.containsKey("__default__")) {
             drafts.put("__default__", new SceneProfileDraft(settings.getProfile("__default__")));
         }
+        drafts.putIfAbsent(SceneMotionSettings.LOBBY_MAP_KEY,
+                new SceneProfileDraft(settings.getProfile(SceneMotionSettings.LOBBY_MAP_KEY)));
         // The vote configuration is the authoritative list of selectable SRE maps in Mod Menu.
         // Seed a draft for every voted map so admins can configure it before any scene asset exists.
         SceneProfile defaultProfile = settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
@@ -319,6 +321,7 @@ public class SceneMotionPage implements ConfigPage {
     private List<String> availableMapKeys() {
         LinkedHashSet<String> keys = new LinkedHashSet<>();
         keys.add(SceneMotionSettings.DEFAULT_MAP_KEY);
+        keys.add(SceneMotionSettings.LOBBY_MAP_KEY);
         keys.addAll(ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
         keys.addAll(drafts.keySet());
         keys.removeIf(key -> key == null || key.isBlank());
@@ -448,6 +451,9 @@ public class SceneMotionPage implements ConfigPage {
     }
 
     private String mapLabel(String mapKey) {
+        if (SceneMotionSettings.LOBBY_MAP_KEY.equals(mapKey)) {
+            return tr("screen.habitrain_core.scene_motion.map_lobby");
+        }
         if (SceneMotionSettings.DEFAULT_MAP_KEY.equals(mapKey)) {
             return tr("screen.habitrain_core.scene_motion.map_default");
         }
@@ -1085,7 +1091,9 @@ public class SceneMotionPage implements ConfigPage {
         int sy = scroll.getContentY() + 4;
         int contentStartY = sy;
 
-        sy += drawWrapped(g, Component.translatable("screen.habitrain_core.scene_motion.intro"),
+        sy += drawWrapped(g, Component.translatable(SceneMotionSettings.LOBBY_MAP_KEY.equals(selectedMapKey)
+                        ? "screen.habitrain_core.scene_motion.lobby_intro"
+                        : "screen.habitrain_core.scene_motion.intro"),
                 innerX + 4, sy, innerWidth - 8, MenuTheme.TEXT_SECONDARY) + 7;
 
         sy = SectionHeader.render(g, font, innerX, sy, innerWidth,

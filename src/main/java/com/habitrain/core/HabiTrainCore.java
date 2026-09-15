@@ -7,12 +7,6 @@ import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelQuestDefinition;
 import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.blackout.BlackoutDeathHandler;
-import com.habitrain.core.game.blackout.BlackoutHornVoteHandler;
-import com.habitrain.core.game.blackout.BlackoutMode;
-import com.habitrain.core.game.blackout.BlackoutPhoneHandler;
-import com.habitrain.core.game.blackout.sre.SREBlackoutGameLauncher;
-import com.habitrain.core.game.blackout.sre.SREBlackoutGameMode;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.EliminatedRestAreaService;
 import com.habitrain.core.game.sre.MvpScoreTracker;
@@ -25,7 +19,6 @@ import com.habitrain.core.task.BackpackSearchHandler;
 import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
-import betel.nut.BetelNutConfig;
 import net.fabricmc.api.ModInitializer;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -59,10 +52,6 @@ public class HabiTrainCore implements ModInitializer {
     // look_my_eyes.ogg now bundled in assets
     public static final ResourceLocation BACKPACK_SEARCH_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "backpack_search");
     public static final SoundEvent BACKPACK_SEARCH_SOUND = SoundEvent.createVariableRangeEvent(BACKPACK_SEARCH_ID);
-    public static final ResourceLocation PHONE_OPERATOR_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "phone_operator");
-    public static final SoundEvent PHONE_OPERATOR_SOUND = SoundEvent.createVariableRangeEvent(PHONE_OPERATOR_ID);
-    public static final ResourceLocation PHONE_RING_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "phone_ring");
-    public static final SoundEvent PHONE_RING_SOUND = SoundEvent.createVariableRangeEvent(PHONE_RING_ID);
     public static final ResourceLocation MIKE_CODE_EDIT_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "mike_code_edit");
     public static final SoundEvent MIKE_CODE_EDIT_SOUND = SoundEvent.createVariableRangeEvent(MIKE_CODE_EDIT_ID);
 
@@ -73,14 +62,6 @@ public class HabiTrainCore implements ModInitializer {
     @Deprecated public static final String TASK_BLACKOUT_EAT = TASK_EAT;
     /** @deprecated Use {@link #TASK_DRINK}; retained for downstream source compatibility. */
     @Deprecated public static final String TASK_BLACKOUT_DRINK = TASK_DRINK;
-    public static final String TASK_BLACKOUT_SEARCH_BACKPACK = MOD_ID + ":blackout_search_backpack";
-    public static final String TASK_BLACKOUT_BETEL_QUEST = MOD_ID + ":blackout_betel_quest";
-    public static final String TASK_BLACKOUT_PET_CAT = MOD_ID + ":blackout_pet_cat";
-    public static final String TASK_BLACKOUT_BE_ALONE = MOD_ID + ":blackout_be_alone";
-    public static final String TASK_BLACKOUT_LOOK_MY_EYES = MOD_ID + ":blackout_look_my_eyes";
-    public static final String TASK_ADD_COAL = MOD_ID + ":add_coal";
-    public static final String TASK_REPAIR_WIRING = MOD_ID + ":repair_wiring";
-    public static final String TASK_MAINTAIN_POWER = MOD_ID + ":maintain_power";
 
     @Override
     public void onInitialize() {
@@ -96,15 +77,10 @@ public class HabiTrainCore implements ModInitializer {
         // 角色扩展 v2 配置（独立版本化文件 config/habitrain_role_v2.json，服务端权威）
         com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.load();
         com.habitrain.core.game.sre.KnifeDurabilityToggleService.register();
-        // 2. 注册内置 GameMode（SRE 模式 + 停电模式）
+        // 2. 注册内置 GameMode（SRE 模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
         GameModeRegistry.register(MOD_ID, "sre:repair", new SRERepairMode());
-        BlackoutMode blackoutMode = new BlackoutMode();
-        blackoutMode.setSreGameLauncher(SREBlackoutGameLauncher.INSTANCE);
-        GameModeRegistry.register(MOD_ID, "habitrain:blackout", blackoutMode);
-        // 注册停电模式专用的 SRE GameMode（复用 SRE 原版角色分配流程）。
-        SREBlackoutGameMode.register();
         // 扫描 SRE 原版模式，注册轻量代理进 GameModeRegistry（须在 SERVER_STARTED freeze 前）。
         // 这样 SRE/Wathe 新版本新增的模式会自动出现在注册表、/habi_api list 与模式投票中。
         SREOriginalModeBridge.registerAll();
@@ -257,30 +233,6 @@ public class HabiTrainCore implements ModInitializer {
         // 8. 注册内置任务
         BuiltinTaskRegistrar.register();
         ModTickHandler.register();
-        // 停电模式任务注册
-        com.habitrain.core.game.blackout.task.AddCoalTask.register();
-        com.habitrain.core.game.blackout.task.AddCoalHandler.register();
-        com.habitrain.core.game.blackout.task.RepairWiringTask.register();
-        com.habitrain.core.game.blackout.task.RepairWiringHandler.register();
-        com.habitrain.core.game.blackout.task.SabotageWiringTask.register();
-        com.habitrain.core.game.blackout.task.SabotageWiringHandler.register();
-        com.habitrain.core.game.blackout.task.FurnaceExplosionTask.register();
-        com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.register();
-        com.habitrain.core.game.blackout.task.MaintainPowerTask.register();
-        com.habitrain.core.game.blackout.task.MaintainPowerHandler.register();
-        com.habitrain.core.game.blackout.task.RestorePowerTask.register();
-        com.habitrain.core.game.blackout.task.RestorePowerHandler.register();
-
-        // 停电模式日常专属任务（吃喝已由全模式 Core 任务统一接管）
-        com.habitrain.core.game.blackout.task.BlackoutSearchBackpackTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutBetelQuestTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutPetCatTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutBeAloneTask.register();
-        com.habitrain.core.game.blackout.task.BlackoutLookMyEyesTask.register();
-        BlackoutPhoneHandler.register();
-        BlackoutDeathHandler.register();
-        BlackoutHornVoteHandler.register();
-        com.habitrain.core.game.blackout.shop.BlackoutTaskShopHandler.register();
         com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().init();
         com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.registerCommon();
         com.habitrain.core.scene.item.HabiAdminItems.init();
@@ -299,22 +251,11 @@ public class HabiTrainCore implements ModInitializer {
         Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_GET_ID, BETEL_NUT_GET_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, LOOK_MY_EYES_ID, LOOK_MY_EYES_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, BACKPACK_SEARCH_ID, BACKPACK_SEARCH_SOUND);
-        Registry.register(BuiltInRegistries.SOUND_EVENT, PHONE_OPERATOR_ID, PHONE_OPERATOR_SOUND);
-        Registry.register(BuiltInRegistries.SOUND_EVENT, PHONE_RING_ID, PHONE_RING_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, MIKE_CODE_EDIT_ID, MIKE_CODE_EDIT_SOUND);
-        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes, backpack_search, phone_operator, phone_ring, mike_code_edit");
+        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes, backpack_search, mike_code_edit");
     }
 
     private void initBetelSystem() {
-        var betelConfig = BetelNutConfig.get();
-        // Blackout betel quests require addiction; force-on is intentional gameplay coupling.
-        // Documented for operators: config file enableAddictionSystem is overridden at runtime.
-        if (!betelConfig.enableAddictionSystem) {
-            betelConfig.enableAddictionSystem = true;
-            LOGGER.info("已强制开启槟榔mod的成瘾系统（停电任务依赖；覆盖配置文件设置）");
-        } else {
-            LOGGER.info("槟榔mod的成瘾系统已开启");
-        }
         BetelQuestState.init();
         BackpackQuestState.init();
         BetelQuestDefinition.register();

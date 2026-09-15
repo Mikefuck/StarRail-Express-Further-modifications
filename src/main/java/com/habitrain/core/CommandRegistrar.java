@@ -51,29 +51,8 @@ public final class CommandRegistrar {
                         )
                 );
             }
-            // /habi_api 命令族（OP：blackout/list/vote）
+            // /habi_api 命令族（OP：list/vote）
             dispatcher.register(Commands.literal("habi_api")
-                    .then(Commands.literal("blackout")
-                            .requires(source -> source.hasPermission(2))
-                            .executes(ctx -> {
-                                ServerLevel level = ctx.getSource().getLevel();
-                                if (SREModeStartAdapter.isSreGameBlocking(level)) {
-                                    ctx.getSource().sendFailure(
-                                            Component.literal("§c无法启动停电模式：当前维度已有 SRE 对局正在进行或启动中"));
-                                    return 0;
-                                }
-                                try {
-                                    GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
-                                    ctx.getSource().sendSuccess(
-                                            () -> Component.literal("§a✅ 停电模式已启动！"), true);
-                                    return 1;
-                                } catch (Exception e) {
-                                    ctx.getSource().sendFailure(
-                                            Component.literal("§c启动失败: " + e.getMessage()));
-                                    return 0;
-                                }
-                            })
-                    )
                     .then(Commands.literal("list")
                             .requires(source -> source.hasPermission(2))
                             .executes(ctx -> {
@@ -471,7 +450,7 @@ public final class CommandRegistrar {
               );
             dispatcher.register(roleApiRootCommand());
           });
-        LOGGER.info("命令已注册: /instantgroup, /habi_api blackout|list|vote|mappool|repair|menugate, /habitrain roleapi");
+        LOGGER.info("命令已注册: /instantgroup, /habi_api list|vote|mappool|repair|menugate, /habitrain roleapi");
     }
 
     private static java.util.UUID playerIdOrNull(MinecraftServer server, String name) {

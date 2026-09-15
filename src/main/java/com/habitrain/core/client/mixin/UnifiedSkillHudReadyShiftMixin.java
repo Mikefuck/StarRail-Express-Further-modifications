@@ -1,7 +1,7 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.client.BlackoutKeyHandler;
+import com.habitrain.core.client.VoteKeyHandler;
 import com.habitrain.core.client.EliminatedRestPromptState;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.api.SRERole;
@@ -88,7 +88,7 @@ public class UnifiedSkillHudReadyShiftMixin {
             return translated;
         }
         return translated.append(" (")
-                .append(BlackoutKeyHandler.getBoundKeyDisplay())
+                .append(VoteKeyHandler.getBoundKeyDisplay())
                 .append(")");
     }
 

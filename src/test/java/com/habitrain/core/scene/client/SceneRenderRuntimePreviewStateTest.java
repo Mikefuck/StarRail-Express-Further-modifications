@@ -21,6 +21,22 @@ class SceneRenderRuntimePreviewStateTest {
     }
 
     @Test
+    void lateMatchFinishRetainsAlreadyReceivedLobbyState() {
+        String lobby = com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY;
+        SceneProfile profile = com.habitrain.core.config.SceneMotionSettings.createDefault().getProfile(lobby);
+        // A preview suppresses graphics/effect setup while the server state arrives.
+        runtime.startPreview("old_match", profile, SceneAssetDescriptor.EMPTY);
+        var state = new com.habitrain.core.scene.model.SceneRuntimeState(true, 100, 2, lobby, "", profile);
+        runtime.updateRuntimeState(state);
+
+        SceneClientRuntime.onMatchFinished();
+
+        assertFalse(runtime.isPreviewActive());
+        assertEquals(state, runtime.getCurrentState());
+        assertTrue(runtime.getCurrentState().isActive());
+    }
+
+    @Test
     void previewStateIsOwnedByRuntimeAndScopedToItsMap() {
         runtime.startPreview("wathe", new SceneProfile(), SceneAssetDescriptor.EMPTY);
 

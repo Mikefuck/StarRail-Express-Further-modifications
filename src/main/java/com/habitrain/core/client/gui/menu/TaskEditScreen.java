@@ -36,7 +36,7 @@ public class TaskEditScreen extends Screen {
     private int contentHeight = 0;
 
     private Button enableBtn;
-    private EditBox goldField, emotionField, weightField, shopPriceField;
+    private EditBox goldField, emotionField, weightField;
     private Button saveBtn, saveReturnBtn, resetBtn;
     private Button topBackBtn;
 
@@ -94,12 +94,6 @@ public class TaskEditScreen extends Screen {
         weightField.setHint(Component.literal("默认"));
         weightField.setEditable(remoteEditable);
 
-        shopPriceField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
-        shopPriceField.setMaxLength(8);
-        if (cfg.hasShopPrice) shopPriceField.setValue(String.valueOf(cfg.shopPrice));
-        shopPriceField.setHint(Component.literal("默认"));
-        shopPriceField.setEditable(remoteEditable);
-
         int centerX = width / 2;
         int btnY = height - FOOTER_H + 6;
 
@@ -108,7 +102,7 @@ public class TaskEditScreen extends Screen {
                 MenuPermissions.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
+            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
             saveController.saveCurrent();
             TaskSaveController.showMessage("§a✔ 任务「" + def.getDisplayName() + "」已保存！");
         }).bounds(centerX - 155, btnY, 90, 20).build();
@@ -151,7 +145,7 @@ public class TaskEditScreen extends Screen {
     }
 
     private void recalcContentHeight() {
-        contentHeight = 420 + (isBlackoutExclusiveTask() ? ROW_H : 0);
+        contentHeight = 420;
         clampScroll();
     }
 
@@ -242,7 +236,7 @@ public class TaskEditScreen extends Screen {
     }
 
     private int renderRewardCard(GuiGraphics g, int mx, int my, float delta, int x, int y, int w) {
-        int rows = isBlackoutExclusiveTask() ? 4 : 3;
+        int rows = 3;
         int cardH = 38 + rows * 24 + 8;
         card(g, x, y, w, cardH, "奖励与权重", "留空时继承任务定义默认值", MenuTheme.ACCENT_AMBER);
         int rowY = y + 38;
@@ -254,9 +248,7 @@ public class TaskEditScreen extends Screen {
         renderFieldRow(g, mx, my, delta, x, rowY, "刷新权重", weightField,
                 String.format("当前 %.1f", effectiveWeight));
         rowY += 24;
-        if (isBlackoutExclusiveTask()) {
-            renderFieldRow(g, mx, my, delta, x, rowY, "商店价格", shopPriceField, "系统默认");
-        }
+
         return y + cardH;
     }
 
@@ -337,12 +329,6 @@ public class TaskEditScreen extends Screen {
         return Math.max(1, width - rightPanelX() - PAD);
     }
 
-    /** 是否为停电专属任务（电话商店购买类，需要商店价格配置）。 */
-    private boolean isBlackoutExclusiveTask() {
-        TaskCategory cat = def.getCategory();
-        return com.habitrain.core.game.blackout.BlackoutMode.BLACKOUT_GOOD.equals(cat)
-                || com.habitrain.core.game.blackout.BlackoutMode.BLACKOUT_BAD.equals(cat);
-    }
 
     private Component makeEnableText() {
         return Component.literal(cfg.enabled ? "§a✔ 已启用" : "§c✘ 已禁用");
@@ -350,7 +336,7 @@ public class TaskEditScreen extends Screen {
 
     private void goBack() {
         if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
-            saveController.syncFields(goldField, emotionField, weightField, shopPriceField, mapEditor.mapField);
+            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
             saveController.saveCurrent();
         }
         Minecraft.getInstance().setScreen(parent);
@@ -401,7 +387,6 @@ public class TaskEditScreen extends Screen {
         goldField.setFocused(false);
         emotionField.setFocused(false);
         weightField.setFocused(false);
-        shopPriceField.setFocused(false);
         mapEditor.mapField.setFocused(false);
 
         if (mx >= enableBtn.getX() && mx < enableBtn.getX() + enableBtn.getWidth()
@@ -444,16 +429,6 @@ public class TaskEditScreen extends Screen {
             weightField.setFocused(true);
             return true;
         }
-        if (isBlackoutExclusiveTask()
-                && mx >= shopPriceField.getX() && mx < shopPriceField.getX() + shopPriceField.getWidth()
-                && my >= shopPriceField.getY() && my < shopPriceField.getY() + 14) {
-            if (!remoteEditable) {
-                MenuPermissions.showDeniedMessage();
-                return true;
-            }
-            shopPriceField.setFocused(true);
-            return true;
-        }
 
         return false;
     }
@@ -481,7 +456,6 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.keyPressed(key, sc, mod)) return true;
         if (emotionField.isFocused() && emotionField.keyPressed(key, sc, mod)) return true;
         if (weightField.isFocused() && weightField.keyPressed(key, sc, mod)) return true;
-        if (shopPriceField.isFocused() && shopPriceField.keyPressed(key, sc, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyPressed(key, sc, mod)) return true;
 
         if (key == 256) {
@@ -496,7 +470,6 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.charTyped(ch, mod)) return true;
         if (emotionField.isFocused() && emotionField.charTyped(ch, mod)) return true;
         if (weightField.isFocused() && weightField.charTyped(ch, mod)) return true;
-        if (shopPriceField.isFocused() && shopPriceField.charTyped(ch, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.charTyped(ch, mod)) return true;
         return super.charTyped(ch, mod);
     }
@@ -506,7 +479,6 @@ public class TaskEditScreen extends Screen {
         if (goldField.isFocused() && goldField.keyReleased(key, sc, mod)) return true;
         if (emotionField.isFocused() && emotionField.keyReleased(key, sc, mod)) return true;
         if (weightField.isFocused() && weightField.keyReleased(key, sc, mod)) return true;
-        if (shopPriceField.isFocused() && shopPriceField.keyReleased(key, sc, mod)) return true;
         if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyReleased(key, sc, mod)) return true;
         return super.keyReleased(key, sc, mod);
     }

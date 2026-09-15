@@ -4,7 +4,6 @@ import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ConfigUpdateScope;
 import com.habitrain.core.network.OptionVoteCastPayload;
 import com.habitrain.core.network.ShaderInfoPayload;
-import com.habitrain.core.network.VotePurpose;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -45,30 +44,6 @@ public final class PayloadSenders {
         String sceneMapKey = com.habitrain.core.client.gui.menu.ConfigUpdateContext.currentSceneMapKey();
         ClientPlayNetworking.send(new ConfigUpdatePayload(
                 ConfigUpdateScope.attachToConfigJson(configJson, scope, sceneMapKey)));
-    }
-
-    /** 从客户端发送聘请警察请求到服务端。 */
-    public static void sendHirePolice() {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutHirePolicePayload());
-    }
-
-    /** 从客户端发送投票。purpose 指定投票类型，targetPlayerId 为投票目标。 */
-    public static void sendVoteCast(VotePurpose purpose, UUID targetPlayerId) {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, targetPlayerId));
-    }
-
-    /** 从客户端撤销当前投票（弃票）。语义等价于 {@code sendVoteCast(purpose, null)} 但意图更清晰。 */
-    public static void sendVoteRevoke(VotePurpose purpose) {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutVoteCastPayload(purpose, null));
-    }
-
-    /** 从客户端发送停电任务商店购买请求。 */
-    public static void sendTaskShopBuy(String entryKey) {
-        if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new com.habitrain.core.network.BlackoutTaskShopBuyPayload(entryKey));
     }
 
     /**

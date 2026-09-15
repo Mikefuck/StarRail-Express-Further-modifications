@@ -8,10 +8,12 @@ import com.habitrain.core.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.model.SceneProfile;
 import com.habitrain.core.scene.model.SceneBackgroundKey;
 import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.scene.model.SceneLobbyPolicy;
 import com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneRuntimeStateS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -40,6 +42,7 @@ public final class SceneRuntimeCoordinator {
     private SceneContextResolver contextResolver = SreSceneContextResolver.INSTANCE;
     private final Map<String, SceneRuntimeState> levelRuntimeStates = new ConcurrentHashMap<>();
     private final Map<String, List<SceneRuntimeState>> levelAdditionalRuntimeStates = new ConcurrentHashMap<>();
+    private final Map<String, List<SceneMotionSettings.ResolvedBackground>> lobbyConfigurations = new ConcurrentHashMap<>();
     private final AtomicInteger profileRevision = new AtomicInteger(1);
 
     private SceneRuntimeCoordinator() {}
@@ -51,11 +54,14 @@ public final class SceneRuntimeCoordinator {
     public void init() {
         MatchEvents.STARTED.register(this::onMatchStarted);
         MatchEvents.ROUND_ENDED.register((level, settlement) -> onMatchEnded(level));
+        ServerTickEvents.END_WORLD_TICK.register(level -> updateLobby(level, false));
         LOGGER.info("移动场景运行协调器已初始化并监听 MatchEvents");
     }
 
     public void onMatchStarted(ServerLevel level) {
         if (level == null) return;
+        // Clear the lobby even if the upcoming match has no enabled scene.
+        clearLobbyForMatch(level);
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
         if (!settings.enabled) {
             LOGGER.debug("场景系统已全局禁用，跳过开局启动");
@@ -130,6 +136,13 @@ public final class SceneRuntimeCoordinator {
     public void onMatchEnded(ServerLevel level) {
         if (level == null) return;
         ScenePreloadCoordinator.getInstance().reset(level);
+        lobbyConfigurations.remove(level.dimension().location().toString());
+        stopRuntime(level);
+        // OnGameEnd fires while SRE is still STOPPING. The tick hook waits for the
+        // actual non-match state before restoring the lobby.
+    }
+
+    private void stopRuntime(ServerLevel level) {
         String dimKey = level.dimension().location().toString();
         SceneRuntimeState oldState = levelRuntimeStates.remove(dimKey);
         levelAdditionalRuntimeStates.remove(dimKey);
@@ -146,6 +159,7 @@ public final class SceneRuntimeCoordinator {
     public void onPlayerJoin(ServerPlayer player) {
         if (player == null || player.serverLevel() == null) return;
         ServerLevel level = player.serverLevel();
+        updateLobby(level, true);
         String dimKey = level.dimension().location().toString();
         SceneRuntimeState state = levelRuntimeStates.get(dimKey);
 
@@ -272,7 +286,8 @@ public final class SceneRuntimeCoordinator {
      */
     public boolean deactivate(ServerLevel level) {
         if (level == null) return false;
-        onMatchEnded(level);
+        ScenePreloadCoordinator.getInstance().reset(level);
+        stopRuntime(level);
         return true;
     }
 
@@ -294,6 +309,46 @@ public final class SceneRuntimeCoordinator {
     public void resetAll() {
         levelRuntimeStates.clear();
         levelAdditionalRuntimeStates.clear();
+        lobbyConfigurations.clear();
+    }
+
+    private void clearLobbyForMatch(ServerLevel level) {
+        lobbyConfigurations.remove(level.dimension().location().toString());
+        if (SceneMotionSettings.LOBBY_MAP_KEY.equals(getRuntimeState(level).getMapKey())) {
+            stopRuntime(level);
+        }
+    }
+
+    /** Stop the lobby before vote prefetch, so stopping it cannot discard prepared match meshes. */
+    public void onMatchPreparing(ServerLevel level) {
+        if (level != null) clearLobbyForMatch(level);
+    }
+
+    /** Poll settings once a second; match transitions are checked every tick. */
+    private void updateLobby(ServerLevel level, boolean force) {
+        var context = contextResolver.resolve(level);
+        if (context.matchActive() || contextResolver.isPreparingMatch(level)) {
+            clearLobbyForMatch(level);
+            return;
+        }
+        if (level.players().isEmpty() || !force && level.getGameTime() % 20 != 0) return;
+        String dimension = level.dimension().location().toString();
+        var desired = SceneLobbyPolicy.resolve(
+                ConfigManager.getInstance().getSceneMotionSettings(), dimension, false);
+        if (desired.equals(lobbyConfigurations.get(dimension))) return;
+        // Snapshot mutable profiles so editing in an integrated server is detected too.
+        lobbyConfigurations.put(dimension, desired.stream().map(background ->
+                new SceneMotionSettings.ResolvedBackground(background.id(), background.name(),
+                        background.profile().copy(), background.fallback())).toList());
+        SceneRuntimeState current = getRuntimeState(level);
+        if (current.isActive() && !SceneMotionSettings.LOBBY_MAP_KEY.equals(current.getMapKey())) {
+            return; // Preserve explicitly activated API/command scenes outside matches.
+        }
+        if (desired.isEmpty()) {
+            if (current.isActive()) stopRuntime(level);
+        } else {
+            activate(level, SceneMotionSettings.LOBBY_MAP_KEY);
+        }
     }
 
     private List<SceneRuntimeState> createAdditionalStates(SceneMotionSettings settings, String mapKey,

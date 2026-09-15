@@ -1,7 +1,6 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import com.habitrain.core.game.sre.CustomTaskBlockIndexLimits;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
@@ -70,14 +69,9 @@ public final class ViewModeDispatcher {
     private static Color resolveColor(Set<Integer> typeIds, Map<Integer, Color> colors) {
         Color found = null;
         int best = Integer.MAX_VALUE;
-        boolean phone = false;
         for (int typeId : typeIds) {
-            if (typeId == BlackoutOverlayTypes.STREET_PHONE
-                    || typeId == BlackoutOverlayTypes.ROTARY_PHONE_RED
-                    || typeId == BlackoutOverlayTypes.HORN) {
-                phone = true;
-            }
-            if (typeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+
+            if (typeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
                 continue;
             }
             Color mapped = colors.get(typeId);
@@ -89,9 +83,7 @@ public final class ViewModeDispatcher {
         if (found != null) {
             return found;
         }
-        if (phone) {
-            return PhoneOverlayRenderer.PHONE_OVERLAY_COLOR;
-        }
+
         return FALLBACK_COLOR;
     }
 }

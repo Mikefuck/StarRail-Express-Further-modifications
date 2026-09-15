@@ -12,7 +12,6 @@ public class ConfigRepository {
     private int sheriffCountDivisor = 6;
     private boolean minigameGlobalEnabled = true;
     private boolean shaderWhitelistEnabled = false;
-    private int tempPowerPrice = 100;
     private boolean knifeDurabilityEnabled = false;
     private boolean lobbyVoiceGroupEnabled = true;
     /** SRE 停电成功后施加给全体玩家的通用物品冷却；0 表示不传播通用冷却。 */
@@ -73,12 +72,6 @@ public class ConfigRepository {
 
     public void setSheriffCountDivisor(int divisor) {
         this.sheriffCountDivisor = Math.max(1, divisor);
-    }
-
-    public int getTempPowerPrice() { return tempPowerPrice; }
-
-    public void setTempPowerPrice(int price) {
-        this.tempPowerPrice = Math.max(0, price);
     }
 
     public boolean isKnifeDurabilityEnabled() { return knifeDurabilityEnabled; }

@@ -14,8 +14,8 @@ import java.util.Map;
 /**
  * 对局内活跃人数不足阈值时自动下雨的控制器。
  *
- * 全局生效：对所有在主世界运行的 SRE 对局（凶杀/修理/停电）生效，不局限于停电模式。
- * 存活人数取 SRE 自带 getAlivePlayerRoleTeamInfo（适用所有模式，非停电不再返回 0）。
+ * 全局生效：对所有在主世界运行的 SRE 对局（凶杀/修理等模式）生效。
+ * 存活人数取 SRE 自带 getAlivePlayerRoleTeamInfo（适用所有模式）。
  * 只影响主世界，只跟踪由本机制触发的雨（不清自然雨/地图脚本雨）。
  * 大厅阶段不触发（主世界无运行中的 SRE 对局时不生效）。
  * 对局结束时只清 force 标志，天气由 EnvironmentController 接管 lobby/post-match。
@@ -50,7 +50,7 @@ public final class SREWeatherController {
     /**
      * 每秒调用一次（每 20 tick）。
      * 对局内活跃人数 &lt; minPlayers → 下雨；≥ minPlayers → 恢复匹配环境天气。
-     * 对所有 SRE 对局生效（凶杀/修理/停电），不局限于停电模式。
+     * 对所有 SRE 对局生效（凶杀/修理等模式）。
      * 只操作主世界。受 lowPlayerRainEnabled 开关控制。
      */
     public static void tick(ServerLevel overworld) {
@@ -79,7 +79,7 @@ public final class SREWeatherController {
             return;
         }
 
-        // 计算当前 SRE 对局存活人数（适用所有 SRE 模式：凶杀/修理/停电）
+        // 计算当前 SRE 对局存活人数（适用所有 SRE 模式：凶杀/修理等模式）
         int aliveCount;
         try {
             var info = sreGame.getAlivePlayerRoleTeamInfo();

@@ -19,6 +19,10 @@ import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
+import io.wifi.starrailexpress.content.item.KeyItem;
+import io.wifi.starrailexpress.content.item.NoteItem;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -29,6 +33,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.UseAnim;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -375,19 +380,19 @@ public final class SevenSinV2BehaviorHooks {
         Inventory inv = victim.getInventory();
         for (int i = 0; i < inv.offhand.size(); i++) {
             ItemStack stack = inv.offhand.get(i);
-            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
+            if (canEnvyTake(stack)) {
                 candidates.add(new SlotRef(SlotKind.OFF, i));
             }
         }
         for (int i = 0; i < inv.items.size(); i++) {
             ItemStack stack = inv.items.get(i);
-            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
+            if (canEnvyTake(stack)) {
                 candidates.add(new SlotRef(SlotKind.MAIN, i));
             }
         }
         for (int i = 0; i < inv.armor.size(); i++) {
             ItemStack stack = inv.armor.get(i);
-            if (stack != null && !stack.isEmpty() && !stack.is(Items.AIR)) {
+            if (canEnvyTake(stack)) {
                 candidates.add(new SlotRef(SlotKind.ARMOR, i));
             }
         }
@@ -418,7 +423,21 @@ public final class SevenSinV2BehaviorHooks {
             envy.displayClientMessage(
                     Component.translatable("message.habitrain_core.sin_envy.no_item"), true);
         }
+    }
 
+    /** All inventory items are eligible except keys, correspondence and food/drink. */
+    private static boolean canEnvyTake(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        var item = stack.getItem();
+        if (item instanceof KeyItem || item instanceof NoteItem) return false;
+        // Include separately implemented role keys/letters and plain bridge items.
+        String path = BuiltInRegistries.ITEM.getKey(item).getPath();
+        if (path.equals("key") || path.endsWith("_key")
+                || path.equals("letter") || path.endsWith("_letter")
+                || path.equals("note") || path.endsWith("_note")) return false;
+        return !stack.has(DataComponents.FOOD)
+                && stack.getUseAnimation() != UseAnim.EAT
+                && stack.getUseAnimation() != UseAnim.DRINK;
     }
 
     private enum SlotKind { MAIN, OFF, ARMOR }
@@ -430,7 +449,7 @@ public final class SevenSinV2BehaviorHooks {
                 case OFF -> inv.offhand.get(index);
                 case ARMOR -> inv.armor.get(index);
             };
-            if (stack == null || stack.isEmpty() || stack.is(Items.AIR)) {
+            if (!canEnvyTake(stack)) {
                 return ItemStack.EMPTY;
             }
             ItemStack taken = stack.copyWithCount(1);

@@ -2,11 +2,6 @@ package com.habitrain.core.client;
 
 import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.cache.ClientMapIntroCache;
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
-import com.habitrain.core.client.gui.BlackoutTaskShopState;
-import com.habitrain.core.client.gui.BlackoutVoteState;
-import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
-import com.habitrain.core.client.gui.ClientBlackoutState;
 import com.habitrain.core.client.gui.MapVotePreviewCache;
 import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.gui.VoteLaunchSession;
@@ -29,7 +24,7 @@ import net.minecraft.client.Minecraft;
 /**
  * 客户端生命周期事件处理。
  * <p>
- * 管理 JOIN / DISCONNECT 事件、游戏结束事件、配置保存回调以及报幕 tick，
+ * 管理 JOIN / DISCONNECT 事件、游戏结束事件、配置保存回调以及场景提示 tick，
  * 在这些生命周期节点执行状态重置与 {@link ShaderMonitor} 的启动/停止。
  */
 @Environment(EnvType.CLIENT)
@@ -41,8 +36,6 @@ public class ClientLifecycleHandler {
         this.shaderMonitor = shaderMonitor;
 
         // 玩家加入服务器 → 清除上一局残留的 HUD 状态 + 报告当前光影包 + 启动监测
-        // ★ 必须在 JOIN 时重置停电 HUD：退出游戏时 DISCONNECT 与排队中的 timer payload
-        //   存在竞态，reset() 可能先于 payload 执行，导致 showHud 被重新置 true 并残留到下一世界。
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             client.execute(() -> {
                 boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
@@ -66,9 +59,8 @@ public class ClientLifecycleHandler {
             com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
         });
 
-        // 客户端 tick：报幕 tick（每帧执行，独立于光影监测）
+        // 客户端 tick：场景视距提示（独立于光影监测）
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            BlackoutWelcomeRenderer.tick();
             com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().tick(client);
         });
 
@@ -117,7 +109,7 @@ public class ClientLifecycleHandler {
                     transition.markGameFinished();
                 }
                 GameRunningCache.invalidate();
-                resetState(ClientSessionResetPolicy.clearEspCachesOnGameFinished(), false);
+                resetState(ClientSessionResetPolicy.clearEspCachesOnGameFinished(), false, true);
             });
         });
 
@@ -138,18 +130,18 @@ public class ClientLifecycleHandler {
     }
 
     private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig) {
+        resetState(clearEspCaches, reloadLocalConfig, false);
+    }
+
+    private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig, boolean matchFinished) {
         GameRunningCache.invalidate();
         ConfigUpdateContext.reset();
         RepairModeClientState.reset();
         MenuAccessGuard.reset();
-        BlackoutHudOverlay.reset();
-        BlackoutWelcomeRenderer.reset();
-        BlackoutVoteState.clear();
         OptionVoteState.clear();
         VoteLaunchSession.clear();
         MapVotePreviewCache.clearAll();
         ClientMapIntroCache.clear();
-        ClientBlackoutState.setBlackoutModeActive(false);
         if (clearEspCaches) {
             ActiveTaskCache.clearAll();
             CustomTaskBlockCache.clear();
@@ -158,7 +150,6 @@ public class ClientLifecycleHandler {
             ConfigManager.getInstance().load();
             InstinctColorHelper.markDirty();
         }
-        BlackoutTaskShopState.clear();
         // 开局转场覆盖层在换世界/断线时释放，避免阻塞残留到下一局。
         com.habitrain.core.client.gui.VoteLaunchOverlayState.setActive(false);
         com.habitrain.core.client.gui.VoteLaunchOverlayState.scheduleGrace(0L);
@@ -170,6 +161,10 @@ public class ClientLifecycleHandler {
         com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
         com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
         com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().reset();
-        com.habitrain.core.scene.client.SceneClientRuntime.reset("client_state_reset");
+        if (matchFinished) {
+            com.habitrain.core.scene.client.SceneClientRuntime.onMatchFinished();
+        } else {
+            com.habitrain.core.scene.client.SceneClientRuntime.reset("client_state_reset");
+        }
     }
 }

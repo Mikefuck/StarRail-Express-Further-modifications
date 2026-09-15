@@ -6,10 +6,6 @@ import com.habitrain.core.internal.CoreBootstrap;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.betel.BetelQuestState;
-import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
-import com.habitrain.core.game.blackout.BlackoutPoliceHireService;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
-import com.habitrain.core.game.blackout.BlackoutTimerSystem;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREModeStartAdapter;
@@ -116,7 +112,7 @@ public final class LifecycleEventsRegistrar {
                 LOGGER.error("[Lifecycle] stuck-blackout scan failed", t);
             }
         });
-        // 服务器关闭时清理停电模式各 manager 的 per-level 静态 Map 条目。
+        // 服务器关闭时清理各服务的 per-level 静态状态。
         // 单机模式下集成服务器停止后客户端 JVM 仍存活，static 字段不会重置，
         // 不清理会导致下一局残留状态（计时器/角色/商店/投票）误用。
         // 注：fabric-api 此版本无 ServerLevelEvents.UNLOAD，故在 SERVER_STOPPING 遍历所有 level 清理。
@@ -145,10 +141,6 @@ public final class LifecycleEventsRegistrar {
                 if (GameModeRegistry.isActiveInLevel(level)) {
                     GameModeRegistry.stop(level);
                 }
-                BlackoutRoleManager.clear(level);
-                BlackoutTimerSystem.reset(level);
-                BlackoutPoliceHireService.cleanup(level);
-                BlackoutExileVoteManager.reset(level);
                 OptionVoteManager.reset(level);
                 ModeMapVoteOrchestrator.reset(level);
                 com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
@@ -165,20 +157,12 @@ public final class LifecycleEventsRegistrar {
             SlownessReapplyManager.clearAll();
             BetelLeafHandler.clearAllHarvests();
             BackpackSearchHandler.clearAllSearches();
-            com.habitrain.core.game.blackout.task.AddCoalHandler.clearAll();
-            com.habitrain.core.game.blackout.task.FurnaceExplosionHandler.clearAll();
-            com.habitrain.core.game.blackout.task.MaintainPowerHandler.clearAll();
-            com.habitrain.core.game.blackout.task.RestorePowerHandler.clearAll();
-            com.habitrain.core.game.blackout.task.RepairWiringHandler.clearAll();
             com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
             BetelQuestState.resetGameState();
             BackpackQuestState.getInstance().resetAll();
             // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
             EnvironmentController.clearRuntimeState();
             com.habitrain.core.game.sre.SREWeatherController.resetAll();
-            // 电话会话 / 汽笛确认窗：集成服同 JVM 重启后 static 不重置
-            com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.clearAll();
-            com.habitrain.core.game.blackout.BlackoutHornVoteHandler.clearAll();
             // 角色扩展 v2：恢复所有 MODIFY overlay 到基线，清空快照会话状态
             //（定义只加载一次；会话状态在 SERVER_STOPPED 清除）。
             GameModeRegistry.clearActiveModes();
@@ -249,9 +233,6 @@ public final class LifecycleEventsRegistrar {
                         if (taskDim == null || taskDim.equals(taskLevel.dimension())) {
                             com.habitrain.core.network.ActiveTaskPayload.sendToPlayer(
                                     player, active.getFullId(), false);
-                            if (com.habitrain.core.game.blackout.BlackoutExclusiveTasks.isExclusive(active.getFullId())) {
-                                com.habitrain.core.game.blackout.ExclusiveTaskHudSync.insert(player, active);
-                            }
                         }
                     }
                     var fake = tm.getFakeTask(player.getUUID());
@@ -396,13 +377,10 @@ public final class LifecycleEventsRegistrar {
             }
         });
         // 玩家断线：通知激活的 GameMode 处理。
-        // 停电模式据此把断线玩家移出存活阵营，避免其继续被计为放逐候选人或卡住胜负判定（Q8）。
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayer player = handler.getPlayer();
             if (player == null) return;
             try {
-                // 清除汽笛确认窗口（断线后无需保留）
-                com.habitrain.core.game.blackout.BlackoutHornVoteHandler.onPlayerRemoved(player.getUUID());
                 // 立刻从语音 pending 队列移除（不必等下一 tick）
                 SREGameModeBase.removePendingVoiceJoin(player.getUUID());
                 // 清除效果归属追踪数据
@@ -429,7 +407,6 @@ public final class LifecycleEventsRegistrar {
                 // 误触发重同步。
                 LAST_VIEW.remove(player.getUUID());
                 PENDING_ROLE_STATE.remove(player.getUUID());
-                com.habitrain.core.game.blackout.BlackoutPhoneSessionGate.clearPlayer(player);
                 com.habitrain.core.network.C2SRateLimiter.clear(player.getUUID());
                 com.habitrain.core.C2SReceiverRegistrar.clearConfigUpdateHistory(player.getUUID());
                 com.habitrain.core.task.TaskManager.getInstance().unbindOwner(player.getUUID());
@@ -476,14 +453,11 @@ public final class LifecycleEventsRegistrar {
         }
         var sreMode = gw.gameMode;
         if (sreMode == null
-                || !com.habitrain.core.game.blackout.sre.SREBlackoutGameMode.MODE_ID.equals(sreMode.identifier)) {
+                || !net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("sre", "blackout").equals(sreMode.identifier)) {
             return;
         }
-        var active = GameModeRegistry.getActiveForLevel(level).orElse(null);
-        if (active instanceof com.habitrain.core.game.blackout.BlackoutMode) {
-            return;
-        }
-        LOGGER.warn("[Lifecycle] SRE blackout is {} in {} but core BlackoutMode round is missing; stopping SRE to unblock votes",
+
+        LOGGER.warn("[Lifecycle] Retired SRE blackout mode is {} in {}; stopping it to unblock votes",
                 status, level.dimension().location());
         try {
             io.wifi.starrailexpress.game.GameUtils.stopGame(level);

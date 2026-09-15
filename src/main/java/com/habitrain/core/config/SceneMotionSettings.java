@@ -5,6 +5,7 @@ import com.habitrain.core.scene.model.SceneMotionMigration;
 import com.habitrain.core.scene.model.SceneBackgroundConfig;
 import com.habitrain.core.scene.model.SceneBackgroundKey;
 import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.scene.model.SceneShakeSettings;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -19,6 +20,8 @@ import java.util.Objects;
 public final class SceneMotionSettings {
     public static final int CURRENT_SCHEMA_VERSION = 4;
     public static final String DEFAULT_MAP_KEY = "__default__";
+    /** Independent, opt-in profile for the non-match lobby. */
+    public static final String LOBBY_MAP_KEY = "__lobby__";
     public static final int MAX_BACKGROUNDS_PER_MAP = 5;
 
     public int schemaVersion = CURRENT_SCHEMA_VERSION;
@@ -39,6 +42,9 @@ public final class SceneMotionSettings {
     public SceneProfile getProfile(String mapKey) {
         if (mapKey == null || mapKey.isBlank()) mapKey = defaultMapKey;
         SceneProfile profile = profiles.get(mapKey);
+        if (profile == null && LOBBY_MAP_KEY.equals(mapKey)) {
+            return createLobbyProfile();
+        }
         if (profile == null) {
             profile = profiles.get(DEFAULT_MAP_KEY);
         }
@@ -48,6 +54,7 @@ public final class SceneMotionSettings {
     public SceneProfile getOrCreateProfile(String mapKey) {
         if (mapKey == null || mapKey.isBlank()) mapKey = defaultMapKey;
         return profiles.computeIfAbsent(mapKey, k -> {
+            if (LOBBY_MAP_KEY.equals(k)) return createLobbyProfile();
             SceneProfile def = profiles.get(DEFAULT_MAP_KEY);
             return def != null ? def.copyForNewProfile() : SceneProfile.createDefault();
         });
@@ -55,6 +62,13 @@ public final class SceneMotionSettings {
 
     public Map<String, SceneProfile> getAllProfiles() {
         return Collections.unmodifiableMap(profiles);
+    }
+
+    private static SceneProfile createLobbyProfile() {
+        SceneProfile profile = SceneProfile.createDefault();
+        profile.setShake(new SceneShakeSettings(false, SceneShakeSettings.DEFAULT_TRANSLATION_AMP,
+                SceneShakeSettings.DEFAULT_ROTATION_AMP_DEG, SceneShakeSettings.DEFAULT_FREQUENCY_HZ));
+        return profile;
     }
 
     public SceneProfile getBackgroundProfile(String mapKey, String backgroundId) {

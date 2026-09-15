@@ -157,7 +157,9 @@ public final class ConfigUpdateAccessPolicy {
         String requested = requestedMapKey == null ? "" : requestedMapKey.trim();
         if (requested.isBlank()) requested = current;
         if (requested.isBlank()) throw new IllegalArgumentException("Scene map key is unavailable");
-        if ("__default__".equals(requested) || requested.equals(current)
+        if ("__default__".equals(requested)
+                || com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY.equals(requested)
+                || requested.equals(current)
                 || configuredMapKeys != null && configuredMapKeys.contains(requested)) {
             return requested;
         }

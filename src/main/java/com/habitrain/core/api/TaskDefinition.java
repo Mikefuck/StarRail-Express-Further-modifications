@@ -39,7 +39,7 @@ public class TaskDefinition {
     private final boolean canRepeat;
     private final boolean shareProgress;
     private final List<String> tags;
-    /** 任务对停电计时器的影响（可选，供自适应刷新概率使用）。null 表示无时间影响。 */
+    /** 旧扩展元数据，仅为兼容保留；Core 不再消费此值。 */
     private final TimeImpact timeImpact;
 
     // 回调函数
@@ -60,7 +60,7 @@ public class TaskDefinition {
     }
 
     /**
-     * 任务对停电计时器的影响声明。
+     * 旧模式的时间影响声明，仅为已有扩展源码兼容保留。
      *  axis: 影响哪个时间轴
      *  deltaSeconds: 增减秒数（正=增加停电时间，负=减少）
      *
@@ -128,7 +128,7 @@ public class TaskDefinition {
     public boolean canRepeat() { return canRepeat; }
     public boolean isShareProgress() { return shareProgress; }
     public List<String> getTags() { return Collections.unmodifiableList(tags); }
-    /** 任务对停电计时器的影响（可能为 null）。供自适应刷新概率使用。 */
+    /** 旧扩展元数据（可能为 null），不再影响 Core 任务权重。 */
     public TimeImpact getTimeImpact() { return timeImpact; }
 
     // --- Callback dispatch ---
@@ -208,9 +208,7 @@ public class TaskDefinition {
         public Builder shareProgress(boolean v) { this.shareProgress = v; return this; }
         public Builder tags(String... t) { this.tags = List.of(t); return this; }
         /**
-         * 声明任务对停电计时器的影响。供自适应刷新概率使用：
-         * computeUrgencyMultiplier 从 deltaSeconds 派生阈值，未来改 delta 自动调整曲线。
-         * 维护约定：时间 delta 必须在注册时声明，不要在 onComplete 写魔法数字。
+         * 兼容旧扩展的时间影响元数据。Core 已不再使用该值修改计时或任务权重。
          */
         public Builder timeImpact(TimeImpact.TimeAxis axis, int deltaSeconds) {
             this.timeImpact = new TimeImpact(axis, deltaSeconds);

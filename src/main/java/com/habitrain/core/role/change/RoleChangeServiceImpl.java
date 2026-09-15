@@ -12,7 +12,6 @@ import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import com.habitrain.core.api.role.v2.RoleView;
 import com.habitrain.core.api.role.v2.state.ResetCause;
 import com.habitrain.core.api.role.v2.state.RoleStateApi;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -32,12 +31,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 /**
- * Default {@link RoleChangeApi} implementation, wrapping the Blackout role
- * manager's unified reassign/eliminate entry points and the v2 catalog for
+ * Default {@link RoleChangeApi} implementation, using SRE role state and the v2 catalog for
  * canonical role resolution.
  *
  * <p>Every change is a {@link RoleChangeTransaction}: it resolves the target,
- * captures the old SRE/Blackout role, mutates, commits the old-role cleanup,
+ * captures the old SRE role, mutates, commits the old-role cleanup,
  * writes history, and — when a mutation stage fails — rolls the pre-change
  * role/faction/state back (fix-doc §11). The mutation backend, resolver and
  * hook seams are injectable so the transaction logic is unit-testable without
@@ -256,13 +254,6 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                     role = RoleKey.of(r.identifier());
                 }
             } catch (Throwable ignored) {}
-            try {
-                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFaction(level, id);
-                faction = f == null ? null : f.name();
-            } catch (Throwable ignored) {
-                // 与上方 SRE 读取一致：faction 读取失败不得沿 lookupCurrentRole
-                // 炸给事务 VALIDATE 阶段（review L9）。
-            }
         }
         return new RoleView(id, role, faction);
     }
@@ -276,15 +267,9 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         if (recorded != null && !recorded.isEmpty()) {
             return List.copyOf(recorded);
         }
-        if (!(player.level() instanceof ServerLevel level)) {
-            return List.of();
-        }
-        Map<UUID, ResourceLocation> history = BlackoutRoleManager.getRoleHistory(level);
-        ResourceLocation roleId = history.get(player.getUUID());
-        if (roleId == null) {
-            return List.of();
-        }
-        return List.of(new RoleHistoryEntry(RoleKey.of(roleId), RoleChangeCause.OTHER, 0));
+        RoleView view = current(player);
+        return view == null || view.role() == null ? List.of()
+                : List.of(new RoleHistoryEntry(view.role(), RoleChangeCause.OTHER, 0));
     }
 
     private @Nullable RoleKey lookupCurrentRole(ServerPlayer player) {
@@ -341,8 +326,8 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
 
     /**
      * Production {@link RoleChangeTransaction.Backend}: captures the current
-     * SRE/Blackout role, mutates through the Blackout role manager's unified
-     * entry points, and restores the captured role on rollback.
+     * SRE role, stages SRE role changes before publishing
+     * assignment effects, and restores the captured role on rollback.
      */
     private final class ProductionBackend implements RoleChangeTransaction.Backend<ServerPlayer> {
 
@@ -357,42 +342,25 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                 old = game == null ? null : game.getRole(player);
             } catch (Throwable ignored) {}
             String faction = null;
-            try {
-                BlackoutRoleManager.Faction f = BlackoutRoleManager.getFactionForEnd(level, player.getUUID());
-                faction = f == null ? null : f.name();
-            } catch (Throwable ignored) {}
+
             return new RoleChangeTransaction.Captured(old, faction);
         }
 
         @Override
         public void updateSre(ServerPlayer player, @Nullable SRERole role) {
-            if (role == null) {
-                sreClearer.accept(player, null);
-            }
-            // For an assignment the SRE write happens inside updateMode via
-            // BlackoutRoleManager.reassignRole (which also fires the compatibility
-            // events and REPLAY sync), so nothing to do here.
+            if (role == null) sreClearer.accept(player, null);
+            // Assignments are staged in updateMode; effects publish only after commit.
         }
 
         @Override
         public void updateMode(ServerPlayer player, @Nullable SRERole role,
                                boolean recordTimeline, boolean addStats) {
-            if (player == null || !(player.level() instanceof ServerLevel level)) {
-                return;
-            }
-            UUID id = player.getUUID();
-            if (role == null) {
-                BlackoutRoleManager.eliminate(level, id);
-            } else {
-                SRERole old = null;
-                try {
-                    SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-                    old = game == null ? null : game.getRole(player);
-                } catch (Throwable ignored) {
-                }
-                BlackoutRoleManager.prepareReassignRole(level, id, role, null);
-                pendingEffects.put(id, new PendingEffects(old, role, recordTimeline, addStats));
-            }
+            if (player == null || role == null) return;
+            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.serverLevel());
+            if (game == null) throw new IllegalStateException("Missing SRE game component");
+            SRERole old = game.getRole(player);
+            game.addRole(player.getUUID(), role, false);
+            pendingEffects.put(player.getUUID(), new PendingEffects(old, role, recordTimeline, addStats));
         }
 
         @Override
@@ -427,7 +395,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             if (effects == null) {
                 return;
             }
-            BlackoutRoleManager.finishReassignRole(level, player.getUUID(), effects.oldRole(),
+            com.habitrain.core.game.sre.SreRoleAssignmentEffects.finishReassignRole(level, player.getUUID(), effects.oldRole(),
                     effects.newRole(), effects.recordTimeline(), effects.addStats());
         }
 
@@ -453,18 +421,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                     }
                 } else {
                     sreClearer.accept(player, null);
-                    try {
-                        BlackoutRoleManager.eliminate(level, id);
-                    } catch (Throwable ignored) {}
                 }
-                try {
-                    if (captured.hadFaction()) {
-                        BlackoutRoleManager.setFaction(level, id,
-                                BlackoutRoleManager.Faction.valueOf(captured.faction()));
-                    } else {
-                        BlackoutRoleManager.setFaction(level, id, null);
-                    }
-                } catch (Throwable ignored) {}
             } catch (Throwable t) {
                 LOGGER.warn("role change rollback failed for {}", id, t);
             }

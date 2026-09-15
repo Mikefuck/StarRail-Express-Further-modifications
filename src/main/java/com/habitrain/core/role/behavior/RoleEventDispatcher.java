@@ -1,5 +1,7 @@
 package com.habitrain.core.role.behavior;
 
+import com.habitrain.core.role.override.RoleOverrideWinHook;
+
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshotId;
@@ -21,7 +23,6 @@ import com.habitrain.core.api.role.v2.behavior.WinPatch;
 import com.habitrain.core.api.role.v2.behavior.WinPatchOp;
 import com.habitrain.core.api.role.v2.state.ResetCause;
 import com.habitrain.core.api.role.v2.state.RoleStateApi;
-import com.habitrain.core.game.blackout.RoleOverrideWinHook;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
@@ -576,8 +577,7 @@ public final class RoleEventDispatcher {
     }
 
     /**
-     * The unified victory fold used by BOTH the standard SRE murder chain and the
-     * blackout chain. Order: v2 {@code allowGameEnd}, v2 {@code evaluateWin}, then
+     * The unified victory fold used by the SRE murder chain. Order: v2 {@code allowGameEnd}, v2 {@code evaluateWin}, then
      * (when the gate is not DENY and v2 did not declare winners) the v1 /
      * RolePatch win-hook overlay. Callers read {@link WinFoldResult#denied()} and
      * {@link WinFoldResult#hasPatch()} according to their chain's semantics.
@@ -590,16 +590,6 @@ public final class RoleEventDispatcher {
             overlay = RoleOverrideWinHook.evaluateAsPatch(level);
         }
         return new WinFoldResult(gate, WinFoldResult.overlayV1(gate, patch, overlay));
-    }
-
-    /**
-     * Blackout victory-checker entry. Returns {@code null} when no in-scope hook
-     * wants to hijack. The {@code allowGameEnd} gate is reported separately by
-     * {@link #foldWin}; {@code checkBlackoutWin} deliberately ignores it (a pride
-     * DENY must not block a custom win declaration).
-     */
-    public @Nullable WinResult checkBlackoutWin(@Nullable ServerLevel level) {
-        return foldWin(level, "BLACKOUT", false).toWinResult();
     }
 
     /** Dispatches an assignment notification. */

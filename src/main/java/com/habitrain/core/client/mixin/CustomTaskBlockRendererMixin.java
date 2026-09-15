@@ -4,14 +4,11 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.client.cache.ActiveTaskCache;
-import com.habitrain.core.client.render.BlockStageScanner;
 import com.habitrain.core.client.render.GameRunningCache;
-import com.habitrain.core.client.render.PhoneOverlayRenderer;
 import com.habitrain.core.client.render.TaskOverlayDrawer;
 import com.habitrain.core.client.render.ViewModeDispatcher;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import com.habitrain.core.game.sre.CustomTaskBlockCache;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
@@ -68,11 +65,9 @@ public class CustomTaskBlockRendererMixin {
             // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
             taskName = fakeName;
             if (taskName == null) {
-                PhoneOverlayRenderer.render(renderContext);
                 return;
             }
             renderTaskBlocks(renderContext, instance, taskName, true);
-            PhoneOverlayRenderer.render(renderContext);
             return;
         }
 
@@ -82,8 +77,6 @@ public class CustomTaskBlockRendererMixin {
         if (fakeName != null && !fakeName.equals(taskName)) {
             renderTaskBlocks(renderContext, instance, fakeName, true);
         }
-
-        PhoneOverlayRenderer.render(renderContext);
     }
 
     private static boolean isEatOrDrinkTask(String taskName) {
@@ -118,7 +111,7 @@ public class CustomTaskBlockRendererMixin {
         }
 
         int blockTypeId = resolveBlockTypeId(taskName);
-        if (blockTypeId < BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+        if (blockTypeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
             if (renderedCount > 0) {
                 HabiTrainCore.LOGGER.debug(
                         "[HabiDebug] CustomTaskBlockRendererMixin: rendered {} upstream-bridged blocks for {} task {}",
@@ -126,12 +119,6 @@ public class CustomTaskBlockRendererMixin {
             }
             return;
         }
-
-        boolean isAddCoalTask = com.habitrain.core.HabiTrainCore.TASK_ADD_COAL.equals(taskName);
-        boolean hasCoal = isAddCoalTask && BlockStageScanner.hasPlayerCoal(instance.player);
-
-        boolean isFurnaceExplosionTask = com.habitrain.core.game.blackout.BlackoutExclusiveTasks.TASK_FURNACE_EXPLOSION.equals(taskName);
-        boolean hasTorch = isFurnaceExplosionTask && BlockStageScanner.hasPlayerRedstoneTorch(instance.player);
 
         var level = renderContext.world();
         var upstreamBlocks = org.agmas.noellesroles.client.NoellesrolesClient.taskBlocks;
@@ -151,22 +138,6 @@ public class CustomTaskBlockRendererMixin {
 
             if (block != null && block instanceof TaskInstinctShowableInterface) {
                 continue;
-            }
-
-            if (isAddCoalTask) {
-                if (hasCoal) {
-                    if (block == Blocks.COAL_BLOCK) continue;
-                } else {
-                    if (block != Blocks.COAL_BLOCK) continue;
-                }
-            }
-
-            if (isFurnaceExplosionTask) {
-                if (hasTorch) {
-                    if (block != Blocks.TNT) continue;
-                } else {
-                    if (block != Blocks.REDSTONE_TORCH) continue;
-                }
             }
 
             TaskOverlayDrawer.renderOverlay(renderContext, pos, taskColor, lineWidth);

@@ -3,8 +3,6 @@ package com.habitrain.core.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.blackout.ExclusiveTaskHudSync;
-import com.habitrain.core.game.blackout.task.FurnaceExplosionHandler;
 import com.habitrain.core.game.sre.DlcTaskTracker;
 import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
@@ -71,8 +69,6 @@ public class TaskManager {
      */
     private final Map<UUID, TaskInstance> activeFakeTasks = new ConcurrentHashMap<>();
 
-    private final Map<UUID, Boolean> blackoutNextDailyPool = new ConcurrentHashMap<>();
-
     private final Map<UUID, Map<String, Integer>> dlcTaskCounts = new ConcurrentHashMap<>();
 
     public int getDlcTaskCount(UUID playerUuid, String fullId) {
@@ -83,18 +79,6 @@ public class TaskManager {
     public void incrementDlcTaskCount(UUID playerUuid, String fullId) {
         dlcTaskCounts.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>())
                 .merge(fullId, 1, Integer::sum);
-    }
-
-    public boolean isBlackoutNextDailyPool(UUID playerUuid) {
-        return blackoutNextDailyPool.getOrDefault(playerUuid, false);
-    }
-
-    public void setBlackoutNextDailyPool(UUID playerUuid, boolean dailyPool) {
-        blackoutNextDailyPool.put(playerUuid, dailyPool);
-    }
-
-    public void clearBlackoutRotationFlag(UUID playerUuid) {
-        blackoutNextDailyPool.remove(playerUuid);
     }
 
     /**
@@ -129,7 +113,7 @@ public class TaskManager {
     }
 
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
-    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); blackoutNextDailyPool.clear(); dlcTaskCounts.clear(); }
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); dlcTaskCounts.clear(); }
 
     /** Stop-server / world-swap: clear active tasks and offline reclaim backlog. */
     public void clearAll() {
@@ -138,8 +122,7 @@ public class TaskManager {
     }
 
     /**
-     * 局终/onCleanup 入口：先 per-player {@code onRemove}+回收，再丢掉该维任务，并清该维炸炉 pending。
-     * BlackoutMode.onCleanup 仍可走 {@link #clearActiveTasksForLevel(ResourceKey)}；有 {@link ServerLevel} 时请用本方法。
+     * 局终/onCleanup 入口：先 per-player {@code onRemove}+回收，再丢掉该维任务，。
      */
     public static void clearActiveTasksForLevel(ServerLevel level) {
         if (level == null) return;
@@ -155,7 +138,6 @@ public class TaskManager {
         if (dimension == null) return;
         dropAndReclaim(activeCustomTasks, dimension, server, false);
         dropAndReclaim(activeFakeTasks, dimension, server, true);
-        FurnaceExplosionHandler.clearPendingForDimension(dimension);
     }
 
     private void dropAndReclaim(Map<UUID, TaskInstance> map, ResourceKey<Level> dimension,
@@ -210,9 +192,6 @@ public class TaskManager {
         if (player instanceof ServerPlayer sp) {
             DlcTaskTracker.stripSreWrapper(sp, instance);
             ActiveTaskPayload.clearForPlayer(sp, fake);
-            if (!fake) {
-                ExclusiveTaskHudSync.clear(sp);
-            }
         }
         if (fake) {
             if (getFakeTask(id) == instance) {
@@ -376,7 +355,6 @@ public class TaskManager {
 
             // 6. 触发附近任务完成联动（狂躁症、渡鸦等）
             notifyNearbyTaskComplete(player);
-
         } catch (Throwable t) {
             LOGGER.error("bridgeSreTaskCompletion failed for task {}", instance.getFullId(), t);
         }

@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>{@code SREGameWorldComponent#setGameStatus(STOPPING)} 是所有对局结束路径的汇入点：
  * SRE 原版 {@code GameUtils.stopGame}（murder/repair/指令等全部汇入）与 api 侧
- * Blackout 的 5 个结束入口都经过它；且各方都在此之前写好了 SRE 结算组件
+ * SRE 结束入口经过这里，结算组件在进入此阶段前已写好
  * （winStatus + CustomWinner*），数据时序正确。在其 {@code RETURN} 通知
  * {@link GameEndTransitionCoordinator} 广播结束转场信号。</p>
  *

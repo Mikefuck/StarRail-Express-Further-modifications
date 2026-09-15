@@ -21,7 +21,7 @@ import java.util.Optional;
  * read the v1 paths ({@code TMMRoles.ROLES} + the v1 override resolver), which
  * never surface v2 {@code ADD} roles or active {@code REPLACE} results. These
  * helpers resolve through the v2 {@link RoleCatalogApi} first so v2 roles enter
- * the same consumer paths (blackout role pool, sin fallback, killer pool,
+ * the same consumer paths (sin fallback, killer pool,
  * hire/police selection), falling back to the v1 path only when the catalog has no
  * compiled snapshot yet (pre-freeze). A live snapshot that throws or is empty
  * returns empty / the baseline, not {@code TMMRoles.ROLES}.

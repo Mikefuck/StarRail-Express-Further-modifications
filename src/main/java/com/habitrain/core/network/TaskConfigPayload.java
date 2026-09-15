@@ -80,7 +80,7 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 entry.instinctColor = buf.readInt();
 
                 // 本协议为单模组内部协议（客户端与服务端同版本），无版本兼容需求。
-                // 字段按 encode 顺序连续读取：mapFilterMode → hasGoldReward → goldReward → hasEmotionReward → emotionReward → hasRefreshWeight → refreshWeight → hasShopPrice → shopPrice
+                // 字段按 encode 顺序连续读取：mapFilterMode → hasGoldReward → goldReward → hasEmotionReward → emotionReward → hasRefreshWeight → refreshWeight
                 entry.mapFilterMode = Math.max(0, Math.min(2, buf.readInt()));
                 entry.hasGoldReward = buf.readBoolean();
                 entry.goldReward = buf.readInt();
@@ -88,8 +88,6 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 entry.emotionReward = buf.readFloat();
                 entry.hasRefreshWeight = buf.readBoolean();
                 entry.refreshWeight = buf.readFloat();
-                entry.hasShopPrice = buf.readBoolean();
-                entry.shopPrice = buf.readInt();
 
                 configs.put(key, entry);
             }
@@ -142,8 +140,6 @@ public class TaskConfigPayload implements CustomPacketPayload {
                 buf.writeFloat(config.emotionReward);
                 buf.writeBoolean(config.hasRefreshWeight);
                 buf.writeFloat(config.refreshWeight);
-                buf.writeBoolean(config.hasShopPrice);
-                buf.writeInt(config.shopPrice);
             }
         }
     };

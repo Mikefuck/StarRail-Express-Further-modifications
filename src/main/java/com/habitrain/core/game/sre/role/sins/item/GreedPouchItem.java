@@ -31,6 +31,8 @@ public final class GreedPouchItem {
     public static final String TAG_GREED_POUCH = "habitrain_greed_pouch";
     public static final String TAG_GREED_OWNER = "habitrain_greed_owner";
     public static final String TAG_GREED_CONTENTS = "habitrain_greed_contents";
+    /** Marks an item transferred by the upstream Thief's "steal" skill. */
+    public static final String TAG_STOLEN_BY_THIEF = "habitrain_stolen_by_thief";
 
     private GreedPouchItem() {}
 
@@ -68,6 +70,7 @@ public final class GreedPouchItem {
     /** Shared by hand absorption, vanilla bundle clicks and collection accounting. */
     public static boolean canStore(@Nullable ItemStack stack) {
         if (stack == null || stack.isEmpty() || isGreedPouch(stack)) return false;
+        if (isStolenByThief(stack)) return true;
         var item = stack.getItem();
         if (item instanceof io.wifi.starrailexpress.content.item.KeyItem
                 || item instanceof io.wifi.starrailexpress.content.item.NoteItem
@@ -79,6 +82,19 @@ public final class GreedPouchItem {
         return !stack.has(DataComponents.FOOD)
                 && stack.getUseAnimation() != net.minecraft.world.item.UseAnim.EAT
                 && stack.getUseAnimation() != net.minecraft.world.item.UseAnim.DRINK;
+    }
+
+    public static boolean isStolenByThief(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        return data != null && data.copyTag().getBoolean(TAG_STOLEN_BY_THIEF);
+    }
+
+    public static void markStolenByThief(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return;
+        CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        tag.putBoolean(TAG_STOLEN_BY_THIEF, true);
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
     }
 
     public static @Nullable UUID getOwnerUuid(@Nullable ItemStack stack) {

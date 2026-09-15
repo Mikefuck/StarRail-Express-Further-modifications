@@ -1,8 +1,5 @@
 package com.habitrain.core.client;
 
-import com.habitrain.core.client.gui.BlackoutActiveTaskHud;
-import com.habitrain.core.client.gui.BlackoutHudOverlay;
-import com.habitrain.core.client.gui.BlackoutWelcomeRenderer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
@@ -16,14 +13,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 public class HudRegistrar {
 
     public HudRegistrar() {
-        // 停电模式快捷键
-        BlackoutKeyHandler.register();
+        // 投票快捷键
+        VoteKeyHandler.register();
 
         // HUD 渲染
         HudRenderCallback.EVENT.register((g, tickDelta) -> {
-            BlackoutHudOverlay.render(g);
-            BlackoutActiveTaskHud.render(g);
-            BlackoutWelcomeRenderer.render(g);
             com.habitrain.core.scene.client.SceneViewDistanceWarningHud.render(g);
         });
     }

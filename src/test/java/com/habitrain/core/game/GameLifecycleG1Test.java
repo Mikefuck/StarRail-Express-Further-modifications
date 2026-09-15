@@ -2,7 +2,6 @@ package com.habitrain.core.game;
 
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.blackout.BlackoutExileVoteManager;
 import com.habitrain.core.game.sre.EliminatedRestAreaService;
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
 import org.junit.jupiter.api.Test;
@@ -25,12 +24,7 @@ class GameLifecycleG1Test {
         assertDoesNotThrow(MapVoteLoadCoordinator::resetAll);
     }
 
-    @Test
-    void restoreCandidateNoopsWithoutLevel() {
-        assertFalse(BlackoutExileVoteManager.isVoteActive(null));
-        assertDoesNotThrow(() ->
-                BlackoutExileVoteManager.restoreCandidate(null, UUID.randomUUID()));
-    }
+
 
     @Test
     void markEliminatedAcceptsNullAndUuid() {

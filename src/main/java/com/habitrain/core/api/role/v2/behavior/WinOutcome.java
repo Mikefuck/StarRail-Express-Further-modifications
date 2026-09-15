@@ -9,7 +9,7 @@ import java.util.UUID;
  * Read-only settlement snapshot handed to {@link RoleWinHooks#afterWinnersFinalized}.
  *
  * <p>{@code status} is an upstream {@code WinStatus} name when known
- * ({@code KILLERS}, {@code CUSTOM}, {@code BLACKOUT}, …). Hooks must not
+ * ({@code KILLERS}, {@code CUSTOM}, …). Hooks must not
  * mutate winners from this callback.
  */
 public record WinOutcome(

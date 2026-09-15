@@ -25,7 +25,7 @@ import java.util.List;
  * P1-1: no process-global write path).
  *
  * <p>Helpers stay on {@link SinVictoryHooks}. Pride {@code allowGameEnd} still
- * gates {@code proposed=BLACKOUT}.</p>
+ * gates ordinary SRE outcomes.</p>
  */
 public final class SevenSinV2Hooks {
 
@@ -41,9 +41,9 @@ public final class SevenSinV2Hooks {
         HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/lust/greed)");
     }
 
-    /** Pride DENY/last-survivor still see the blackout per-second probe. */
+    /** Pride DENY/last-survivor run for ordinary faction outcomes. */
     private static boolean prideGateProposal(@Nullable String proposed) {
-        return "KILLERS".equals(proposed) || "PASSENGERS".equals(proposed) || "BLACKOUT".equals(proposed);
+        return "KILLERS".equals(proposed) || "PASSENGERS".equals(proposed);
     }
 
     private static final RoleWinHooks PRIDE = new RoleWinHooks() {

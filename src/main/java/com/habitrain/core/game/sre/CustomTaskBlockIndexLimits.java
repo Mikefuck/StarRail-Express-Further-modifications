@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
@@ -11,6 +10,7 @@ import java.util.Set;
  */
 public final class CustomTaskBlockIndexLimits {
 
+    public static final int CUSTOM_OVERLAY_MIN_TYPE_ID = 13;
     public static final int GLOBAL_MAX_ENTRIES = 65_536;
     public static final int BULK_BLOCK_CAP = 48;
     public static final int DEFAULT_TYPE_CAP = 256;
@@ -25,16 +25,8 @@ public final class CustomTaskBlockIndexLimits {
                 || block == Blocks.LEVER;
     }
 
-    public static boolean isUncappedType(int typeId) {
-        return typeId == BlackoutOverlayTypes.STREET_PHONE
-                || typeId == BlackoutOverlayTypes.ROTARY_PHONE_RED
-                || typeId == BlackoutOverlayTypes.HORN;
-    }
-
     public static int capFor(Block block, int typeId) {
-        if (isUncappedType(typeId)) {
-            return Integer.MAX_VALUE;
-        }
+
         if (block != null && isBulkDecorative(block)) {
             return BULK_BLOCK_CAP;
         }
@@ -60,7 +52,7 @@ public final class CustomTaskBlockIndexLimits {
         }
         boolean hasCustom = false;
         for (int typeId : typeIds) {
-            if (typeId >= BlackoutOverlayTypes.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+            if (typeId >= com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
                 hasCustom = true;
                 break;
             }

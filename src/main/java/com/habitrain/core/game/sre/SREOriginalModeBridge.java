@@ -16,7 +16,7 @@ import java.util.Set;
  * Scans original SRE {@link SREGameModes#GAME_MODES} and registers thin Core proxies so
  * those modes appear in {@link GameModeRegistry} / mode-map vote.
  * <p>
- * Modes already owned by Core (murder, repair, blackout) are skipped to avoid duplicates.
+ * Modes owned by Core (murder, repair) and the retired sre:blackout ID are excluded.
  */
 public final class SREOriginalModeBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|SREOriginalModeBridge");

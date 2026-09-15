@@ -80,12 +80,12 @@ public final class OptionVoteTexts {
 
     /**
      * 投票倒计时页提示：ESC + 已注册的 open_vote 键均可隐藏。
-     * 键名来自 {@link com.habitrain.core.client.BlackoutKeyHandler}，随玩家改键变化。
+     * 键名来自 {@link com.habitrain.core.client.VoteKeyHandler}，随玩家改键变化。
      */
     public static Component hideHintWithBoundKey() {
         return Component.translatable(
                 "vote.habitrain_core.ui.hide_hint_key",
-                com.habitrain.core.client.BlackoutKeyHandler.getBoundKeyDisplay());
+                com.habitrain.core.client.VoteKeyHandler.getBoundKeyDisplay());
     }
 
     public static Component noCandidates() {

@@ -31,17 +31,15 @@ import java.util.UUID;
  * 背包翻找交互处理器
  * 玩家右键背包方块后给予缓慢3效果，播放翻找音效，
  * 并在任务系统中标记为"正在翻找"状态，使任务进度每tick递增。
- * 谋杀模式 search_backpack 为 6 秒；停电模式 blackout_search_backpack 为 3 秒。
+ * 翻找背包任务需要 6 秒。
  */
 public class BackpackSearchHandler {
     /** 活跃的翻找记录 (玩家UUID -> 翻找状态) */
     private static final Map<UUID, SearchState> activeSearches = new HashMap<>();
     private static final int SEARCH_TICKS_DEFAULT = 120; // 6秒 — 谋杀模式
-    private static final int SEARCH_TICKS_BLACKOUT = 60; // 3秒 — 停电模式
 
     private static final String BACKPACK_BLOCK_ID = "decocraft:backpack_red";
     private static final String TASK_SEARCH_BACKPACK = "habitrain_core:search_backpack";
-    private static final String TASK_BLACKOUT_SEARCH_BACKPACK = "habitrain_core:blackout_search_backpack";
 
     private static Block backpackBlock = null;
     private static boolean blockChecked = false;
@@ -77,8 +75,7 @@ public class BackpackSearchHandler {
                     TaskManager mgr = TaskManager.getInstance();
                     TaskInstance stuckTask = mgr.getActiveTask(uuid);
                     if (stuckTask != null
-                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
-                                    || TASK_BLACKOUT_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
+                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
                             && !stuckTask.isFulfilled()) {
                         if (player != null) {
                             com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(player, stuckTask);
@@ -106,8 +103,7 @@ public class BackpackSearchHandler {
                     TaskManager mgr = TaskManager.getInstance();
                     TaskInstance stuckTask = mgr.getActiveTask(uuid);
                     if (stuckTask != null
-                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
-                                    || TASK_BLACKOUT_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
+                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
                             && !stuckTask.isFulfilled()) {
                         // 任务超时前回收发放的道具（虽然翻背包通常 onComplete 才发放，
                         // 但若任务以某种方式提前发放了道具，这里回收保证安全）
@@ -126,7 +122,6 @@ public class BackpackSearchHandler {
                     }
                     continue;
                 }
-
             }
         });
     }
@@ -155,9 +150,7 @@ public class BackpackSearchHandler {
     }
 
     private static int getSearchTicks(String taskKey) {
-        if (TASK_BLACKOUT_SEARCH_BACKPACK.equals(taskKey)) {
-            return SEARCH_TICKS_BLACKOUT;
-        }
+
         return SEARCH_TICKS_DEFAULT;
     }
 
@@ -175,10 +168,9 @@ public class BackpackSearchHandler {
 
         UUID uuid = player.getUUID();
 
-        // 检查玩家是否有翻找背包任务（支持谋杀模式与停电模式两个版本）
+        // 检查玩家是否有翻找背包任务
         TaskInstance task = TaskManager.getInstance().getActiveTask(uuid);
-        if (task == null || (!TASK_SEARCH_BACKPACK.equals(task.getFullId())
-                && !TASK_BLACKOUT_SEARCH_BACKPACK.equals(task.getFullId()))) {
+        if (task == null || !TASK_SEARCH_BACKPACK.equals(task.getFullId())) {
             return InteractionResult.PASS;
         }
         if (task.isFulfilled() || task.getProgress() >= task.getMaxProgress()) {
@@ -192,7 +184,7 @@ public class BackpackSearchHandler {
             return InteractionResult.FAIL;
         }
 
-        // 给予缓慢3效果（时长按任务版本：谋杀6秒 / 停电3秒，+10 tick缓冲）；到期自动 unregister
+        // 给予缓慢3效果（6秒，+10 tick缓冲）；到期自动 unregister
         int slowDuration = searchTicks + 10;
         SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
                 2, slowDuration, ResourceLocation.parse(taskKey));

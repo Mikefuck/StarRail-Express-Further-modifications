@@ -5,8 +5,6 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
-import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.util.SubtitleNotifier;
@@ -25,7 +23,7 @@ public final class DlcTaskTracker {
     private DlcTaskTracker() {}
 
     /**
-     * Creates a DLC task instance, tracks assignment counts, manages blackout rotation flag,
+     * Creates a DLC task instance, tracks assignment counts,
      * and returns the wrapped TrainTask.
      *
      * @param def        the DLC task definition
@@ -53,19 +51,6 @@ public final class DlcTaskTracker {
             }
             return new SRETrainTaskWrapper(instance, fakeSlot);
         } else {
-            if (player.level() instanceof ServerLevel level) {
-                GameMode activeMode = GameModeRegistry.getActiveForLevel(level).orElse(null);
-                if (activeMode instanceof BlackoutMode
-                        && BlackoutMode.BLACKOUT_GOOD.equals(def.getCategory())
-                        && (BlackoutExclusiveTasks.isSupply(def.getFullId())
-                        || BlackoutExclusiveTasks.isDaily(def.getFullId()))) {
-                    boolean wasDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
-                    mgr.setBlackoutNextDailyPool(player.getUUID(), !wasDaily);
-                    LOGGER.info("[HabiDebug] Blackout rotation flag toggled: {} -> {} for player {}",
-                            wasDaily ? "DAILY" : "SUPPLY", !wasDaily ? "DAILY" : "SUPPLY",
-                            player.getName().getString());
-                }
-            }
 
             mgr.setActiveTask(player.getUUID(), instance);
             if (player instanceof ServerPlayer sp) {

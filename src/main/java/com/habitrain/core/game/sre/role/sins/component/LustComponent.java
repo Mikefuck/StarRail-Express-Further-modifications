@@ -2,7 +2,6 @@ package com.habitrain.core.game.sre.role.sins.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
@@ -387,15 +386,6 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     public static List<ServerPlayer> collectAlivePlayers(ServerLevel level) {
         List<ServerPlayer> out = new java.util.ArrayList<>();
         if (level == null) return out;
-
-        List<UUID> blackoutAlive = BlackoutRoleManager.getAllAlive(level);
-        if (!blackoutAlive.isEmpty() && level.getServer() != null) {
-            for (UUID id : blackoutAlive) {
-                ServerPlayer p = level.getServer().getPlayerList().getPlayer(id);
-                if (p != null && !p.isSpectator()) out.add(p);
-            }
-            return out;
-        }
 
         for (ServerPlayer p : level.players()) {
             if (p == null || p.isSpectator()) continue;

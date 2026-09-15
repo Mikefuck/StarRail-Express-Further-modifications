@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * 暴食：在 {@link Player#eat} 成功返回后叠正面效果。
- * 与 {@link BlackoutEatMixin}（HEAD 推进 blackout 吃/喝任务）并存，不改任务进度逻辑。
+ * 与 {@link CoreEatMixin}（HEAD 推进 Core 吃/喝任务）并存，不改任务进度逻辑。
  */
 @Mixin(Player.class)
 public class GluttonyEatMixin {

@@ -8,7 +8,6 @@ import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
-import com.habitrain.core.game.blackout.BlackoutRoleManager;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.CustomWinnerRole;
 import io.wifi.starrailexpress.api.SRERole;
@@ -144,13 +143,7 @@ public final class MatchSettlementFactory {
                 }
             }
         }
-        if (GameModeIds.isBlackout(modeId) && level != null) {
-            try {
-                ids.addAll(BlackoutRoleManager.getRoleHistory(level).keySet());
-            } catch (RuntimeException t) {
-                LOGGER.debug("blackout role history unavailable: {}", t.toString());
-            }
-        }
+
         if (game != null) {
             try {
                 Map<UUID, SRERole> roles = game.getRoles();
@@ -250,12 +243,7 @@ public final class MatchSettlementFactory {
             SREGameWorldComponent game,
             GameUtils.WinStatus winStatus,
             String modeId) {
-        if (GameModeIds.isBlackout(modeId) && level != null && uuid != null) {
-            MatchWinFaction blackout = classifyBlackout(level, uuid, winStatus);
-            if (blackout != null) {
-                return blackout;
-            }
-        }
+
         SRERole role = effectiveOf(resolveRole(uuid, game));
         if (role != null) {
             return MatchWinFaction.fromRoleFlags(
@@ -281,23 +269,6 @@ public final class MatchSettlementFactory {
             }
         }
         return MatchWinFaction.PASSENGER;
-    }
-
-    private static MatchWinFaction classifyBlackout(
-            ServerLevel level, UUID uuid, GameUtils.WinStatus winStatus) {
-        try {
-            boolean known = BlackoutRoleManager.getFaction(level, uuid) != null
-                    || BlackoutRoleManager.getRoleHistory(level).containsKey(uuid);
-            if (!known) {
-                return null;
-            }
-            BlackoutRoleManager.Faction faction = BlackoutRoleManager.getFactionForEnd(level, uuid);
-            boolean killerWon = winStatus != null && winStatus.isKillerWin();
-            return MatchWinFaction.fromBlackoutName(faction == null ? null : faction.name(), killerWon);
-        } catch (RuntimeException t) {
-            LOGGER.debug("blackout faction lookup failed: {}", t.toString());
-            return null;
-        }
     }
 
     private static SRERole resolveRole(UUID uuid, SREGameWorldComponent game) {

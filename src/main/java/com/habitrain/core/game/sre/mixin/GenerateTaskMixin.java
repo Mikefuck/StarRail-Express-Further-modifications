@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.*;
 import com.habitrain.core.task.TaskManager;
@@ -40,17 +39,6 @@ public abstract class GenerateTaskMixin {
             "repair_wire", "repair_panel"
     );
 
-    /** Throttle empty-pool WARN logs per player (ms). Bounded so the
-     *  per-player UUID map cannot accumulate across rounds forever (review L14). */
-    private static final Map<UUID, Long> EMPTY_POOL_WARN_AT =
-            new LinkedHashMap<>(16, 0.75f, false) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<UUID, Long> eldest) {
-                    return size() > 64;
-                }
-            };
-    private static final long EMPTY_POOL_WARN_COOLDOWN_MS = 15_000L;
-
     @Shadow(remap = false) private Player player;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, SREPlayerTaskComponent.TrainTask> tasks;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, Integer> timesGotten;
@@ -87,18 +75,6 @@ public abstract class GenerateTaskMixin {
         FactionFilter.FactionContext ctx = FactionFilter.determineFaction(player, !this.tasks.isEmpty());
 
         // 电话专属 / 强制恢复供电活跃时：禁止 SRE 再生成任务进左上角。
-        if (ctx.activeMode() instanceof BlackoutMode
-                && !ctx.killerDualTask() && player instanceof ServerPlayer sp) {
-            TaskInstance activeTask = mgr.getActiveTask(sp.getUUID());
-            if (activeTask != null
-                    && !activeTask.isFulfilled()
-                    && com.habitrain.core.game.blackout.BlackoutExclusiveTasks.isExclusive(activeTask.getFullId())) {
-                LOGGER.info("[HabiDebug] Player has active exclusive task {}, skipping SRE dispatch",
-                        activeTask.getFullId());
-                cir.setReturnValue(null);
-                return;
-            }
-        }
 
         LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, killerDual={}, parallel={}",
                 mapName, currentMood, disabledTasks, currentCategory,
@@ -120,10 +96,6 @@ public abstract class GenerateTaskMixin {
 
         LOGGER.debug("[HabiDebug] Flat pool built: {} entries, total weight={}",
                 weightEntries.size(), String.format("%.2f", total));
-
-        if (weightEntries.isEmpty() || total <= 0f) {
-            maybeWarnEmptyPool(ctx, mapName, disabledTasks);
-        }
 
         boolean isFakeTask = ctx.currentIsFakeTask();
         SREPlayerTaskComponent.TrainTask selected = TaskSelector.weightedSelect(
@@ -155,46 +127,5 @@ public abstract class GenerateTaskMixin {
                 ? new SREPlayerTaskComponent.SleepTask(io.wifi.starrailexpress.game.GameConstants.SLEEP_TASK_DURATION)
                 : null);
         return true;
-    }
-
-    private void maybeWarnEmptyPool(FactionFilter.FactionContext ctx, String mapName, Set<String> disabledTasks) {
-        if (!(player instanceof ServerPlayer sp)) return;
-        // Only interesting for blackout killers waiting on BAD pool, or dual fake GOOD.
-        if (!(ctx.activeMode() instanceof BlackoutMode) || !ctx.killerDualTask()) return;
-
-        long now = System.currentTimeMillis();
-        Long last = EMPTY_POOL_WARN_AT.get(sp.getUUID());
-        if (last != null && now - last < EMPTY_POOL_WARN_COOLDOWN_MS) return;
-        EMPTY_POOL_WARN_AT.put(sp.getUUID(), now);
-
-        TaskManager mgr = TaskManager.getInstance();
-        var forced = ctx.forcedCategory();
-        var raw = com.habitrain.core.task.TaskPoolBuilder.getPool(
-                ctx.activeMode(), mapName, forced, mgr.getCurrentGameModeCategory(player),
-                player, BUILTIN_SRE_TASK_IDS);
-        int canAssignFail = 0;
-        int alreadyHas = 0;
-        int disabled = 0;
-        List<String> ids = new ArrayList<>();
-        for (var def : raw) {
-            ids.add(def.getFullId());
-            if (mgr.hasTaskWithId(player.getUUID(), def.getFullId())) {
-                alreadyHas++;
-            } else if (disabledTasks.contains(def.getFullId())) {
-                disabled++;
-            } else if (!def.canAssign(player)) {
-                canAssignFail++;
-            }
-        }
-        LOGGER.warn(
-                "[HabiDebug] Killer empty weighted pool: player={} fake={} forced={} rawCandidates={} alreadyHas={} disabled={} canAssignFail={} ids={}",
-                sp.getName().getString(),
-                ctx.currentIsFakeTask(),
-                forced,
-                raw.size(),
-                alreadyHas,
-                disabled,
-                canAssignFail,
-                ids);
     }
 }

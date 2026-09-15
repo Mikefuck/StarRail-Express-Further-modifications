@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,10 +40,6 @@ public class TaskConfigEntry {
     public float refreshWeight = 0f;
     public boolean hasRefreshWeight = false;
 
-    /** 停电任务商店价格（仅停电专属任务生效；0 表示使用商店目录默认价）。 */
-    public int shopPrice = 0;
-    public boolean hasShopPrice = false;
-
     public TaskConfigEntry() {}
 
     public TaskConfigEntry(boolean enabled) {
@@ -66,7 +61,6 @@ public class TaskConfigEntry {
         if (hasGoldReward) json.addProperty("goldReward", goldReward);
         if (hasEmotionReward) json.addProperty("emotionReward", emotionReward);
         if (hasRefreshWeight) json.addProperty("refreshWeight", refreshWeight);
-        if (hasShopPrice) json.addProperty("shopPrice", shopPrice);
 
         return json;
     }
@@ -115,10 +109,7 @@ public class TaskConfigEntry {
             entry.hasRefreshWeight = true;
             entry.refreshWeight = json.get("refreshWeight").getAsFloat();
         }
-        if (json.has("shopPrice")) {
-            entry.hasShopPrice = true;
-            entry.shopPrice = json.get("shopPrice").getAsInt();
-        }
+
         return entry;
     }
 

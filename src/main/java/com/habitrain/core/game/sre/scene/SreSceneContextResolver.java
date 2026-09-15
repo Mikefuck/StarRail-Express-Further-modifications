@@ -17,6 +17,11 @@ public final class SreSceneContextResolver implements SceneContextResolver {
     private SreSceneContextResolver() {}
 
     @Override
+    public boolean isPreparingMatch(ServerLevel level) {
+        return MapVoteLoadCoordinator.isLoading(level);
+    }
+
+    @Override
     public SceneContext resolve(ServerLevel level) {
         if (level == null) {
             return new SceneContext("__default__", "minecraft:overworld", false);

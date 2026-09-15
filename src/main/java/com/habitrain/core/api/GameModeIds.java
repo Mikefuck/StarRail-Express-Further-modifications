@@ -8,6 +8,8 @@ package com.habitrain.core.api;
  * and is treated as {@link #BLACKOUT}.
  */
 public final class GameModeIds {
+    /** Historical ID only; this mode is no longer registered or playable. */
+    @Deprecated
     public static final String BLACKOUT = "habitrain:blackout";
     public static final String MURDER = "sre:murder";
     public static final String REPAIR = "sre:repair";

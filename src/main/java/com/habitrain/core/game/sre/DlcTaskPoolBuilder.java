@@ -5,8 +5,6 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.blackout.BlackoutExclusiveTasks;
-import com.habitrain.core.game.blackout.BlackoutMode;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.task.TaskPoolBuilder;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
@@ -24,7 +22,7 @@ public final class DlcTaskPoolBuilder {
     private DlcTaskPoolBuilder() {}
 
     /**
-     * Builds the DLC task pool with filtering, blackout rotation, and adaptive auto-boost.
+     * Builds the DLC task pool with filtering and adaptive auto-boost.
      *
      * @param entries             mutable list to append weighted entries into
      * @param mgr                 task manager instance
@@ -79,30 +77,6 @@ public final class DlcTaskPoolBuilder {
             filteredDlc.add(def);
         }
 
-        // Blackout rotation filtering — IDs from BlackoutExclusiveTasks single source
-        if (activeMode instanceof BlackoutMode
-                && BlackoutMode.BLACKOUT_GOOD.equals(forcedCategory)
-                && !currentIsFakeTask
-                && !skipActiveTaskGuard) {
-            boolean wantDaily = mgr.isBlackoutNextDailyPool(player.getUUID());
-            Set<String> targetPool = wantDaily
-                    ? BlackoutExclusiveTasks.DAILY_TASK_IDS
-                    : BlackoutExclusiveTasks.SUPPLY_TASK_IDS;
-            List<TaskDefinition> rotationFiltered = new ArrayList<>();
-            for (TaskDefinition def : filteredDlc) {
-                if (targetPool.contains(def.getFullId())) {
-                    rotationFiltered.add(def);
-                }
-            }
-            if (!rotationFiltered.isEmpty()) {
-                LOGGER.info("[HabiDebug] Blackout rotation: filtering to {} pool ({} candidates)",
-                        wantDaily ? "DAILY" : "SUPPLY", rotationFiltered.size());
-                filteredDlc = rotationFiltered;
-            } else {
-                LOGGER.info("[HabiDebug] Blackout rotation: {} pool empty, keeping full GOOD pool",
-                        wantDaily ? "DAILY" : "SUPPLY");
-            }
-        }
 
         int dlcCount = filteredDlc.size();
         if (dlcCount == 0) return 0f;
@@ -132,17 +106,12 @@ public final class DlcTaskPoolBuilder {
             float baseWeight = getEffectiveWeight(def);
             float boostedWeight = baseWeight * autoBoost;
 
-            if (activeMode instanceof BlackoutMode) {
-                boostedWeight *= TaskWeightCurves.computeBlackoutDynamicMultiplier(def, player);
-            }
-
             int timesAssigned = mgr.getDlcTaskCount(player.getUUID(), def.getFullId());
             float antiRepeat = 1f / Math.max(1, timesAssigned);
             boostedWeight *= antiRepeat;
 
-            LOGGER.debug("[HabiDebug]   ADD DLC {}: baseWeight={} × autoBoost={} × dyn={} × antiRepeat={} = finalWeight={}",
+            LOGGER.debug("[HabiDebug]   ADD DLC {}: baseWeight={} × autoBoost={} × antiRepeat={} = finalWeight={}",
                     def.getFullId(), baseWeight, autoBoost,
-                    (activeMode instanceof BlackoutMode) ? String.format("%.2f", TaskWeightCurves.computeBlackoutDynamicMultiplier(def, player)) : "N/A",
                     String.format("%.2f", antiRepeat),
                     boostedWeight);
             entries.add(new AbstractMap.SimpleEntry<>(def, boostedWeight));

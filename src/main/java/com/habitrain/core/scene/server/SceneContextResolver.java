@@ -9,4 +9,7 @@ public interface SceneContextResolver {
     record SceneContext(String mapKey, String dimensionKey, boolean matchActive) {}
 
     SceneContext resolve(ServerLevel level);
+
+    /** Loading may precede the game's active-state flag. */
+    default boolean isPreparingMatch(ServerLevel level) { return false; }
 }

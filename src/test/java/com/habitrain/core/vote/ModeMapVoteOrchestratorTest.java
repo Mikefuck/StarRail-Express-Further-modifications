@@ -17,9 +17,9 @@ class ModeMapVoteOrchestratorTest {
     }
 
     @Test
-    void murderAndBlackoutKeepMapVote() {
+    void murderAndCustomModesKeepMapVote() {
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId("habitrain_core:sre:murder"));
-        assertFalse(ModeMapVoteOrchestrator.isRepairModeId("habitrain_core:habitrain:blackout"));
+        assertFalse(ModeMapVoteOrchestrator.isRepairModeId("example:custom"));
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId("wifi:tnt_tag"));
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId(null));
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId(""));

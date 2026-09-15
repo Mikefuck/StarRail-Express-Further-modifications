@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.game.blackout.BlackoutOverlayTypes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.Test;
@@ -14,19 +13,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class CustomTaskBlockIndexLimitsTest {
 
-    @Test
-    void phoneTypesAreUncapped() {
-        assertTrue(CustomTaskBlockIndexLimits.isUncappedType(BlackoutOverlayTypes.STREET_PHONE));
-        assertTrue(CustomTaskBlockIndexLimits.isUncappedType(BlackoutOverlayTypes.ROTARY_PHONE_RED));
-        assertEquals(Integer.MAX_VALUE,
-                CustomTaskBlockIndexLimits.capFor(null, BlackoutOverlayTypes.STREET_PHONE));
-    }
+
 
     @Test
     void defaultTypeCapAppliesWithoutBlock() {
         assertEquals(CustomTaskBlockIndexLimits.DEFAULT_TYPE_CAP,
                 CustomTaskBlockIndexLimits.capFor(null, 20));
-        assertFalse(CustomTaskBlockIndexLimits.isUncappedType(20));
     }
 
     @Test
@@ -40,15 +32,15 @@ class CustomTaskBlockIndexLimitsTest {
     }
 
     @Test
-    void spectatorDrawsSparseCustomTypesIncludingCatsAndPhones() {
+    void spectatorDrawsSparseCustomTaskTypes() {
         assertTrue(CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(
                 null, Set.of(13)));
         assertTrue(CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(
                 null, Set.of(37)));
         assertTrue(CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(
-                null, Set.of(BlackoutOverlayTypes.STREET_PHONE)));
+                null, Set.of(39)));
         assertTrue(CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(
-                null, Set.of(BlackoutOverlayTypes.ROTARY_PHONE_RED)));
+                null, Set.of(40)));
         assertTrue(CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(
                 null, Set.of(15, 20)));
     }

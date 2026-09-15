@@ -101,7 +101,7 @@ boolean isActive(ServerLevel level);
 
 | 入口 | 契约 |
 |---|---|
-| `GameModeIds.BLACKOUT` / `MURDER` / `REPAIR` | 短 id：`habitrain:blackout`、`sre:murder`、`sre:repair` |
+| `GameModeIds.MURDER` / `REPAIR` | 当前内置模式短 id：`sre:murder`、`sre:repair`；`BLACKOUT` 仅保留用于旧历史数据识别 |
 | `GameModeIds.canonical(raw)` | 把 registry 全 id、`sre:blackout`、类名猜测映射到短 id |
 | `MatchStateApi.phase(level)` | 对齐 SRE `GameStatus`（含 `INITIATING`）；读失败为 `UNKNOWN` |
 | `MatchStateApi.hasLeftLobby(level)` | `phase != INACTIVE`（含 `UNKNOWN`，卡片应拒绝） |
@@ -279,7 +279,7 @@ default boolean requiresClient(); // 默认 false
 
 `OnGamePlayerRolesConfirm` / `RoleLifecycleHooks.onRolesConfirm` **可以**在开局确认阶段改写分配 Map（抽奖自选、职业卡、七宗罪互斥等）。这是**开局确认**，不是局中转职。局中转换必须走 `RoleChangeApi`。
 
-强制随机转职必须使用 `RoleChangeCause.FORCED_RANDOM`。Core 会在事务写入前检查旧职业：Core 自有职业和普通、无组件、允许随机的 `NormalRole` 默认可转；未知上游的组件职业、自定义实现或禁止被其他职业随机的角色默认拒绝。只有完整审计旧职业的 CCA、药水效果、实体和全局状态清理后，才能加入 `ForcedRandomRoleChangePolicy` 的内部安全名单。不要通过直接修改角色 Map 或调用 `BlackoutRoleManager.reassignRole` 绕过保护。
+强制随机转职必须使用 `RoleChangeCause.FORCED_RANDOM`。Core 会在事务写入前检查旧职业：Core 自有职业和普通、无组件、允许随机的 `NormalRole` 默认可转；未知上游的组件职业、自定义实现或禁止被其他职业随机的角色默认拒绝。只有完整审计旧职业的 CCA、药水效果、实体和全局状态清理后，才能加入 `ForcedRandomRoleChangePolicy` 的内部安全名单。不要通过直接修改角色 Map  绕过保护。
 
 ### 8.3 `RoleStateApi`
 

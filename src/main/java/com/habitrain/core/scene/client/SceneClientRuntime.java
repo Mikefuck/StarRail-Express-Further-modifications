@@ -12,6 +12,22 @@ public final class SceneClientRuntime {
         SceneAssetCache.getInstance().resetSession();
         SceneAmbientSoundController.getInstance().stopSound();
         SceneShakeController.getInstance().updateSettings(null, false);
+        resetEditorState();
+    }
+
+    /** A late SRE finish callback must not erase a lobby state already received from the server. */
+    public static void onMatchFinished() {
+        var state = SceneRenderRuntime.getInstance().getCurrentState();
+        if (state != null && state.isActive()
+                && com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY.equals(state.getMapKey())) {
+            stopPreview();
+            resetEditorState();
+        } else {
+            reset("match_finished");
+        }
+    }
+
+    private static void resetEditorState() {
         SceneToolHud.getInstance().updateState("", null, 0L);
         SceneToolSelectionRenderer.getInstance().updateSelection(null);
         com.habitrain.core.client.gui.menu.page.SceneMotionPage.clearRememberedEditorTarget();

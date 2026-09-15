@@ -12,7 +12,6 @@ import com.habitrain.core.client.gui.menu.TaskEditScreen;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.ConfigQueryService;
 import com.habitrain.core.config.TaskConfigEntry;
-import com.habitrain.core.game.blackout.BlackoutMode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -39,7 +38,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private static final int HEADER_H = 28;
     private static final int GROUP_HEADER_H = 20;
     private static final String GROUP_ORIGINAL = "original";
-    private static final String GROUP_BLACKOUT = "blackout";
     private static final String GROUP_MORE = "more";
     private static final String GROUP_OTHER = "other";
     private static final Set<String> ORIGINAL_SRE_TASK_IDS = Set.of(
@@ -90,7 +88,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private void rebuildSections() {
         Map<String, List<TaskDefinition>> grouped = new LinkedHashMap<>();
         grouped.put(GROUP_ORIGINAL, new ArrayList<>());
-        grouped.put(GROUP_BLACKOUT, new ArrayList<>());
         grouped.put(GROUP_MORE, new ArrayList<>());
         grouped.put(GROUP_OTHER, new ArrayList<>());
         for (TaskDefinition def : TaskRegistry.getAll()) {
@@ -111,11 +108,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
     private String groupKeyFor(TaskDefinition def) {
         TaskCategory category = def.getCategory();
-        if (BlackoutMode.MODE_ID.equals(def.getGameModeId())
-                || BlackoutMode.BLACKOUT_GOOD.equals(category)
-                || BlackoutMode.BLACKOUT_BAD.equals(category)) {
-            return GROUP_BLACKOUT;
-        }
+
         if (HabiTrainCore.MOD_ID.equals(def.getModId())
                 && "sre:base".equals(def.getGameModeId())
                 && ORIGINAL_SRE_TASK_IDS.contains(def.getTaskId())) {
@@ -130,7 +123,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private String resolveSectionTitle(String sectionKey, List<TaskDefinition> tasks) {
         return switch (sectionKey) {
             case GROUP_ORIGINAL -> "原版哈比任务";
-            case GROUP_BLACKOUT -> "停电专属任务";
             case GROUP_MORE -> "更多任务";
             default -> "其他";
         };
@@ -139,15 +131,12 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private int accentForSection(String sectionKey, List<TaskDefinition> tasks) {
         return switch (sectionKey) {
             case GROUP_ORIGINAL -> MenuTheme.ACCENT_MINT;
-            case GROUP_BLACKOUT -> MenuTheme.DANGER;
             case GROUP_MORE -> MenuTheme.ACCENT_BLUE;
             default -> MenuTheme.TEXT_SECONDARY;
         };
     }
 
     private int taskCategoryPriority(TaskCategory cat) {
-        if (BlackoutMode.BLACKOUT_GOOD.equals(cat)) return 0;
-        if (BlackoutMode.BLACKOUT_BAD.equals(cat)) return 1;
         if (TaskCategory.MURDER.equals(cat)) return 2;
         if (TaskCategory.REPAIR.equals(cat)) return 3;
         if (TaskCategory.ALL.equals(cat)) return 4;
@@ -156,13 +145,11 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     }
 
     /**
-     * 内容区组标题：停电模式已按阵营拆分到不同侧栏条目，此处仅做细分标注。
+     * 内容区任务组标题。
      */
     private String categoryGroupLabel(TaskCategory cat) {
         if (cat == null) return "未分类";
         String id = cat.getId();
-        if (BlackoutMode.BLACKOUT_GOOD.equals(cat)) return "§a好人任务池";
-        if (BlackoutMode.BLACKOUT_BAD.equals(cat)) return "§c坏人任务池";
         if (TaskCategory.MURDER.equals(cat)) return "谋杀模式";
         if (TaskCategory.REPAIR.equals(cat)) return "修机模式";
         if (TaskCategory.ALL.equals(cat)) return "通用任务";
@@ -270,17 +257,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         // 元信息
         String meta = "§7" + def.getFullId();
         g.drawString(font, meta, x + 8, y + 15, MenuTheme.TEXT_SECONDARY, false);
-        // 阵营药丸（仅停电模式任务显示）：绿色"好人"/红色"坏人"
-        int factionPillW = 0;
-        String factionLabel = factionLabelFor(def);
-        if (factionLabel != null) {
-            boolean isGood = BlackoutMode.BLACKOUT_GOOD.equals(def.getCategory());
-            factionPillW = 36;
-            int fpX = x + w - 168;
-            g.fill(fpX, y + 4, fpX + factionPillW, y + 18, isGood ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-            g.drawString(font, factionLabel, fpX + (factionPillW - font.width(factionLabel)) / 2, y + 6,
-                    0xFFFFFFFF, false);
-        }
         // 状态药丸
         int pillX = x + w - 120;
         int pillW = 48;
@@ -295,15 +271,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         taskHits.add(new TaskRowHit(def, pillX, pillW, editX, editW, y, ROW_H));
     }
 
-    /**
-     * 返回阵营药丸文本（§a好人 / §c坏人），非停电任务返回 null 不显示药丸。
-     */
-    private String factionLabelFor(TaskDefinition def) {
-        TaskCategory cat = def.getCategory();
-        if (BlackoutMode.BLACKOUT_GOOD.equals(cat)) return "§a好人";
-        if (BlackoutMode.BLACKOUT_BAD.equals(cat)) return "§c坏人";
-        return null;
-    }
 
     private boolean matchesSearch(TaskDefinition def) {
         if (searchText.isEmpty()) return true;

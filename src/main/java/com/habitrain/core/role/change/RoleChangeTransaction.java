@@ -38,7 +38,7 @@ public final class RoleChangeTransaction<A> {
         CAPTURE,            // snapshot old SRE role / faction / managed state
         BEFORE_LOST,        // prep-only hooks; nothing irreversible
         UPDATE_SRE,         // write the new role to the SRE map
-        UPDATE_MODE,        // update mode (Blackout) faction/role
+        UPDATE_MODE,        // update mode faction/role
         INIT_NEW,           // initialize new-role CCA, state, skills, items
         COMMIT_OLD,         // finalize old-role cleanup (onLost + state reset)
         WRITE_HISTORY,      // write timeline + stats
@@ -55,7 +55,7 @@ public final class RoleChangeTransaction<A> {
         void updateSre(A actor, @Nullable SRERole role);
 
         /**
-         * Updates reversible mode (Blackout) role/faction data to match
+         * Updates reversible mode role/faction data to match
          * {@code role}. It must not emit events, update replay/stats, or sync
          * clients; those belong to {@link #afterAssigned}/{@link #syncClient}
          * after the transaction is committed.

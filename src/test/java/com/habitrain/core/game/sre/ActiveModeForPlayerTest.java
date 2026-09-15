@@ -19,26 +19,20 @@ class ActiveModeForPlayerTest {
 
     @Test
     void pickUsesRoundMembershipWhenCurrentLevelHasNoMode() {
-        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of("blackout"), List.of("blackout", "murder"));
-        assertEquals(Optional.of("blackout"), picked);
+        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of("repair"), List.of("repair", "murder"));
+        assertEquals(Optional.of("repair"), picked);
     }
 
     @Test
     void pickFallsBackToTheOnlyActiveMode() {
-        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of(), List.of("blackout"));
-        assertEquals(Optional.of("blackout"), picked);
+        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of(), List.of("repair"));
+        assertEquals(Optional.of("repair"), picked);
     }
 
     @Test
     void pickIsEmptyWhenSeveralActiveModesAndPlayerIsInNone() {
-        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of(), List.of("blackout", "murder"));
+        Optional<String> picked = ActiveModeForPlayer.pick(null, List.of(), List.of("repair", "murder"));
         assertTrue(picked.isEmpty());
     }
 
-    @Test
-    void blackoutRoundIncludesAliveOrRoleHistory() {
-        assertTrue(ActiveModeForPlayer.belongsToBlackoutRound(true, false));
-        assertTrue(ActiveModeForPlayer.belongsToBlackoutRound(false, true));
-        assertFalse(ActiveModeForPlayer.belongsToBlackoutRound(false, false));
-    }
 }

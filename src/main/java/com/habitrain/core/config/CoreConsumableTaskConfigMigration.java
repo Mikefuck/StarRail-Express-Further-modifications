@@ -67,10 +67,7 @@ final class CoreConsumableTaskConfigMigration {
             canonical.hasRefreshWeight = true;
             canonical.refreshWeight = legacy.refreshWeight;
         }
-        if (legacy.hasShopPrice) {
-            canonical.hasShopPrice = true;
-            canonical.shopPrice = legacy.shopPrice;
-        }
+
         return true;
     }
 }

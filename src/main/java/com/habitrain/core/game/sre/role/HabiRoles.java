@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * habitrain_core 投稿职业注册入口。
- * 全部注册进 {@link TMMRoles}，blackout 通过 canUseKiller 映射 GOOD/BAD。
+ * 全部注册进 {@link TMMRoles}。
  *
  * <p>专属商店必须通过角色 {@link SRERole#getShopEntries()} 覆盖提供
  * （见 {@link HabiRoleShops}），不要只依赖 {@code ShopContent.customEntries}——
@@ -106,5 +106,4 @@ public final class HabiRoles {
             return false;
         }
     }
-
 }

@@ -4,7 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.WinResult;
-import com.habitrain.core.game.blackout.ForcedReadyJoinGate;
+import com.habitrain.core.game.sre.ForcedReadyJoinGate;
 import io.wifi.starrailexpress.cca.ParticipationComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -81,34 +81,13 @@ public final class SREModeStartAdapter {
     }
 
     /**
-     * @param registryFullId e.g. habitrain_core:habitrain:blackout
+     * @param registryFullId e.g. habitrain_core:sre:murder
      */
     public static boolean startMode(ServerLevel level, String registryFullId) {
         if (level == null || registryFullId == null || registryFullId.isBlank()) {
             return false;
         }
         try {
-            // blackout path
-            if (registryFullId.endsWith(":habitrain:blackout")
-                    || "habitrain_core:habitrain:blackout".equals(registryFullId)) {
-                if (isSreGameBlocking(level)) {
-                    HabiTrainCore.LOGGER.warn(
-                            "[SREModeStartAdapter] refuse blackout start: SRE already blocking in {}",
-                            level.dimension().location());
-                    return false;
-                }
-                forceReadyParticipants(level);
-                GameModeRegistry.start("habitrain_core:habitrain:blackout", level);
-                if (!isSreGameStarted(level)) {
-                    GameModeRegistry.stop(level, WinResult.forceEnd("SRE未启动"));
-                    ForcedReadyJoinGate.clear();
-                    HabiTrainCore.LOGGER.warn(
-                            "[SREModeStartAdapter] blackout registry active but SRE not STARTING/RUNNING in {}",
-                            level.dimension().location());
-                    return false;
-                }
-                return true;
-            }
             // murder
             if (registryFullId.contains("sre:murder")) {
                 var mode = io.wifi.starrailexpress.api.SREGameModes.MURDER;
