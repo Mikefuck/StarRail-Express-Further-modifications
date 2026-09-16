@@ -9,10 +9,22 @@ public final class SceneClientRuntime {
 
     public static void reset(String reason) {
         SceneRenderRuntime.getInstance().reset();
+        SceneBuildScheduler.getInstance().reset();
         SceneAssetCache.getInstance().resetSession();
         SceneAmbientSoundController.getInstance().stopSound();
         SceneShakeController.getInstance().updateSettings(null, false);
         resetEditorState();
+    }
+
+    /**
+     * 配置页改动后刷新所有受影响的场景子系统。
+     *
+     * <p>放在这里而不是让配置页逐个知道有哪些子系统：解码缓存配额、网格构建预算与显存配额
+     * 分属不同单例，但它们都是由同一份 {@code scenePerformance} 偏好驱动的。</p>
+     */
+    public static void applyClientConfig() {
+        SceneAssetCache.getInstance().applyClientConfig();
+        SceneRenderRuntime.getInstance().applyClientConfig();
     }
 
     /** A late SRE finish callback must not erase a lobby state already received from the server. */

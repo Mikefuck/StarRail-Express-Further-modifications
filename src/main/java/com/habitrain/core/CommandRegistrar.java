@@ -415,6 +415,21 @@ public final class CommandRegistrar {
                                 ctx.getSource().sendSuccess(() -> Component.literal("§e已停止当前维度的场景运动"), true);
                                 return 1;
                             }))
+                            // 导出当前资产供整合包分发：玩家侧放进 habitrain_scene_seed/ 即可零网络加载。
+                            .then(Commands.literal("export").executes(ctx -> {
+                                var result = com.habitrain.core.scene.server.SceneExportService.exportAll();
+                                if (!result.ok()) {
+                                    ctx.getSource().sendFailure(Component.literal("§c导出失败: " + result.error()));
+                                    return 0;
+                                }
+                                ctx.getSource().sendSuccess(() -> Component.literal(
+                                        "§a已导出 §e" + result.assets() + " §a个场景资产（§f"
+                                                + com.habitrain.core.scene.asset.SceneAssetSizeReport.humanBytes(result.bytes())
+                                                + "§a）\n§7目录: §f" + result.directory()
+                                                + "\n§7把该目录里的 .hscene 放进客户端 §f.habitrain_scene_seed/§7 即可免下载"
+                                                + (result.skipped() > 0 ? "\n§7跳过（无文件/无效）: §e" + result.skipped() : "")), false);
+                                return 1;
+                            }))
                             .then(Commands.literal("build")
                                     .executes(ctx -> {
                                         ServerLevel level = ctx.getSource().getLevel();

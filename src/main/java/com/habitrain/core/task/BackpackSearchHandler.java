@@ -2,14 +2,10 @@ package com.habitrain.core.task;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.task.SlownessReapplyManager;
-import com.habitrain.core.task.TaskManager;
-import com.habitrain.core.util.SubtitleNotifier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;

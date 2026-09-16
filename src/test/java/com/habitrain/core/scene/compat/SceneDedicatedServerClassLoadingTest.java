@@ -4,6 +4,7 @@ import com.habitrain.core.api.client.scene.compat.*;
 import com.habitrain.core.api.scene.compat.*;
 import com.habitrain.core.scene.SceneLimits;
 import com.habitrain.core.scene.asset.SceneAssetCodec;
+import com.habitrain.core.scene.asset.SceneAssetSizeReport;
 import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
 import com.habitrain.core.scene.model.SceneBounds;
 import net.minecraft.resources.ResourceLocation;
@@ -41,6 +42,7 @@ public class SceneDedicatedServerClassLoadingTest {
             SceneAssetCodec.class,
             SceneAssetCodec.SectionData.class,
             SceneAssetCodec.AssetData.class,
+            SceneAssetSizeReport.class,
             SceneLimits.class,
             SceneBounds.class,
             com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.class,

@@ -21,7 +21,6 @@
  */
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.game.sre.GameEndTransitionCoordinator;
 import io.wifi.starrailexpress.SRE;
 import io.wifi.starrailexpress.api.replay.ReplayEvent;
 import io.wifi.starrailexpress.api.replay.ReplayEventTypes;

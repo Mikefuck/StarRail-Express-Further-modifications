@@ -50,14 +50,15 @@ import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -70,27 +71,65 @@ public final class SceneMeshBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneMeshBuilder.class.getSimpleName());
     private static final Direction[] DIRECTIONS = Direction.values();
     private static final int MAX_SECTIONS = SceneLimits.MAX_MESH_SECTIONS;
-    private static final int SECTIONS_PER_STEP = 2;
-    private static final long STEP_BUDGET_NANOS = 4_000_000L;
+    /** 单个 quad 的顶点数据估算（4 个顶点 × 32 字节的 BLOCK 顶点格式）。 */
+    private static final long ESTIMATED_BYTES_PER_QUAD = 128L;
     /** 约 2,097,152 quads * 128 bytes/quad = 256 MiB。 */
     private static final long MAX_QUADS = 2_097_152L;
     private static final AtomicBoolean FABRIC_CONTEXT_FALLBACK_WARNED = new AtomicBoolean();
+    /**
+     * 运行/预取路径默认只做统计与异常抽样；发布诊断与管理员检查会显式要求详细模式。
+     * 逐条保留正常方块会让大型场景的报告本身成为主要内存占用。
+     */
+    private static final boolean DEFAULT_DETAILED_DIAGNOSTICS =
+            com.habitrain.core.client.config.SceneClientPerformanceRules.REPORT_DETAILED_DIAGNOSTICS;
 
     private SceneMeshBuilder() {}
 
     public record MeshBuildResult(SceneMeshSet meshSet, SceneCompatibilityReport report) {}
 
     public static CompletableFuture<MeshBuildResult> buildMeshWithReportAsync(SceneAssetCodec.AssetData assetData) {
+        return buildMeshWithReportAsync(assetData, DEFAULT_DETAILED_DIAGNOSTICS,
+                SceneBuildScheduler.Priority.PREFETCH);
+    }
+
+    public static CompletableFuture<MeshBuildResult> buildMeshWithReportAsync(SceneAssetCodec.AssetData assetData,
+                                                                             boolean detailedDiagnostics) {
+        return buildMeshWithReportAsync(assetData, detailedDiagnostics,
+                SceneBuildScheduler.Priority.PREFETCH);
+    }
+
+    /**
+     * 提交一次网格构建。
+     *
+     * <p>构建不再自带预算、也不再自行重排（此前每个 BuildState 用 {@code delayedExecutor}
+     * 私有地推进 4 ms）；它被交给 {@link SceneBuildScheduler}，与所有其他构建共享一份帧级总预算。</p>
+     *
+     * @param detailedDiagnostics true 时逐条保留正常方块条目（发布/管理员诊断用），
+     *                            false 时正常条目按位置聚合成计数，只保留异常抽样
+     * @param priority            与下载队列同源的优先级：主背景/预览优先于附加背景，附加背景优先于预取
+     */
+    public static CompletableFuture<MeshBuildResult> buildMeshWithReportAsync(SceneAssetCodec.AssetData assetData,
+                                                                             boolean detailedDiagnostics,
+                                                                             SceneBuildScheduler.Priority priority) {
         if (assetData == null || assetData.sections.isEmpty()) {
-            return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), new SceneCompatibilityReport()));
+            SceneCompatibilityReport empty = new SceneCompatibilityReport(detailedDiagnostics);
+            empty.freeze();
+            return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), empty));
         }
         if (assetData.sections.size() > MAX_SECTIONS) {
             LOGGER.warn("拒绝构建超限场景网格: sections={}", assetData.sections.size());
-            return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), new SceneCompatibilityReport()));
+            SceneCompatibilityReport empty = new SceneCompatibilityReport(detailedDiagnostics);
+            empty.freeze();
+            return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), empty));
+        }
+        if (Minecraft.getInstance().level == null) {
+            throw new IllegalStateException("Cannot build a scene mesh without a client level");
         }
 
+        // BuildState 的构造已经很轻（调色板改为惰性解析），因此仍同步建好再交给调度器。
         CompletableFuture<MeshBuildResult> result = new CompletableFuture<>();
-        Minecraft.getInstance().execute(new BuildState(assetData, result)::advance);
+        SceneBuildScheduler.getInstance().submit(
+                new BuildState(assetData, result, detailedDiagnostics), priority);
         return result;
     }
 
@@ -98,7 +137,7 @@ public final class SceneMeshBuilder {
         return buildMeshWithReportAsync(assetData).thenApply(MeshBuildResult::meshSet);
     }
 
-    private static final class BuildState {
+    private static final class BuildState implements SceneBuildScheduler.BuildStep {
         private enum FabricBakeOutcome {
             EMITTED,
             FALLBACK_TO_ACTIVE_RENDERER,
@@ -107,13 +146,22 @@ public final class SceneMeshBuilder {
 
         private final SceneAssetCodec.AssetData asset;
         private final CompletableFuture<MeshBuildResult> result;
-        private final SceneCompatibilityReport report = new SceneCompatibilityReport();
-        private final Map<SceneMeshSet.Layer, ByteBufferBuilder> byteBuilders =
+        private final SceneCompatibilityReport report;
+        private final SceneMeshBatchPolicy.Plan batchPlan;
+        /**
+         * 分批后的构建器：外层键是层/材质，数组下标是批次。
+         *
+         * <p>不透明层按空间批次分组（裁剪粒度就是它）；{@code TRANSLUCENT} 与半透明自定义材质
+         * 固定用下标 0——半透明不拆批，保住原来的发射顺序。构建器按需创建，空批次不占原生内存。</p>
+         */
+        private final Map<SceneMeshSet.Layer, ByteBufferBuilder[]> byteBuilders =
                 new EnumMap<>(SceneMeshSet.Layer.class);
-        private final Map<SceneMeshSet.Layer, BufferBuilder> builders =
+        private final Map<SceneMeshSet.Layer, BufferBuilder[]> builders =
                 new EnumMap<>(SceneMeshSet.Layer.class);
-        private final Map<SceneMaterialKey, ByteBufferBuilder> customByteBuilders = new LinkedHashMap<>();
-        private final Map<SceneMaterialKey, BufferBuilder> customBuilders = new LinkedHashMap<>();
+        private final Map<SceneMaterialKey, ByteBufferBuilder[]> customByteBuilders = new LinkedHashMap<>();
+        private final Map<SceneMaterialKey, BufferBuilder[]> customBuilders = new LinkedHashMap<>();
+        /** 当前 section 所属的批次。 */
+        private int activeBatch;
         private final Map<BlockPos, SceneBlockPayloadEntry> payloadMap = new HashMap<>();
         private final BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
         private final RandomSource random = RandomSource.create(42L);
@@ -121,12 +169,33 @@ public final class SceneMeshBuilder {
         private final SnapshotBlockView blockView;
         private final SpriteFinder blockSpriteFinder;
         private int sectionIndex;
+        /** 当前 section 的可中断游标：activeLayer 是已完成的 y 层数（0..16）。 */
+        private SceneAssetCodec.SectionData activeSection;
+        private BlockState[] activePalette;
+        private int activeBaseX;
+        private int activeBaseY;
+        private int activeBaseZ;
+        private int activeLayer;
         private long quadCount;
         private boolean cpuBuildersClosed;
+        /** section 阶段是否已经跑完；之后进入 upload 阶段。 */
+        private boolean sectionsDone;
+        /** upload 阶段的游标：按层再来按自定义材质，逐个 build + upload。 */
+        private SceneMeshSet uploadTarget;
+        /** 上传工作项：一个 (层或材质, 批次) 的构建器。一个 list 顺序推进，便于逐项检查预算。 */
+        private record Upload(SceneMeshSet.Layer layer, SceneMaterialKey material, int batch,
+                              BufferBuilder builder) {}
+        private List<Upload> pendingUploads = List.of();
+        private int uploadCursor;
+        /** 批次下标 → 该批的网格集合（惰性创建，只有真的产出几何才会有）。 */
+        private final Map<Integer, SceneMeshSet> batchTargets = new LinkedHashMap<>();
+        private final Map<Integer, SceneVertexBounds> batchBounds = new LinkedHashMap<>();
 
-        private BuildState(SceneAssetCodec.AssetData asset, CompletableFuture<MeshBuildResult> result) {
+        private BuildState(SceneAssetCodec.AssetData asset, CompletableFuture<MeshBuildResult> result,
+                           boolean detailedDiagnostics) {
             this.asset = asset;
             this.result = result;
+            this.report = new SceneCompatibilityReport(detailedDiagnostics);
             ClientLevel level = Minecraft.getInstance().level;
             if (level == null) {
                 throw new IllegalStateException("Cannot build a scene mesh without a client level");
@@ -134,12 +203,9 @@ public final class SceneMeshBuilder {
             this.blockView = new SnapshotBlockView(asset, level);
             this.blockSpriteFinder = SpriteFinder.get(
                     Minecraft.getInstance().getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS));
-            for (SceneMeshSet.Layer layer : SceneMeshSet.Layer.values()) {
-                ByteBufferBuilder bytes = new ByteBufferBuilder(131072);
-                byteBuilders.put(layer, bytes);
-                builders.put(layer, new BufferBuilder(bytes,
-                        com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS, DefaultVertexFormat.BLOCK));
-            }
+            this.batchPlan = SceneMeshBatchPolicy.plan(asset.sections.size(),
+                    com.habitrain.core.client.config.ClientVisualPreferences.getMeshBatchMinSections(),
+                    asset.sourceBounds);
             if (asset.blockPayloads != null) {
                 for (SceneBlockPayloadEntry entry : asset.blockPayloads) {
                     payloadMap.put(new BlockPos(entry.localX(), entry.localY(), entry.localZ()), entry);
@@ -147,39 +213,100 @@ public final class SceneMeshBuilder {
             }
         }
 
-        private void advance() {
+        /**
+         * 由 {@link SceneBuildScheduler} 驱动的增量推进：先跑完全部 section，再逐个上传缓冲。
+         *
+         * <p>预算由调度器在所有构建之间共享，因此这里不再持有任何私有配额。</p>
+         */
+        @Override
+        public boolean step(long deadlineNanos) {
             if (result.isDone()) {
                 closeCpuBuilders();
-                return;
+                closeUploadedMeshes();
+                return true;
+            }
+            // 构建现在会跨越多帧，可能在关卡已被替换之后才轮到执行；快照视图持有旧 ClientLevel，
+            // 继续推进只会在错误的世界上采样光照与遮挡。
+            if (Minecraft.getInstance().level != blockView.level) {
+                LOGGER.debug("场景网格构建跨越了关卡切换，已放弃: sections={}", asset.sections.size());
+                abort();
+                return true;
             }
             try {
-                long start = System.nanoTime();
-                int processed = 0;
-                while (sectionIndex < asset.sections.size()
-                        && processed < SECTIONS_PER_STEP
-                        && System.nanoTime() - start < STEP_BUDGET_NANOS) {
-                    processSection(asset.sections.get(sectionIndex++));
-                    processed++;
+                if (!sectionsDone) {
+                    if (!stepSections(deadlineNanos)) return false;
+                    sectionsDone = true;
+                    beginUpload();
                 }
-                if (sectionIndex < asset.sections.size()) {
-                    CompletableFuture.delayedExecutor(1L, TimeUnit.MILLISECONDS)
-                            .execute(() -> Minecraft.getInstance().execute(this::advance));
-                    return;
-                }
-                result.complete(upload());
+                return stepUpload(deadlineNanos);
             } catch (Throwable t) {
                 closeCpuBuilders();
+                closeUploadedMeshes();
                 LOGGER.error("构建场景顶点网格失败", t);
+                // 失败路径同样要冻结：部分统计信息对诊断仍然有价值。
+                report.freeze();
+                result.complete(new MeshBuildResult(new SceneMeshSet(), report));
+                return true;
+            }
+        }
+
+        @Override
+        public void abort() {
+            closeCpuBuilders();
+            closeUploadedMeshes();
+            if (!result.isDone()) {
+                report.freeze();
                 result.complete(new MeshBuildResult(new SceneMeshSet(), report));
             }
         }
 
+        private void closeUploadedMeshes() {
+            if (uploadTarget != null) {
+                uploadTarget.close();
+                uploadTarget = null;
+            }
+            batchTargets.values().forEach(SceneMeshSet::close);
+            batchTargets.clear();
+            batchBounds.clear();
+        }
+
+        /**
+         * 取当前 section 所属批次、指定层的构建器（按需创建）。
+         *
+         * <p>半透明层与半透明自定义材质固定落在批次 0：它们不拆批，所有 section 都追加到同一个
+         * 缓冲里，绘制顺序与分批功能上线前逐字节一致。</p>
+         */
+        private BufferBuilder builderFor(SceneMeshSet.Layer layer) {
+            int slot = (batchPlan.isBatched() && layer != SceneMeshSet.Layer.TRANSLUCENT) ? activeBatch : 0;
+            BufferBuilder[] array = builders.computeIfAbsent(layer,
+                    ignored -> new BufferBuilder[batchPlan.batchCount()]);
+            ByteBufferBuilder[] byteArray = byteBuilders.computeIfAbsent(layer,
+                    ignored -> new ByteBufferBuilder[batchPlan.batchCount()]);
+            BufferBuilder builder = array[slot];
+            if (builder == null) {
+                ByteBufferBuilder bytes = new ByteBufferBuilder(131072);
+                byteArray[slot] = bytes;
+                builder = new BufferBuilder(bytes,
+                        com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS, DefaultVertexFormat.BLOCK);
+                array[slot] = builder;
+            }
+            return builder;
+        }
+
         private BufferBuilder getOrCreateCustomBuilder(SceneMaterialKey material) {
-            return customBuilders.computeIfAbsent(material, mat -> {
+            int slot = (batchPlan.isBatched() && !material.isTranslucent()) ? activeBatch : 0;
+            BufferBuilder[] array = customBuilders.computeIfAbsent(material,
+                    ignored -> new BufferBuilder[batchPlan.batchCount()]);
+            ByteBufferBuilder[] byteArray = customByteBuilders.computeIfAbsent(material,
+                    ignored -> new ByteBufferBuilder[batchPlan.batchCount()]);
+            BufferBuilder builder = array[slot];
+            if (builder == null) {
                 ByteBufferBuilder bytes = new ByteBufferBuilder(65536);
-                customByteBuilders.put(mat, bytes);
-                return new BufferBuilder(bytes, mat.vertexFormatMode(), DefaultVertexFormat.BLOCK);
-            });
+                byteArray[slot] = bytes;
+                builder = new BufferBuilder(bytes, material.vertexFormatMode(), DefaultVertexFormat.BLOCK);
+                array[slot] = builder;
+            }
+            return builder;
         }
 
         private final class MaterialSinkImpl implements SceneMaterialSink {
@@ -270,27 +397,58 @@ public final class SceneMeshBuilder {
             return (sky << 20) | (block << 4);
         }
 
-        private void processSection(SceneAssetCodec.SectionData section) {
-            SnapshotSection snapshotSection = blockView.getSection(section.relX, section.relY, section.relZ);
-            if (snapshotSection == null) return;
-            BlockState[] palette = snapshotSection.palette;
+        /**
+         * 取下一个可处理的 section 并摆好游标；空 section 直接跳过。
+         *
+         * @return false 表示所有 section 都已经处理完
+         */
+        private boolean beginNextSection() {
+            while (sectionIndex < asset.sections.size()) {
+                SceneAssetCodec.SectionData section = asset.sections.get(sectionIndex);
+                SnapshotSection snapshot = blockView.getSection(section.relX, section.relY, section.relZ);
+                if (snapshot == null) {
+                    sectionIndex++;
+                    continue;
+                }
+                activeSection = section;
+                activePalette = snapshot.palette;
+                activeBaseX = localSectionOrigin(section.relX, asset.sourceBounds.minX());
+                activeBaseY = localSectionOrigin(section.relY, asset.sourceBounds.minY());
+                activeBaseZ = localSectionOrigin(section.relZ, asset.sourceBounds.minZ());
+                // 批次只在 section 边界上变化：section 内的方块共用同一个包围盒，不需要逐块判断。
+                activeBatch = batchPlan.batchIndex(SceneMeshBatchPolicy.axisCoordinate(
+                        batchPlan, activeBaseX, activeBaseY, activeBaseZ));
+                activeLayer = 0;
+                return true;
+            }
+            return false;
+        }
 
-            int baseX = localSectionOrigin(section.relX, asset.sourceBounds.minX());
-            int baseY = localSectionOrigin(section.relY, asset.sourceBounds.minY());
-            int baseZ = localSectionOrigin(section.relZ, asset.sourceBounds.minZ());
+        /**
+         * 推进 section 阶段，每完成一个 y 层（256 个方块）检查一次共享预算。
+         *
+         * <p>切分粒度选 y 层而不是整个 section，是因为此前预算只在 section 之间检查：
+         * 单个密集装饰 section 可以一次吃掉远超一帧的时间。这里保留原有的 {@code y → z → x}
+         * 遍历顺序不变——顶点追加顺序决定了半透明层的绘制顺序，不能改。</p>
+         *
+         * @return true 表示全部 section 处理完毕
+         */
+        private boolean stepSections(long deadlineNanos) {
+            if (activeSection == null && !beginNextSection()) return true;
 
-            for (int y = 0; y < 16; y++) {
+            for (int y = activeLayer; y < 16; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
-                        int flat = (y << 8) | (z << 4) | x;
-                        int paletteIndex = flat < section.blockIndices.length ? section.blockIndices[flat] : 0;
-                        if (paletteIndex <= 0 || paletteIndex >= palette.length) continue;
-                        BlockState state = palette[paletteIndex];
+                        int flat = sectionFlatIndex(x, y, z);
+                        int paletteIndex = flat < activeSection.blockIndices.length
+                                ? activeSection.blockIndices[flat] : 0;
+                        if (paletteIndex <= 0 || paletteIndex >= activePalette.length) continue;
+                        BlockState state = activePalette[paletteIndex];
                         if (state == null || state.isAir()) continue;
 
-                        int localX = baseX + x;
-                        int localY = baseY + y;
-                        int localZ = baseZ + z;
+                        int localX = activeBaseX + x;
+                        int localY = activeBaseY + y;
+                        int localZ = activeBaseZ + z;
                         int worldX = asset.sourceBounds.minX() + localX;
                         int worldY = asset.sourceBounds.minY() + localY;
                         int worldZ = asset.sourceBounds.minZ() + localZ;
@@ -469,7 +627,7 @@ public final class SceneMeshBuilder {
                         // 5. 原版静态模型快速路径，同时也是 Sodium/Indium 增强模型的
                         //    兼容回退。让活动渲染器创建自己的上下文，避免手工 getQuads
                         //    丢掉 Wathe 等模型的面、材质层和嵌套模型。
-                        BufferBuilder builder = builders.get(resolveLayer(state));
+                        BufferBuilder builder = builderFor(resolveLayer(state));
                         long modelQuadCount = countModelQuads(state, model);
                         poses.pushPose();
                         poses.translate(localX, localY, localZ);
@@ -479,7 +637,7 @@ public final class SceneMeshBuilder {
                         FluidState fluidState = state.getFluidState();
                         if (!fluidState.isEmpty()) {
                             countQuads(6L);
-                            BufferBuilder fluidBuilder = builders.get(resolveLayer(fluidState));
+                            BufferBuilder fluidBuilder = builderFor(resolveLayer(fluidState));
                             dispatcher.renderLiquid(localPos, blockView, fluidBuilder, state, fluidState);
                         }
 
@@ -498,7 +656,15 @@ public final class SceneMeshBuilder {
                         ));
                     }
                 }
+                activeLayer = y + 1;
+                // 预算检查点：一帧最多推进一个 y 层的量级，单个重 section 再也无法越过预算。
+                if (System.nanoTime() >= deadlineNanos) return false;
             }
+            sectionIndex++;
+            activeSection = null;
+            activePalette = null;
+            activeLayer = 0;
+            return false;
         }
 
         private FabricBakeOutcome bakeFabricModel(BakedModel model,
@@ -696,31 +862,112 @@ public final class SceneMeshBuilder {
             }
         }
 
-        private MeshBuildResult upload() throws Throwable {
-            SceneMeshSet meshSet = new SceneMeshSet();
+        private void beginUpload() {
+            uploadTarget = new SceneMeshSet();
+            List<Upload> uploads = new ArrayList<>();
+            for (Map.Entry<SceneMeshSet.Layer, BufferBuilder[]> entry : builders.entrySet()) {
+                BufferBuilder[] array = entry.getValue();
+                for (int batch = 0; batch < array.length; batch++) {
+                    if (array[batch] != null) {
+                        uploads.add(new Upload(entry.getKey(), null, batch, array[batch]));
+                    }
+                }
+            }
+            for (Map.Entry<SceneMaterialKey, BufferBuilder[]> entry : customBuilders.entrySet()) {
+                BufferBuilder[] array = entry.getValue();
+                for (int batch = 0; batch < array.length; batch++) {
+                    if (array[batch] != null) {
+                        uploads.add(new Upload(null, entry.getKey(), batch, array[batch]));
+                    }
+                }
+            }
+            pendingUploads = uploads;
+            uploadCursor = 0;
+        }
+
+        /**
+         * 一个构建完成的缓冲该落到哪里：分批时进它自己的批次，半透明与未分批时进外层集合。
+         */
+        private void storeUpload(Upload upload, VertexBuffer buffer, long bytes) {
+            boolean translucent = upload.material() != null
+                    ? upload.material().isTranslucent()
+                    : upload.layer() == SceneMeshSet.Layer.TRANSLUCENT;
+            if (!batchPlan.isBatched() || translucent) {
+                uploadTarget.setEstimatedBytes(uploadTarget.estimatedBytes() + bytes);
+                if (upload.material() != null) {
+                    uploadTarget.setCustomBuffer(upload.material(), buffer);
+                } else {
+                    uploadTarget.setBuffer(upload.layer(), buffer);
+                }
+                return;
+            }
+            SceneMeshSet target = batchTargets.computeIfAbsent(upload.batch(),
+                    ignored -> new SceneMeshSet());
+            target.setEstimatedBytes(target.estimatedBytes() + bytes);
+            if (upload.material() != null) {
+                target.setCustomBuffer(upload.material(), buffer);
+            } else {
+                target.setBuffer(upload.layer(), buffer);
+            }
+        }
+
+        /** 把每个批次连同它的本地 AABB 交给结果集合；没有几何的批次不产生条目。 */
+        private void finishBatches() {
+            for (Map.Entry<Integer, SceneMeshSet> entry : batchTargets.entrySet()) {
+                uploadTarget.addBatch(batchBounds.get(entry.getKey()).batch(entry.getValue()));
+            }
+        }
+
+        /**
+         * 逐个 build + upload 缓冲，之间检查共享预算。
+         *
+         * <p>单个 {@code MeshData} 无法再切分，因此<strong>一个缓冲</strong>是这里的最小原子单位；
+         * 一个超大材质层仍可能越过 deadline，那是这个粒度下不可避免的过冲，而不是遗漏。</p>
+         *
+         * @return true 表示全部层与材质都已上传，结果已经交付
+         */
+        private boolean stepUpload(long deadlineNanos) throws Throwable {
             try {
-                for (Map.Entry<SceneMeshSet.Layer, BufferBuilder> entry : builders.entrySet()) {
-                    MeshData data = entry.getValue().build();
-                    if (data == null) continue;
-                    meshSet.setBuffer(entry.getKey(), uploadBuffer(data));
+                while (uploadCursor < pendingUploads.size()) {
+                    Upload upload = pendingUploads.get(uploadCursor++);
+                    MeshData data = upload.builder().build();
+                    if (data != null) {
+                        boolean batched = batchPlan.isBatched() && (upload.material() != null
+                                ? !upload.material().isTranslucent()
+                                : upload.layer() != SceneMeshSet.Layer.TRANSLUCENT);
+                        try (data) {
+                            if (batched) {
+                                batchBounds.computeIfAbsent(upload.batch(), ignored -> new SceneVertexBounds())
+                                        .include(data.vertexBuffer(), data.drawState().vertexCount(),
+                                                DefaultVertexFormat.BLOCK.getVertexSize());
+                            }
+                            long bytes = (long) data.drawState().vertexCount()
+                                    * DefaultVertexFormat.BLOCK.getVertexSize();
+                            storeUpload(upload, uploadBuffer(data), bytes);
+                        }
+                    }
+                    if (System.nanoTime() >= deadlineNanos) return false;
                 }
-                for (Map.Entry<SceneMaterialKey, BufferBuilder> entry : customBuilders.entrySet()) {
-                    MeshData data = entry.getValue().build();
-                    if (data == null) continue;
-                    meshSet.setCustomBuffer(entry.getKey(), uploadBuffer(data));
-                }
-                return new MeshBuildResult(meshSet, report);
+                finishBatches();
+                // 构建结束即冻结：此后任何 addEntry 都是遗漏的写入，会被记录而不是静默污染读数。
+                report.freeze();
+                SceneMeshSet completed = uploadTarget;
+                uploadTarget = null;
+                batchTargets.clear();
+                batchBounds.clear();
+                if (!result.complete(new MeshBuildResult(completed, report))) completed.close();
+                return true;
             } catch (Throwable uploadFailure) {
-                meshSet.close();
+                closeUploadedMeshes();
                 throw uploadFailure;
             } finally {
-                closeCpuBuilders();
+                if (result.isDone()) closeCpuBuilders();
             }
         }
 
         private VertexBuffer uploadBuffer(MeshData data) throws Throwable {
             VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
-            try (data) {
+            try {
                 buffer.bind();
                 try {
                     buffer.upload(data);
@@ -737,12 +984,16 @@ public final class SceneMeshBuilder {
         private void closeCpuBuilders() {
             if (cpuBuildersClosed) return;
             cpuBuildersClosed = true;
-            for (ByteBufferBuilder bytes : byteBuilders.values()) {
-                if (bytes != null) bytes.close();
+            for (ByteBufferBuilder[] array : byteBuilders.values()) {
+                for (ByteBufferBuilder bytes : array) {
+                    if (bytes != null) bytes.close();
+                }
             }
             byteBuilders.clear();
-            for (ByteBufferBuilder bytes : customByteBuilders.values()) {
-                if (bytes != null) bytes.close();
+            for (ByteBufferBuilder[] array : customByteBuilders.values()) {
+                for (ByteBufferBuilder bytes : array) {
+                    if (bytes != null) bytes.close();
+                }
             }
             customByteBuilders.clear();
         }
@@ -756,6 +1007,16 @@ public final class SceneMeshBuilder {
 
     static int localSectionOrigin(int relativeSection, int sourceMinBlock) {
         return relativeSection * 16 + Math.floorDiv(sourceMinBlock, 16) * 16 - sourceMinBlock;
+    }
+
+    /**
+     * section 内方块在资产索引数组里的平坦下标。
+     *
+     * <p>遍历顺序固定为 {@code y → z → x}，与构建器最初的实现逐位一致：顶点追加顺序决定了
+     * 半透明层的绘制顺序，把 section 拆成按 y 层推进的批次时这一点不能变。</p>
+     */
+    static int sectionFlatIndex(int x, int y, int z) {
+        return (y << 8) | (z << 4) | x;
     }
 
     static SceneMaterialKey fabricMaterialKey(String fabricBlendMode,
@@ -824,11 +1085,16 @@ public final class SceneMeshBuilder {
      * Read-only block view backed by the captured scene. Feeding this view to the vanilla
      * block renderer preserves its ambient occlusion, face shade, tint and neighbor-light
      * sampling instead of flattening every baked quad to a single light value.
+     *
+     * <p><b>调色板惰性解析</b>：此前构造函数会为全部最多 8192 个 section 一次性解析调色板
+     * （注册表查找 + 属性解析，十万量级），是一次完全不受预算约束的客户端线程尖峰。现在
+     * 只在某个 section 第一次被访问时解析，成本因此落在受共享预算约束的构建步骤里。</p>
      */
     private static final class SnapshotBlockView implements BlockAndTintGetter {
         private final SceneBounds bounds;
         private final SceneBounds haloBounds;
         private final ClientLevel level;
+        private final Map<SectionKey, SceneAssetCodec.SectionData> rawSections = new HashMap<>();
         private final Map<SectionKey, SnapshotSection> sections = new HashMap<>();
 
         private SnapshotBlockView(SceneAssetCodec.AssetData asset, ClientLevel level) {
@@ -836,17 +1102,27 @@ public final class SceneMeshBuilder {
             this.haloBounds = asset.haloBounds != null && !asset.haloBounds.isEmpty() ? asset.haloBounds : asset.sourceBounds;
             this.level = level;
             for (SceneAssetCodec.SectionData section : asset.sections) {
-                BlockState[] palette = new BlockState[section.palette.size()];
-                for (int i = 0; i < section.palette.size(); i++) {
-                    palette[i] = parseBlockState(section.palette.get(i));
-                }
-                sections.put(new SectionKey(section.relX, section.relY, section.relZ),
-                        new SnapshotSection(palette, section.blockIndices, section.skyLight, section.blockLight));
+                rawSections.put(new SectionKey(section.relX, section.relY, section.relZ), section);
             }
         }
 
         private SnapshotSection getSection(int relX, int relY, int relZ) {
-            return sections.get(new SectionKey(relX, relY, relZ));
+            return sectionFor(new SectionKey(relX, relY, relZ));
+        }
+
+        /** 全部访问都在客户端线程上（构建步骤与活动渲染器），因此普通 HashMap 即可。 */
+        private SnapshotSection sectionFor(SectionKey key) {
+            SnapshotSection cached = sections.get(key);
+            if (cached != null) return cached;
+            SceneAssetCodec.SectionData raw = rawSections.get(key);
+            if (raw == null) return null;
+            BlockState[] palette = new BlockState[raw.palette.size()];
+            for (int i = 0; i < raw.palette.size(); i++) {
+                palette[i] = parseBlockState(raw.palette.get(i));
+            }
+            SnapshotSection parsed = new SnapshotSection(palette, raw.blockIndices, raw.skyLight, raw.blockLight);
+            sections.put(key, parsed);
+            return parsed;
         }
 
         @Override

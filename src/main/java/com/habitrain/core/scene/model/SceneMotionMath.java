@@ -114,6 +114,40 @@ public final class SceneMotionMath {
         return unwrapped - Math.floor(unwrapped / distance) * distance;
     }
 
+    /**
+     * 直线运动副本在时刻 t 的世界空间包围球，供运行时裁剪使用。
+     *
+     * <p>球心与渲染矩阵同源：{@code buildSceneModelMatrix} 施加的是
+     * {@code T(位置) · [T(pivot) · R · T(-pivot)]}，局部几何中心 {@code L = (size/2)} 的像正是
+     * {@link SceneOrbitMath#calculateFixedLocalCenter} 给出的 {@code F(L)}。旋转是刚体变换，
+     * 因此以包围盒半对角线为半径的球在旋转前后不变——这正是环绕模式已经在用的口径，
+     * 于是两边的距离判定与视锥判定可以直接复用同一套代码。</p>
+     *
+     * @param offsetX 运动相位与循环回绕造成的世界位移（{@code motion + loopOffset}）
+     * @return 世界空间包围球；几何为空时退化为原点半径 0 的球
+     */
+    public static SceneInstanceBounds calculateLinearInstanceBounds(SceneProfile profile,
+                                                                    double offsetX, double offsetY, double offsetZ) {
+        if (profile == null) return new SceneInstanceBounds(0.0, 0.0, 0.0, 0.0);
+        SceneBounds bounds = profile.getSourceBounds();
+        double sx = bounds != null ? Math.max(0.0, bounds.sizeX()) : 0.0;
+        double sy = bounds != null ? Math.max(0.0, bounds.sizeY()) : 0.0;
+        double sz = bounds != null ? Math.max(0.0, bounds.sizeZ()) : 0.0;
+        double radius = 0.5 * Math.sqrt(sx * sx + sy * sy + sz * sz);
+
+        double[] localCenter = SceneOrbitMath.calculateFixedLocalCenter(
+                bounds, profile.getPivotLocal(), profile.getRotationDegrees());
+        double[] origin = profile.getDisplayOrigin();
+        double ox = origin != null && origin.length >= 1 ? finiteOr(origin[0], 0.0) : 0.0;
+        double oy = origin != null && origin.length >= 2 ? finiteOr(origin[1], 0.0) : 0.0;
+        double oz = origin != null && origin.length >= 3 ? finiteOr(origin[2], 0.0) : 0.0;
+        return new SceneInstanceBounds(
+                ox + offsetX + localCenter[0],
+                oy + offsetY + localCenter[1],
+                oz + offsetZ + localCenter[2],
+                radius);
+    }
+
     private static double finiteOr(double value, double fallback) {
         return Double.isFinite(value) ? value : fallback;
     }

@@ -1,6 +1,5 @@
 package com.habitrain.core.client.role;
 
-import com.habitrain.core.api.role.v2.client.RoleScreenKind;
 import com.habitrain.core.api.role.v2.client.RoleScreenSpec;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;

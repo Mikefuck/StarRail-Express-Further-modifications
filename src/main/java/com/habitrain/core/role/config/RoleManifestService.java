@@ -2,7 +2,6 @@ package com.habitrain.core.role.config;
 
 import com.habitrain.core.api.role.v2.RoleExtensionApi;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
-import com.habitrain.core.role.client.RoleClientExtensionRegistry;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import net.fabricmc.loader.api.FabricLoader;

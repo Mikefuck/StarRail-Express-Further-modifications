@@ -2,14 +2,12 @@ package com.habitrain.core.role.behavior;
 
 import com.habitrain.core.role.override.RoleOverrideWinHook;
 
-import com.habitrain.core.api.WinResult;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import com.habitrain.core.api.role.v2.behavior.Decision;
 import com.habitrain.core.api.role.v2.behavior.RoleCombatHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleHookContext;
-import com.habitrain.core.api.role.v2.behavior.RoleHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleInteractionHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleLifecycleHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleMeetingHooks;

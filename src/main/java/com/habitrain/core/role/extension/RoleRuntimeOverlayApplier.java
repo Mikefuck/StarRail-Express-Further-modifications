@@ -2,7 +2,6 @@ package com.habitrain.core.role.extension;
 
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.api.role.v2.RoleKey;
-import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.api.role.v2.definition.RoleRelationProfile;

@@ -9,7 +9,6 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +40,6 @@ public final class VoiceGroupService {
             source.sendFailure(Component.literal("§c你的语音连接尚未就绪")); return 0;
         }
         MinecraftServer srv = source.getServer();
-        Vec3 senderPos = sender.position();
         List<ServerPlayer> nearby = new ArrayList<>();
         for (ServerPlayer p : srv.getPlayerList().getPlayers()) {
             if (p.getUUID().equals(sender.getUUID())) continue;

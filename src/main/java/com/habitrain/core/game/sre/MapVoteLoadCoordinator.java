@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.WinResult;
 import com.habitrain.core.game.sre.mixin.FullTrainResetTaskAccessor;

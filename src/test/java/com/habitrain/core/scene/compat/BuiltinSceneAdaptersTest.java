@@ -1,7 +1,5 @@
 package com.habitrain.core.scene.compat;
 
-import com.habitrain.core.api.client.scene.compat.SceneBakeContext;
-import com.habitrain.core.api.client.scene.compat.SceneBakeResult;
 import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapter;
 import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapter;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;

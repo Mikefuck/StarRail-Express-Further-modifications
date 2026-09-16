@@ -45,13 +45,20 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 移动场景系统：世界渲染与配置器 HUD
         // Match SRE's proven scene-preview pass: the terrain/depth buffer is complete here,
         // while the context matrix still expects an explicit -camera world translation.
-        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
-                context -> com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().render(context));
+        // 场景网格构建的主驱动：每帧一次。必须挂在 render(context) 之后而不是它内部——
+        // render 是 synchronized 且在没有活动场景时会提前返回，而预取构建在那种情况下
+        // 依然要推进，也不该在渲染期间嵌套进入场景运行时的同步块。
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(context -> {
+            com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().render(context);
+            com.habitrain.core.scene.client.SceneBuildScheduler.getInstance().pump();
+        });
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
                 context -> com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance().render(context));
         com.habitrain.core.scene.client.SceneToolHud.init();
         com.habitrain.core.scene.client.SceneOriginPlacementController.init();
         com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().init();
+        // 分片请求超时判定与退避重试需要一个与帧率无关的固定节奏。
+        com.habitrain.core.scene.client.SceneClientTicker.init();
         net.fabricmc.fabric.api.resource.ResourceManagerHelper.get(net.minecraft.server.packs.PackType.CLIENT_RESOURCES)
                 .registerReloadListener(new com.habitrain.core.scene.client.SceneResourceReloadListener());
         com.habitrain.core.scene.client.compat.builtin.BuiltinClientSceneAdapters.registerClient();

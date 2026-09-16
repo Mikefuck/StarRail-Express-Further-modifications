@@ -13,7 +13,6 @@ import com.habitrain.core.role.extension.ManagedRoleEntry;
 import com.habitrain.core.role.extension.RoleOperation;
 import com.habitrain.core.role.extension.RolePatchBundle;
 import com.habitrain.core.role.override.RoleOverrideRegistry;
-import io.wifi.starrailexpress.api.RoleSkill;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;

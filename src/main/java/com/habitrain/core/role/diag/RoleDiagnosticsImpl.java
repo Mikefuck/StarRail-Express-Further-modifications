@@ -12,13 +12,11 @@ import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import com.habitrain.core.api.role.v2.definition.RoleAlias;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
-import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.EntryStatus;
 import com.habitrain.core.role.extension.ManagedRoleEntry;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
-import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.role.sins;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.server.level.ServerLevel;

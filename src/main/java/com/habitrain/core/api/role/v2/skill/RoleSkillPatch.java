@@ -2,7 +2,6 @@ package com.habitrain.core.api.role.v2.skill;
 
 import com.habitrain.core.api.role.v2.definition.ListOp;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;

@@ -57,7 +57,7 @@ class SceneStagingSessionTest {
 
     private SceneStagingSession session(long expiresAt) {
         return new SceneStagingSession("stage", requester, "map1", "minecraft:overworld",
-                "tool", descriptor, expiresAt);
+                "tool", descriptor, null, expiresAt);
     }
 
     private static SceneStagingSession.ValidationFailure validate(

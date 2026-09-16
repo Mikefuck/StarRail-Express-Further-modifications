@@ -23,21 +23,27 @@ public final class SceneStagingSession {
     private final String dimensionId;
     private final String toolSessionId;
     private final SceneAssetDescriptor descriptor;
+    private final SceneDeltaStore.DeltaInfo delta;
     private final long expiresAt;
     private boolean reportAccepted;
     private String clientEnvironment = "";
 
     public SceneStagingSession(String stagingId, UUID requesterId, String mapKey,
                                String dimensionId, String toolSessionId,
-                               SceneAssetDescriptor descriptor, long expiresAt) {
+                               SceneAssetDescriptor descriptor, SceneDeltaStore.DeltaInfo delta,
+                               long expiresAt) {
         this.stagingId = Objects.requireNonNull(stagingId);
         this.requesterId = Objects.requireNonNull(requesterId);
         this.mapKey = mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
         this.dimensionId = dimensionId == null ? "" : dimensionId;
         this.toolSessionId = toolSessionId == null ? "" : toolSessionId;
         this.descriptor = Objects.requireNonNull(descriptor);
+        this.delta = delta;
         this.expiresAt = expiresAt;
     }
+
+    /** 本次暂存顺带产出的增量补丁元数据；没有则为 null。补丁文件在 {@code staging/} 下同 stagingId。 */
+    public SceneDeltaStore.DeltaInfo delta() { return delta; }
 
     public String stagingId() { return stagingId; }
     public UUID requesterId() { return requesterId; }

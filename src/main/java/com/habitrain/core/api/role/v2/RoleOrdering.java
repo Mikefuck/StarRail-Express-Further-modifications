@@ -1,6 +1,5 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.v2.EffectiveRole;
 
 import java.util.Comparator;
 

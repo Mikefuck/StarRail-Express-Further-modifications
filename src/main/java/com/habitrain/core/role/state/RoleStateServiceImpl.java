@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -140,7 +139,9 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     @Override
     public Collection<RoleStateSpec<?>> specs() {
-        return specs.values().stream().map(ManagedDeclaration::declaration).toList();
+        return specs.values().stream()
+                .<RoleStateSpec<?>>map(ManagedDeclaration::declaration)
+                .toList();
     }
 
     @Override

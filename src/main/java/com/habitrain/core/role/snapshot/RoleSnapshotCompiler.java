@@ -7,7 +7,6 @@ import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import com.habitrain.core.api.role.v2.definition.ReplacementIdentity;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
 import com.habitrain.core.role.catalog.MapRoleLookup;
 import com.habitrain.core.role.catalog.RawRoleLookup;
 import com.habitrain.core.role.extension.RoleBaselineStore;
@@ -20,7 +19,6 @@ import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;

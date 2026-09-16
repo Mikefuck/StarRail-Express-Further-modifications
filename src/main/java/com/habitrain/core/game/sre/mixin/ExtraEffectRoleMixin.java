@@ -2,7 +2,6 @@ package com.habitrain.core.game.sre.mixin;
 
 import io.wifi.starrailexpress.api.ExtraEffectRole;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import org.spongepowered.asm.mixin.Final;

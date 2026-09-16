@@ -11,7 +11,6 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /** 游戏外·光影白名单（内联页面）：启用 + 列表增删，即时保存。 */
 public class OutGameShaderPage implements ConfigPage {

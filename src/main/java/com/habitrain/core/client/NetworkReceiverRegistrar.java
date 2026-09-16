@@ -8,7 +8,6 @@ import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.gui.VoteLaunchSession;
 import com.habitrain.core.client.gui.VoteLaunchTransitionScreen;
 import com.habitrain.core.client.gui.VoteLaunchOverlayState;
-import com.habitrain.core.client.InstinctColorHelper;
 import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
@@ -503,18 +502,35 @@ public class NetworkReceiverRegistrar {
                                         .updateAdditionalRuntimeStates(payload.states())));
 
         // 26) 场景资产 Manifest 下发（触发按需下载）
+        //     协议版本一并交给渲染运行时：客户端据此判断能不能跟服务端协商增量补丁。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetManifestS2C.TYPE, (payload, ctx) ->
                         ctx.client().execute(() ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
-                                        .acceptManifest(payload.mapKey(), payload.descriptor())));
+                                        .acceptManifest(payload.mapKey(), payload.descriptor(),
+                                                payload.protocolVersion())));
+
+        // 26b) 增量探测的回答：有补丁就记下来，之后取该资产时优先走增量。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetDeltaOfferS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneAssetCache.getInstance()
+                                        .acceptDeltaOffer(payload)));
 
         // 27) 场景资产分片数据接收
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetChunkS2C.TYPE, (payload, ctx) ->
                         ctx.client().execute(() ->
                                 com.habitrain.core.scene.client.SceneAssetCache.getInstance()
-                                        .handleChunk(payload)));
+                                        .acceptChunk(payload)));
+
+        // 27b) 分片请求未被满足时的确定性回答（BUSY / 未授权 / 越界等）。
+        // 没有这条回包，被拒的请求会让该资产永远停留在等待状态。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetChunkStatusS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneAssetCache.getInstance()
+                                        .acceptStatus(payload)));
 
         // 投票加载页预取：文件校验、解码和 GPU 网格编译完成后再向服务端回执。
         ClientPlayNetworking.registerGlobalReceiver(

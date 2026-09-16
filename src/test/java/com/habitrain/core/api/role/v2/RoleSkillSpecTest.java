@@ -9,7 +9,6 @@ import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.api.role.v2.skill.RoleSkillPatch;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
-import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.ManagedSRERole;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import io.wifi.starrailexpress.api.NormalRole;

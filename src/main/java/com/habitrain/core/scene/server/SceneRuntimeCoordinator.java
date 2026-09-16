@@ -121,7 +121,7 @@ public final class SceneRuntimeCoordinator {
         if (descriptor != null && descriptor.isValid()) {
             SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(mapKey, descriptor);
             for (ServerPlayer player : level.players()) {
-                SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
                 ServerPlayNetworking.send(player, manifestPayload);
             }
         }
@@ -166,7 +166,7 @@ public final class SceneRuntimeCoordinator {
         if (state != null && state.isActive()) {
             SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(state.getMapKey());
             if (descriptor != null && descriptor.isValid()) {
-                SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+                SceneTransferService.getInstance().authorizeAsset(player, state.getMapKey(), descriptor);
                 ServerPlayNetworking.send(player, new SceneAssetManifestS2C(state.getMapKey(), descriptor));
             }
             ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(state));
@@ -175,8 +175,8 @@ public final class SceneRuntimeCoordinator {
                 SceneAssetDescriptor additionalDescriptor = SceneAssetStore.getInstance()
                         .getDescriptor(additionalState.getMapKey());
                 if (additionalDescriptor != null && additionalDescriptor.isValid()) {
-                    SceneTransferService.getInstance().authorize(player.getUUID(),
-                            additionalDescriptor.sha256(), additionalDescriptor.compressedSize());
+                    SceneTransferService.getInstance().authorizeAsset(player,
+                            additionalState.getMapKey(), additionalDescriptor);
                     ServerPlayNetworking.send(player,
                             new SceneAssetManifestS2C(additionalState.getMapKey(), additionalDescriptor));
                 }
@@ -189,7 +189,7 @@ public final class SceneRuntimeCoordinator {
         if (server == null || descriptor == null) return;
         SceneAssetManifestS2C payload = new SceneAssetManifestS2C(mapKey, descriptor);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+            SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
             ServerPlayNetworking.send(player, payload);
         }
 
@@ -268,7 +268,7 @@ public final class SceneRuntimeCoordinator {
         if (descriptor != null && descriptor.isValid()) {
             SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(mapKey, descriptor);
             for (ServerPlayer player : level.players()) {
-                SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
                 ServerPlayNetworking.send(player, manifestPayload);
             }
         }
@@ -368,7 +368,7 @@ public final class SceneRuntimeCoordinator {
             }
             SceneAssetManifestS2C manifest = new SceneAssetManifestS2C(assetKey, descriptor);
             for (ServerPlayer player : level.players()) {
-                SceneTransferService.getInstance().authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+                SceneTransferService.getInstance().authorizeAsset(player, assetKey, descriptor);
                 ServerPlayNetworking.send(player, manifest);
             }
         }

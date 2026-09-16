@@ -4,6 +4,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.scene.SceneLimits;
 import com.habitrain.core.scene.asset.SceneAssetCodec;
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.scene.asset.SceneAssetSizeReport;
 import com.habitrain.core.scene.model.SceneBounds;
 import com.habitrain.core.scene.model.SceneProfile;
 import com.habitrain.core.scene.network.SceneAssetBuildProgressS2C;
@@ -18,7 +19,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.chunk.DataLayer;
@@ -492,7 +492,7 @@ public final class SceneCaptureService {
                 String fingerprint = com.habitrain.core.scene.asset.SceneRegistryFingerprint.calculate();
 
                 SceneAssetCodec.AssetData assetData = new SceneAssetCodec.AssetData(
-                        SceneAssetCodec.FORMAT_VERSION_V2,
+                        SceneAssetCodec.FORMAT_VERSION,
                         dataVersion,
                         dimension,
                         task.bounds,
@@ -514,6 +514,20 @@ public final class SceneCaptureService {
                 }
                 String sha256 = SceneAssetCodec.calculateSha256(compressed);
 
+                // 体积归因：让"选区是不是开得太大"在日志与游戏内都看得见，而不是只留一句"发布成功"。
+                // 这里在 HabiTrain-SceneCapture-Worker 线程上，不在服务端 tick 里。
+                SceneAssetSizeReport sizeReport = SceneAssetSizeReport.analyze(
+                        assetData, task.totalNonAirBlocks, compressed.length);
+                LOGGER.info("场景资产编码完成: mapKey={}, 格式=v{}, {}",
+                        task.mapKey, SceneAssetCodec.FORMAT_VERSION, sizeReport.toLogLine());
+                sizeReport.warning().ifPresent(warning -> {
+                    LOGGER.warn("场景资产体积告警: mapKey={}, code={}, 提示={}",
+                            task.mapKey, warning.code(), warning.hint());
+                    String message = "资产偏大（" + sizeReport.humanCompressed() + " / "
+                            + sizeReport.sectionCount() + " Section）：" + warning.hint();
+                    server.execute(() -> sendProgress(server, task, "SIZE_WARNING", 0.9f, message));
+                });
+
                 SceneAssetDescriptor descriptor = new SceneAssetDescriptor(
                         sha256,
                         uncompressedSize,
@@ -524,10 +538,15 @@ public final class SceneCaptureService {
                         System.currentTimeMillis()
                 );
 
+                // 增量补丁：拿同 mapKey 的上一版当底。生成失败/不值得都只是"这次没有增量"，
+                // 全量资产照旧发布，客户端照旧能下。
+                SceneDeltaStore.PatchBlob delta = SceneDeltaBuilder.build(
+                        task.mapKey, assetData, sha256, compressed.length);
+
                 boolean staged = SceneStagingService.getInstance().stage(
                         server, task.requesterPlayerId, task.mapKey,
                         task.level.dimension().location().toString(), task.toolSessionId,
-                        compressed, descriptor);
+                        compressed, descriptor, delta);
                 if (staged) {
                     LOGGER.info("场景资产已进入诊断暂存: mapKey={}, hash={}, sections={}",
                             task.mapKey, descriptor.shortHash(), task.capturedSections.size());

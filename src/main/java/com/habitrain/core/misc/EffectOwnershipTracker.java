@@ -1,7 +1,6 @@
 package com.habitrain.core.misc;
 
 import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.effect.MobEffect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

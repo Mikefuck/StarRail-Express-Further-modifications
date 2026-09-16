@@ -15,7 +15,6 @@ import com.habitrain.core.game.sre.SREModeStartAdapter;
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
 import com.habitrain.core.game.sre.RepairModeManager;
 import com.habitrain.core.game.sre.SreOriginalModeProxy;
-import com.habitrain.core.network.MapVoteProfilePayload;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;

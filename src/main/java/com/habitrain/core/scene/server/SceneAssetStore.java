@@ -249,6 +249,8 @@ public final class SceneAssetStore {
     public synchronized boolean discardStagedAsset(String stagingId) {
         if (stagingDir == null || !isValidStagingId(stagingId)) return false;
         try {
+            // 顺带清掉同一暂存会话可能带着的增量补丁，避免丢弃/过期后留一个孤儿文件。
+            Files.deleteIfExists(stagingPath(stagingId).resolveSibling(stagingId + ".hpatch"));
             return Files.deleteIfExists(stagingPath(stagingId));
         } catch (IOException e) {
             LOGGER.warn("删除暂存场景资产失败: stagingId={}", stagingId, e);
@@ -322,5 +324,7 @@ public final class SceneAssetStore {
         if (removed != null) {
             saveIndex();
         }
+        // 地图都不在了，相对它的增量补丁也就没有意义了。
+        SceneDeltaStore.getInstance().discard(mapKey);
     }
 }

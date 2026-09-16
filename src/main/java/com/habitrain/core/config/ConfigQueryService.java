@@ -1,7 +1,5 @@
 package com.habitrain.core.config;
 
-import com.habitrain.core.config.MinigameConfigEntry;
-import com.habitrain.core.config.TaskConfigEntry;
 
 /**
  * Read-only interface for configuration data.

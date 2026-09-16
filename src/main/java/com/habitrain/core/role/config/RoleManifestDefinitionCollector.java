@@ -10,15 +10,12 @@ import com.habitrain.core.api.role.v2.definition.RoleAlias;
 import com.habitrain.core.api.role.v2.definition.RoleDefinition;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
-import com.habitrain.core.api.role.v2.skill.RoleSkillPatch;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import com.habitrain.core.api.role.v2.state.RoleStateApi;
 import com.habitrain.core.api.role.v2.state.RoleStateSpec;
-import com.habitrain.core.role.behavior.HookType;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
 import com.habitrain.core.role.extension.ManagedRoleEntry;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
-import io.wifi.starrailexpress.api.RoleSkill;
 
 import java.util.ArrayList;
 import java.util.Collections;

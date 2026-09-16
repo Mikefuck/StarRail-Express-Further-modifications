@@ -1,7 +1,6 @@
 package com.habitrain.core.game;
 
 import com.habitrain.core.api.GameMode;
-import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.api.WinResult;

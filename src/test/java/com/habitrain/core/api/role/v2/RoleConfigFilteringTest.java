@@ -10,7 +10,6 @@ import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
-import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.ConfiguredPatch;
 import com.habitrain.core.role.extension.EntryStatus;
 import com.habitrain.core.role.extension.ManagedRoleEntry;
@@ -41,7 +40,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

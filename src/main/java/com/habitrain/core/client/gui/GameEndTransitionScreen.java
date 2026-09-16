@@ -39,9 +39,6 @@
  */
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.client.gui.GameEndOverlayState;
-import com.habitrain.core.client.gui.OptionVoteTexts;
-import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.mvp.MvpAnimationController;
 import com.habitrain.core.client.mvp.MvpAnimationDefinition;
 import com.habitrain.core.client.mvp.MvpAnimationSelector;

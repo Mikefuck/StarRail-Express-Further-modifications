@@ -132,12 +132,17 @@ public final class SceneVisibilityAdvisor {
             return populateOrbit(profile, geometry, cullCenters);
         }
         populateLinear(profile, geometry, cullCenters);
-        return 0.0; // LINEAR runtime currently culls by the translated scene origin.
+        // 直线模式的运行时裁剪基准是"变换后的模型包围球"，与环绕模式一致：球心是
+        // displayOrigin + 位移 + F(L)，半径是包围盒半对角线。之前这里返回 0 并只登记平移后的
+        // 原点，会让建议里的所需可视距离比实际裁剪点小一个 F(L) 的长度——大枢轴配置下会低估。
+        return modelRadius(profile.getSourceBounds());
     }
 
     private static void populateLinear(SceneProfile profile, Envelope geometry, Envelope cullCenters) {
         double[] origin = profile.getDisplayOrigin();
         double[] direction = profile.getDirection();
+        double[] fixedCenter = SceneOrbitMath.calculateFixedLocalCenter(
+                profile.getSourceBounds(), profile.getPivotLocal(), profile.getRotationDegrees());
         double start;
         double end;
         if (profile.getLoop().isEnabled()) {
@@ -153,10 +158,12 @@ public final class SceneVisibilityAdvisor {
             end = start + travel;
         }
 
-        cullCenters.include(origin[0] + direction[0] * start,
-                origin[1] + direction[1] * start, origin[2] + direction[2] * start);
-        cullCenters.include(origin[0] + direction[0] * end,
-                origin[1] + direction[1] * end, origin[2] + direction[2] * end);
+        cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * start,
+                origin[1] + fixedCenter[1] + direction[1] * start,
+                origin[2] + fixedCenter[2] + direction[2] * start);
+        cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * end,
+                origin[1] + fixedCenter[1] + direction[1] * end,
+                origin[2] + fixedCenter[2] + direction[2] * end);
 
         forEachFixedCorner(profile, corner -> {
             geometry.include(origin[0] + corner[0] + direction[0] * start,

@@ -3,7 +3,6 @@ package com.habitrain.core;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.network.*;
-import com.habitrain.core.util.SubtitleNotifier;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
@@ -309,14 +308,28 @@ public final class C2SReceiverRegistrar {
                         }));
 
         // C2S 场景资产分片请求：具体 Manifest 授权、offset 与速率校验由传输服务负责。
+        // 与其他 C2S 一致在服务端线程执行；真正的文件读取仍提交到传输服务的 IO 池。
         ServerPlayNetworking.registerGlobalReceiver(
-                com.habitrain.core.scene.network.SceneAssetChunkRequestC2S.TYPE, (payload, context) -> {
-                    ServerPlayer player = context.player();
-                    if (player != null && payload != null) {
-                        com.habitrain.core.scene.server.SceneTransferService.getInstance()
-                                .handleChunkRequest(player, payload);
-                    }
-                });
+                com.habitrain.core.scene.network.SceneAssetChunkRequestC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player != null && payload != null) {
+                                com.habitrain.core.scene.server.SceneTransferService.getInstance()
+                                        .handleChunkRequest(player, payload);
+                            }
+                        }));
+
+        // C2S 增量补丁探测：客户端手里有旧版本时问一句"这版有没有补丁"。
+        // 只查内存索引与文件存在性，不做磁盘读，因此在服务端线程执行是安全的。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneAssetDeltaProbeC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player != null && payload != null) {
+                                com.habitrain.core.scene.server.SceneTransferService.getInstance()
+                                        .handleDeltaProbe(player, payload.mapKey(), payload.targetSha256());
+                            }
+                        }));
 
         // 客户端只有在场景文件校验、解码与 GPU 网格预编译全部成功后才会上报 ready。
         ServerPlayNetworking.registerGlobalReceiver(

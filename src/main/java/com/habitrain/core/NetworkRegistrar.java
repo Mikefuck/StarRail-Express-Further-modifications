@@ -50,6 +50,7 @@ public final class NetworkRegistrar {
         com.habitrain.core.scene.network.SceneAssetManifestS2C.register(); count++;
         com.habitrain.core.scene.network.SceneAssetChunkRequestC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetChunkS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneAssetChunkStatusS2C.register(); count++;
         com.habitrain.core.scene.network.SceneAssetPrefetchS2C.register(); count++;
         com.habitrain.core.scene.network.SceneAssetReadyC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetBuildRequestC2S.register(); count++;
@@ -58,6 +59,8 @@ public final class NetworkRegistrar {
         com.habitrain.core.scene.network.SceneStagingOfferS2C.register(); count++;
         com.habitrain.core.scene.network.SceneStagingReportC2S.register(); count++;
         com.habitrain.core.scene.network.SceneStagingDecisionC2S.register(); count++;
+        com.habitrain.core.scene.network.SceneAssetDeltaProbeC2S.register(); count++;
+        com.habitrain.core.scene.network.SceneAssetDeltaOfferS2C.register(); count++;
         LOGGER.info("Registered {} HabiTrain network payload types", count);
     }
 }

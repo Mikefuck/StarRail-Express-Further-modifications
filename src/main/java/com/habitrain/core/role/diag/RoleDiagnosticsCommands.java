@@ -10,11 +10,9 @@ import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.api.role.v2.behavior.RoleHooks;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
-import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import com.habitrain.core.role.action.RoleActionServiceImpl;
 import com.habitrain.core.role.state.RoleStateServiceImpl;
-import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;

@@ -1,6 +1,5 @@
 package com.habitrain.core.api.role.v2.definition;
 
-import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
 import org.jetbrains.annotations.Nullable;
 

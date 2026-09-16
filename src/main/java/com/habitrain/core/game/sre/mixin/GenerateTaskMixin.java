@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.*;
 import com.habitrain.core.task.TaskManager;

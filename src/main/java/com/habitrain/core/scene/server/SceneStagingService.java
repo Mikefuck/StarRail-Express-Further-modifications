@@ -1,6 +1,7 @@
 package com.habitrain.core.scene.server;
 
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.scene.asset.SceneAssetSizeReport;
 import com.habitrain.core.scene.network.SceneAssetBuildProgressS2C;
 import com.habitrain.core.scene.network.SceneStagingDecisionC2S;
 import com.habitrain.core.scene.network.SceneStagingOfferS2C;
@@ -12,6 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -31,16 +33,25 @@ public final class SceneStagingService {
 
     public synchronized boolean stage(MinecraftServer server, UUID requesterId, String mapKey,
                                       String dimensionId, String toolSessionId, byte[] compressed,
-                                      SceneAssetDescriptor descriptor) {
+                                      SceneAssetDescriptor descriptor,
+                                      SceneDeltaStore.PatchBlob delta) {
         if (server == null || requesterId == null || descriptor == null || !descriptor.isValid()
                 || toolSessionId == null || toolSessionId.isBlank()) return false;
         discardForPlayer(requesterId);
         String stagingId = UUID.randomUUID().toString();
         if (!SceneAssetStore.getInstance().stageAsset(stagingId, compressed, descriptor)) return false;
 
+        // 补丁是纯附加件：它写不进去只是"这次没有增量"，绝不能影响正式资产的暂存与发布。
+        SceneDeltaStore.DeltaInfo deltaInfo = null;
+        if (delta != null && delta.isValid()
+                && SceneDeltaStore.getInstance().stageDelta(stagingId, delta)) {
+            deltaInfo = new SceneDeltaStore.DeltaInfo(delta.baseSha256(), delta.patchSha256(),
+                    delta.bytes().length, System.currentTimeMillis());
+        }
+
         long expiresAt = System.currentTimeMillis() + DEFAULT_EXPIRY_MS;
         SceneStagingSession session = new SceneStagingSession(stagingId, requesterId, mapKey,
-                dimensionId, toolSessionId, descriptor, expiresAt);
+                dimensionId, toolSessionId, descriptor, deltaInfo, expiresAt);
         sessions.put(stagingId, session);
         SceneTransferService.getInstance().authorizeStaging(
                 requesterId, stagingId, descriptor.sha256(), descriptor.compressedSize());
@@ -80,7 +91,21 @@ public final class SceneStagingService {
             return;
         }
         sendProgress(player, session.mapKey(), "AWAITING_CONFIRMATION", 0.95f,
-                "诊断通过；请在设置页显式点击“发布”，正式资产才会替换");
+                "诊断通过；" + describeSize(session.descriptor())
+                        + "；请在设置页显式点击“发布”，正式资产才会替换");
+    }
+
+    /**
+     * 让操作者在按下"发布"之前就看到这次要发布多大的东西。
+     *
+     * <p>报告里最实在的一条结论是"真正决定字节数的是选区大小"，而这条提示正是选区决策的唯一依据：
+     * 压缩后体积就是每个玩家冷缓存时要下载的量。</p>
+     */
+    private static String describeSize(SceneAssetDescriptor descriptor) {
+        if (descriptor == null) return "资产体积未知";
+        return "本资产压缩后 " + SceneAssetSizeReport.humanBytes(descriptor.compressedSize())
+                + "（原始约 " + SceneAssetSizeReport.humanBytes(descriptor.uncompressedSize())
+                + "，共 " + descriptor.sectionCount() + " Section）";
     }
 
     public synchronized void handleDecision(MinecraftServer server, ServerPlayer player,
@@ -114,9 +139,31 @@ public final class SceneStagingService {
         }
         sessions.remove(session.stagingId());
         SceneTransferService.getInstance().revokeStaging(session.stagingId());
+        publishDelta(session);
         SceneRuntimeCoordinator.getInstance().onAssetPublished(server, session.mapKey(), session.descriptor());
         sendProgress(player, session.mapKey(), "COMPLETED", 1.0f,
                 "资产已确认发布！SHA-256: " + session.descriptor().shortHash());
+    }
+
+    /**
+     * 资产已经发布成功之后才落补丁。
+     *
+     * <p>顺序是刻意的：补丁只是"让老客户端少下一段"的加速件，它失败不该把已经原子替换好的
+     * 正式资产回滚掉，也不该让操作者看到"发布失败"。失败时只记一条 warn，客户端照常全量下载。</p>
+     */
+    private void publishDelta(SceneStagingSession session) {
+        SceneDeltaStore.DeltaInfo info = session == null ? null : session.delta();
+        if (session == null) return;
+        if (info == null) {
+            SceneDeltaStore.getInstance().discard(session.mapKey());
+            return;
+        }
+        File staged = SceneDeltaStore.getInstance().stagedPatchFile(session.stagingId());
+        if (!SceneDeltaStore.getInstance().publish(session.mapKey(), info, staged)) {
+            SceneDeltaStore.getInstance().discard(session.mapKey());
+            LOGGER.warn("增量补丁未能发布，客户端将走全量下载: mapKey={}, patch={}",
+                    session.mapKey(), info.shortPatch());
+        }
     }
 
     private SceneStagingSession.ValidationFailure validate(ServerPlayer player,

@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MinigameConfigEntry;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;

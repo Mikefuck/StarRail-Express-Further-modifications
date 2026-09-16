@@ -16,7 +16,6 @@ import com.habitrain.core.game.sre.SREOriginalModeBridge;
 import com.habitrain.core.game.sre.SRERepairMode;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
-import com.habitrain.core.task.ClearableHandlerRegistry;
 import com.habitrain.core.task.SlownessReapplyManager;
 import com.habitrain.core.task.TaskManager;
 import net.fabricmc.api.ModInitializer;

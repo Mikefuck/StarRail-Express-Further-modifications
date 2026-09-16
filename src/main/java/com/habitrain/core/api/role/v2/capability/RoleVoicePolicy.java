@@ -2,7 +2,6 @@ package com.habitrain.core.api.role.v2.capability;
 
 import com.habitrain.core.api.role.v2.RoleKey;
 import net.minecraft.resources.ResourceLocation;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 

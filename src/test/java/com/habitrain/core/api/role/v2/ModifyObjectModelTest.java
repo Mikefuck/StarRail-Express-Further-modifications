@@ -9,7 +9,6 @@ import com.habitrain.core.api.role.v2.definition.RolePresentation;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
 import com.habitrain.core.api.role.v2.definition.RoleSpawnProfile;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
-import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
@@ -24,7 +23,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

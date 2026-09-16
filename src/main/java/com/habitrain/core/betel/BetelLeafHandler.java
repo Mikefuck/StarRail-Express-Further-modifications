@@ -91,7 +91,7 @@ public class BetelLeafHandler {
 
         // 记录采集任务（按世界分桶存储，避免跨世界遍历）
         activeHarvests.computeIfAbsent(dimension, k -> new HashMap<>())
-                .put(uuid, new HarvestTask(uuid, pos, dimension, world.getGameTime()));
+                .put(uuid, new HarvestTask(pos, world.getGameTime()));
 
         return InteractionResult.FAIL;
     }
@@ -238,15 +238,11 @@ public class BetelLeafHandler {
     }
 
     private static class HarvestTask {
-        final UUID playerUuid;
         final BlockPos leafPos;
-        final ResourceKey<Level> worldKey;
         final long startTick;
 
-        HarvestTask(UUID playerUuid, BlockPos leafPos, ResourceKey<Level> worldKey, long startTick) {
-            this.playerUuid = playerUuid;
+        HarvestTask(BlockPos leafPos, long startTick) {
             this.leafPos = leafPos;
-            this.worldKey = worldKey;
             this.startTick = startTick;
         }
     }

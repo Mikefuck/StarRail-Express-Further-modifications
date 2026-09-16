@@ -15,7 +15,6 @@ import com.habitrain.core.api.role.v2.state.RoleStateApi;
 import com.habitrain.core.role.behavior.RoleEventDispatcher;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.Nullable;

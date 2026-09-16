@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;

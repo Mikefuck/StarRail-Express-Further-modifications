@@ -23,14 +23,17 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -62,6 +65,11 @@ public final class SceneRenderRuntime {
     private final Map<String, List<Long>> additionalPrefetchWaiters = new ConcurrentHashMap<>();
     private long additionalMeshGeneration = 0L;
     private long meshLoadGeneration = 0L;
+    /** 附加网格的最近使用序号：显存预算超限时据此淘汰"已不被需要"的那些。 */
+    private final Map<String, Long> additionalMeshUseSeq = new ConcurrentHashMap<>();
+    private long meshUseCounter = 0L;
+    /** 显存估算配额；-1 表示尚未从配置读取。 */
+    private volatile long meshCacheQuotaBytes = -1L;
     private volatile SceneCompatibilityReport lastCompatibilityReport = new SceneCompatibilityReport();
     private volatile com.habitrain.core.scene.model.ScenePublishPolicy publishPolicy = com.habitrain.core.scene.model.ScenePublishPolicy.STRICT;
 
@@ -138,9 +146,40 @@ public final class SceneRenderRuntime {
         }
     }
 
+    // ---- 分批裁剪的诊断计数（最近一帧） ----
+
+    private volatile int lastTotalBatches;
+    private volatile int lastDrawnBatches;
+    private volatile long lastCulledBatchBytes;
+
+    /** 最近一帧参与裁剪的批次数（未分批时为 0）。 */
+    public int getLastTotalBatches() { return lastTotalBatches; }
+
+    /** 最近一帧实际提交的批次数。与总数一起看，就是分批裁剪到底省了多少。 */
+    public int getLastDrawnBatches() { return lastDrawnBatches; }
+
+    /** 最近一帧因视锥裁剪而未提交的批次估算字节数。 */
+    public long getLastCulledBatchBytes() { return lastCulledBatchBytes; }
+
+    /** 见到的服务端场景协议版本；决定客户端能不能发起增量补丁协商。 */
+    private volatile int lastServerProtocolVersion = com.habitrain.core.scene.network.SceneProtocol.LEGACY_VERSION;
+
     /** 保存服务端权威 Manifest，并协调 Manifest/Runtime 任意到达顺序。 */
     public synchronized void acceptManifest(String mapKey, SceneAssetDescriptor descriptor) {
+        acceptManifest(mapKey, descriptor, com.habitrain.core.scene.network.SceneProtocol.LEGACY_VERSION);
+    }
+
+    /**
+     * 带协议版本的重载：版本只用来决定"能不能跟对面协商增量补丁"，不参与任何拒绝逻辑。
+     */
+    public synchronized void acceptManifest(String mapKey, SceneAssetDescriptor descriptor,
+                                            int serverProtocolVersion) {
+        if (serverProtocolVersion > lastServerProtocolVersion) {
+            lastServerProtocolVersion = serverProtocolVersion;
+        }
         if (descriptor == null || !descriptor.isValid()) return;
+        // 本地还没有这一版时问一句有没有增量补丁；有也不影响下面的正常流程。
+        SceneAssetCache.getInstance().considerDeltaProbe(mapKey, descriptor, serverProtocolVersion);
         manifestsByHash.put(descriptor.sha256(), descriptor);
         if (mapKey != null && !mapKey.isBlank()) {
             manifestsByMap.put(mapKey, descriptor);
@@ -181,7 +220,8 @@ public final class SceneRenderRuntime {
         String hash = descriptor.sha256();
         if (additionalMeshesByHash.containsKey(hash) || !additionalLoadingHashes.add(hash)) return;
         long generation = additionalMeshGeneration;
-        SceneAssetCache.getInstance().getOrFetchAsset(descriptor, assetData -> {
+        SceneAssetCache.getInstance().getOrFetchAsset(descriptor,
+                SceneAssetDownloadQueue.Priority.ADDITIONAL_RUNTIME, assetData -> {
             if (assetData == null) {
                 synchronized (this) {
                     additionalLoadingHashes.remove(hash);
@@ -189,7 +229,8 @@ public final class SceneRenderRuntime {
                 }
                 return;
             }
-            SceneMeshBuilder.buildMeshWithReportAsync(assetData).thenAccept(result -> {
+            SceneMeshBuilder.buildMeshWithReportAsync(assetData, false,
+                    SceneBuildScheduler.Priority.ADDITIONAL).thenAccept(result -> {
                 synchronized (this) {
                     additionalLoadingHashes.remove(hash);
                     SceneMeshSet mesh = result != null ? result.meshSet() : null;
@@ -207,6 +248,8 @@ public final class SceneRenderRuntime {
                     if (report != null) compatibilityReportsByHash.put(hash, report);
                     SceneMeshSet previous = additionalMeshesByHash.put(hash, mesh);
                     if (previous != null && previous != mesh) previous.close();
+                    additionalMeshUseSeq.put(hash, ++meshUseCounter);
+                    enforceMeshBudget();
                     LOGGER.info("已启用附加动态背景 GPU 网格: hash={}", shortHash(hash));
                     reportAdditionalPrefetchWaiters(hash, true);
                 }
@@ -248,6 +291,8 @@ public final class SceneRenderRuntime {
             reportPrefetchResult(sessionId, descriptor == null ? "" : descriptor.sha256(), false);
             return;
         }
+        // 预取包本身不带协议版本，用 manifest 里见到的那个（同一会话内先到的一般就是它）。
+        SceneAssetCache.getInstance().considerDeltaProbe(mapKey, descriptor, lastServerProtocolVersion);
         if (!com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID.equals(
                 com.habitrain.core.scene.model.SceneBackgroundKey.backgroundIdFromAssetKey(mapKey))) {
             prefetchAdditionalAsset(sessionId, mapKey, descriptor);
@@ -279,7 +324,8 @@ public final class SceneRenderRuntime {
         }
         long generation;
         synchronized (this) { generation = additionalMeshGeneration; }
-        SceneAssetCache.getInstance().getOrFetchAsset(descriptor, assetData -> {
+        SceneAssetCache.getInstance().getOrFetchAsset(descriptor,
+                SceneAssetDownloadQueue.Priority.PREFETCH, assetData -> {
             if (assetData == null) {
                 synchronized (this) {
                     additionalLoadingHashes.remove(hash);
@@ -301,11 +347,15 @@ public final class SceneRenderRuntime {
                         if (report != null) compatibilityReportsByHash.put(hash, report);
                         SceneMeshSet previous = additionalMeshesByHash.put(hash, mesh);
                         if (previous != null && previous != mesh) previous.close();
+                        additionalMeshUseSeq.put(hash, ++meshUseCounter);
                     } else if (mesh != null) {
                         mesh.close();
                     }
                 }
-                synchronized (this) { reportAdditionalPrefetchWaiters(hash, success); }
+                synchronized (this) {
+                    enforceMeshBudget();
+                    reportAdditionalPrefetchWaiters(hash, success);
+                }
             });
         });
     }
@@ -315,6 +365,97 @@ public final class SceneRenderRuntime {
         if (sessions == null) return;
         for (Long sessionId : sessions) {
             if (sessionId != null) reportPrefetchResult(sessionId, hash, success);
+        }
+    }
+
+    // ---- 显存预算 ----
+
+    /**
+     * 此刻真正在用的资产 hash 集合。
+     *
+     * <p>供 {@link SceneAssetCache} 的内存与磁盘淘汰保护使用：这些资产正在屏幕上、正在构建
+     * 或正在预取，任何一层缓存把它们丢掉都会立刻表现为重新下载或重新烘焙。</p>
+     */
+    public synchronized Set<String> activeAssetHashes() {
+        Set<String> hashes = new HashSet<>();
+        addIfPresent(hashes, loadedAssetHash);
+        addIfPresent(hashes, preparedAssetHash);
+        addIfPresent(hashes, preparingAssetHash);
+        addIfPresent(hashes, previewAssetHash);
+        if (currentState != null) addIfPresent(hashes, currentState.getAssetHash());
+        for (SceneRuntimeState state : additionalRuntimeStates) {
+            if (state != null) addIfPresent(hashes, state.getAssetHash());
+        }
+        hashes.addAll(additionalMeshesByHash.keySet());
+        hashes.addAll(additionalLoadingHashes);
+        hashes.addAll(additionalPrefetchWaiters.keySet());
+        return hashes;
+    }
+
+    private static void addIfPresent(Set<String> target, String hash) {
+        if (hash != null && !hash.isBlank()) target.add(hash);
+    }
+
+    /** 读入显存配额；首次访问时从配置读取，之后由配置页显式刷新。 */
+    public void applyClientConfig() {
+        meshCacheQuotaBytes = com.habitrain.core.client.config.SceneClientPerformanceRules.quotaBytes(
+                com.habitrain.core.client.config.ClientVisualPreferences.getMeshCacheQuotaMiB());
+    }
+
+    /** 全部场景网格的显存占用估算（诊断用）。 */
+    public synchronized long totalMeshBytes() {
+        long total = 0L;
+        if (currentMeshSet != null) total += currentMeshSet.estimatedBytes();
+        if (preparedMeshSet != null) total += preparedMeshSet.estimatedBytes();
+        for (SceneMeshSet mesh : additionalMeshesByHash.values()) {
+            total += mesh.estimatedBytes();
+        }
+        return total;
+    }
+
+    /**
+     * 超出显存配额时淘汰"已经不被需要"的附加网格。
+     *
+     * <p>只淘汰不在当前 {@code additionalRuntimeStates} 里的条目——也就是预取回来却一直没被
+     * 启用的那些。当前主背景、预备网格与正在显示的附加背景<b>永不</b>在这里被关闭：
+     * 它们的所有权是排他的，没有引用计数可以让"另一个持有者"安全地继续用一个已释放的
+     * {@code VertexBuffer}。</p>
+     *
+     * <p>调用点都在 {@code synchronized(this)} 内，与 {@code render()} 互斥，因此关闭网格
+     * 不会与正在进行的绘制交错。</p>
+     */
+    private void enforceMeshBudget() {
+        long quota = meshCacheQuotaBytes;
+        if (quota < 0L) {
+            applyClientConfig();
+            quota = meshCacheQuotaBytes;
+        }
+        if (quota <= 0L) return;
+        long total = totalMeshBytes();
+        if (total <= quota) return;
+
+        Set<String> wanted = new HashSet<>();
+        for (SceneRuntimeState state : additionalRuntimeStates) {
+            if (state != null) addIfPresent(wanted, state.getAssetHash());
+        }
+        List<String> candidates = new ArrayList<>();
+        for (String hash : additionalMeshesByHash.keySet()) {
+            if (!wanted.contains(hash)) candidates.add(hash);
+        }
+        candidates.sort(Comparator.comparingLong(hash -> additionalMeshUseSeq.getOrDefault(hash, 0L)));
+
+        for (String hash : candidates) {
+            if (total <= quota) break;
+            SceneMeshSet removed = additionalMeshesByHash.remove(hash);
+            if (removed == null) continue;
+            total -= removed.estimatedBytes();
+            additionalMeshUseSeq.remove(hash);
+            removed.close();
+            LOGGER.debug("按显存配额淘汰附加场景网格: hash={}", shortHash(hash));
+        }
+        if (total > quota) {
+            LOGGER.debug("场景网格显存仍在配额之上（在用网格不可淘汰）: used={} MiB, quota={} MiB",
+                    total / (1024 * 1024), quota / (1024 * 1024));
         }
     }
 
@@ -389,12 +530,14 @@ public final class SceneRenderRuntime {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
         preparingFuture = result;
 
-        SceneAssetCache.getInstance().getOrFetchAsset(descriptor, assetData -> {
+        SceneAssetCache.getInstance().getOrFetchAsset(descriptor,
+                SceneAssetDownloadQueue.Priority.PRIMARY_RUNTIME, assetData -> {
             if (assetData == null) {
                 finishPrepare(generation, sha256, null, result);
                 return;
             }
-            SceneMeshBuilder.buildMeshWithReportAsync(assetData)
+            SceneMeshBuilder.buildMeshWithReportAsync(assetData, false,
+                            SceneBuildScheduler.Priority.PRIMARY)
                     .thenAccept(buildResult -> finishPrepare(generation, sha256, buildResult, result));
         });
         return result;
@@ -448,19 +591,23 @@ public final class SceneRenderRuntime {
             String sha256,
             SceneCompatibilityReport report,
             com.habitrain.core.scene.model.ScenePublishPolicy policy) {
-        if (report == null || report.getIssues().isEmpty()) return;
+        if (report == null || report.totalIssueCount() == 0L) return;
+        java.util.List<SceneCompatibilityReport.Entry> issues = report.getIssues();
         java.util.List<SceneCompatibilityReport.Entry> blocking = report.getBlockingIssues(policy);
-        LOGGER.warn("场景资产兼容性诊断: hash={}, policy={}, issues={}, blocking={}",
-                shortHash(sha256), policy, report.getIssues().size(), blocking.size());
-        int limit = Math.min(16, report.getIssues().size());
+        // 计数用精确值（不受抽样上限影响），逐条打印只用保留的抽样。
+        LOGGER.warn("场景资产兼容性诊断: hash={}, policy={}, issues={}, blocking={}, sampled={}",
+                shortHash(sha256), policy, report.totalIssueCount(), blocking.size(), issues.size());
+        int limit = Math.min(16, issues.size());
         for (int i = 0; i < limit; i++) {
-            SceneCompatibilityReport.Entry issue = report.getIssues().get(i);
+            SceneCompatibilityReport.Entry issue = issues.get(i);
             LOGGER.warn("场景兼容问题[{}/{}]: block={}, localPos={}, type={}, blocking={}, detail={}",
-                    i + 1, report.getIssues().size(), issue.blockId(), issue.localPos(),
+                    i + 1, report.totalIssueCount(), issue.blockId(), issue.localPos(),
                     issue.issueType(), issue.isBlocking(policy), issue.description());
         }
-        if (report.getIssues().size() > limit) {
-            LOGGER.warn("另有 {} 条场景兼容问题未逐条写入日志", report.getIssues().size() - limit);
+        long notLogged = report.totalIssueCount() - limit;
+        if (notLogged > 0L) {
+            LOGGER.warn("另有 {} 条场景兼容问题未逐条写入日志（抽样保留 {} 条）",
+                    notLogged, issues.size());
         }
     }
 
@@ -640,14 +787,15 @@ public final class SceneRenderRuntime {
 
         // 渲染 2 份循环副本
         double maxDistance = profile.getRender().getMaxDistanceBlocks();
-        renderCopy(viewMatrix, projectionMatrix, camPos, origin, motionX, motionY, motionZ,
+        Frustum frustum = context.frustum();
+        renderCopy(viewMatrix, projectionMatrix, camPos, frustum, profile, origin, motionX, motionY, motionZ,
                 0, 0, 0, pivot, rot, renderTranslucent, maxDistance);
 
         if (loopEnabled) {
             double loopOffsetX = -dir[0] * loopDist;
             double loopOffsetY = -dir[1] * loopDist;
             double loopOffsetZ = -dir[2] * loopDist;
-            renderCopy(viewMatrix, projectionMatrix, camPos, origin, motionX, motionY, motionZ,
+            renderCopy(viewMatrix, projectionMatrix, camPos, frustum, profile, origin, motionX, motionY, motionZ,
                     loopOffsetX, loopOffsetY, loopOffsetZ, pivot, rot, renderTranslucent, maxDistance);
         }
         renderAdditionalScenes(context, viewMatrix, projectionMatrix, camPos, partialTick);
@@ -680,11 +828,11 @@ public final class SceneRenderRuntime {
                 SceneRotation rotation = profile.getRotationDegrees();
                 boolean translucent = profile.getRender().isRenderTranslucent();
                 double maxDistance = profile.getRender().getMaxDistanceBlocks();
-                renderCopy(viewMatrix, projectionMatrix, camPos, origin,
+                renderCopy(viewMatrix, projectionMatrix, camPos, context.frustum(), profile, origin,
                         direction[0] * phase, direction[1] * phase, direction[2] * phase,
                         0, 0, 0, pivot, rotation, translucent, maxDistance);
                 if (profile.getLoop().isEnabled()) {
-                    renderCopy(viewMatrix, projectionMatrix, camPos, origin,
+                    renderCopy(viewMatrix, projectionMatrix, camPos, context.frustum(), profile, origin,
                             direction[0] * phase, direction[1] * phase, direction[2] * phase,
                             -direction[0] * loopDistance, -direction[1] * loopDistance,
                             -direction[2] * loopDistance, pivot, rotation, translucent, maxDistance);
@@ -695,31 +843,129 @@ public final class SceneRenderRuntime {
         }
     }
 
-    private void renderCopy(Matrix4f viewMatrix, Matrix4f projMat, Vec3 camPos,
-                            double[] origin, double mx, double my, double mz,
+    /**
+     * 绘制直线运动的一个副本（主副本或循环回绕副本）。
+     *
+     * <p>裁剪与环绕模式口径一致：先用<b>变换后的包围球</b>与 maxDistance 比距离，再用它的
+     * 外接 AABB 做视锥裁剪。此前只拿「场景原点」到相机的距离判断，既看不到视锥（镜头背对
+     * 时仍然提交整份网格），又会在「大场景边缘仍可见、原点已很远」时把可见几何过早剔除。</p>
+     *
+     * <p>注意 {@code renderX/Y/Z} 仍然按原点计算——包围球只参与裁剪，不参与模型矩阵。</p>
+     */
+    private void renderCopy(Matrix4f viewMatrix, Matrix4f projMat, Vec3 camPos, Frustum frustum,
+                            SceneProfile profile, double[] origin, double mx, double my, double mz,
                             double lx, double ly, double lz,
                             double[] pivot, SceneRotation rot, boolean renderTranslucent,
                             double maxDistance) {
 
+        SceneInstanceBounds bounds = SceneMotionMath.calculateLinearInstanceBounds(
+                profile, mx + lx, my + ly, mz + lz);
+        if (!bounds.isWithinDistance(camPos.x, camPos.y, camPos.z, maxDistance)) return;
+        if (frustum != null && !((FrustumAccessor) frustum).habitrain$cubeInFrustum(
+                bounds.minX(), bounds.minY(), bounds.minZ(),
+                bounds.maxX(), bounds.maxY(), bounds.maxZ())) {
+            return;
+        }
+
         double renderX = origin[0] + mx + lx - camPos.x;
         double renderY = origin[1] + my + ly - camPos.y;
         double renderZ = origin[2] + mz + lz - camPos.z;
-        if (renderX * renderX + renderY * renderY + renderZ * renderZ > maxDistance * maxDistance) return;
 
         Matrix4f modelMatrix = buildSceneModelMatrix(
                 renderX, renderY, renderZ, pivot, rot, null, 0.0, false);
         Matrix4f modelView = composeModelView(viewMatrix, modelMatrix);
 
-        // 绘制各图层
-        currentMeshSet.renderLayer(SceneMeshSet.Layer.SOLID, modelView, projMat, RenderType.solid());
-        currentMeshSet.renderLayer(SceneMeshSet.Layer.CUTOUT_MIPPED, modelView, projMat, RenderType.cutoutMipped());
-        currentMeshSet.renderLayer(SceneMeshSet.Layer.CUTOUT, modelView, projMat, RenderType.cutout());
-        currentMeshSet.renderCustomOpaqueBatches(modelView, projMat);
+        drawMeshInstance(currentMeshSet, modelMatrix, modelView, projMat, camPos, frustum, renderTranslucent);
+    }
 
-        if (renderTranslucent) {
-            currentMeshSet.renderLayer(SceneMeshSet.Layer.TRANSLUCENT, modelView, projMat, RenderType.translucent());
-            currentMeshSet.renderCustomTranslucentBatches(modelView, projMat);
+    /**
+     * 提交一个实例的全部层。
+     *
+     * <p>网格按空间分批时（只有大场景才会分批，见 {@link SceneMeshBatchPolicy}），逐批用
+     * <b>视锥</b>裁剪：批次的世界 AABB 由本地 AABB 的 8 个角点经模型矩阵变换得到，保守但绝不
+     * 会剔掉可见几何。这里刻意<b>不做</b>逐批的距离裁剪——那是"渲染范围"语义，会真的让远处
+     * 几何消失，属于观感变化，必须由配置与验证来定，不该由分批顺手引入。</p>
+     *
+     * <p>半透明层始终整层提交：GL 混合与顺序有关，而分批把发射序切成了几段。</p>
+     */
+    private void drawMeshInstance(SceneMeshSet mesh, Matrix4f modelMatrix, Matrix4f modelView,
+                                  Matrix4f projMat, Vec3 camPos, Frustum frustum,
+                                  boolean renderTranslucent) {
+        drawMeshInstanceOpaque(mesh, modelMatrix, modelView, projMat, camPos, frustum);
+        drawMeshInstanceTranslucent(mesh, modelView, projMat, renderTranslucent);
+    }
+
+    private void drawMeshInstanceOpaque(SceneMeshSet mesh, Matrix4f modelMatrix, Matrix4f modelView,
+                                        Matrix4f projMat, Vec3 camPos, Frustum frustum) {
+        if (mesh == null) return;
+        if (mesh.isBatched()) {
+            int total = 0;
+            int drawn = 0;
+            long culledBytes = 0L;
+            for (SceneMeshSet.Batch batch : mesh.batches()) {
+                total++;
+                if (!isBatchInFrustum(batch, modelMatrix, camPos, frustum)) {
+                    culledBytes += batch.mesh().estimatedBytes();
+                    continue;
+                }
+                drawn++;
+                SceneMeshSet batchMesh = batch.mesh();
+                batchMesh.renderLayer(SceneMeshSet.Layer.SOLID, modelView, projMat, RenderType.solid());
+                batchMesh.renderLayer(SceneMeshSet.Layer.CUTOUT_MIPPED, modelView, projMat, RenderType.cutoutMipped());
+                batchMesh.renderLayer(SceneMeshSet.Layer.CUTOUT, modelView, projMat, RenderType.cutout());
+                batchMesh.renderCustomOpaqueBatches(modelView, projMat);
+            }
+            lastTotalBatches = total;
+            lastDrawnBatches = drawn;
+            lastCulledBatchBytes = culledBytes;
+            return;
         }
+        mesh.renderLayer(SceneMeshSet.Layer.SOLID, modelView, projMat, RenderType.solid());
+        mesh.renderLayer(SceneMeshSet.Layer.CUTOUT_MIPPED, modelView, projMat, RenderType.cutoutMipped());
+        mesh.renderLayer(SceneMeshSet.Layer.CUTOUT, modelView, projMat, RenderType.cutout());
+        mesh.renderCustomOpaqueBatches(modelView, projMat);
+    }
+
+    private void drawMeshInstanceTranslucent(SceneMeshSet mesh, Matrix4f modelView,
+                                             Matrix4f projMat, boolean renderTranslucent) {
+        if (mesh == null || !renderTranslucent) return;
+        mesh.renderLayer(SceneMeshSet.Layer.TRANSLUCENT, modelView, projMat, RenderType.translucent());
+        mesh.renderCustomTranslucentBatches(modelView, projMat);
+    }
+
+    /**
+     * 批次的世界 AABB 是否与视锥相交。
+     *
+     * <p>{@code modelMatrix} 把本地坐标映射到<b>相机相对</b>坐标，所以先变换再补回相机位置，
+     * 得到 frustum 期望的世界坐标。8 个角点全部参与：场景可以带枢轴旋转，只取两个对角点会
+     * 在旋转后得到错误的包围盒。</p>
+     */
+    private static boolean isBatchInFrustum(SceneMeshSet.Batch batch, Matrix4f modelMatrix,
+                                            Vec3 camPos, Frustum frustum) {
+        if (frustum == null) return true;
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        for (int corner = 0; corner < 8; corner++) {
+            Vector3f point = new Vector3f(
+                    (corner & 1) == 0 ? (float) batch.minX() : (float) batch.maxX(),
+                    (corner & 2) == 0 ? (float) batch.minY() : (float) batch.maxY(),
+                    (corner & 4) == 0 ? (float) batch.minZ() : (float) batch.maxZ());
+            modelMatrix.transformPosition(point);
+            double x = point.x + camPos.x;
+            double y = point.y + camPos.y;
+            double z = point.z + camPos.z;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            maxZ = Math.max(maxZ, z);
+        }
+        return ((FrustumAccessor) frustum).habitrain$cubeInFrustum(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private void renderOrbitScene(WorldRenderContext context, Matrix4f viewMatrix, Matrix4f projMat, Vec3 camPos,
@@ -754,7 +1000,7 @@ public final class SceneRenderRuntime {
                     renderX, renderY, renderZ, pivot, rot,
                     transform.axis(), transform.deltaAngleDegrees(), transform.rotateModelWithOrbit());
             Matrix4f modelView = composeModelView(viewMatrix, modelMatrix);
-            visible.add(new OrbitRenderEntry(modelView, bounds));
+            visible.add(new OrbitRenderEntry(modelMatrix, modelView, bounds));
         }
 
         lastVisibleOrbitInstances = visible.size();
@@ -762,11 +1008,8 @@ public final class SceneRenderRuntime {
         // 同一份 VBO 只上传一次；每个可见副本只提交不同的模型矩阵。
         // 先完成全部不透明/裁切层，避免后续副本的不透明面覆盖先绘制的透明层。
         for (OrbitRenderEntry entry : visible) {
-            Matrix4f modelView = entry.modelView();
-            currentMeshSet.renderLayer(SceneMeshSet.Layer.SOLID, modelView, projMat, RenderType.solid());
-            currentMeshSet.renderLayer(SceneMeshSet.Layer.CUTOUT_MIPPED, modelView, projMat, RenderType.cutoutMipped());
-            currentMeshSet.renderLayer(SceneMeshSet.Layer.CUTOUT, modelView, projMat, RenderType.cutout());
-            currentMeshSet.renderCustomOpaqueBatches(modelView, projMat);
+            drawMeshInstanceOpaque(currentMeshSet, entry.modelMatrix(), entry.modelView(),
+                    projMat, camPos, frustum);
         }
 
         if (renderTranslucent) {
@@ -774,14 +1017,12 @@ public final class SceneRenderRuntime {
             visible.sort(Comparator.comparingDouble((OrbitRenderEntry entry) ->
                     entry.bounds().distanceSquaredTo(camPos.x, camPos.y, camPos.z)).reversed());
             for (OrbitRenderEntry entry : visible) {
-                Matrix4f modelView = entry.modelView();
-                currentMeshSet.renderLayer(SceneMeshSet.Layer.TRANSLUCENT, modelView, projMat, RenderType.translucent());
-                currentMeshSet.renderCustomTranslucentBatches(modelView, projMat);
+                drawMeshInstanceTranslucent(currentMeshSet, entry.modelView(), projMat, true);
             }
         }
     }
 
-    private record OrbitRenderEntry(Matrix4f modelView, SceneInstanceBounds bounds) {}
+    private record OrbitRenderEntry(Matrix4f modelMatrix, Matrix4f modelView, SceneInstanceBounds bounds) {}
 
     private static void applyOrbitRotation(PoseStack poseStack, SceneOrbitAxis axis, double deltaDegrees) {
         if (Math.abs(deltaDegrees) < 1.0e-5) return;
@@ -903,6 +1144,7 @@ public final class SceneRenderRuntime {
     }
 
     public synchronized void reset() {
+        lastServerProtocolVersion = com.habitrain.core.scene.network.SceneProtocol.LEGACY_VERSION;
         previewActive = false;
         previewMapKey = "";
         previewProfile = null;

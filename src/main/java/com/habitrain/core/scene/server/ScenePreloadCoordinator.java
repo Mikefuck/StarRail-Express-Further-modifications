@@ -126,13 +126,20 @@ public final class ScenePreloadCoordinator {
                 : SceneTransferService.BandwidthPhase.MATCH);
         for (Map.Entry<String, SceneAssetDescriptor> entry : session.descriptorsByAssetKey.entrySet()) {
             SceneAssetDescriptor descriptor = entry.getValue();
-            transfer.authorize(player.getUUID(), descriptor.sha256(), descriptor.compressedSize());
+            transfer.authorizeAsset(player, entry.getKey(), descriptor);
             ServerPlayNetworking.send(player,
                     new SceneAssetPrefetchS2C(session.id, entry.getKey(), descriptor));
         }
     }
 
-    /** The next requested offset proves that the previous bytes passed client CRC validation. */
+    /**
+     * The next requested offset proves that the previous bytes passed client CRC validation.
+     *
+     * <p><b>仅用于进度日志。</b>就绪判定走客户端显式 ack（{@link #handleReady}），
+     * {@link #allReady} 与 {@link #enterMatch} 都不读这里累计的字节数。客户端使用有界窗口
+     * 时可能一次发出多片请求，因此该计数最多领先实际接收前缀 {@code (window-1)} 片——
+     * 对 1/4 进度日志无影响，不得据此做任何调度或放行决定。</p>
+     */
     public void recordConfirmedBytes(ServerPlayer player, String sha256, long confirmedBytes) {
         Session session = sessionFor(player, sha256);
         if (session == null) return;

@@ -1,7 +1,6 @@
 package com.habitrain.core.scene.item;
 
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.game.sre.scene.SreSceneContextResolver;
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.model.SceneBackgroundKey;
@@ -157,8 +156,7 @@ public final class SceneConfiguratorItem extends Item {
         for (var entry : SceneAssetStore.getInstance().getAllDescriptors().entrySet()) {
             SceneAssetDescriptor mapDescriptor = entry.getValue();
             if (mapDescriptor == null || !mapDescriptor.isValid()) continue;
-            SceneTransferService.getInstance().authorize(
-                    player.getUUID(), mapDescriptor.sha256(), mapDescriptor.compressedSize());
+            SceneTransferService.getInstance().authorizeAsset(player, entry.getKey(), mapDescriptor);
             ServerPlayNetworking.send(player, new SceneAssetManifestS2C(entry.getKey(), mapDescriptor));
         }
 

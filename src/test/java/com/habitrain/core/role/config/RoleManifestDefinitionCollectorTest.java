@@ -18,7 +18,6 @@ import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
 import com.habitrain.core.role.state.RoleStateServiceImpl;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
-import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

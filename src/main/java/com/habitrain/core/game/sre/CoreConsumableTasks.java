@@ -1,11 +1,9 @@
 package com.habitrain.core.game.sre;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
-import net.minecraft.server.level.ServerPlayer;
 
 /** Canonical Core-owned eat and drink tasks used by every SRE game mode. */
 public final class CoreConsumableTasks {
