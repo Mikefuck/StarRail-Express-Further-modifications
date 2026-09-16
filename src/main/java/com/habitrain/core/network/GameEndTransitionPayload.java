@@ -31,7 +31,7 @@ public record GameEndTransitionPayload(String winStatusName, String modeId, Stri
     public static final int ROLE_TYPE_NEUTRAL_SECONDARY = 3;
     public static final int ROLE_TYPE_KILLER = 4;
     public static final int ROLE_TYPE_SHERIFF = 5;
-    public static final CustomPacketPayload.Type<GameEndTransitionPayload> TYPE = new CustomPacketPayload.Type(HabiTrainCore.id("game_end_transition"));
+    public static final CustomPacketPayload.Type<GameEndTransitionPayload> TYPE = new CustomPacketPayload.Type<>(HabiTrainCore.id("game_end_transition"));
     public static final StreamCodec<FriendlyByteBuf, GameEndTransitionPayload> CODEC = StreamCodec.ofMember(GameEndTransitionPayload::write, GameEndTransitionPayload::new);
 
     public GameEndTransitionPayload {

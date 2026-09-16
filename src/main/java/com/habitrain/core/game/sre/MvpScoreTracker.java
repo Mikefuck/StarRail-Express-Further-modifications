@@ -147,7 +147,7 @@ public final class MvpScoreTracker {
     }
 
     private static Map<UUID, ScoreSnapshot> immutableSnapshot(RoundState state) {
-        LinkedHashMap snapshot = new LinkedHashMap();
+        LinkedHashMap<UUID, ScoreSnapshot> snapshot = new LinkedHashMap<>();
         state.players.forEach((id, score) -> snapshot.put(id, score.freeze()));
         return Map.copyOf(snapshot);
     }

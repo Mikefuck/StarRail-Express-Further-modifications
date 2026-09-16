@@ -13,21 +13,23 @@ class CaptureTicketWindowTest {
     @Test
     void slidingWindowIsBoundedAndKeepsRepeatedChunkSectionsTogether() {
         RecordingAccess access = new RecordingAccess();
-        CaptureTicketWindow<String> window = new CaptureTicketWindow<>(
-                List.of("a", "a", "b", "b", "c", "d"), 2, access);
+        try (CaptureTicketWindow<String> window = new CaptureTicketWindow<>(
+                List.of("a", "a", "b", "b", "c", "d"), 2, access)) {
 
-        window.alignToSection(0);
-        assertEquals(Set.of("a", "b"), window.heldTicketsForTest());
-        assertEquals(2, window.heldTicketCount());
+            window.alignToSection(0);
+            assertEquals(Set.of("a", "b"), window.heldTicketsForTest());
+            assertEquals(2, window.heldTicketCount());
 
-        window.alignToSection(2);
-        assertEquals(Set.of("b", "c"), window.heldTicketsForTest());
-        assertTrue(access.released.contains("a"));
+            window.alignToSection(2);
+            assertEquals(Set.of("b", "c"), window.heldTicketsForTest());
+            assertTrue(access.released.contains("a"));
 
-        window.alignToSection(4);
-        assertEquals(Set.of("c", "d"), window.heldTicketsForTest());
-        assertTrue(access.released.contains("b"));
-        assertTrue(access.maxHeld <= 2);
+            window.alignToSection(4);
+            assertEquals(Set.of("c", "d"), window.heldTicketsForTest());
+            assertTrue(access.released.contains("b"));
+            assertTrue(access.maxHeld <= 2);
+        }
+        assertTrue(access.held.isEmpty());
     }
 
     @Test
@@ -50,13 +52,14 @@ class CaptureTicketWindowTest {
     void acquisitionFailureReleasesTicketsAlreadyOwnedByTheWindow() {
         RecordingAccess access = new RecordingAccess();
         access.failOnAcquire = "c";
-        CaptureTicketWindow<String> window = new CaptureTicketWindow<>(
-                List.of("a", "b", "c", "d"), 4, access);
+        try (CaptureTicketWindow<String> window = new CaptureTicketWindow<>(
+                List.of("a", "b", "c", "d"), 4, access)) {
 
-        assertThrows(IllegalStateException.class, () -> window.alignToSection(0));
-        assertTrue(access.held.isEmpty());
-        assertEquals(Set.of("a", "b"), new HashSet<>(access.released));
-        assertThrows(IllegalStateException.class, () -> window.alignToSection(0));
+            assertThrows(IllegalStateException.class, () -> window.alignToSection(0));
+            assertTrue(access.held.isEmpty());
+            assertEquals(Set.of("a", "b"), new HashSet<>(access.released));
+            assertThrows(IllegalStateException.class, () -> window.alignToSection(0));
+        }
     }
 
     private static final class RecordingAccess implements CaptureTicketWindow.TicketAccess<String> {

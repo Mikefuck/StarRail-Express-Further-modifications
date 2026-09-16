@@ -39,7 +39,6 @@
  */
 package com.habitrain.core.client.gui;
 
-import com.google.common.collect.Multimap;
 import com.habitrain.core.client.gui.GameEndOverlayState;
 import com.habitrain.core.client.gui.OptionVoteTexts;
 import com.habitrain.core.client.gui.VoteLaunchOverlayState;
@@ -205,7 +204,7 @@ extends Screen {
             }
             boolean normalRelease = this.environmentReady && this.gameFinished;
             boolean environmentFallback = this.gameFinished && now >= minExitAt + 3000L;
-            boolean bl = hardRelease = !this.environmentReady && now >= this.startedAtMillis + 30000L;
+            hardRelease = !this.environmentReady && now >= this.startedAtMillis + 30000L;
             if (now >= minExitAt && (normalRelease || environmentFallback) || hardRelease) {
                 this.startExit(now);
             }
@@ -329,7 +328,7 @@ extends Screen {
         Object winKey;
         boolean customWin;
         boolean customComponentWin = "CUSTOM_COMPONENT".equals(this.winStatusName);
-        boolean bl = customWin = "CUSTOM".equals(this.winStatusName) || customComponentWin;
+        customWin = "CUSTOM".equals(this.winStatusName) || customComponentWin;
         if (customComponentWin && !this.customTitleJson.isBlank()) {
             try {
                 RegistryAccess access = Minecraft.getInstance().level != null
@@ -729,7 +728,7 @@ extends Screen {
             float arc = 10.0f + (float)(i * 13 % 25);
             int px = Math.round((float)centerX + direction * reach * flight);
             int py = Math.round(Mth.lerp((float)flight, (float)((float)baseY - 22.0f), (float)((float)baseY - 2.0f)) - Mth.sin((float)(flight * (float)Math.PI)) * arc);
-            int n = size = i % 5 == 0 ? 2 : 1;
+            size = i % 5 == 0 ? 2 : 1;
             if (flight < 1.0f) {
                 int particleAlpha = Math.round(230.0f * alphaT * (1.0f - flight * 0.38f));
                 g.fill(px, py, px + size, py + size, GameEndTransitionScreen.withAlpha(i % 3 == 0 ? 13708081 : 9309716, particleAlpha));
@@ -773,7 +772,7 @@ extends Screen {
         GameProfile profile = new GameProfile(id, safeName);
         AbstractClientPlayer source = mc.level.players().stream().filter(player -> player.getUUID().equals(id)).findFirst().orElse(null);
         if (source != null) {
-            profile.getProperties().putAll((Multimap)source.getGameProfile().getProperties());
+            profile.getProperties().putAll(source.getGameProfile().getProperties());
         }
         RemotePlayer created = new RemotePlayer(mc.level, profile) {
 

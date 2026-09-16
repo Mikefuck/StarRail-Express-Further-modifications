@@ -62,8 +62,8 @@ public final class GameEndTransitionCoordinator {
         if (level == null) {
             return;
         }
-        ResourceKey dimension = level.dimension();
-        GameEndTransitionCoordinator.clearRoundState((ResourceKey<Level>)dimension);
+        ResourceKey<Level> dimension = level.dimension();
+        GameEndTransitionCoordinator.clearRoundState(dimension);
         try {
             SREGameRoundEndComponent roundEnd = (SREGameRoundEndComponent)SREGameRoundEndComponent.KEY.get((Object)level);
             if (roundEnd != null) {
@@ -79,29 +79,29 @@ public final class GameEndTransitionCoordinator {
         if (level == null) {
             return;
         }
-        ResourceKey dimension = level.dimension();
-        if (NOTIFIED.putIfAbsent((ResourceKey<Level>)dimension, Boolean.TRUE) != null) {
+        ResourceKey<Level> dimension = level.dimension();
+        if (NOTIFIED.putIfAbsent(dimension, Boolean.TRUE) != null) {
             return;
         }
         try {
             boolean customResult;
             SREGameRoundEndComponent roundEnd = (SREGameRoundEndComponent)SREGameRoundEndComponent.KEY.get((Object)level);
             ResultSnapshot result = GameEndTransitionCoordinator.snapshotResult(level, roundEnd);
-            RESULTS.put((ResourceKey<Level>)dimension, result);
-            MVP_STATS.put((ResourceKey<Level>)dimension, MvpScoreTracker.freeze(level));
+            RESULTS.put(dimension, result);
+            MVP_STATS.put(dimension, MvpScoreTracker.freeze(level));
             LinkedHashSet<UUID> customWinners = new LinkedHashSet<UUID>();
-            boolean bl = customResult = result.winStatus() == GameUtils.WinStatus.CUSTOM || result.winStatus() == GameUtils.WinStatus.CUSTOM_COMPONENT;
+            customResult = result.winStatus() == GameUtils.WinStatus.CUSTOM || result.winStatus() == GameUtils.WinStatus.CUSTOM_COMPONENT;
             if (customResult && roundEnd != null && roundEnd.CustomWinnerPlayers != null) {
                 for (UUID winner : roundEnd.CustomWinnerPlayers) {
                     if (winner == null) continue;
                     customWinners.add(winner);
                 }
             }
-            CUSTOM_WINNERS.put((ResourceKey<Level>)dimension, Set.copyOf(customWinners));
+            CUSTOM_WINNERS.put(dimension, Set.copyOf(customWinners));
             GameEndTransitionCoordinator.broadcast(level, false);
         }
         catch (Throwable t) {
-            GameEndTransitionCoordinator.clearRoundState((ResourceKey<Level>)dimension);
+            GameEndTransitionCoordinator.clearRoundState(dimension);
             LOGGER.warn("[GameEndTransition] initial broadcast failed dim={}", (Object)dimension.location(), (Object)t);
         }
     }
@@ -110,11 +110,11 @@ public final class GameEndTransitionCoordinator {
         if (level == null) {
             return;
         }
-        ResourceKey dimension = level.dimension();
+        ResourceKey<Level> dimension = level.dimension();
         if (!NOTIFIED.containsKey(dimension)) {
             return;
         }
-        if (ENVIRONMENT_READY_AT.putIfAbsent((ResourceKey<Level>)dimension, level.getGameTime() + 2L) == null) {
+        if (ENVIRONMENT_READY_AT.putIfAbsent(dimension, level.getGameTime() + 2L) == null) {
             LOGGER.info("[GameEndTransition] environment applied dim={} -> waiting for weather sync", (Object)dimension.location());
         }
     }
@@ -124,15 +124,15 @@ public final class GameEndTransitionCoordinator {
             return;
         }
         for (ServerLevel level : server.getAllLevels()) {
-            ResourceKey dimension = level.dimension();
+            ResourceKey<Level> dimension = level.dimension();
             Long readyAt = (Long)ENVIRONMENT_READY_AT.get(dimension);
             if (readyAt == null || level.getGameTime() < readyAt) continue;
             try {
                 GameEndTransitionCoordinator.broadcast(level, true);
-                GameEndTransitionCoordinator.clearRoundState((ResourceKey<Level>)dimension);
+                GameEndTransitionCoordinator.clearRoundState(dimension);
             }
             catch (Throwable t) {
-                ENVIRONMENT_READY_AT.replace((ResourceKey<Level>)dimension, readyAt, level.getGameTime() + 20L);
+                ENVIRONMENT_READY_AT.replace(dimension, readyAt, level.getGameTime() + 20L);
                 LOGGER.warn("[GameEndTransition] release broadcast failed dim={}", (Object)dimension.location(), (Object)t);
             }
         }
@@ -142,9 +142,9 @@ public final class GameEndTransitionCoordinator {
         if (level == null) {
             return;
         }
-        ResourceKey dimension = level.dimension();
+        ResourceKey<Level> dimension = level.dimension();
         if (!ENVIRONMENT_READY_AT.containsKey(dimension)) {
-            GameEndTransitionCoordinator.clearRoundState((ResourceKey<Level>)dimension);
+            GameEndTransitionCoordinator.clearRoundState(dimension);
         }
     }
 
@@ -239,13 +239,13 @@ public final class GameEndTransitionCoordinator {
     }
 
     private static List<GameEndTransitionPayload.MvpPlayer> resolveMvpPlayers(ServerLevel level, SREGameRoundEndComponent roundEnd, ResultSnapshot result) {
-        Set customWinners;
+        Set<UUID> customWinners;
         GameUtils.WinStatus winStatus = result.winStatus();
         if (winStatus == GameUtils.WinStatus.NO_PLAYER || winStatus == GameUtils.WinStatus.NONE || winStatus == GameUtils.WinStatus.NOT_MODIFY) {
             return List.of();
         }
-        ResourceKey dimension = level.dimension();
-        Map stats = MVP_STATS.getOrDefault(dimension, Map.of());
+        ResourceKey<Level> dimension = level.dimension();
+        Map<UUID, MvpScoreTracker.ScoreSnapshot> stats = MVP_STATS.getOrDefault(dimension, Map.of());
         if (stats.isEmpty()) {
             return List.of();
         }
@@ -276,7 +276,7 @@ public final class GameEndTransitionCoordinator {
         }
         ArrayList<GameEndTransitionPayload.MvpPlayer> ranked = new ArrayList<GameEndTransitionPayload.MvpPlayer>();
         for (PlayerResultSnapshot candidate : candidates.values()) {
-            MvpScoreTracker.ScoreSnapshot score = (MvpScoreTracker.ScoreSnapshot)stats.get(candidate.id());
+            MvpScoreTracker.ScoreSnapshot score = stats.get(candidate.id());
             if (score == null) continue;
             String name = candidate.name().isBlank() ? score.playerName() : candidate.name();
             ranked.add(new GameEndTransitionPayload.MvpPlayer(candidate.id(), name, score.score(), score.kills(), score.survivalSeconds(), score.itemUses(), candidate.roleType()));
