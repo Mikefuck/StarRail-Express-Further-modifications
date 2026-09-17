@@ -13,7 +13,7 @@ final class RemovedModeConfigMigration {
             "habitrain_core:maintain_power", "habitrain_core:restore_power",
             "habitrain_core:blackout_search_backpack", "habitrain_core:blackout_betel_quest",
             "habitrain_core:blackout_pet_cat", "habitrain_core:blackout_be_alone",
-            "habitrain_core:blackout_look_my_eyes");
+            "habitrain_core:blackout_look_my_eyes", "habitrain_core:betel_quest");
 
     private RemovedModeConfigMigration() {}
 

@@ -67,7 +67,6 @@ public class LootHelper {
                 );
             } else {
                 itemPool = List.of(
-                    "betel-nut-mod:synthetic_world_betel",
                     "trainmurdermystery:emoji_helmet",
                     "trainmurdermystery:defense_vial",
                     "noellesroles:noell_paperclip",

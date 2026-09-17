@@ -54,7 +54,6 @@
 | **StarRailExpress (SRE)** | 4.3.0 | 上游本体模组 |
 | **playerAnimator** | 2.0.4+ | 运行前置依赖，用于驱动 MVP 结算画面 3D 玩家角色庆祝动作 |
 | **Simple Voice Chat** | 1.21.1-2.5.x | 可选，用于语音群组划分与静音集成 |
-| **Betel Nut Mod (槟榔)** | 兼容版本 | 集成成瘾系统与特色搜包任务 |
 
 ---
 
@@ -103,7 +102,6 @@
 - 🌦️ **全局环境控制器（Environment Controller）**：大厅（Lobby）、对局中（Match）、结算后（Post-Match）三阶段独立配置天气（晴天/雨天/雷暴）与时间锁定。
 - 🗡️ **小刀耐久与平衡机制**：可配置杀手小刀耐久度与充能机制，支持基于总人数自动计算警长比例（`sheriffCountDivisor`）。
 - 🎙️ **Simple Voice Chat 联动**：提供 `/instantgroup [range]` 范围快速组队，并支持大厅阶段自动组队语音。
-- 🌿 **槟榔模组深度集成**：提供嚼槟榔任务与交互，尊重槟榔模组的成瘾系统配置。
 
 ---
 
@@ -287,10 +285,9 @@ src/main/java/com/habitrain/core/
 ├── role/                  # 角色扩展平台 v2 内部实现与引擎
 ├── network/               # S2C / C2S 自定义网络 Payload 与编解码
 ├── config/                # JSON 配置文件读写、同步与 ModMenu 门控
-├── client/                # ModMenu 四大分类 13 个配置页、MVP 动画、HUD、GUI、渲染与客户端 Mixin
-│   ├── gui/menu/          # 统一配置中心根屏与各分类页面
-│   └── mvp/               # playerAnimator MVP 3D 动作加载、绑定与播放控制器
-└── betel/                 # 槟榔模组深度集成与成瘾系统
+└── client/                # ModMenu 四大分类 13 个配置页、MVP 动画、HUD、GUI、渲染与客户端 Mixin
+    ├── gui/menu/          # 统一配置中心根屏与各分类页面
+    └── mvp/               # playerAnimator MVP 3D 动作加载、绑定与播放控制器
 ```
 
 ---

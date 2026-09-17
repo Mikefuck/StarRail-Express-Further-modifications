@@ -2,10 +2,6 @@ package com.habitrain.core;
 
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.betel.BetelFoodRestriction;
-import com.habitrain.core.betel.BetelLeafHandler;
-import com.habitrain.core.betel.BetelQuestDefinition;
-import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.EliminatedRestAreaService;
@@ -42,10 +38,6 @@ public class HabiTrainCore implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     // ===== 音效事件常量 =====
-    public static final ResourceLocation BETEL_NUT_EAT_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "betel_nut_eat");
-    public static final SoundEvent BETEL_NUT_EAT_SOUND = SoundEvent.createVariableRangeEvent(BETEL_NUT_EAT_ID);
-    public static final ResourceLocation BETEL_NUT_GET_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "betel_nut_get");
-    public static final SoundEvent BETEL_NUT_GET_SOUND = SoundEvent.createVariableRangeEvent(BETEL_NUT_GET_ID);
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
     // look_my_eyes.ogg now bundled in assets
@@ -236,7 +228,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.registerCommon();
         com.habitrain.core.scene.item.HabiAdminItems.init();
         registerMoreSounds();
-        initBetelSystem();
+        initBackpackSystem();
         LOGGER.info("哈比列车核心 初始化完成！已注册 {} 个 GameMode, {} 个任务",
                 GameModeRegistry.size(), TaskRegistry.size());
     }
@@ -246,20 +238,14 @@ public class HabiTrainCore implements ModInitializer {
     }
 
     private void registerMoreSounds() {
-        Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_EAT_ID, BETEL_NUT_EAT_SOUND);
-        Registry.register(BuiltInRegistries.SOUND_EVENT, BETEL_NUT_GET_ID, BETEL_NUT_GET_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, LOOK_MY_EYES_ID, LOOK_MY_EYES_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, BACKPACK_SEARCH_ID, BACKPACK_SEARCH_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, MIKE_CODE_EDIT_ID, MIKE_CODE_EDIT_SOUND);
-        LOGGER.info("已注册自定义音效: betel_nut_eat, betel_nut_get, look_my_eyes, backpack_search, mike_code_edit");
+        LOGGER.info("已注册自定义音效: look_my_eyes, backpack_search, mike_code_edit");
     }
 
-    private void initBetelSystem() {
-        BetelQuestState.init();
+    private void initBackpackSystem() {
         BackpackQuestState.init();
-        BetelQuestDefinition.register();
-        BetelLeafHandler.register();
         BackpackSearchHandler.register();
-        BetelFoodRestriction.register();
     }
 }

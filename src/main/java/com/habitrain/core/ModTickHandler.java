@@ -1,8 +1,7 @@
 package com.habitrain.core;
 
 import com.habitrain.core.api.GameModeRegistry;
-import com.habitrain.core.betel.BetelLeafHandler;
-import com.habitrain.core.betel.BetelTickEngine;
+import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.game.sre.SREWeatherController;
@@ -11,7 +10,6 @@ import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 
 public class ModTickHandler {
     private static int voteTickCounter = 0;
@@ -58,8 +56,7 @@ public class ModTickHandler {
 
         boolean isGameActive = false;
         for (ServerLevel world : server.getAllLevels()) {
-            BetelLeafHandler.tickHarvests(world);
-            if (BetelTickEngine.isGameActive(world)) {
+            if (isGameActive(world)) {
                 isGameActive = true;
             }
         }
@@ -73,16 +70,18 @@ public class ModTickHandler {
             }
         }
 
-        if (!isGameActive) {
-            return;
-        }
-
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            try {
-                BetelTickEngine.tickPlayer(player);
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[ModTick] per-player tick failed for {}", player.getName().getString(), t);
-            }
-        }
     }
+
+    private static boolean isGameActive(ServerLevel world) {
+        try {
+            Object gameComponent = SREGameWorldComponent.KEY.get(world);
+            if (gameComponent instanceof SREGameWorldComponent gc) {
+                return gc.isRunning();
+            }
+        } catch (Exception e) {
+            HabiTrainCore.LOGGER.warn("isGameActive check failed: {}", e.getMessage());
+        }
+        return false;
+    }
+
 }

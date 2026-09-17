@@ -14,6 +14,8 @@ class RemovedModeConfigMigrationTest {
                   "tasks":{
                     "habitrain_core:add_coal":{"shopPrice":45},
                     "habitrain_core:blackout_pet_cat":{},
+                    "habitrain_core:betel_quest":{"enabled":true},
+                    "example:betel_quest":{"enabled":true},
                     "habitrain_core:blackout_eat":{"enabled":false,"goldReward":7},
                     "habitrain_core:pet_cat":{"enabled":false,"shopPrice":22},
                     "example:add_coal":{"enabled":true}
@@ -35,6 +37,8 @@ class RemovedModeConfigMigrationTest {
         assertTrue(root.getAsJsonObject("global").get("blackoutEffectEnhancementEnabled").getAsBoolean());
         JsonObject tasks = root.getAsJsonObject("tasks");
         assertFalse(tasks.has("habitrain_core:add_coal"));
+        assertFalse(tasks.has("habitrain_core:betel_quest"));
+        assertTrue(tasks.has("example:betel_quest"));
         assertFalse(tasks.has("habitrain_core:blackout_pet_cat"));
         assertTrue(tasks.has("example:add_coal"));
         assertTrue(tasks.has("habitrain_core:blackout_eat"));
@@ -52,11 +56,13 @@ class RemovedModeConfigMigrationTest {
         ConfigSync sync = new ConfigSync(null);
         sync.loadFromJsonString(repo, legacy().toString());
         assertFalse(repo.getAllConfigs().containsKey("habitrain_core:add_coal"));
+        assertFalse(repo.getAllConfigs().containsKey("habitrain_core:betel_quest"));
         assertFalse(repo.getMutableGameModeConfigs().containsKey("habitrain_core:habitrain:blackout"));
         assertFalse(repo.getModeMapVote().modes.containsKey("habitrain_core:habitrain:blackout"));
         assertEquals(73, repo.getBlackoutGlobalCooldownSeconds());
         assertTrue(sync.mergeFromJsonString(repo, legacy().toString()));
         assertFalse(repo.getAllConfigs().containsKey("habitrain_core:blackout_pet_cat"));
+        assertFalse(repo.getAllConfigs().containsKey("habitrain_core:betel_quest"));
         assertFalse(repo.getModeMapVote().modes.containsKey("habitrain_core:habitrain:blackout"));
     }
 }

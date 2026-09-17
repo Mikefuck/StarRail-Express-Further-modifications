@@ -1,20 +1,13 @@
 package com.habitrain.core.task;
 
-import betel.nut.component.BetelNutAddictionComponent;
-import betel.nut.component.BetelNutEntityComponents;
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.betel.BetelQuestState;
-import com.habitrain.core.betel.BetelLeafHandler;
 import com.habitrain.core.game.sre.role.HabiComponents;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
-import com.habitrain.core.misc.EffectOwnershipTracker;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffects;
 
-import java.util.UUID;
 
 
 /**
@@ -55,36 +48,14 @@ public class GameLifecycleHandler {
     private static void handleGameEnd(MinecraftServer server) {
         try {
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                UUID pUuid = player.getUUID();
                 // per-player try-catch：单个玩家清理失败不应跳过后续玩家
-                // 和全局清理（BetelQuestState.resetAll 等），避免跨局状态泄漏。
+                // 和全局清理，避免跨局状态泄漏。
                 try {
                     TaskManager.getInstance().cancelAllTrackedTasks(player);
-                    // 使用归属追踪器释放游戏中的槟榔效果
-                    // 只移除本模组的"betel_quest"来源效果，不影响其他模组
-                    if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SPEED, "betel_quest")) {
-                        player.removeEffect(MobEffects.MOVEMENT_SPEED);
-                    }
-                    if (EffectOwnershipTracker.release(pUuid, MobEffects.DARKNESS, "betel_quest")) {
-                        player.removeEffect(MobEffects.DARKNESS);
-                    }
-                    if (EffectOwnershipTracker.release(pUuid, MobEffects.GLOWING, "betel_quest")) {
-                        player.removeEffect(MobEffects.GLOWING);
-                    }
-                    if (EffectOwnershipTracker.release(pUuid, MobEffects.MOVEMENT_SLOWDOWN, "betel_quest")) {
-                        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    }
-
                     try {
                         BuiltInRegistries.MOB_EFFECT.getHolder(
                                         ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles"))
                                 .ifPresent(player::removeEffect);
-                    } catch (Exception ignored) {}
-
-                    // 清除槟榔成瘾组件数据
-                    try {
-                        BetelNutAddictionComponent addiction = BetelNutEntityComponents.ADDICTION.get(player);
-                        addiction.clearAddiction(player);
                     } catch (Exception ignored) {}
 
                     // 七宗罪 + 既有角色 CCA 局终清空（仅在线玩家；离线残留由 JOIN 再清）。
@@ -100,8 +71,6 @@ public class GameLifecycleHandler {
             // 全局清理必须执行，即使某玩家清理抛异常也不应跳过
             ClearableHandlerRegistry.clearAll();
             SlownessReapplyManager.clearAll();
-            BetelQuestState.resetGameState();
-            BetelLeafHandler.clearAllHarvests();
             MimeKillerComponent.clearHiddenBodies();
             try {
                 com.habitrain.core.game.sre.modifier.virtue.TemperanceVirtue.clearAll();
@@ -122,7 +91,7 @@ public class GameLifecycleHandler {
             com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
             com.habitrain.core.game.sre.role.component.FlowerGirlComponent.clearMeleeImmune();
 
-            HabiTrainCore.LOGGER.info("游戏结束，已清除所有槟榔效果");
+            HabiTrainCore.LOGGER.info("游戏结束，已清理任务与角色状态");
         }
     }
 }

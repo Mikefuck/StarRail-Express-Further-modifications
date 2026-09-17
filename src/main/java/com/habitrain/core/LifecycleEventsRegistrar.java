@@ -4,8 +4,6 @@ import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.internal.CoreBootstrap;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.betel.BetelLeafHandler;
-import com.habitrain.core.betel.BetelQuestState;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
 import com.habitrain.core.misc.EffectOwnershipTracker;
@@ -154,10 +152,8 @@ public final class LifecycleEventsRegistrar {
             // 维修人员模式：停服前恢复所有维修员参与状态与游戏模式，避免 NBT 残留「不参与」
             com.habitrain.core.game.sre.RepairModeManager.resetAll(server);
             SlownessReapplyManager.clearAll();
-            BetelLeafHandler.clearAllHarvests();
             BackpackSearchHandler.clearAllSearches();
             com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
-            BetelQuestState.resetGameState();
             BackpackQuestState.getInstance().resetAll();
             // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
             EnvironmentController.clearRuntimeState();

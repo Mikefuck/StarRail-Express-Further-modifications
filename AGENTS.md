@@ -21,7 +21,7 @@ bash gradlew clean build
 ```
 
 - Java 21（`options.release = 21`），Fabric Loom 1.17.13；字节码目标为 21
-- `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat、betel-nut-mod 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
+- `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
 - `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
 - `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证仍以 `bash gradlew build` 和必要的游戏内运行共同完成
 - README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口
@@ -48,7 +48,6 @@ bash gradlew clean build
 - Mixin 包: `game.sre.mixin` (服务端) / `client.mixin` (客户端)
 - 网络 payload 用 Fabric API `CustomPacketPayload` + `StreamCodec` 模式，UTF-8 charset
 - Iris 光影检测通过反射，无编译期依赖；客户端轮询上报，服务端白名单踢出
-- 槟榔模组成瘾系统遵循其自身配置（Core 不再强制覆盖）
 - ExtraSlotComponent 每玩家每 tick 调用 `serverTick()`
 - task tick: `TaskInstance.tick(player)` → onTick → completion check → onComplete/fail
 
