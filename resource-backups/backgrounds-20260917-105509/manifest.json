@@ -1,0 +1,104 @@
+[
+  {
+    "file": "title/panorama/panorama_0.png",
+    "before_bytes": 1784628,
+    "before_sha256": "30464dd95519badcce3e86df477db5ccf85ba4c6ccca38877a762f78c9bd2430",
+    "after_bytes": 145238,
+    "after_sha256": "02fe8c39608558134f1c208c57db89626447c25d23928a007eda2dfc7713cb33",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "title/panorama/panorama_1.png",
+    "before_bytes": 1624126,
+    "before_sha256": "57fbd361f7d7cc0ef660241b6aaafe31adacff9151807e918bbc4d16d166e24d",
+    "after_bytes": 178368,
+    "after_sha256": "56f411ac741269926e0b1b1f990fd5ec437a9d1ca8ef60ad07db8b369d6bed5b",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "title/panorama/panorama_2.png",
+    "before_bytes": 1867294,
+    "before_sha256": "fa4cb660f79d203ab4916206f3d67649eb33a7fa2f3e3bb1427000f0dc2a4055",
+    "after_bytes": 154519,
+    "after_sha256": "934fb25c75175c293913a5d8c7b45ce6e2c984db4860df88eb6e72730a5a5d50",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "title/panorama/panorama_3.png",
+    "before_bytes": 2073796,
+    "before_sha256": "719ed5c86c1012096c356199df5571399894ab1e9d6854eb8821e7b006affe39",
+    "after_bytes": 165436,
+    "after_sha256": "d308b9795876d30d084ca0edc2d58e57ef5fed02725f012c54164cf20c58c87f",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "title/panorama/panorama_4.png",
+    "before_bytes": 1146548,
+    "before_sha256": "c677c3c18ddc90cd3d3b57ae5dab28c62f7ef75f6c8d677d8b2a45d90cb43998",
+    "after_bytes": 115038,
+    "after_sha256": "f4328f1b962d5c609df264417a46dc3396488a5f2bc17796216a366f1835ed87",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "title/panorama/panorama_5.png",
+    "before_bytes": 1652691,
+    "before_sha256": "b1c9a2eea3c2d53acd2397d6fc5c4de4f513459923f2c4278fc68ad9bce8b7de",
+    "after_bytes": 200583,
+    "after_sha256": "25b900d7edb7822ff490aabcea1845b2f9cdaa15d3398e815db9c63c85093cbe",
+    "after_size": [
+      512,
+      512
+    ],
+    "after_mode": "P",
+    "compression": "256-color adaptive palette, median cut with k-means refinement"
+  },
+  {
+    "file": "loading/game_loading.png",
+    "before_bytes": 4598445,
+    "before_sha256": "933f79e6033f2f78db2ca2035b081422551226c9fb566e0c1530f91d7ee777a1",
+    "after_bytes": 1280908,
+    "after_sha256": "72526e243c502e115438b873030a294a01efe602ba4d2ae2a0caec2531be61e8",
+    "after_size": [
+      1280,
+      720
+    ],
+    "after_mode": "RGBA"
+  },
+  {
+    "file": "loading/world_loading.png",
+    "before_bytes": 2124805,
+    "before_sha256": "b46ad11dd9f513499bfb9e2a08667d75e1cee9b75615efb7d2a3a73d53fe017f",
+    "after_bytes": 2124805,
+    "after_sha256": "b46ad11dd9f513499bfb9e2a08667d75e1cee9b75615efb7d2a3a73d53fe017f",
+    "after_size": [
+      1672,
+      941
+    ],
+    "after_mode": "RGB"
+  }
+]
