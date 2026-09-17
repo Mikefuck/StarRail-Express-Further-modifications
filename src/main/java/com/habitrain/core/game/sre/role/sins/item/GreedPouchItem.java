@@ -17,6 +17,7 @@ import net.minecraft.world.item.component.ItemLore;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,6 +28,7 @@ import java.util.UUID;
  * 不注册新 Item；收集通过「袋 + 另一只手物品」右键吸收种类（见 {@code GreedComponent}）。
  */
 public final class GreedPouchItem {
+    public static final int CAPACITY = 32;
     public static final String TAG_GREED_POUCH = "habitrain_greed_pouch";
     public static final String TAG_GREED_OWNER = "habitrain_greed_owner";
     public static final String TAG_GREED_CONTENTS = "habitrain_greed_contents";
@@ -41,6 +43,7 @@ public final class GreedPouchItem {
         stack.set(DataComponents.LORE, new ItemLore(List.of(
                 Component.literal("绑定：不可丢弃；种类数达到开局人数的三分之一减一获胜（向上取整，至少1种）"),
                 Component.literal("把偷来的物品放进袋内即计入种类"),
+                Component.literal("容量：32件，每件物品占1格，与堆叠上限无关"),
                 Component.literal("也可：主/副手持袋，另一手持物右键吸收")
         )));
         HabiRoleItems.putFlag(stack, TAG_GREED_POUCH, true);
@@ -148,19 +151,18 @@ public final class GreedPouchItem {
         if (!isGreedPouch(pouch) || registries == null) return;
         CompoundTag tag = pouch.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
         ListTag list = new ListTag();
-        BundleContents.Mutable mutable = new BundleContents.Mutable(BundleContents.EMPTY);
+        List<ItemStack> visible = new ArrayList<>();
         if (contents != null) {
             for (ItemStack stack : contents) {
                 if (stack == null || stack.isEmpty() || isGreedPouch(stack)) continue;
                 ItemStack one = stack.copyWithCount(1);
                 list.add(one.save(registries));
-                // tryInsert may fail on weight limits; still keep CUSTOM_DATA copy.
-                mutable.tryInsert(one.copy());
+                if (visible.size() < CAPACITY) visible.add(one.copy());
             }
         }
         tag.put(TAG_GREED_CONTENTS, list);
         pouch.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-        pouch.set(DataComponents.BUNDLE_CONTENTS, mutable.toImmutable());
+        pouch.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(visible));
     }
 
     /**
@@ -207,15 +209,15 @@ public final class GreedPouchItem {
      * not evidence that a player removed them from the pouch.
      */
     public static List<ItemStack> getDisplayableItems(List<ItemStack> contents) {
-        BundleContents.Mutable mutable = new BundleContents.Mutable(BundleContents.EMPTY);
+        List<ItemStack> visible = new ArrayList<>();
         if (contents != null) {
             for (ItemStack stack : contents) {
                 if (stack == null || stack.isEmpty() || isGreedPouch(stack)) continue;
-                mutable.tryInsert(stack.copyWithCount(1));
+                if (visible.size() < CAPACITY) visible.add(stack.copyWithCount(1));
             }
         }
         Map<String, ItemStack> byItemId = new LinkedHashMap<>();
-        mutable.toImmutable().itemCopyStream().forEach(stack -> addByItemId(byItemId, stack));
+        visible.forEach(stack -> addByItemId(byItemId, stack));
         return List.copyOf(byItemId.values());
     }
 
@@ -251,17 +253,20 @@ public final class GreedPouchItem {
         if (!isGreedPouch(pouch) || contents == null || contents.isEmpty()) return;
         BundleContents current = pouch.getOrDefault(
                 DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
-        BundleContents.Mutable mutable = new BundleContents.Mutable(current);
+        List<ItemStack> visible = new ArrayList<>(current.itemCopyStream().toList());
+        int count = visible.stream().mapToInt(ItemStack::getCount).sum();
         Map<String, ItemStack> visibleByItemId = new LinkedHashMap<>();
         current.itemCopyStream().forEach(stack -> addByItemId(visibleByItemId, stack));
         for (ItemStack stack : contents) {
             if (stack == null || stack.isEmpty() || isGreedPouch(stack)) continue;
             var id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
             if (id == null || visibleByItemId.containsKey(id.toString())) continue;
-            mutable.tryInsert(stack.copyWithCount(1));
+            if (count >= CAPACITY) break;
+            visible.add(stack.copyWithCount(1));
+            count++;
             visibleByItemId.put(id.toString(), stack.copyWithCount(1));
         }
-        pouch.set(DataComponents.BUNDLE_CONTENTS, mutable.toImmutable());
+        pouch.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(visible));
     }
 
     private static @Nullable UUID parseUuid(@Nullable String s) {
@@ -271,5 +276,34 @@ public final class GreedPouchItem {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    public static int storedCount(ItemStack pouch) {
+        return pouch.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY)
+                .itemCopyStream().mapToInt(ItemStack::getCount).sum();
+    }
+
+    /** Each physical item costs one position, including unstackable equipment. */
+    public static int insert(ItemStack pouch, ItemStack offered) {
+        if (!isGreedPouch(pouch) || !canStore(offered) || !offered.getItem().canFitInsideContainerItems()) return 0;
+        int count = Math.min(offered.getCount(), Math.max(0, CAPACITY - storedCount(pouch)));
+        if (count == 0) return 0;
+        List<ItemStack> items = new ArrayList<>(pouch.getOrDefault(
+                DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY).itemCopyStream().toList());
+        // Keep each item separate so every click can retrieve one independent item.
+        for (int i = 0; i < count; i++) items.add(0, offered.copyWithCount(1));
+        pouch.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(items));
+        offered.shrink(count);
+        return count;
+    }
+
+    public static ItemStack removeFirst(ItemStack pouch) {
+        List<ItemStack> items = new ArrayList<>(pouch.getOrDefault(
+                DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY).itemCopyStream().toList());
+        if (items.isEmpty()) return ItemStack.EMPTY;
+        ItemStack result = items.getFirst().split(1);
+        if (items.getFirst().isEmpty()) items.removeFirst();
+        pouch.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(items));
+        return result;
     }
 }

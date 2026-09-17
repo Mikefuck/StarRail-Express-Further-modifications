@@ -98,6 +98,8 @@ tasks.register("stageTestRuntime", Sync) {
 
 test {
     useJUnitPlatform()
+    // Real ItemStack tests need a fresh Minecraft bootstrap, isolated from registry mocks.
+    exclude("**/GreedPouchItemTest.class")
     dependsOn(tasks.named("stageTestRuntime"))
     // Gradle's Windows test worker corrupts non-ASCII classpath entries.
     // Stage classes and resolved jars under Gradle home before forking it.
@@ -108,6 +110,18 @@ test {
     ) + fileTree(new File(stagedTestRuntimeDir, "libs")) {
         include("*.jar")
     }
+}
+
+tasks.register("greedPouchTest", Test) {
+    useJUnitPlatform()
+    dependsOn(tasks.named("stageTestRuntime"))
+    testClassesDirs = tasks.named("test").get().testClassesDirs
+    classpath = tasks.named("test").get().classpath
+    include("**/GreedPouchItemTest.class")
+}
+
+tasks.named("check") {
+    dependsOn(tasks.named("greedPouchTest"))
 }
 
 processResources {

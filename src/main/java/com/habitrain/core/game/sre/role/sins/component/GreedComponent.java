@@ -102,10 +102,12 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         String itemId = id.toString();
         if (collectedTypeIds.contains(itemId)) return false;
         ItemStack stored = actualItem.copyWithCount(1);
+        ItemStack pouch = findOwnPouch(self);
+        if (pouch.isEmpty() || GreedPouchItem.insert(pouch, stored.copy()) == 0) return false;
         storedItems.add(stored);
         boolean fresh = collectedTypeIds.add(itemId);
         KEY.sync(self);
-        syncPhysicalPouch(self);
+        GreedPouchItem.setCustomDataBackup(pouch, storedItems, self.registryAccess());
         if (fresh && announce) {
             self.displayClientMessage(
                     Component.translatable(
@@ -238,6 +240,13 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         if (GreedPouchItem.isGreedPouch(other)) return false;
         if (other.is(Items.AIR)) return false;
         if (collectionComplete) return false;
+
+        // Reconcile inventory clicks before checking the hand insertion and its capacity.
+        resyncFromPhysicalPouch(self);
+        if (GreedPouchItem.storedCount(findOwnPouch(self)) >= GreedPouchItem.CAPACITY) {
+            self.displayClientMessage(Component.literal("贪婪收纳袋已满（32/32件）"), true);
+            return true;
+        }
 
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(other.getItem());
         if (id == null) return false;
