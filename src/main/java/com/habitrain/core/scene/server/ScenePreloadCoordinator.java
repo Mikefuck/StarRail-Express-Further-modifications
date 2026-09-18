@@ -51,18 +51,16 @@ public final class ScenePreloadCoordinator {
     private static final class Session {
         final long id;
         final ResourceKey<Level> dimension;
-        final String mapKey;
         final Map<String, SceneAssetDescriptor> descriptorsByAssetKey;
         final Set<String> expectedHashes;
         final long totalBytes;
         final ConcurrentMap<UUID, PlayerProgress> players = new ConcurrentHashMap<>();
         volatile boolean loadingPhase = true;
 
-        Session(long id, ResourceKey<Level> dimension, String mapKey,
+        Session(long id, ResourceKey<Level> dimension,
                 Map<String, SceneAssetDescriptor> descriptorsByAssetKey) {
             this.id = id;
             this.dimension = dimension;
-            this.mapKey = mapKey;
             this.descriptorsByAssetKey = Map.copyOf(descriptorsByAssetKey);
             this.expectedHashes = descriptorsByAssetKey.values().stream()
                     .map(SceneAssetDescriptor::sha256).collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -97,8 +95,7 @@ public final class ScenePreloadCoordinator {
             return false;
         }
 
-        Session session = new Session(NEXT_SESSION_ID.incrementAndGet(), level.dimension(),
-                normalizedMapKey, descriptors);
+        Session session = new Session(NEXT_SESSION_ID.incrementAndGet(), level.dimension(), descriptors);
         sessions.put(level.dimension(), session);
         for (ServerPlayer player : level.players()) {
             enroll(session, player);

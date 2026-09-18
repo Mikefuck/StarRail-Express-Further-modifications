@@ -45,7 +45,6 @@ public class InGameEnvPage implements ConfigPage {
     private static final int ROW_H = 22;
     private static final int HEADER_H = 16;
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -70,7 +69,6 @@ public class InGameEnvPage implements ConfigPage {
     private record MapRowHit(String mapId, int x, int y, int w, int h) {}
 
     public InGameEnvPage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         this.area = new ScrollArea(0, 0, 0, 0); // 坐标在 render 里设定
@@ -91,12 +89,6 @@ public class InGameEnvPage implements ConfigPage {
         } catch (Throwable ignored) {}
     }
 
-    private void saveNow() {
-        dirty();
-        try {
-            ConfigManager.getInstance().save();
-        } catch (Throwable ignored) {}
-    }
 
     private void ensureWidgetsInitialized() {
         if (widgetsInitialized) return;

@@ -1,5 +1,6 @@
 {
     "message.habitrain_core.sin_greed.forbidden_item": "§c[贪婪] 收纳袋不能放入钥匙、信纸、食物或饮品。",
+    "itemGroup.habitrain_core.items": "哈比列车 API 物品",
     "menu.habitrain_core.greed.inventory": "贪婪：%s 的背包",
     "message.habitrain_core.sin_greed.unpriced": "§c[贪婪] 该物品没有金币标价，无法拿取。",
     "message.habitrain_core.sin_greed.backlash": "§c[贪婪] 反噬！物品未拿走，剩余 %s 金币已转给对方。",

@@ -26,7 +26,6 @@ import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
@@ -53,7 +52,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,7 +70,6 @@ public final class SceneMeshBuilder {
     private static final Direction[] DIRECTIONS = Direction.values();
     private static final int MAX_SECTIONS = SceneLimits.MAX_MESH_SECTIONS;
     /** 单个 quad 的顶点数据估算（4 个顶点 × 32 字节的 BLOCK 顶点格式）。 */
-    private static final long ESTIMATED_BYTES_PER_QUAD = 128L;
     /** 约 2,097,152 quads * 128 bytes/quad = 256 MiB。 */
     private static final long MAX_QUADS = 2_097_152L;
     private static final AtomicBoolean FABRIC_CONTEXT_FALLBACK_WARNED = new AtomicBoolean();
@@ -202,7 +199,7 @@ public final class SceneMeshBuilder {
             }
             this.blockView = new SnapshotBlockView(asset, level);
             this.blockSpriteFinder = SpriteFinder.get(
-                    Minecraft.getInstance().getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS));
+                    Minecraft.getInstance().getModelManager().getAtlas(net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS));
             this.batchPlan = SceneMeshBatchPolicy.plan(asset.sections.size(),
                     com.habitrain.core.client.config.ClientVisualPreferences.getMeshBatchMinSections(),
                     asset.sourceBounds);
@@ -1034,7 +1031,7 @@ public final class SceneMeshBuilder {
                 ? SceneMaterialKey.ShaderFamily.TRANSLUCENT
                 : SceneMaterialKey.ShaderFamily.BLOCK;
         return new SceneMaterialKey(
-                TextureAtlas.LOCATION_BLOCKS,
+                net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS,
                 SceneMaterialKey.UvSpace.BLOCK_ATLAS,
                 blendMode,
                 true,

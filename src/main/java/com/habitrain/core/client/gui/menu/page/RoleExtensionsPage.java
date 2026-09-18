@@ -27,7 +27,6 @@ import java.util.List;
  */
 public class RoleExtensionsPage implements ConfigPage {
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -43,7 +42,6 @@ public class RoleExtensionsPage implements ConfigPage {
     private static final int ROW_GAP = 2;
 
     public RoleExtensionsPage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         refresh();

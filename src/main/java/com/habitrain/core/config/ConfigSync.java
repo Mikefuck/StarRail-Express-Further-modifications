@@ -9,10 +9,9 @@ import java.util.*;
 
 public class ConfigSync {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConfigSync.class.getSimpleName());
-    private final ConfigStore store;
 
+    @SuppressWarnings("unused") // Kept for callers that construct ConfigSync with a store.
     public ConfigSync(ConfigStore store) {
-        this.store = store;
     }
 
     public void loadFromJsonString(ConfigRepository repo, String json) {

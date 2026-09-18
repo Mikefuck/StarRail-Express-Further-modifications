@@ -32,7 +32,6 @@ public class OutGameMvpAnimationsPage implements ConfigPage {
     private static final int ACTION_AVOID_DUP = -3;
     private static final int ACTION_SHOW_ITEMS = -4;
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -45,7 +44,6 @@ public class OutGameMvpAnimationsPage implements ConfigPage {
     private record Hit(int action, String animationId, int x, int y, int w, int h) {}
 
     public OutGameMvpAnimationsPage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         this.settings = ConfigManager.getInstance().getMvpAnimationSettings().copy();
@@ -107,7 +105,6 @@ public class OutGameMvpAnimationsPage implements ConfigPage {
     }
 
     private int renderMasterControls(GuiGraphics g, int mx, int my, int cardX, int cy, int cardW) {
-        int startY = cy;
         int rowH = 24;
 
         g.fill(cardX, cy, cardX + cardW, cy + 1, MenuTheme.BORDER);

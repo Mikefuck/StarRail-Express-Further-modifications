@@ -17,7 +17,6 @@ import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;

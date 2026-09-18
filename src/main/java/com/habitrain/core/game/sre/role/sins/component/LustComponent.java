@@ -210,7 +210,6 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (!(player instanceof ServerPlayer self)) return;
         if (!(self.level() instanceof ServerLevel level)) return;
 
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         boolean isLust = HabiRoles.isHabiRole(self, SevenSins.LUST);
         if (!isLust || self.isSpectator()) {
             if (observing) observing = false;
@@ -309,7 +308,6 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
      */
     public static List<ServerPlayer> findTrueLoverPair(ServerLevel level) {
         if (level == null) return null;
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         List<ServerPlayer> lovers = new java.util.ArrayList<>();
         for (ServerPlayer p : collectAlivePlayers(level)) {
             if (HabiRoles.isHabiRole(p, SevenSins.LUST)) {

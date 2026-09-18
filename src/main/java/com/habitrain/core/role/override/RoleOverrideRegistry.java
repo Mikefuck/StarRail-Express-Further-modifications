@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class RoleOverrideRegistry {
     public static final RoleOverrideRegistry INSTANCE = new RoleOverrideRegistry();
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleOverrideRegistry");

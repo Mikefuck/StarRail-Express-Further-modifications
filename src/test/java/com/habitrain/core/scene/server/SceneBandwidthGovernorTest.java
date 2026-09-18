@@ -75,9 +75,7 @@ class SceneBandwidthGovernorTest {
         clock.nowNanos = CHUNK_NANOS_AT_1MIB * 4;
 
         long bReadyAt = governor.reserve(PLAYER_B, 65536, SLOW_PLAYER);
-        long expectedGlobalFloor = GLOBAL > 0
-                ? CHUNK_NANOS_AT_1MIB * 8 * SLOW_PLAYER / GLOBAL
-                : 0L;
+        long expectedGlobalFloor = CHUNK_NANOS_AT_1MIB * 8 * SLOW_PLAYER / GLOBAL;
 
         assertTrue(bReadyAt <= clock.nowNanos + expectedGlobalFloor + 1L,
                 "B 不该被 A 的单玩家游标拖住，实际 " + bReadyAt + " ns");
@@ -146,7 +144,7 @@ class SceneBandwidthGovernorTest {
         long first = governor.reserve(null, 65536, SLOW_PLAYER);
         long second = governor.reserve(null, 65536, SLOW_PLAYER);
 
-        assertEquals(GLOBAL > 0 ? 65536L * 1_000_000_000L / GLOBAL : 0L, second - first, 1L);
+        assertEquals(65536L * 1_000_000_000L / GLOBAL, second - first, 1L);
     }
 
     @Test

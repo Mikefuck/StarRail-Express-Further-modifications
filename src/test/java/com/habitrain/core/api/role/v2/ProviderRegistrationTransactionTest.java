@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * therefore runtime-only; these tests pin the staging/rollback guarantees and the
  * strict ADD-ownership rule.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 class ProviderRegistrationTransactionTest {
 
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:vigilante");

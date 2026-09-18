@@ -30,10 +30,8 @@ import net.minecraft.client.Minecraft;
 @Environment(EnvType.CLIENT)
 public class ClientLifecycleHandler {
 
-    private final ShaderMonitor shaderMonitor;
 
     public ClientLifecycleHandler(ShaderMonitor shaderMonitor) {
-        this.shaderMonitor = shaderMonitor;
 
         // 玩家加入服务器 → 清除上一局残留的 HUD 状态 + 报告当前光影包 + 启动监测
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {

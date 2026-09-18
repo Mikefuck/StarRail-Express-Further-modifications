@@ -446,10 +446,6 @@ public class SceneMotionPage implements ConfigPage {
         }
     }
 
-    private void syncToolMapSelection(String mapKey) {
-        syncToolSelection(mapKey, selectedBackgroundId);
-    }
-
     private String mapLabel(String mapKey) {
         if (SceneMotionSettings.LOBBY_MAP_KEY.equals(mapKey)) {
             return tr("screen.habitrain_core.scene_motion.map_lobby");

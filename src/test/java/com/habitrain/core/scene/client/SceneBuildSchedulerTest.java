@@ -62,7 +62,6 @@ class SceneBuildSchedulerTest {
         final List<String> log;
         final long costNanos;
         int remaining;
-        boolean aborted;
 
         CostlyStep(FakeClock clock, List<String> log, long costNanos, int steps) {
             this.clock = clock;
@@ -80,7 +79,6 @@ class SceneBuildSchedulerTest {
 
         @Override
         public void abort() {
-            aborted = true;
         }
     }
 

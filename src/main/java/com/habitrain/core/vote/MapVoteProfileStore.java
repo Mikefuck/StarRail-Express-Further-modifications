@@ -62,7 +62,6 @@ public final class MapVoteProfileStore {
     public static final String PLACEHOLDER_RESOURCE =
             "/assets/habitrain_core/textures/gui/map_vote/placeholder.png";
 
-    private static final Gson GSON = new Gson();
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().create();
 
     private MapVoteProfileStore() {}

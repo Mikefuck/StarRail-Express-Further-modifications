@@ -18,8 +18,6 @@ public class TaskEditScreen extends Screen {
     private static final int HEADER_H = 48;
     private static final int FOOTER_H = 38;
     private static final int SECTION_GAP = 8;
-    private static final int ROW_H = 22;
-    private static final int LABEL_W = 76;
     private static final int SCROLLBAR_W = 4;
 
     private final Screen parent;

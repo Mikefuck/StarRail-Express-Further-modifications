@@ -377,7 +377,7 @@ class RoleStatePersistenceTest {
         capture(out);
         onlineAll(List.of(PLAYER));
 
-        RoleStateKey<Integer> owner = store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
+        store.register(RoleStateSpec.of("habitrain_core", "owner", Integer.class)
                 .role(ROLE).sync(SyncPolicy.OWNER).resetOn(ResetCause.ROLE_LOST)
                 .codec(Codec.INT).defaultValue(() -> 0).build());
         store.reset(PLAYER, ROLE, ResetCause.ROLE_LOST);

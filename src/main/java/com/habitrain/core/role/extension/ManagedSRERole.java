@@ -14,7 +14,6 @@ import com.habitrain.core.api.role.v2.definition.RoleVisibilityProfile;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
-import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -152,11 +151,8 @@ public class ManagedSRERole extends NormalRole {
     public static ManagedSRERole from(RoleDefinition def) {
         RolePresentation presentation = def.presentation();
         RoleFactionProfile faction = def.faction();
-        RoleSpawnProfile spawn = def.spawn();
-        RoleCompatibilityProfile compatibility = def.compatibility();
         RoleInventoryProfile inventory = def.inventory();
         RoleEconomyProfile economy = def.economy();
-        RoleVisibilityProfile visibility = def.visibility();
 
         ManagedSRERole role = new ManagedSRERole(
                 def.key().location(),
@@ -185,7 +181,6 @@ public class ManagedSRERole extends NormalRole {
 
     /** Applies the non-inventory, non-shop profiles to any {@code SRERole}. */
     private static void applyCommonProfiles(SRERole role, RoleDefinition def) {
-        RolePresentation presentation = def.presentation();
         RoleFactionProfile faction = def.faction();
         RoleSpawnProfile spawn = def.spawn();
         RoleCompatibilityProfile compatibility = def.compatibility();

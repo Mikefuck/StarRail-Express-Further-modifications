@@ -291,7 +291,6 @@ public class OutGameVotePage implements ConfigPage {
 
         int cy = listTop + 6 - (int) scroll[0];
         int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
 
         // ===== 总开关 =====
         g.drawString(font, "模式 / 地图投票", labelX, cy, MenuTheme.TEXT_PRIMARY, false);

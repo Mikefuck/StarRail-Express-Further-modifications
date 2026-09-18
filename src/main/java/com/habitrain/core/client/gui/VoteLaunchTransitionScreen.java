@@ -472,7 +472,6 @@ public final class VoteLaunchTransitionScreen extends Screen {
         int x0 = cx + 3;
         int y0 = cy + 3;
         int x1 = cx + s - 3;
-        int y1 = cy + s - 3;
         for (int i = 0; i < s - 6; i++) {
             g.fill(x0 + i, y0 + i, x0 + i + 1, y0 + i + 1, withAlpha(IVORY, 230));
             g.fill(x1 - 1 - i, y0 + i, x1 - i, y0 + i + 1, withAlpha(IVORY, 230));

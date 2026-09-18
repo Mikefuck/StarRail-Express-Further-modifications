@@ -15,7 +15,6 @@ public final class OptionVoteState {
     private static boolean active = false;
     private static int remainingSeconds = 0;
     private static int totalSeconds = 15;
-    private static int maxSelections = 1;
     private static String title = "";
     private static String description = "";
     private static List<OptionVotePayload.Entry> candidates = List.of();
@@ -55,7 +54,6 @@ public final class OptionVoteState {
         active = payload.active();
         remainingSeconds = payload.remainingSeconds();
         totalSeconds = payload.totalSeconds();
-        maxSelections = payload.maxSelections();
         title = payload.title() == null ? "" : payload.title();
         description = payload.description() == null ? "" : payload.description();
         candidates = List.copyOf(payload.candidates());

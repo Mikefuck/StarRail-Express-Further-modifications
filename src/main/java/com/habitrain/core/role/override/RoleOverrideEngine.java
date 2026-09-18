@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class RoleOverrideEngine {
     private static final RoleOverrideEngine INSTANCE = new RoleOverrideEngine();
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleOverrideEngine");

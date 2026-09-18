@@ -184,7 +184,6 @@ public final class SwiftWindComponent implements RoleComponent {
         horizontal = horizontal.normalize();
 
         Vec3 start = self.position();
-        Vec3 end = start.add(horizontal.scale(DASH_BLOCKS));
         // 碰撞：步进
         double step = 0.25;
         int steps = (int) Math.ceil(DASH_BLOCKS / step);

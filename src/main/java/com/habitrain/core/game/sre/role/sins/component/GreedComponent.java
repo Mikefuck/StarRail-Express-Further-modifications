@@ -305,7 +305,6 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         if (!(sp.level() instanceof ServerLevel level)) return;
         if (!GreedEconomy.isActive(sp) || collectionComplete) return;
 
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         boolean isGreed = false;
         try {
             if (HabiRoles.isHabiRole(sp, SevenSins.GREED)) {
@@ -521,14 +520,4 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         }
     }
 
-    private void syncPhysicalPouch(ServerPlayer self) {
-        for (int i = 0; i < self.getInventory().getContainerSize(); i++) {
-            ItemStack stack = self.getInventory().getItem(i);
-            if (GreedPouchItem.isBoundPouchOf(self, stack)) {
-                GreedPouchItem.setStoredItems(stack, storedItems, self.registryAccess());
-                self.getInventory().setChanged();
-                return;
-            }
-        }
-    }
 }

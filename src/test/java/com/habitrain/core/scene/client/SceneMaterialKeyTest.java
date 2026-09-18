@@ -2,7 +2,6 @@ package com.habitrain.core.scene.client;
 
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +12,7 @@ public class SceneMaterialKeyTest {
     @Test
     public void testStandardLayerConstants() {
         assertNotNull(SceneMaterialKey.SOLID);
-        assertEquals(TextureAtlas.LOCATION_BLOCKS, SceneMaterialKey.SOLID.textureOrAtlasId());
+        assertEquals(net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS, SceneMaterialKey.SOLID.textureOrAtlasId());
         assertEquals(SceneMaterialKey.UvSpace.BLOCK_ATLAS, SceneMaterialKey.SOLID.uvSpace());
         assertEquals(SceneMaterialKey.BlendMode.SOLID, SceneMaterialKey.SOLID.blendMode());
         assertTrue(SceneMaterialKey.SOLID.cull());

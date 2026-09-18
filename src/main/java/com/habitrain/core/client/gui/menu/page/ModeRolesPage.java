@@ -230,7 +230,6 @@ public class ModeRolesPage implements ConfigPage {
         int headerY = y + 4;
         int listTop = headerY + 30;
         int listY = listTop + 4;
-        int listH = h - (listY - y) - 4;
 
         // Global toggle click
         if (PillToggle.hit(mx, my, x + w - 72, headerY, 64, 14)) {

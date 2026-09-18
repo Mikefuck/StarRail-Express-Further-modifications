@@ -61,10 +61,8 @@ class SceneAssetDownloadQueueWindowTest {
         final RecordingFailures failures = new RecordingFailures();
         final AssetTransferRegistry registry = new AssetTransferRegistry();
         final SceneAssetDownloadQueue queue;
-        final int window;
 
         Fixture(int windowChunks) {
-            this.window = windowChunks;
             queue = new SceneAssetDownloadQueue(clock::current, sender, failures,
                     () -> 1000, () -> 3, () -> windowChunks, 100, 1000);
         }
@@ -78,9 +76,6 @@ class SceneAssetDownloadQueueWindowTest {
             queue.onBytesReceived(entry, offset, length);
         }
 
-        long chunkLength(long offset, long totalSize) {
-            return Math.min(CHUNK, totalSize - offset);
-        }
     }
 
     private static List<Long> offsets(RecordingSender sender) {

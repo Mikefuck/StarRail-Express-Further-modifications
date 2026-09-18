@@ -1269,10 +1269,6 @@ public final class RoleEventDispatcher {
         }
     }
 
-    private Decision invokeDecision(ManagedHookEntry e, String hookName, Supplier<Decision> action) {
-        return invokeDecision(e, hookName, action, Decision.PASS);
-    }
-
     private Decision invokeDecision(ManagedHookEntry e, String hookName, Supplier<Decision> action,
                                     Decision fallback) {
         refreshCircuits();

@@ -37,7 +37,6 @@ public final class SREWeatherController {
 
     private static final int CHECK_INTERVAL = 20; // 每 20 tick 检查一次
     /** Documentation default; runtime threshold comes from env.clampedMinPlayers(). */
-    private static final int MIN_PLAYERS = 8;
     private static final int RAIN_DURATION_TICKS = 20 * 60 * 10; // 10 分钟降雨：持续不足阈值期间不轻易到期，避免 ~1s 晴天间隙
     private static final int CLEAR_DURATION_TICKS = 20 * 60; // 1 分钟晴天
 

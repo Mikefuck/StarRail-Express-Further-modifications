@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code freeze()} paths are pure (no {@code TMMRoles}/{@code FabricLoader}), so
  * they are exercised directly; state is reset between tests via reflection.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 class RoleExtensionModifyReplaceAliasTest {
 
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:vigilante");

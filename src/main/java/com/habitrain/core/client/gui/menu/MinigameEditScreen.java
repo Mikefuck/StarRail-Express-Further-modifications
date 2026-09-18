@@ -272,7 +272,6 @@ public class MinigameEditScreen extends Screen {
         // 轮廓
         g.drawString(font, "轮廓宽度", PAD, y + 3, 0xFFCCCCCC, false);
         String wText = String.format("%.1f", cfg.outlineWidth);
-        int wTextW = font.width(wText);
         int minusX = PAD + LABEL_W;
         int plusX = minusX + 24;
         int textX = plusX + 24;
@@ -365,7 +364,6 @@ public class MinigameEditScreen extends Screen {
         int contentTop = HEADER_H;
         int contentBot = height - 30;
         if (my >= contentTop && my < contentBot) {
-            int maxScroll = Math.max(0, contentHeight - (contentBot - contentTop));
             // 滚动条拖拽检测
             int scrollW = width - PAD * 2;
             int sbX = PAD + scrollW - 4;

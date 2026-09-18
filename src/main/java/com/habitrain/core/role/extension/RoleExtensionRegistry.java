@@ -43,6 +43,7 @@ import java.util.Set;
  * stay in the raw registry after deactivation; the catalog's visibility/source
  * logic (rather than deletion) controls whether they surface.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class RoleExtensionRegistry {
 
     public static final RoleExtensionRegistry INSTANCE = new RoleExtensionRegistry();
@@ -592,52 +593,6 @@ public final class RoleExtensionRegistry {
         }
         combined.addAll(configuredPatchesFor(replacementId));
         return RoleRuntimeOverlayApplier.applyModifiesAndReturnConfigured(compiled, combined);
-    }
-
-    /**
-     * Resolves stored relation keys onto compiled ADD / REPLACE roles. Counterpart
-     * lookup uses the managed maps first; {@code TMMRoles} is only consulted after
-     * an {@code ADD} has already initialized it, so unit tests that freeze without
-     * calling {@link #add} stay bootstrap-safe.
-     */
-    private void linkStoredRelations() {
-        for (SRERole managed : managedRoles.values()) {
-            if (managed instanceof ManagedSRERole mm && mm.relationProfile() != null) {
-                RoleBaselineStore.captureRelationGraph(managed, mm.relationProfile(), this::resolveForLink);
-                RoleExtensionCompiler.linkRelations(managed, mm.relationProfile(), this::resolveForLink);
-            }
-        }
-        for (ManagedSRERole replacement : compiledReplacements.values()) {
-            if (replacement.relationProfile() != null) {
-                RoleBaselineStore.captureRelationGraph(replacement, replacement.relationProfile(), this::resolveForLink);
-                RoleExtensionCompiler.linkRelations(replacement, replacement.relationProfile(), this::resolveForLink);
-            }
-        }
-        for (ManagedPatch mp : patches) {
-            RolePatch patch = mp.patch();
-            if (patch.occupation() == null && patch.opposing() == null && patch.related() == null) {
-                continue;
-            }
-            // MODIFY relation keys are folded into the overlay and linked onto the
-            // ORIGINAL object by RoleRuntimeOverlayApplier (which captures the
-            // baseline first), so nothing happens here at freeze time.
-        }
-    }
-
-    private @Nullable SRERole resolveForLink(com.habitrain.core.api.role.v2.RoleKey key) {
-        ResourceLocation id = key.location();
-        SRERole managed = managedRoles.get(id);
-        if (managed != null) {
-            return managed;
-        }
-        ManagedSRERole replacement = compiledReplacements.get(id);
-        if (replacement != null) {
-            return replacement;
-        }
-        if (tmmAccessible) {
-            return TMMRoles.getRole(id);
-        }
-        return null;
     }
 
     /**

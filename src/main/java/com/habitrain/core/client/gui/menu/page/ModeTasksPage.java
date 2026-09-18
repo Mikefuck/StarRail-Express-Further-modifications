@@ -107,7 +107,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     }
 
     private String groupKeyFor(TaskDefinition def) {
-        TaskCategory category = def.getCategory();
 
         if (HabiTrainCore.MOD_ID.equals(def.getModId())
                 && "sre:base".equals(def.getGameModeId())
@@ -149,7 +148,6 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
      */
     private String categoryGroupLabel(TaskCategory cat) {
         if (cat == null) return "未分类";
-        String id = cat.getId();
         if (TaskCategory.MURDER.equals(cat)) return "谋杀模式";
         if (TaskCategory.REPAIR.equals(cat)) return "修机模式";
         if (TaskCategory.ALL.equals(cat)) return "通用任务";

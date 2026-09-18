@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class EnvironmentController {
     private static final Logger LOGGER = LoggerFactory.getLogger("EnvironmentController");
     private static final int WEATHER_DURATION = 20 * 60 * 10;

@@ -6,7 +6,6 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Map;
@@ -61,7 +60,7 @@ public record SceneMaterialKey(
     }
 
     public static final SceneMaterialKey SOLID = new SceneMaterialKey(
-            TextureAtlas.LOCATION_BLOCKS,
+            net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS,
             UvSpace.BLOCK_ATLAS,
             BlendMode.SOLID,
             true,
@@ -72,7 +71,7 @@ public record SceneMaterialKey(
     );
 
     public static final SceneMaterialKey CUTOUT_MIPPED = new SceneMaterialKey(
-            TextureAtlas.LOCATION_BLOCKS,
+            net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS,
             UvSpace.BLOCK_ATLAS,
             BlendMode.CUTOUT_MIPPED,
             true,
@@ -83,7 +82,7 @@ public record SceneMaterialKey(
     );
 
     public static final SceneMaterialKey CUTOUT = new SceneMaterialKey(
-            TextureAtlas.LOCATION_BLOCKS,
+            net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS,
             UvSpace.BLOCK_ATLAS,
             BlendMode.CUTOUT,
             true,
@@ -94,7 +93,7 @@ public record SceneMaterialKey(
     );
 
     public static final SceneMaterialKey TRANSLUCENT = new SceneMaterialKey(
-            TextureAtlas.LOCATION_BLOCKS,
+            net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS,
             UvSpace.BLOCK_ATLAS,
             BlendMode.TRANSLUCENT,
             true,
@@ -107,7 +106,7 @@ public record SceneMaterialKey(
     private static final Map<SceneMaterialKey, RenderType> RENDER_TYPE_CACHE = new ConcurrentHashMap<>();
 
     public SceneMaterialKey {
-        if (textureOrAtlasId == null) textureOrAtlasId = TextureAtlas.LOCATION_BLOCKS;
+        if (textureOrAtlasId == null) textureOrAtlasId = net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS;
         if (uvSpace == null) uvSpace = UvSpace.BLOCK_ATLAS;
         if (blendMode == null) blendMode = BlendMode.SOLID;
         if (primitiveMode == null) primitiveMode = PrimitiveMode.QUADS;

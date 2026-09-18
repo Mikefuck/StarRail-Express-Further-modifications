@@ -2,8 +2,6 @@ package com.habitrain.core.misc;
 
 import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *   "vegetarian"         - VegetarianFoodMixin 素食主义者
  */
 public class EffectOwnershipTracker {
-    private static final Logger LOGGER = LoggerFactory.getLogger("EffectTracker");
 
     // playerUUID → (effectRegistryName → source标签集合)
     private static final Map<UUID, Map<String, Set<String>>> ownership = new ConcurrentHashMap<>();

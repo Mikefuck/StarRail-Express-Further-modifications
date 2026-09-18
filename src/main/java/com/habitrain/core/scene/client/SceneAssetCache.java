@@ -113,8 +113,6 @@ public final class SceneAssetCache {
     private volatile int requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
     private volatile int maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
     private volatile int transferWindowChunks = SceneClientPerformanceRules.DEFAULT_TRANSFER_WINDOW_CHUNKS;
-    /** 最近一次落盘确认的字节数，仅用于诊断（请求推进已不再依赖它）。 */
-    private volatile long lastCommittedBytes;
     /** 已解码资产的堆占用记账与 LRU 选取；实际移除由本类执行。 */
     private final SceneMemoryBudget memoryBudget = new SceneMemoryBudget(
             SceneClientPerformanceRules.quotaBytes(SceneClientPerformanceRules.DEFAULT_MEMORY_CACHE_QUOTA_MIB));
@@ -810,7 +808,6 @@ public final class SceneAssetCache {
             // 下一片请求现在由「接收」而不是「落盘」驱动（见 acceptChunk），因此这里
             // 不再需要每 64 KiB 一次客户端线程跳转——那正是加载期吞吐被钉在约 3.8 MiB/s
             // 的原因。落盘进度只留给诊断。
-            lastCommittedBytes = committedBytes;
             queue.onBytesCommitted(entry, committedBytes);
         }
 

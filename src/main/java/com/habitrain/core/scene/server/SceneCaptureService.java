@@ -667,7 +667,6 @@ public final class SceneCaptureService {
         return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
     private static <T extends Comparable<T>> String getPropertyValueName(Property<T> prop, BlockState state) {
         return prop.getName(state.getValue(prop));
     }

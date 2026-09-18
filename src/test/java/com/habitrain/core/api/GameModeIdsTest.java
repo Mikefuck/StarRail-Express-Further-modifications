@@ -10,9 +10,9 @@ class GameModeIdsTest {
 
     @Test
     void canonicalMapsRegistryAndSreBlackoutToHabitrainBlackout() {
-        assertEquals(GameModeIds.BLACKOUT, GameModeIds.canonical("sre:blackout"));
-        assertEquals(GameModeIds.BLACKOUT, GameModeIds.canonical("habitrain_core:habitrain:blackout"));
-        assertEquals(GameModeIds.BLACKOUT, GameModeIds.canonical("SREBlackoutGameMode"));
+        assertEquals("habitrain:blackout", GameModeIds.canonical("sre:blackout"));
+        assertEquals("habitrain:blackout", GameModeIds.canonical("habitrain_core:habitrain:blackout"));
+        assertEquals("habitrain:blackout", GameModeIds.canonical("SREBlackoutGameMode"));
         assertEquals(GameModeIds.MURDER, GameModeIds.canonical("habitrain_core:sre:murder"));
         assertEquals(GameModeIds.REPAIR, GameModeIds.canonical("canyuesama:repair_escape"));
         assertEquals(GameModeIds.MURDER, GameModeIds.canonical(null));

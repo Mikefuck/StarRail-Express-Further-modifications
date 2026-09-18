@@ -25,6 +25,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class SlothScreenLockMixin {
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void habitrain$lockSleepingSlothScreens(Screen screen, CallbackInfo ci) {
+        @SuppressWarnings("resource") // Mixin targets Minecraft's shared client instance.
         Minecraft client = (Minecraft) (Object) this;
         // 开局/结束转场激活期间，拦截外部 setScreen(null)（SRE CloseUiPayload 的客户端实现），
         // 避免转场被原版「关闭界面」包提前结束。转场自身的 completeTransition 会先

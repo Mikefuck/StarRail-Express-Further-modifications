@@ -101,7 +101,6 @@ public final class AssetTransferRegistry {
         private volatile long acceptedBytes;
         private int attempts;
         private long lastUsedAtMillis;
-        private boolean notifyPending;
 
         AssetEntry(String sha256, long totalSize, long generation, long transferId) {
             this.sha256 = sha256;

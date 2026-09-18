@@ -146,8 +146,7 @@ class AssetTransferRegistryTest {
     void resetHandsBackWaitersSoTheyCanBeNotified() {
         AssetTransferRegistry registry = new AssetTransferRegistry();
         Recorder waiter = new Recorder();
-        AssetTransferRegistry.AssetEntry entry =
-                registry.acquire(HASH, 1024L, false, waiter).entry();
+        registry.acquire(HASH, 1024L, false, waiter);
 
         List<AssetTransferRegistry.AssetEntry> invalidated = registry.invalidateAll();
         assertEquals(1, invalidated.size());

@@ -27,6 +27,7 @@ import java.util.List;
  * patch is available for diagnostics, migration tooling and future unified
  * activation.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class LegacyRoleOverrideTranslator {
 
     private LegacyRoleOverrideTranslator() {}

@@ -199,7 +199,6 @@ final class SceneFabricModelCollector {
         }
 
         @Override
-        @SuppressWarnings("removal")
         public BakedModelConsumer bakedModelConsumer() {
             return bakedModelConsumer;
         }
@@ -275,7 +274,6 @@ final class SceneFabricModelCollector {
             }
         }
 
-        @SuppressWarnings("removal")
         private final class NestedModelConsumer implements BakedModelConsumer {
             @Override
             public void accept(BakedModel model) {

@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * same injected-raw-map + reflection-seeded-snapshot harness as
  * {@link RoleCatalogApiTest}.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 class RoleCatalogQueryTest {
 
     private static final ResourceLocation CIV_ID = ResourceLocation.parse("sre:civilian");

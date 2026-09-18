@@ -25,7 +25,6 @@ public class OutGameLobbyEnvPage implements ConfigPage {
     private static final int HEADER_H = 16;
     private static final int ROW_H = 22;
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -36,7 +35,6 @@ public class OutGameLobbyEnvPage implements ConfigPage {
     private boolean widgetsInitialized = false;
 
     public OutGameLobbyEnvPage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         this.area = new ScrollArea(0, 0, 0, 0); // 坐标在 render 里设定

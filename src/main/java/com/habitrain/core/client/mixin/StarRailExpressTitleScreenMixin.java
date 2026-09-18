@@ -39,8 +39,8 @@ public class StarRailExpressTitleScreenMixin {
     @Shadow private boolean showChangelog;
     @Shadow private float panoramaFade;
 
-    /** List<MenuEntry> */
-    @Shadow private List menuEntries;
+    /** The target screen stores MenuEntry values in this list. */
+    @Shadow private List<Object> menuEntries;
 
     @Shadow private int menuBaseX;
     @Shadow private int menuBaseY;

@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class ModifyRoleDefinition {
     private final String sourceModId;
     private final Component displayName;

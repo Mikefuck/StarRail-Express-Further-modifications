@@ -21,7 +21,6 @@ public class InGameBalancePage implements ConfigPage {
     private static final int ROW_H = 32;
     private static final float MIN_TARGET = 0.10f, MAX_TARGET = 0.80f, STEP = 0.05f;
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -42,7 +41,6 @@ public class InGameBalancePage implements ConfigPage {
     private final java.util.List<Hit> hits = new java.util.ArrayList<>();
 
     public InGameBalancePage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         ConfigManager c = ConfigManager.getInstance();

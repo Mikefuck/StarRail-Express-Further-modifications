@@ -72,7 +72,6 @@ public final class ModeMapVoteOrchestrator {
         @Nullable String selectedMapId;
         @Nullable String selectedModeDisplay;
         int phaseDurationSeconds;
-        long phaseStartMs;
     }
 
     public static boolean start(ServerLevel level, ModeMapVoteConfig config) {
@@ -137,7 +136,6 @@ public final class ModeMapVoteOrchestrator {
         session.config = cfg;
         session.phase = Phase.MODE_VOTING;
         session.phaseDurationSeconds = duration;
-        session.phaseStartMs = System.currentTimeMillis();
         SESSIONS.put(level.dimension(), session);
 
         // 只有一个可投票模式：跳过模式投票，直接选定该模式进入地图投票。
@@ -288,7 +286,6 @@ public final class ModeMapVoteOrchestrator {
 
         session.phase = Phase.MAP_VOTING;
         session.phaseDurationSeconds = duration;
-        session.phaseStartMs = System.currentTimeMillis();
 
         boolean started = OptionVoteManager.start(
                 level,
@@ -385,7 +382,6 @@ public final class ModeMapVoteOrchestrator {
         session.selectedMapId = mapId;
         session.phase = Phase.SWITCHING_MAP;
         session.phaseDurationSeconds = 0;
-        session.phaseStartMs = System.currentTimeMillis();
 
         boolean loaded = SREModeStartAdapter.loadMap(level, mapId);
         if (!loaded) {
@@ -422,7 +418,6 @@ public final class ModeMapVoteOrchestrator {
         session.selectedMapId = REPAIR_LAUNCH_MAP_ID;
         session.phase = Phase.STARTING_MODE;
         session.phaseDurationSeconds = 0;
-        session.phaseStartMs = System.currentTimeMillis();
 
         MapVoteLoadCoordinator.beginLoad(level, REPAIR_LAUNCH_MAP_ID, modeId);
         boolean started = SREModeStartAdapter.startMode(level, modeId);

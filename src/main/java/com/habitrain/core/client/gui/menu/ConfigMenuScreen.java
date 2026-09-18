@@ -95,10 +95,6 @@ public class ConfigMenuScreen extends Screen {
         this(parent, AccessMode.FULL);
     }
 
-    private ConfigMenuScreen(Screen parent, boolean taskSettingsOnly) {
-        this(parent, taskSettingsOnly ? AccessMode.TASK_SETTINGS_ONLY : AccessMode.FULL);
-    }
-
     private ConfigMenuScreen(Screen parent, AccessMode accessMode) {
         super(Component.literal("哈比列车核心 — 控制台"));
         this.parent = parent;

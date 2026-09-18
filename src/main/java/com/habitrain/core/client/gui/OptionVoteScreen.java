@@ -19,7 +19,6 @@ import io.wifi.starrailexpress.network.MapIntroSyncPayload;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
@@ -50,7 +49,6 @@ import java.util.Map;
 public class OptionVoteScreen extends Screen {
     private static final Gson GSON = new Gson();
     // ---- 夜行列车配色 ----
-    private static final int VOID = 0xFF09080B;
     private static final int INK = 0xFF151116;
     private static final int PANEL = 0xF0221917;
     private static final int PANEL_SOFT = 0xE02B211E;
@@ -73,7 +71,6 @@ public class OptionVoteScreen extends Screen {
     private static final long DETAIL_OPEN_MILLIS = 320L;      // 档案浮层从底部升起时长
     private static final long DETAIL_CLOSE_MILLIS = 220L;     // 档案浮层回落时长
     private static final long DETAIL_SWITCH_MILLIS = 200L;    // 切换地图时交叉淡入时长
-    private static final int DETAIL_MIN_W = 220;
     private static final int DETAIL_MAX_W = 1920;
     private static final int LAYOUT_MARGIN = 24;              // 左右边距
     private static final int LAYOUT_GAP = 24;                 // 紧凑列表与档案浮层最小间隙

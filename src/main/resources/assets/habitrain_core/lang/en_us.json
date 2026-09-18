@@ -1,4 +1,5 @@
 {
+    "itemGroup.habitrain_core.items": "HabiTrain API Items",
     "message.habitrain_core.sin_greed.forbidden_item": "§c[Greed] Keys, letters, notes, food and drinks cannot enter the pouch.",
     "menu.habitrain_core.greed.inventory": "Greed: %s's inventory",
     "message.habitrain_core.sin_greed.unpriced": "[Greed] This item has no coin price.",

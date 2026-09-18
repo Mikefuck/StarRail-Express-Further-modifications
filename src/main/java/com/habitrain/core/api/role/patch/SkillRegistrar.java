@@ -10,5 +10,6 @@ public interface SkillRegistrar {
      * unregister operation, so integrations must guard handlers with
      * {@code RoleOverrideApi.isModified(targetId)}.
      */
+    @Deprecated
     void register(SRERole original);
 }

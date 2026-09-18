@@ -40,7 +40,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
 public final class MvpScoreTracker {
-    private static final int SURVIVAL_INTERVAL_TICKS = 600;
     private static final Map<ResourceKey<Level>, RoundState> ROUNDS = new ConcurrentHashMap<ResourceKey<Level>, RoundState>();
     private static boolean initialized;
 
@@ -115,10 +114,10 @@ public final class MvpScoreTracker {
         }
         try {
             for (ReplayEvent event : SRE.REPLAY_MANAGER.getEventsByType(ReplayEventTypes.EventType.ITEM_USED)) {
-                ReplayEventTypes.ItemUsedDetails used;
                 MutableScore score;
                 ReplayEventTypes.EventDetails eventDetails = event.details();
-                if (!(eventDetails instanceof ReplayEventTypes.ItemUsedDetails) || (score = state.players.get((used = (ReplayEventTypes.ItemUsedDetails)eventDetails).playerUuid())) == null) continue;
+                if (!(eventDetails instanceof ReplayEventTypes.ItemUsedDetails used)
+                        || (score = state.players.get(used.playerUuid())) == null) continue;
                 ++score.itemUses;
             }
         }

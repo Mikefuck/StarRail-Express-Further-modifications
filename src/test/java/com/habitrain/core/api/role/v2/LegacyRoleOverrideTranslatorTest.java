@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * definitions translate into the unified {@link ManagedRoleEntry} shape so v1/v2
  * same-target conflicts become diagnosable without changing the v1 engine.
  */
+@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 class LegacyRoleOverrideTranslatorTest {
 
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:vigilante");

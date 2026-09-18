@@ -18,7 +18,6 @@ public class OutGameShaderPage implements ConfigPage {
     private static final int HEADER_H = 72;
     private static final int ROW_H = 26, ROW_GAP = 2;
 
-    private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
@@ -32,7 +31,6 @@ public class OutGameShaderPage implements ConfigPage {
     private record RowHit(int index, int x, int y, int w, int h) {}
 
     public OutGameShaderPage(ConfigMenuScreen root, Font font, boolean editable) {
-        this.root = root;
         this.font = font;
         this.editable = editable;
         ConfigManager c = ConfigManager.getInstance();

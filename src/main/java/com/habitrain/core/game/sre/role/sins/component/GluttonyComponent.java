@@ -6,7 +6,6 @@ import com.habitrain.core.game.sre.role.sins.SevenSins;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREAbilityPlayerComponent;
-import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -115,7 +114,6 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
     public static boolean isGluttony(Player target) {
         if (target == null || target.level() == null) return false;
         try {
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(target.level());
             return HabiRoles.isHabiRole(target, SevenSins.GLUTTONY);
         } catch (Throwable t) {
             return false;
