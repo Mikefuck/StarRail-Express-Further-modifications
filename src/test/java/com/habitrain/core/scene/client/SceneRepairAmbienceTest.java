@@ -16,6 +16,7 @@ class SceneRepairAmbienceTest {
 
     private SceneAmbientSoundController.MovingSceneLoopSound sound() {
         return new SceneAmbientSoundController.MovingSceneLoopSound(
+                SceneAmbientSoundController.PRIMARY_KEY,
                 SoundEvent.createVariableRangeEvent(ResourceLocation.parse("test:ambience")),
                 0.8f, 1.0f, 4);
     }

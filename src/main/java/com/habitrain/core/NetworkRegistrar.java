@@ -61,6 +61,8 @@ public final class NetworkRegistrar {
         com.habitrain.core.scene.network.SceneStagingDecisionC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetDeltaProbeC2S.register(); count++;
         com.habitrain.core.scene.network.SceneAssetDeltaOfferS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneInstancesS2C.register(); count++;
+        com.habitrain.core.scene.network.SceneInstanceResyncC2S.register(); count++;
         LOGGER.info("Registered {} HabiTrain network payload types", count);
     }
 }

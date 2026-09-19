@@ -24,7 +24,7 @@ bash gradlew clean build
 - `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
 - `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
 - `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证仍以 `bash gradlew build` 和必要的游戏内运行共同完成
-- README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口
+- README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口；移动场景相关另有 `docs/移动场景API使用教程.md` 与 `docs/大厅移动背景.md`
 
 ## 重要架构
 

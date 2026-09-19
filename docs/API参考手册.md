@@ -321,7 +321,6 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 `RoleClientExtensionApi` 是只读查询门面，旧写形方法会抛异常。不要让 common/server 类加载 `Minecraft` 客户端类型。
 
 ## 10. v2 配置、快照与命令
-
 配置文件：`config/habitrain_role_v2.json`。门控顺序：全局 → provider → entry。
 
 - 大厅修改：立即成为 lobby snapshot。
@@ -356,7 +355,56 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 
 诊断/读取需要 OP 2，配置写入需要 OP 4。
 
-## 11. 关键红线
+## 11. 移动场景 API（`com.habitrain.core.api.scene`）
+
+移动场景系统有两条通道：**地图级场景**（配置页/`sceneMotion` 配置，每图 1 主 + 最多 4 附加）
+与 **API 实例**（外部 Mod 运行时注册，**数量无上限**、不落盘）。v2 门面 `SceneApi` 同时覆盖两者，
+v1 的 `SceneMotionApi` 保留且行为不变。
+
+### 11.1 `SceneApi`（服务端门面，`SceneApi.instance()`）
+
+| 分组 | 方法 |
+|---|---|
+| 全局 | `config` `isGlobalEnabled` `setGlobalEnabled` `defaultMapKey` `lobbyMapKey` `isLobbyMapKey` `maxBackgroundsPerMap` |
+| 资产键助手 | `normalizeMapKey` `primaryAssetKey` `backgroundAssetKey` `mapKeyFromAssetKey` `backgroundIdFromAssetKey` |
+| 实例查询 | `instanceCount` `instanceCountIn` `instances` `instancesIn` `instancesOfOwner` `instancesWithTag` `instance` `hasInstance` |
+| 实例生命周期 | `spawn` `upsert` `despawn` `despawnAllOfOwner` `despawnAllWithTag` `despawnMatching` `despawnAllIn` `despawnAll` `resync` `resyncDimension` `resyncAll` `modify` |
+| 实时调参 | `setProfile` `editProfile` `setProfileEnabled` `setSpeed` `setDirection` `setDisplayOrigin` `setRotation` `setPhaseOffset` `setLoop` `setRenderDistance` `setTranslucent` `setMotionMode` `setOrbit` `setOrbitSettings` `editSound` `editShake` `setAssetKey` `setAnchor` `setPaused` `setTimeScale` `restart` `setStartGameTime` `setHeadStartSeconds` `setDurationTicks` `setDurationSeconds` `setPriority` `addTag` `setTags` `setVisibleToAll` `setVisibleTo` `setDimension` |
+| 地图级场景 | `runtimeState` `isSceneActive` `startScene` `stopScene` `resolveContext` `registerContextResolver` |
+| 配置读写 | `profile` `getOrCreateProfile` `setMapProfile` `editMapProfile` `profileMapKeys` `backgrounds` `backgroundProfile` `backgroundName` `putBackground` `removeBackground` |
+| 资产 | `asset` `hasAsset` `assets` `deleteAsset` `publishAsset` `publishAssetData` `requestCapture` `cancelCapture` |
+| 事件 | `addListener` `removeListener` |
+| 诊断 | `diagnostics` `describeInstances` `snapshot` |
+
+### 11.2 值对象与端口
+
+| 类型 | 职责 |
+|---|---|
+| `SceneInstanceSpec` / `.Builder` | 实例描述：ID、owner、维度、assetKey、profile、时间轴（`startGameTime` / `headStartSeconds` / `timeScale` / `paused`）、`durationTicks`、`priority`、`tags`、`anchor`、可见性 |
+| `SceneProfileBuilder`（`Orbit` / `Render` / `Sound` / `Shake`） | 运动参数全字段构建：源选区、原点、枢轴、方向、速度、旋转、相位、循环、直线/环绕、渲染距离与半透明、环境音、微震 |
+| `SceneInstanceAnchor` | `world()` / `player(uuid, offset)` / `entity(entityId, offset)`，客户端每帧解析，失败回退静态原点 |
+| `SceneSpawnResult` / `.SceneSpawnStatus` | `OK` / `INVALID_SPEC` / `ALREADY_EXISTS` / `GLOBAL_DISABLED` / `SERVER_UNAVAILABLE` / `LEVEL_NOT_FOUND` |
+| `SceneInstanceView` | 实例只读视图（身份、资产、参数、时间、生命周期、可见性、`elapsedSeconds`） |
+| `SceneListener` | 服务端事件：实例增/改/删、地图级场景启停、资产发布、全量重同步 |
+| `SceneClientApi`（`@Environment(CLIENT)`） | 客户端查询：`mapSceneState`、`instances*`、`isMeshReady`、`meshBytes`、`requestResync` |
+
+### 11.3 网络与同步契约
+
+- S2C `habitrain_core:scene_instances`：`upserts` + `removals` + `clear` 的增量同步，**没有实例总数上限**；
+  单包条目 ≤ 256、单实例 profile JSON ≤ 128 KiB（仅约束"包"，不约束"同时存在的场景数"）。
+- C2S `habitrain_core:scene_instance_resync`：客户端在"没换会话但清空过本地状态"（对局结束）后请求全量重发；服务端有 1 秒冷却。
+- 运动本身零流量：相位是 `gameTime` 的确定性函数。
+- 实例只发给所属维度内、通过可见性过滤的玩家；JOIN/换维度/对局结束/全局开关重开都会全量重发。
+- 客户端按 `assetHash` 共享 GPU 网格；显存配额只淘汰"当前无引用"的网格。
+
+### 11.4 线程与持久化约束
+
+- 写操作（含 `publishAsset`）必须在服务端主线程；读操作任意线程安全。
+- API 实例是纯运行时状态：不写配置、不跨存档保存、服务器停止即清空；需要持久化请用地图级配置。
+
+> 完整教程（含全部参数表、实战配方与排错表）见 **[移动场景 API 使用教程](移动场景API使用教程.md)**。
+
+## 12. 关键红线
 
 1. 不用 `TMMRoles.registerRole()` 注册 v2 ADD/REPLACE；让 Core 管理一次性编译与可见性。
 2. 不直接遍历 `TMMRoles.ROLES`；使用 `RoleCatalogApi`。
@@ -366,8 +414,10 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 6. 不在 action handler 里重新解析已声明的结构化目标；使用 `RoleActionContext.target()`。
 7. 不把 v2 preview 能力宣传为已经完成真实双端验收。
 8. 不把 `muteReceive`、非 NAMEPLATE 名称渲染或完整视觉 HUD 当成稳定消费能力。
+9. 不在服务端主线程之外调用 `SceneApi` 的写操作（注册表突变与发包都是同步的）。
+10. 不把 API 实例当持久数据用；重启即清空，请在启动/开局时重新注册。
 
-## 12. 类族索引
+## 13. 类族索引
 
 | 类族 | 包 |
 |---|---|
@@ -379,5 +429,7 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 | 语音/聊天 | `role.v2.capability` |
 | 技能补丁 | `role.v2.skill` |
 | 职业书补丁 | `role.v2.book` |
+| 移动场景（公开） | `api.scene` / `api.scene.client` |
+| 移动场景（实现） | `scene.*`（`model` / `server` / `client` / `network` / `asset` / `compat` / `item`） |
 
-接口变更时，应同时更新本手册、`README.md`、`docs/使用教程.md`、角色扩展 v2 教程以及工作区角色扩展 skill。
+接口变更时，应同时更新本手册、`README.md`、`docs/使用教程.md`、`docs/移动场景API使用教程.md`、角色扩展 v2 教程以及工作区角色扩展 skill。

@@ -225,6 +225,8 @@ public class HabiTrainCore implements ModInitializer {
         BuiltinTaskRegistrar.register();
         ModTickHandler.register();
         com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().init();
+        // API 场景实例注册表（数量无上限）：tick 驱动的过期回收与维度对齐同步。
+        com.habitrain.core.scene.server.SceneInstanceService.getInstance().init();
         com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.registerCommon();
         com.habitrain.core.scene.item.HabiAdminItems.init();
         registerMoreSounds();

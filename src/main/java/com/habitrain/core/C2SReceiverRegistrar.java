@@ -407,6 +407,17 @@ public final class C2SReceiverRegistrar {
                                 player.sendSystemMessage(Component.literal("§c场景地图切换被拒绝：地图不存在或未配置"));
                             }
                         }));
+
+        // C2S API 场景实例重同步请求：客户端清空过本地状态（例如对局结束）但没换会话时，
+        // 服务端并不知道，需要客户端主动要一次全量。服务端侧带 1 秒冷却。
+        ServerPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneInstanceResyncC2S.TYPE, (payload, context) ->
+                        context.server().execute(() -> {
+                            ServerPlayer player = context.player();
+                            if (player == null) return;
+                            com.habitrain.core.scene.server.SceneInstanceService.getInstance()
+                                    .handleResyncRequest(player);
+                        }));
     }
 
     private static void sendSlothSleepRoster(ServerPlayer sloth) {

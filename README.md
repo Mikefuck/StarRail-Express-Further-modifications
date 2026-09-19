@@ -102,6 +102,7 @@
 - 🌦️ **全局环境控制器（Environment Controller）**：大厅（Lobby）、对局中（Match）、结算后（Post-Match）三阶段独立配置天气（晴天/雨天/雷暴）与时间锁定。
 - 🗡️ **小刀耐久与平衡机制**：可配置杀手小刀耐久度与充能机制，支持基于总人数自动计算警长比例（`sheriffCountDivisor`）。
 - 🎙️ **Simple Voice Chat 联动**：提供 `/instantgroup [range]` 范围快速组队，并支持大厅阶段自动组队语音。
+- 🚄 **移动场景（窗外动态外景）**：地图级场景（配置页，每图最多 5 个背景）与 **API 场景实例（外部 Mod 运行时注册，数量无上限）** 两条通道并存；支持直线/环绕运动、无缝循环、车外环境音、镜头微震、空间锚点跟随、逐字段实时调参。开发者见 [移动场景 API 使用教程](docs/移动场景API使用教程.md)。
 
 ---
 
@@ -178,6 +179,7 @@
 | **游戏模式** | `com.habitrain.core.api.*` | `GameModeRegistry`<br>`GameMode`<br>`WinResult` | 自定义游戏模式注册、对局生命周期与胜负判定拦截 |
 | **投票系统** | `com.habitrain.core.api.*` | `OptionVoteApi`<br>`ModeMapVoteApi`<br>`ModeMapVoteConfig` | 通用选项投票与双阶段模式/地图投票系统 |
 | **道具管理** | `com.habitrain.core.api.*` | `ItemReclaimHelper` | 任务临时道具打标、跟踪与安全回收 |
+| **移动场景 v2** | `com.habitrain.core.api.scene.*` | `SceneApi`<br>`SceneInstanceSpec`<br>`SceneProfileBuilder`<br>`SceneInstanceAnchor`<br>`SceneListener`<br>`SceneClientApi` | 无数量上限的运行时场景实例、逐字段实时调参、锚点跟随、可见性与生命周期控制、资产发布、客户端查询与诊断。教程见 [docs/移动场景API使用教程.md](docs/移动场景API使用教程.md) |
 
 ---
 
@@ -267,6 +269,13 @@ public final class MyRoleProvider implements RoleExtensionEntrypoint {
 | `/habitrain roleapi config set ...` | OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 热启用/禁用 Provider、Entry 或全局 Hooks |
 | `/habitrain roleapi config winner ...`| OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 手动设置字段补丁冲突的获胜条目 |
 | `/habitrain roleapi manifest` | OP 2 | 生成当前所有角色条目的只读清单摘要 |
+| `/habitrain scene status` | OP 2 | 查看当前地图级移动场景状态（地图键、激活、资产哈希、速度） |
+| `/habitrain scene start [map]` / `stop` | OP 2 | 手动启停当前维度的地图级场景运动 |
+| `/habitrain scene tool` | OP 2 | 获取移动场景配置器道具 |
+| `/habitrain scene build [map]` | OP 2 | 用已保存源选区发起场景资产生成 |
+| `/habitrain scene export` | OP 2 | 导出全部场景资产供整合包免下载分发 |
+| `/habitrain scene api` | OP 2 | 列出全部 API 场景实例（外部 Mod 注册，数量无上限） |
+| `/habitrain scene api clear\|resync` | OP 2 | 回收 / 全量重发全部 API 场景实例 |
 
 C2S `role_config_update`（Mod 菜单保存角色扩展配置）需要 **OP2 + MenuGate**。`/habitrain roleapi config set|winner` 需要 **OP4**；专用服且门控开启时，游戏内玩家还须在 MenuGate 允许名单中；控制台 / 命令方块仅需 OP4（break-glass）。
 
@@ -314,6 +323,7 @@ build/release/habitrain_core-2.0.2-restored.jar
 - 📘 **[使用教程](docs/使用教程.md)**：面向玩家、服主与模组开发者的全方位实战指南（涵盖玩法机制、MVP 动画配置、配置中心四分类运维、任务/模式开发与角色扩展实战）。
 - 📑 **[API 参考手册](docs/API参考手册.md)**：公开 API 接口契约、方法签名与类族索引速查。
 - 📕 **[角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md)**：角色扩展平台 v2 深度开发指南（ADD/MODIFY/REPLACE、Hooks、State、Action、Client HUD 与诊断）。
+- 🚄 **[移动场景 API 使用教程](docs/移动场景API使用教程.md)**：`SceneApi` v2 全量教程（无上限实例、全参数表、锚点、资产发布、事件、性能模型与实战配方）。
 - 📜 **[MVP 动画开源授权告示](THIRD_PARTY_LICENSES/MVP_ANIMATIONS.md)**：MVP 结算 3D 动作姿势开源协议说明与作者归属。
 
 ---

@@ -461,6 +461,37 @@ public final class CommandRegistrar {
                                                 return 1;
                                             }))
                             )
+                            // API 场景实例（外部 Mod 注册，数量无上限）诊断
+                            .then(Commands.literal("api")
+                                    .executes(ctx -> {
+                                        var api = com.habitrain.core.api.scene.SceneApi.instance();
+                                        var lines = api.describeInstances();
+                                        StringBuilder sb = new StringBuilder("§6=== API 场景实例 ===\n")
+                                                .append("§7总数: §b").append(api.instanceCount())
+                                                .append(" §7全局开关: ").append(api.isGlobalEnabled() ? "§a开" : "§c关");
+                                        if (lines.isEmpty()) {
+                                            sb.append("\n§7（暂无实例；外部 Mod 可通过 SceneApi 注册）");
+                                        } else {
+                                            for (String line : lines) {
+                                                sb.append('\n').append(line);
+                                            }
+                                        }
+                                        ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
+                                        return 1;
+                                    })
+                                    .then(Commands.literal("clear").executes(ctx -> {
+                                        int removed = com.habitrain.core.api.scene.SceneApi.instance().despawnAll();
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§e已回收 " + removed + " 个 API 场景实例"), true);
+                                        return 1;
+                                    }))
+                                    .then(Commands.literal("resync").executes(ctx -> {
+                                        com.habitrain.core.api.scene.SceneApi.instance().resyncAll();
+                                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                                "§a已向所有在线玩家重新下发 API 场景实例"), true);
+                                        return 1;
+                                    }))
+                            )
                     )
               );
             dispatcher.register(roleApiRootCommand());

@@ -29,6 +29,8 @@ public final class SceneClientTicker {
             SceneBuildScheduler.getInstance().pump();
             if (client.level == null) return;
             SceneAssetCache.getInstance().tick();
+            // API 场景实例的车外音/微震按 tick 对齐（几何是每帧确定性计算的，不需要 tick）。
+            SceneRenderRuntime.getInstance().tickDynamicInstances();
         });
     }
 }

@@ -1,7 +1,9 @@
 package com.habitrain.core.scene.client;
 
 import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.SceneInstanceAnchor;
 import com.habitrain.core.client.mixin.FrustumAccessor;
+import com.habitrain.core.scene.model.SceneInstance;
 import com.habitrain.core.scene.model.SceneInstanceBounds;
 import com.habitrain.core.scene.model.SceneProfile;
 import com.habitrain.core.scene.model.SceneMotionMath;
@@ -12,6 +14,8 @@ import com.habitrain.core.scene.model.SceneOrbitSettings;
 import com.habitrain.core.scene.model.SceneInstanceTransform;
 import com.habitrain.core.scene.model.SceneRotation;
 import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.scene.model.SceneShakeSettings;
+import com.habitrain.core.scene.model.SceneSoundSettings;
 import com.habitrain.core.scene.network.SceneAssetReadyC2S;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -60,6 +64,14 @@ public final class SceneRenderRuntime {
     private final Map<String, SceneAssetDescriptor> manifestsByMap = new ConcurrentHashMap<>();
     private final Map<String, SceneCompatibilityReport> compatibilityReportsByHash = new ConcurrentHashMap<>();
     private List<SceneRuntimeState> additionalRuntimeStates = List.of();
+    /**
+     * API 场景实例（外部 Mod 通过 {@code SceneApi} 注册）：id → 服务端权威快照。
+     *
+     * <p>与地图级附加背景不同，这里<b>没有数量上限</b>：条目数只取决于服务端注册了多少个，
+     * 每个条目共用 {@link #additionalMeshesByHash} 里按内容哈希去重的网格，因此 N 个实例
+     * 引用同一份资产时只会占用一份 GPU 网格。</p>
+     */
+    private final Map<String, SceneInstance> dynamicInstances = new ConcurrentHashMap<>();
     private final Map<String, SceneMeshSet> additionalMeshesByHash = new ConcurrentHashMap<>();
     private final java.util.Set<String> additionalLoadingHashes = ConcurrentHashMap.newKeySet();
     private final Map<String, List<Long>> additionalPrefetchWaiters = new ConcurrentHashMap<>();
@@ -197,9 +209,65 @@ public final class SceneRenderRuntime {
     public synchronized void updateAdditionalRuntimeStates(List<SceneRuntimeState> states) {
         this.additionalRuntimeStates = states == null ? List.of() : states.stream()
                 .filter(Objects::nonNull).filter(SceneRuntimeState::isActive).limit(4).toList();
-        java.util.Set<String> wanted = this.additionalRuntimeStates.stream()
-                .map(SceneRuntimeState::getAssetHash).filter(hash -> hash != null && !hash.isBlank())
-                .collect(java.util.stream.Collectors.toSet());
+        reconcileWantedMeshes();
+    }
+
+    /**
+     * 应用服务端下发的 API 场景实例增量（新增/更新 + 删除 + 全清）。
+     *
+     * <p>幂等：同一个实例以更高 revision 重发只会覆盖本地快照。清空语义只影响 API 实例，
+     * 不会动地图级主/附加背景。</p>
+     */
+    public synchronized void applyInstanceOps(List<SceneInstance> upserts, List<String> removals, boolean clear) {
+        if (clear) {
+            dynamicInstances.clear();
+        }
+        if (removals != null) {
+            for (String id : removals) {
+                if (id != null) dynamicInstances.remove(id);
+            }
+        }
+        if (upserts != null) {
+            for (SceneInstance instance : upserts) {
+                if (instance == null || instance.id() == null) continue;
+                dynamicInstances.put(instance.id(), instance);
+            }
+        }
+        reconcileWantedMeshes();
+    }
+
+    /** 本地已知的全部 API 场景实例（按 priority 升序，即先画低优先级）。 */
+    public synchronized List<SceneInstance> dynamicInstances() {
+        List<SceneInstance> snapshot = new ArrayList<>(dynamicInstances.values());
+        snapshot.sort(Comparator.comparingInt(SceneInstance::priority)
+                .thenComparingLong(SceneInstance::createdAtMillis));
+        return snapshot;
+    }
+
+    /** 按 ID 查询本地已知的 API 场景实例。 */
+    public synchronized SceneInstance dynamicInstance(String instanceId) {
+        return instanceId != null ? dynamicInstances.get(instanceId) : null;
+    }
+
+    /** 本地已知的 API 场景实例数量。 */
+    public synchronized int dynamicInstanceCount() {
+        return dynamicInstances.size();
+    }
+
+    /** 某实例的网格是否已经烘焙完成、可以立即绘制。 */
+    public synchronized boolean isDynamicInstanceMeshReady(String instanceId) {
+        SceneInstance instance = dynamicInstances.get(instanceId);
+        if (instance == null || !instance.hasAsset()) return false;
+        SceneMeshSet mesh = additionalMeshesByHash.get(instance.assetHash());
+        return mesh != null && !mesh.isEmpty() && !mesh.isClosed();
+    }
+
+    /**
+     * 重新对齐"当前被需要的附加网格"：地图级附加背景 ∪ API 场景实例。
+     * 不再被任何一方引用的网格会被释放，缺失的会触发下载与烘焙。
+     */
+    private void reconcileWantedMeshes() {
+        Set<String> wanted = wantedHashes();
         additionalMeshesByHash.entrySet().removeIf(entry -> {
             if (wanted.contains(entry.getKey())) return false;
             entry.getValue().close();
@@ -211,9 +279,24 @@ public final class SceneRenderRuntime {
         }
     }
 
+    /** 当前被需要的全部资产哈希（地图级附加背景 + API 实例）。 */
+    private Set<String> wantedHashes() {
+        Set<String> wanted = new HashSet<>();
+        for (SceneRuntimeState state : additionalRuntimeStates) {
+            if (state != null) addIfPresent(wanted, state.getAssetHash());
+        }
+        for (SceneInstance instance : dynamicInstances.values()) {
+            if (instance != null) addIfPresent(wanted, instance.assetHash());
+        }
+        return wanted;
+    }
+
     private boolean isWantedAdditionalHash(String hash) {
-        return hash != null && additionalRuntimeStates.stream()
-                .anyMatch(state -> Objects.equals(hash, state.getAssetHash()));
+        if (hash == null) return false;
+        if (additionalRuntimeStates.stream().anyMatch(state -> Objects.equals(hash, state.getAssetHash()))) {
+            return true;
+        }
+        return dynamicInstances.values().stream().anyMatch(instance -> Objects.equals(hash, instance.assetHash()));
     }
 
     private void loadAdditionalMesh(SceneAssetDescriptor descriptor) {
@@ -386,6 +469,9 @@ public final class SceneRenderRuntime {
         for (SceneRuntimeState state : additionalRuntimeStates) {
             if (state != null) addIfPresent(hashes, state.getAssetHash());
         }
+        for (SceneInstance instance : dynamicInstances.values()) {
+            if (instance != null) addIfPresent(hashes, instance.assetHash());
+        }
         hashes.addAll(additionalMeshesByHash.keySet());
         hashes.addAll(additionalLoadingHashes);
         hashes.addAll(additionalPrefetchWaiters.keySet());
@@ -434,10 +520,7 @@ public final class SceneRenderRuntime {
         long total = totalMeshBytes();
         if (total <= quota) return;
 
-        Set<String> wanted = new HashSet<>();
-        for (SceneRuntimeState state : additionalRuntimeStates) {
-            if (state != null) addIfPresent(wanted, state.getAssetHash());
-        }
+        Set<String> wanted = wantedHashes();
         List<String> candidates = new ArrayList<>();
         for (String hash : additionalMeshesByHash.keySet()) {
             if (!wanted.contains(hash)) candidates.add(hash);
@@ -717,6 +800,8 @@ public final class SceneRenderRuntime {
         SceneProjectionDiagnostics.recordProjection(context.projectionMatrix());
         boolean active = previewActive || (currentState != null && currentState.isActive());
         if (!active) {
+            // 地图级场景没开也要画 API 实例：外部 Mod 注册的场景与地图配置无关。
+            renderDynamicInstances(context);
             return;
         }
         String expectedHash = previewActive ? previewAssetHash : currentState.getAssetHash();
@@ -729,6 +814,7 @@ public final class SceneRenderRuntime {
                 float partialTick = context.tickCounter().getGameTimeDeltaPartialTick(true);
                 renderAdditionalScenes(context, context.positionMatrix(), context.projectionMatrix(),
                         camera.getPosition(), partialTick);
+                renderDynamicInstances(context);
             }
             return;
         }
@@ -740,6 +826,7 @@ public final class SceneRenderRuntime {
                 float partialTick = context.tickCounter().getGameTimeDeltaPartialTick(true);
                 renderAdditionalScenes(context, context.positionMatrix(), context.projectionMatrix(),
                         camera.getPosition(), partialTick);
+                renderDynamicInstances(context);
             }
             return;
         }
@@ -763,6 +850,7 @@ public final class SceneRenderRuntime {
         if (profile.getMotionMode() == SceneMotionMode.ORBIT) {
             renderOrbitScene(context, viewMatrix, projectionMatrix, camPos, profile, elapsedSeconds);
             renderAdditionalScenes(context, viewMatrix, projectionMatrix, camPos, partialTick);
+            renderDynamicInstances(context);
             return;
         }
         lastConfiguredOrbitInstances = 0;
@@ -799,6 +887,148 @@ public final class SceneRenderRuntime {
                     loopOffsetX, loopOffsetY, loopOffsetZ, pivot, rot, renderTranslucent, maxDistance);
         }
         renderAdditionalScenes(context, viewMatrix, projectionMatrix, camPos, partialTick);
+        renderDynamicInstances(context);
+    }
+
+    /**
+     * 绘制全部 API 场景实例（无数量上限）。
+     *
+     * <p>与地图级附加背景的区别：</p>
+     * <ul>
+     *   <li>这里的主循环<b>不依赖地图级场景是否激活</b>——没有地图场景时也会渲染。</li>
+     *   <li>时间轴来自每个实例自己的 {@code startGameTime / timeScale / paused}。</li>
+     *   <li>锚点模式会在每帧解析出实际显示原点（切换维度/实体不存在时回退静态原点）。</li>
+     *   <li>只渲染属于玩家当前维度的实例；这不是"上限"，而是维度隔离。</li>
+     * </ul>
+     */
+    private void renderDynamicInstances(WorldRenderContext context) {
+        if (previewActive || dynamicInstances.isEmpty()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        String dimensionKey = mc.level.dimension().location().toString();
+        long clientGameTime = mc.level.getGameTime();
+        float partialTick = context.tickCounter().getGameTimeDeltaPartialTick(true);
+        Matrix4f viewMatrix = context.positionMatrix();
+        Matrix4f projectionMatrix = context.projectionMatrix();
+        Vec3 camPos = context.camera().getPosition();
+
+        SceneMeshSet primaryMesh = currentMeshSet;
+        try {
+            for (SceneInstance instance : dynamicInstances()) {
+                if (!instance.belongsTo(dimensionKey)) continue;
+                SceneProfile rawProfile = instance.profile();
+                if (rawProfile == null || !rawProfile.isEnabled()) continue;
+                SceneMeshSet mesh = additionalMeshesByHash.get(instance.assetHash());
+                if (mesh == null || mesh.isEmpty() || mesh.isClosed()) continue;
+
+                SceneProfile profile = resolveAnchoredProfile(instance, rawProfile);
+                currentMeshSet = mesh;
+                double elapsed = instance.elapsedSeconds(clientGameTime, partialTick);
+
+                if (profile.getMotionMode() == SceneMotionMode.ORBIT) {
+                    renderOrbitScene(context, viewMatrix, projectionMatrix, camPos, profile, elapsed);
+                    continue;
+                }
+                double loopDistance = SceneMotionMath.effectiveLoopDistance(
+                        profile.getSourceBounds(), profile.getDirection(), profile.getLoop());
+                double phase = SceneMotionMath.phase(profile.getLoop().isEnabled(),
+                        profile.getSpeedBlocksPerSecond(), elapsed, profile.getPhaseOffsetBlocks(), loopDistance);
+                double[] direction = profile.getDirection();
+                double[] origin = profile.getDisplayOrigin();
+                double[] pivot = profile.getPivotLocal();
+                SceneRotation rotation = profile.getRotationDegrees();
+                boolean translucent = profile.getRender().isRenderTranslucent();
+                double maxDistance = profile.getRender().getMaxDistanceBlocks();
+                renderCopy(viewMatrix, projectionMatrix, camPos, context.frustum(), profile, origin,
+                        direction[0] * phase, direction[1] * phase, direction[2] * phase,
+                        0, 0, 0, pivot, rotation, translucent, maxDistance);
+                if (profile.getLoop().isEnabled()) {
+                    renderCopy(viewMatrix, projectionMatrix, camPos, context.frustum(), profile, origin,
+                            direction[0] * phase, direction[1] * phase, direction[2] * phase,
+                            -direction[0] * loopDistance, -direction[1] * loopDistance,
+                            -direction[2] * loopDistance, pivot, rotation, translucent, maxDistance);
+                }
+            }
+        } finally {
+            currentMeshSet = primaryMesh;
+        }
+    }
+
+    /**
+     * 解析实例的实际显示原点。
+     *
+     * <p>锚点为世界模式时直接返回原 profile（零分配）；玩家/实体模式会复制一份 profile 并把
+     * {@code displayOrigin} 换成"锚点当前位置 + 偏移"，这样包围球、环绕中心、起始角等所有下游
+     * 数学都自动跟随锚点，不需要在渲染管线里到处传位移量。</p>
+     */
+    private static SceneProfile resolveAnchoredProfile(SceneInstance instance, SceneProfile profile) {
+        SceneInstanceAnchor anchor = instance.anchor();
+        if (anchor == null || !anchor.requiresRuntimeResolution()) return profile;
+        double[] anchorPos = resolveAnchorPosition(anchor);
+        if (anchorPos == null) return profile;
+        SceneProfile copy = profile.copy();
+        copy.setDisplayOrigin(anchorPos[0] + anchor.offsetX(),
+                anchorPos[1] + anchor.offsetY(),
+                anchorPos[2] + anchor.offsetZ());
+        return copy;
+    }
+
+    /** 解析锚点目标的世界坐标；目标不在本地世界时返回 {@code null}（调用方回退静态原点）。 */
+    private static double[] resolveAnchorPosition(SceneInstanceAnchor anchor) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+        if (anchor.isPlayer()) {
+            var player = mc.level.getPlayerByUUID(anchor.playerId());
+            if (player == null) return null;
+            return new double[]{player.getX(), player.getY(), player.getZ()};
+        }
+        if (anchor.isEntity()) {
+            var entity = mc.level.getEntity(anchor.entityId());
+            if (entity == null) return null;
+            return new double[]{entity.getX(), entity.getY(), entity.getZ()};
+        }
+        return null;
+    }
+
+    /**
+     * 每个客户端 tick 对齐 API 实例的"持续型效果"：车外环境音与镜头微震。
+     *
+     * <p>几何是每帧按确定性时间轴算的，不需要 tick；但音效需要"起播/淡出"的边沿语义，
+     * 微震是全局限单一通道，两者都放在 tick 里做集合对齐，天然自愈（客户端状态被清空后
+     * 下一个 tick 就会重新补上）。</p>
+     */
+    public synchronized void tickDynamicInstances() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            SceneAmbientSoundController.getInstance().retainOnly(Map.of());
+            return;
+        }
+        String dimensionKey = mc.level.dimension().location().toString();
+        Map<String, SceneSoundSettings> desired = new java.util.LinkedHashMap<>();
+        SceneShakeSettings bestShake = null;
+        for (SceneInstance instance : dynamicInstances()) {
+            if (!instance.belongsTo(dimensionKey)) continue;
+            SceneProfile profile = instance.profile();
+            if (profile == null || !profile.isEnabled()) continue;
+            SceneSoundSettings sound = profile.getOutsideSound();
+            if (sound != null && sound.isEnabled()) {
+                desired.put(SceneAmbientSoundController.instanceKey(instance.id()), sound);
+            }
+            if (profile.getShake() != null && profile.getShake().isEnabled()) {
+                // dynamicInstances() 已按 priority 升序：取最后一个 = 渲染层级最高者。
+                bestShake = profile.getShake();
+            }
+        }
+
+        // 地图级场景正在提供微震时不动它，避免两个来源互相覆盖。
+        boolean primaryOwnsShake = !previewActive && currentState != null && currentState.isActive()
+                && currentState.getProfile().getShake().isEnabled();
+        if (!primaryOwnsShake) {
+            SceneShakeController.getInstance().updateSettings(bestShake, bestShake != null);
+        }
+
+        // 维修模式/无实例时清空，其余保持"期望集合"，音轨自身负责淡入淡出。
+        SceneAmbientSoundController.getInstance().retainOnly(desired);
     }
 
     private void renderAdditionalScenes(WorldRenderContext context, Matrix4f viewMatrix, Matrix4f projectionMatrix,
@@ -1124,6 +1354,8 @@ public final class SceneRenderRuntime {
             SceneAssetDescriptor descriptor = manifestsByHash.get(state.getAssetHash());
             if (descriptor != null && descriptor.isValid()) loadAdditionalMesh(descriptor);
         }
+        // API 实例引用的资产同样要重建。
+        reconcileWantedMeshes();
     }
 
     public synchronized void clearMesh() {
@@ -1151,6 +1383,8 @@ public final class SceneRenderRuntime {
         previewAssetHash = "";
         currentState = SceneRuntimeState.INACTIVE;
         additionalRuntimeStates = List.of();
+        dynamicInstances.clear();
+        SceneAmbientSoundController.getInstance().stopAllSounds();
         additionalMeshGeneration++;
         additionalLoadingHashes.clear();
         additionalPrefetchWaiters.clear();

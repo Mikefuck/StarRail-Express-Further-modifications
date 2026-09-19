@@ -51,6 +51,12 @@ public final class SceneRuntimeCoordinator {
         this.contextResolver = resolver != null ? resolver : SreSceneContextResolver.INSTANCE;
     }
 
+    /** 用当前注册的解析器解析某维度的地图上下文（公开给 API / 命令使用）。 */
+    public SceneContextResolver.SceneContext resolveContext(ServerLevel level) {
+        if (level == null) return new SceneContextResolver.SceneContext("__default__", "", false);
+        return contextResolver.resolve(level);
+    }
+
     public void init() {
         MatchEvents.STARTED.register(this::onMatchStarted);
         MatchEvents.ROUND_ENDED.register((level, settlement) -> onMatchEnded(level));
@@ -116,6 +122,7 @@ public final class SceneRuntimeCoordinator {
         levelAdditionalRuntimeStates.put(dimKey, additionalStates);
 
         LOGGER.info("移动场景启动: mapKey={}, startTime={}, assetHash={}", mapKey, startTime, descriptor != null ? descriptor.shortHash() : "NONE");
+        SceneInstanceService.getInstance().fireMapSceneStarted(level, mapKey);
 
         // 广播 Manifest 与运行状态包
         if (descriptor != null && descriptor.isValid()) {
@@ -138,6 +145,9 @@ public final class SceneRuntimeCoordinator {
         ScenePreloadCoordinator.getInstance().reset(level);
         lobbyConfigurations.remove(level.dimension().location().toString());
         stopRuntime(level);
+        // API 场景实例不随对局结束回收（它们属于注册它们的 Mod），但客户端在对局结束时
+        // 清空过本地状态，所以这里补一次全量重发，和客户端的主动请求互为兜底。
+        SceneInstanceService.getInstance().resyncLevel(level);
         // OnGameEnd fires while SRE is still STOPPING. The tick hook waits for the
         // actual non-match state before restoring the lobby.
     }
@@ -148,6 +158,7 @@ public final class SceneRuntimeCoordinator {
         levelAdditionalRuntimeStates.remove(dimKey);
         if (oldState != null && oldState.isActive()) {
             LOGGER.info("移动场景停止: dimension={}", dimKey);
+            SceneInstanceService.getInstance().fireMapSceneStopped(level, oldState.getMapKey());
             SceneRuntimeStateS2C inactivePayload = new SceneRuntimeStateS2C(SceneRuntimeState.INACTIVE);
             for (ServerPlayer player : level.players()) {
                 ServerPlayNetworking.send(player, inactivePayload);
@@ -160,6 +171,8 @@ public final class SceneRuntimeCoordinator {
         if (player == null || player.serverLevel() == null) return;
         ServerLevel level = player.serverLevel();
         updateLobby(level, true);
+        // API 场景实例与地图级场景互不影响，单独全量下发一次。
+        SceneInstanceService.getInstance().onPlayerJoin(player);
         String dimKey = level.dimension().location().toString();
         SceneRuntimeState state = levelRuntimeStates.get(dimKey);
 
@@ -187,6 +200,8 @@ public final class SceneRuntimeCoordinator {
 
     public void onAssetPublished(MinecraftServer server, String mapKey, SceneAssetDescriptor descriptor) {
         if (server == null || descriptor == null) return;
+        // API 场景实例引用的资产也要热更新（换哈希并重发）。
+        SceneInstanceService.getInstance().onAssetPublished(mapKey, descriptor);
         SceneAssetManifestS2C payload = new SceneAssetManifestS2C(mapKey, descriptor);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
@@ -278,6 +293,7 @@ public final class SceneRuntimeCoordinator {
             ServerPlayNetworking.send(player, statePayload);
             ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(additionalStates));
         }
+        SceneInstanceService.getInstance().fireMapSceneStarted(level, mapKey);
         return true;
     }
 
@@ -303,6 +319,7 @@ public final class SceneRuntimeCoordinator {
         SceneTransferService.getInstance().onPlayerDisconnect(player.getUUID());
         ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(SceneRuntimeState.INACTIVE));
         ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(List.of()));
+        SceneInstanceService.getInstance().onPlayerChangeDimension(player);
         onPlayerJoin(player);
     }
 

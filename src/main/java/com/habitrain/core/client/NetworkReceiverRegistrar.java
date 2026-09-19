@@ -501,6 +501,14 @@ public class NetworkReceiverRegistrar {
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .updateAdditionalRuntimeStates(payload.states())));
 
+        // API 场景实例增量同步（新增/更新 + 删除 + 全清）。数量没有上限，服务端按单实例发包。
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.scene.network.SceneInstancesS2C.TYPE, (payload, ctx) ->
+                        ctx.client().execute(() ->
+                                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
+                                        .applyInstanceOps(payload.upserts(), payload.removals(),
+                                                payload.clear())));
+
         // 26) 场景资产 Manifest 下发（触发按需下载）
         //     协议版本一并交给渲染运行时：客户端据此判断能不能跟服务端协商增量补丁。
         ClientPlayNetworking.registerGlobalReceiver(

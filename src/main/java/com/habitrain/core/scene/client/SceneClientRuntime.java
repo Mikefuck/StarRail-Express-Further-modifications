@@ -1,9 +1,15 @@
 package com.habitrain.core.scene.client;
 
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.habitrain.core.scene.network.SceneInstanceResyncC2S;
+
 /**
  * 客户端移动场景统一生命周期入口。所有换会话/换世界/局终清理都从这里完成，
  * 避免网格、预览、下载流、音效、抖动或选区状态残留到下一局。
  */
+@Environment(EnvType.CLIENT)
 public final class SceneClientRuntime {
     private SceneClientRuntime() {}
 
@@ -11,7 +17,7 @@ public final class SceneClientRuntime {
         SceneRenderRuntime.getInstance().reset();
         SceneBuildScheduler.getInstance().reset();
         SceneAssetCache.getInstance().resetSession();
-        SceneAmbientSoundController.getInstance().stopSound();
+        SceneAmbientSoundController.getInstance().stopAllSounds();
         SceneShakeController.getInstance().updateSettings(null, false);
         resetEditorState();
     }
@@ -36,6 +42,25 @@ public final class SceneClientRuntime {
             resetEditorState();
         } else {
             reset("match_finished");
+        }
+        // 上面的 reset 会把 API 场景实例与网格一并清掉，但服务端并不知道客户端做过这件事
+        // （既没换会话也没换维度，服务端的"已下发"认知仍然有效）。这里主动要一次全量重同步，
+        // 让外部 Mod 注册的场景在对局结束后立刻回来。
+        requestInstanceResync();
+    }
+
+    /**
+     * 请求服务端重新下发当前维度的全部 API 场景实例。
+     *
+     * <p>幂等、带服务端冷却；未连接时安全地什么都不做。</p>
+     */
+    public static void requestInstanceResync() {
+        try {
+            if (ClientPlayNetworking.canSend(SceneInstanceResyncC2S.TYPE)) {
+                ClientPlayNetworking.send(new SceneInstanceResyncC2S());
+            }
+        } catch (Throwable ignored) {
+            // 连接尚未就绪/正在断开：无需重同步。
         }
     }
 
