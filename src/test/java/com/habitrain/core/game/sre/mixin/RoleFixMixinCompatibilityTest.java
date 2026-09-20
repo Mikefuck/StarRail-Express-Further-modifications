@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class RoleFixMixinCompatibilityTest {
     @ParameterizedTest
     @CsvSource({
+            "EnvyDeathLootMixin, io/wifi/starrailexpress/api/GameMode",
+            "EnvyGunDropMixin, io/wifi/starrailexpress/util/BrokenGunDropUtils",
             "GreedPouchInsertMixin, net/minecraft/world/item/BundleItem",
             "SlothSleepHitboxMixin, net/minecraft/world/entity/player/Player",
             "SlothMinigameTaskMixin, io/wifi/starrailexpress/cca/SREPlayerMinigameTaskComponent",
@@ -32,7 +34,9 @@ class RoleFixMixinCompatibilityTest {
         for (var handler : mixin.methods) {
             if (handler.visibleAnnotations == null) continue;
             for (AnnotationNode annotation : handler.visibleAnnotations) {
-                if (!annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")) continue;
+                boolean wrapMethod = annotation.desc.equals(
+                        "Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;");
+                if (!wrapMethod && !annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")) continue;
                 @SuppressWarnings("unchecked")
                 List<String> selectors = (List<String>) value(annotation, "method");
                 assertNotNull(selectors);
@@ -48,7 +52,7 @@ class RoleFixMixinCompatibilityTest {
                                 mixinName + " callback arguments for " + selector);
                     }
                     boolean returnsValue = Type.getReturnType(method.desc).getSort() != Type.VOID;
-                    assertEquals(returnsValue ? "CallbackInfoReturnable" : "CallbackInfo",
+                    assertEquals(wrapMethod ? "Operation" : returnsValue ? "CallbackInfoReturnable" : "CallbackInfo",
                             parameters[parameters.length - 1].getClassName().replaceAll(".*\\.", ""));
                     checked++;
                 }

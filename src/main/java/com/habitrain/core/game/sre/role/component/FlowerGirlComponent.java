@@ -6,6 +6,8 @@ import com.habitrain.core.game.sre.role.HabiRoles;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREArmorPlayerComponent;
+import io.wifi.starrailexpress.cca.SREWeakArmorPlayerComponent;
+import io.wifi.starrailexpress.cca.SREPlayerPsychoComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -227,9 +229,9 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
             // 清护盾
             try {
                 SREArmorPlayerComponent armor = SREArmorPlayerComponent.KEY.get(p);
-                if (armor != null && armor.armor > 0) {
-                    armor.armor = 0;
-                }
+                if (armor != null) armor.clear();
+                SREWeakArmorPlayerComponent.KEY.get(p).clear();
+                SREPlayerPsychoComponent.KEY.get(p).setArmour(0);
             } catch (Throwable ignored) {}
             p.removeEffect(MobEffects.GLOWING);
             try {

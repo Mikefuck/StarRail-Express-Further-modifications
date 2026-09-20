@@ -18,7 +18,7 @@ import java.util.List;
 public final class SevenSinShops {
     private SevenSinShops() {}
 
-    public static final int ENVY_KNIFE_PRICE = 200;
+    public static final int ENVY_KNIFE_PRICE = 120;
     public static final int ENVY_GUN_PRICE = 285;
     public static final int ENVY_LOCKPICK_PRICE = 150;
     public static final int ENVY_BLACKOUT_PRICE = 150;
@@ -39,7 +39,7 @@ public final class SevenSinShops {
     }
 
     /**
-     * 嫉妒杀手店：刀 200、左轮手枪 285、开锁 150、关灯 150。
+     * 嫉妒杀手店：刀 120、左轮手枪 285、开锁 150、关灯 150。
      * 刀必须用 {@link KillerKnifeShopEntry} 以 stamp murder 耐久。
      */
     public static List<ShopEntry> envyShop() {

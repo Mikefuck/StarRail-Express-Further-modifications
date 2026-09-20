@@ -378,21 +378,27 @@ public final class SevenSinV2BehaviorHooks {
     private static void handleEnvyKillLoot(ServerPlayer envy, ServerPlayer victim) {
         List<SlotRef> candidates = new ArrayList<>();
         Inventory inv = victim.getInventory();
+        List<ItemStack> deathWeapons = EnvyDeathLoot.weaponsFor(victim);
+        if (deathWeapons != null) {
+            for (ItemStack weapon : deathWeapons) {
+                candidates.add(new SlotRef(SlotKind.MAIN, -1, weapon));
+            }
+        }
         for (int i = 0; i < inv.offhand.size(); i++) {
             ItemStack stack = inv.offhand.get(i);
-            if (canEnvyTake(stack)) {
+            if (canEnvyTake(stack) && (deathWeapons == null || !EnvyDeathLoot.preservesDrop(stack))) {
                 candidates.add(new SlotRef(SlotKind.OFF, i));
             }
         }
         for (int i = 0; i < inv.items.size(); i++) {
             ItemStack stack = inv.items.get(i);
-            if (canEnvyTake(stack)) {
+            if (canEnvyTake(stack) && (deathWeapons == null || !EnvyDeathLoot.preservesDrop(stack))) {
                 candidates.add(new SlotRef(SlotKind.MAIN, i));
             }
         }
         for (int i = 0; i < inv.armor.size(); i++) {
             ItemStack stack = inv.armor.get(i);
-            if (canEnvyTake(stack)) {
+            if (canEnvyTake(stack) && (deathWeapons == null || !EnvyDeathLoot.preservesDrop(stack))) {
                 candidates.add(new SlotRef(SlotKind.ARMOR, i));
             }
         }
@@ -442,8 +448,13 @@ public final class SevenSinV2BehaviorHooks {
 
     private enum SlotKind { MAIN, OFF, ARMOR }
 
-    private record SlotRef(SlotKind kind, int index) {
+    private record SlotRef(SlotKind kind, int index, @Nullable ItemStack deathWeapon) {
+        SlotRef(SlotKind kind, int index) {
+            this(kind, index, null);
+        }
+
         ItemStack takeOne(Inventory inv) {
+            if (deathWeapon != null) return deathWeapon.copyWithCount(1);
             ItemStack stack = switch (kind) {
                 case MAIN -> inv.items.get(index);
                 case OFF -> inv.offhand.get(index);
