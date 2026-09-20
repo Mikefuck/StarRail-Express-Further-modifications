@@ -58,6 +58,8 @@ public final class ModeMapVoteOrchestrator {
     static final String REPAIR_LAUNCH_MAP_ID = "repair_manor";
 
     private static final ConcurrentMap<ResourceKey<Level>, Session> SESSIONS = new ConcurrentHashMap<>();
+    /** 最近一次 start 失败的可读原因（审核 C7/M-13）。 */
+    private static final ConcurrentMap<ResourceKey<Level>, String> LAST_FAILURE = new ConcurrentHashMap<>();
 
     static {
         com.habitrain.core.task.ClearableHandlerRegistry.register(ModeMapVoteOrchestrator::resetAll);
@@ -76,25 +78,27 @@ public final class ModeMapVoteOrchestrator {
 
     public static boolean start(ServerLevel level, ModeMapVoteConfig config) {
         if (level == null) return false;
-        ModeMapVoteConfig cfg = config != null ? config : new ModeMapVoteConfig();
+        // 审核 B2：调用方传入的对象可能被其后续修改，这里做一次不可变快照再会话持有。
+        ModeMapVoteConfig cfg = config != null ? config.snapshot() : new ModeMapVoteConfig();
 
         ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
         if (settings == null || !settings.enabled) {
-            return false;
+            return fail(level, "配置未启用模式→地图投票 (modeMapVote.enabled=false)");
         }
 
         Session existing = SESSIONS.get(level.dimension());
         if (existing != null && existing.phase != Phase.IDLE) {
-            return false;
+            return fail(level, "该维度已有进行中的投票 (phase=" + existing.phase + ")");
         }
         if (OptionVoteManager.isActive(level)) {
-            return false;
+            return fail(level, "该维度已有 active 选项投票 (voteId="
+                    + OptionVoteManager.currentVoteId(level) + ")");
         }
         if (SREModeStartAdapter.isSreGameBlocking(level)) {
-            return false;
+            return fail(level, "SRE 对局已占用该维度");
         }
         if (GameModeRegistry.isActiveInLevel(level)) {
-            return false;
+            return fail(level, "该维度已有活跃 GameMode");
         }
 
         var discoveredMaps = SREIntegration.discoverServerMaps(level);
@@ -124,7 +128,7 @@ public final class ModeMapVoteOrchestrator {
             options.add(new VoteOption(fullId, resolveModeDisplayName(settings, fullId)));
         }
         if (options.isEmpty()) {
-            return false;
+            return fail(level, "没有可通过配置过滤的候选模式");
         }
 
         int duration = cfg.modeDurationSeconds > 0
@@ -137,6 +141,7 @@ public final class ModeMapVoteOrchestrator {
         session.phase = Phase.MODE_VOTING;
         session.phaseDurationSeconds = duration;
         SESSIONS.put(level.dimension(), session);
+        clearFailure(level);
 
         // 只有一个可投票模式：跳过模式投票，直接选定该模式进入地图投票。
         if (options.size() == 1) {
@@ -161,12 +166,30 @@ public final class ModeMapVoteOrchestrator {
         );
         if (!started) {
             SESSIONS.remove(level.dimension());
-            return false;
+            return fail(level, "选项投票层拒绝发起模式投票（可能已存在 active 投票）");
         }
 
         LOGGER.info("[ModeMapVote] mode vote started options={} duration={}s dim={}",
                 options.size(), duration, level.dimension().location());
         return true;
+    }
+
+    /** 记录失败原因并返回 {@code false}，供 {@link #lastFailure(ServerLevel)} 读取。 */
+    private static boolean fail(ServerLevel level, String reason) {
+        LAST_FAILURE.put(level.dimension(), reason);
+        LOGGER.info("[ModeMapVote] start refused dim={} reason={}", level.dimension().location(), reason);
+        return false;
+    }
+
+    private static void clearFailure(ServerLevel level) {
+        LAST_FAILURE.remove(level.dimension());
+    }
+
+    /** 最近一次 {@link #start} 失败的可读原因；没有失败记录时返回空串。 */
+    public static String lastFailure(ServerLevel level) {
+        if (level == null) return "";
+        String reason = LAST_FAILURE.get(level.dimension());
+        return reason != null ? reason : "";
     }
 
     private static void onModeResolved(ServerLevel level, VoteResult result) {
@@ -462,10 +485,10 @@ public final class ModeMapVoteOrchestrator {
         if (level == null) return null;
         Session session = SESSIONS.get(level.dimension());
         if (session == null) {
-            return new ModeMapVoteSnapshot(Phase.IDLE.name(), null, null, 0);
+            return new ModeMapVoteSnapshot(com.habitrain.core.api.ModeMapVotePhase.IDLE, null, null, 0);
         }
         return new ModeMapVoteSnapshot(
-                session.phase.name(),
+                com.habitrain.core.api.ModeMapVotePhase.fromName(session.phase.name()),
                 session.selectedModeId,
                 session.selectedMapId,
                 remainingSeconds(level, session)
@@ -475,10 +498,12 @@ public final class ModeMapVoteOrchestrator {
     public static void reset(ServerLevel level) {
         if (level == null) return;
         SESSIONS.remove(level.dimension());
+        LAST_FAILURE.remove(level.dimension());
     }
 
     public static void resetAll() {
         SESSIONS.clear();
+        LAST_FAILURE.clear();
     }
 
     public static void onPlayerJoin(ServerPlayer player) {

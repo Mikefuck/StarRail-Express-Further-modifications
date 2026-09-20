@@ -56,7 +56,7 @@ public record SceneAssetDeltaOfferS2C(String targetSha256, Status status,
     public boolean hasDelta() {
         return status == Status.OK && baseSha256.matches("[0-9a-fA-F]{64}")
                 && patchSha256.matches("[0-9a-fA-F]{64}") && patchBytes > 0
-                && patchBytes <= com.habitrain.core.scene.asset.SceneAssetCodec.MAX_COMPRESSED_BYTES;
+                && patchBytes <= com.habitrain.core.api.scene.asset.SceneAssetCodec.MAX_COMPRESSED_BYTES;
     }
 
     public static final StreamCodec<ByteBuf, SceneAssetDeltaOfferS2C> CODEC = new StreamCodec<>() {

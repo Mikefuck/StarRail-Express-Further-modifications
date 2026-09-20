@@ -2,7 +2,7 @@ package com.habitrain.core;
 
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.internal.CoreBootstrap;
+import com.habitrain.core.internal.CoreLifecycleScope;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.EnvironmentController;
 import com.habitrain.core.game.sre.SREGameModeBase;
@@ -61,8 +61,8 @@ public final class LifecycleEventsRegistrar {
             com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.bind(server);
             // 所有 entrypoint（含本 mod 与依赖 DLC）已在此前完成注册，
             // 现在冻结注册表，禁止运行期注册导致 CME 与状态不一致。
-            // freeze() 仅在 CoreBootstrap 内生效，防止 DLC 误调提前冻住注册表。
-            CoreBootstrap.run(() -> {
+            // freeze() 仅在 CoreLifecycleScope 内生效，防止 DLC 误调提前冻住注册表。
+            CoreLifecycleScope.run(() -> {
                 TaskRegistry.freeze();
                 GameModeRegistry.freeze();
             });
@@ -113,72 +113,97 @@ public final class LifecycleEventsRegistrar {
         // 单机模式下集成服务器停止后客户端 JVM 仍存活，static 字段不会重置，
         // 不清理会导致下一局残留状态（计时器/角色/商店/投票）误用。
         // 注：fabric-api 此版本无 ServerLevelEvents.UNLOAD，故在 SERVER_STOPPING 遍历所有 level 清理。
+        //
+        // 审核 S-02：本处理器<b>必须</b>自身吞掉异常。Fabric 按注册顺序分发监听器，
+        // 异常穿出会跳过其后的监听器——在停服阶段那意味着另一个模组的存档 / 退款
+        // 整体被跳过（丢档）。因此外层再包一层 try/catch。
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            // G5-F012/F016：先把脏主配置和上次失败的角色 v2 配置落盘，再清 server 引用。
             try {
-                ConfigManager.getInstance().save();
-            } catch (Exception e) {
-                LOGGER.error("停服保存主配置失败", e);
-            }
-            try {
-                var roleCfg = com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE;
-                if (roleCfg.lastSaveError() != null) {
-                    roleCfg.save();
-                }
-            } catch (Exception e) {
-                LOGGER.error("停服重试角色扩展配置失败", e);
-            }
-            ConfigManager.getInstance().setServer(null);
-            try {
-                io.wifi.starrailexpress.game.GameUtils.isStartingGame = false;
+                onServerStopping(server);
             } catch (Throwable t) {
-                LOGGER.debug("clear GameUtils.isStartingGame skipped", t);
+                LOGGER.error("停服清理失败；其它模组的 SERVER_STOPPING 收尾不受影响", t);
             }
-            for (ServerLevel level : server.getAllLevels()) {
-                if (GameModeRegistry.isActiveInLevel(level)) {
-                    GameModeRegistry.stop(level);
-                }
-                OptionVoteManager.reset(level);
-                ModeMapVoteOrchestrator.reset(level);
-                com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
-            }
-            com.habitrain.core.game.sre.MapVoteLoadCoordinator.resetAll();
-            OptionVoteManager.resetAll();
-            ModeMapVoteOrchestrator.resetAll();
-            com.habitrain.core.vote.MapFileMonitor.reset();
-            // 清理所有跨局残留状态
-            com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
-            com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
-            // 维修人员模式：停服前恢复所有维修员参与状态与游戏模式，避免 NBT 残留「不参与」
-            com.habitrain.core.game.sre.RepairModeManager.resetAll(server);
-            SlownessReapplyManager.clearAll();
-            BackpackSearchHandler.clearAllSearches();
-            com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
-            BackpackQuestState.getInstance().resetAll();
-            // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
-            EnvironmentController.clearRuntimeState();
-            com.habitrain.core.game.sre.SREWeatherController.resetAll();
-            // 角色扩展 v2：恢复所有 MODIFY overlay 到基线，清空快照会话状态
-            //（定义只加载一次；会话状态在 SERVER_STOPPED 清除）。
-            GameModeRegistry.clearActiveModes();
-            com.habitrain.core.role.override.RoleOverrideTickApplier.serverStop();
-            com.habitrain.core.role.extension.RoleRuntimeOverlayApplier.serverStop();
-            // 角色状态 v2：清空 transient + round 会话状态，保留 WORLD/PERMANENT 持久槽
-            //（真实世界组件随 world NBT 在下次启动恢复，fix-doc §20.2）。
-            ((com.habitrain.core.role.state.RoleStateServiceImpl)
-                    com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).serverStop();
-            // 角色状态 v2：解绑 server 引用，避免集成服务器同 JVM 重启后残留陈旧引用。
-            com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.unbind();
-            // UUID 任务表跨集成服存档会串局：停服时清空活跃任务与离线回收队列。
-            com.habitrain.core.task.TaskManager.getInstance().clearAll();
-
-            com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll();
-            com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll();
-            com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown();
-            com.habitrain.core.scene.server.SceneStagingService.getInstance().shutdown();
-            com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown();
-            com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null);
         });
+        // 玩家加入：任务/角色/场景/投票的全量同步与重连恢复。
+        // 提取为独立方法后必须在此注册，否则整个 JOIN 同步链路静默失效。
+        registerJoinHandler();
+    }
+
+    /** 审核 S-02：{@code SERVER_STOPPING} 的实际清理逻辑（注册处已包 try/catch）。 */
+    private static void onServerStopping(net.minecraft.server.MinecraftServer server) {
+        // G5-F012/F016：先把脏主配置和上次失败的角色 v2 配置落盘，再清 server 引用。
+        try {
+            ConfigManager.getInstance().save();
+        } catch (Exception e) {
+            LOGGER.error("停服保存主配置失败", e);
+        }
+        try {
+            var roleCfg = com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE;
+            if (roleCfg.lastSaveError() != null) {
+                roleCfg.save();
+            }
+        } catch (Exception e) {
+            LOGGER.error("停服重试角色扩展配置失败", e);
+        }
+        ConfigManager.getInstance().setServer(null);
+        try {
+            io.wifi.starrailexpress.game.GameUtils.isStartingGame = false;
+        } catch (Throwable t) {
+            LOGGER.debug("clear GameUtils.isStartingGame skipped", t);
+        }
+        for (ServerLevel level : server.getAllLevels()) {
+            if (GameModeRegistry.isActiveInLevel(level)) {
+                GameModeRegistry.stop(level);
+            }
+            OptionVoteManager.reset(level);
+            ModeMapVoteOrchestrator.reset(level);
+            com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
+        }
+        com.habitrain.core.game.sre.MapVoteLoadCoordinator.resetAll();
+        OptionVoteManager.resetAll();
+        ModeMapVoteOrchestrator.resetAll();
+        com.habitrain.core.vote.MapFileMonitor.reset();
+        // 清理所有跨局残留状态
+        com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
+        com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
+        // 维修人员模式：停服前恢复所有维修员参与状态与游戏模式，避免 NBT 残留「不参与」
+        com.habitrain.core.game.sre.RepairModeManager.resetAll(server);
+        SlownessReapplyManager.clearAll();
+        BackpackSearchHandler.clearAllSearches();
+        com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
+        BackpackQuestState.getInstance().resetAll();
+        // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
+        EnvironmentController.clearRuntimeState();
+        com.habitrain.core.game.sre.SREWeatherController.resetAll();
+        // 角色扩展 v2：恢复所有 MODIFY overlay 到基线，清空快照会话状态
+        //（定义只加载一次；会话状态在 SERVER_STOPPED 清除）。
+        GameModeRegistry.clearActiveModes();
+        // 审核 A5：集成服务器同 JVM 重启时，注册表的 frozen 标志必须复位，
+        // 否则「第二次进世界」时任何注册动作都会抛 frozen 异常（报错与真实原因相距很远）。
+        CoreLifecycleScope.run(() -> {
+            TaskRegistry.resetLifecycle();
+            GameModeRegistry.resetLifecycle();
+        });
+        com.habitrain.core.role.override.RoleOverrideTickApplier.serverStop();
+        com.habitrain.core.role.extension.RoleRuntimeOverlayApplier.serverStop();
+        // 角色状态 v2：清空 transient + round 会话状态，保留 WORLD/PERMANENT 持久槽
+        //（真实世界组件随 world NBT 在下次启动恢复，fix-doc §20.2）。
+        ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).serverStop();
+        // 角色状态 v2：解绑 server 引用，避免集成服务器同 JVM 重启后残留陈旧引用。
+        com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.unbind();
+        // UUID 任务表跨集成服存档会串局：停服时清空活跃任务与离线回收队列。
+        com.habitrain.core.task.TaskManager.getInstance().clearAll();
+
+        com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll();
+        com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll();
+        com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown();
+        com.habitrain.core.scene.server.SceneStagingService.getInstance().shutdown();
+        com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown();
+        com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null);
+    }
+
+    private static void registerJoinHandler() {
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
@@ -207,6 +232,7 @@ public final class LifecycleEventsRegistrar {
             // 中途重连：仅在本维 SRE 对局 running 且任务维度匹配时重发 HUD，避免跨存档僵尸任务框
             try {
                 var tm = com.habitrain.core.task.TaskManager.getInstance();
+                com.habitrain.core.game.sre.DlcTaskTracker.onPlayerJoin(player);
                 tm.flushPendingReclaim(player);
                 ServerLevel taskLevel = player.serverLevel();
                 boolean sreRunning = false;
@@ -220,23 +246,22 @@ public final class LifecycleEventsRegistrar {
                 }
                 if (!sreRunning) {
                     tm.removeActiveTask(player.getUUID());
-                    tm.removeFakeTask(player.getUUID());
+                    // 客户端 JOIN 不清 ActiveTaskCache（避免与服务端快照竞态），
+                    // 因此"服务端已经没有任务"必须显式下清空包，否则集成服/重连会
+                    // 把上一局记录的 DLC 任务 id 留在客户端，旧任务点持续透视。
+                    com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
                 } else {
                     var active = tm.getActiveTask(player.getUUID());
                     if (active != null) {
                         var taskDim = active.getDimension();
                         if (taskDim == null || taskDim.equals(taskLevel.dimension())) {
                             com.habitrain.core.network.ActiveTaskPayload.sendToPlayer(
-                                    player, active.getFullId(), false);
+                                    player, active.getFullId());
+                        } else {
+                            com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
                         }
-                    }
-                    var fake = tm.getFakeTask(player.getUUID());
-                    if (fake != null) {
-                        var fakeDim = fake.getDimension();
-                        if (fakeDim == null || fakeDim.equals(taskLevel.dimension())) {
-                            com.habitrain.core.network.ActiveTaskPayload.sendToPlayer(
-                                    player, fake.getFullId(), true);
-                        }
+                    } else {
+                        com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
                     }
                 }
             } catch (Exception e) {
@@ -394,6 +419,11 @@ public final class LifecycleEventsRegistrar {
                 ((com.habitrain.core.role.action.RoleActionServiceImpl)
                         com.habitrain.core.api.role.v2.action.RoleActionApi.instance())
                         .onPlayerDisconnect(player.getUUID());
+                // 角色能力 v2（审核 R-04）：清除该玩家的隔离组，避免重连后仍带旧组。
+                if (com.habitrain.core.api.role.v2.capability.RoleCapabilityApi.instance()
+                        instanceof com.habitrain.core.role.capability.RoleCapabilityServiceImpl caps) {
+                    caps.onPlayerDisconnect(player.getUUID());
+                }
                 // 角色扩展握手（audit P1-4）：断线清除该玩家的上报，避免把上一连接的
                 // manifest 带入下一次连接。
                 com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE

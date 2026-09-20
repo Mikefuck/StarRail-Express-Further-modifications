@@ -1,5 +1,7 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.api.scene.SceneMotionSettings;
+
 import org.jetbrains.annotations.Nullable;
 import java.util.*;
 

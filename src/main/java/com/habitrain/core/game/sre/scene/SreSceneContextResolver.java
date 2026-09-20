@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.scene;
 
 import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
-import com.habitrain.core.scene.server.SceneContextResolver;
+import com.habitrain.core.api.scene.SceneContextResolver;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

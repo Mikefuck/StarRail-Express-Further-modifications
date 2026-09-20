@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 
 import java.util.Objects;
 import java.util.UUID;

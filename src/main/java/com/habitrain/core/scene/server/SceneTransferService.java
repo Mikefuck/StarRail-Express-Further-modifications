@@ -1,8 +1,8 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.SceneLimits;
 import com.habitrain.core.scene.network.SceneAssetChunkRequestC2S;
 import com.habitrain.core.scene.network.SceneAssetChunkS2C;
 import com.habitrain.core.scene.network.SceneAssetChunkStatusS2C;

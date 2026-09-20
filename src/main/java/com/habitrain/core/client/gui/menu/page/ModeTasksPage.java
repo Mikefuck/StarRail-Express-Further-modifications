@@ -28,7 +28,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * "任务配置" 子页 — 左侧模式列表 + 右侧任务网格。
+ * "任务配置" 子页 — 左侧分区列表 + 右侧任务网格。
+ * <p>左侧分区维度是 <b>固定的三组</b>（原版哈比任务 / 更多任务 / 其他，见
+ * {@link #groupKeyFor}），<b>不是</b>游戏模式；右侧再按
+ * {@link TaskCategory 任务分类} 二次分组。
  * <p>由 ConfigMenuScreen 以 {@code new ModeTasksPage(this, font, remoteEditable)} 构造。
  */
 public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigPage {
@@ -40,18 +43,22 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private static final String GROUP_ORIGINAL = "original";
     private static final String GROUP_MORE = "more";
     private static final String GROUP_OTHER = "other";
-    private static final Set<String> ORIGINAL_SRE_TASK_IDS = Set.of(
-            "sleep", "eat", "drink", "exercise", "raed_book", "bathe", "toilet",
-            "chair", "note_block", "meditate", "outside", "breathe", "be_alone",
-            "repair_wire", "repair_panel", "vending_machine"
-    );
+    /**
+     * 「原版哈比任务」分组的成员清单。
+     * <p><b>唯一来源</b>是 {@link com.habitrain.core.game.sre.SreTaskMirrors#ids()} —— 与
+     * {@code GenerateTaskMixin.BUILTIN_SRE_TASK_IDS}（派发池排除兜底）完全同源，
+     * 因此「注册为镜像」「排除出 DLC 池」「配置页归入原版组」三处口径永远一致
+     * （audit P1-5 的三套清单已合并）。
+     */
+    private static final Set<String> ORIGINAL_GROUP_TASK_IDS =
+            com.habitrain.core.game.sre.SreTaskMirrors.ids();
 
     private final ConfigMenuScreen root;
     private final Font font;
     private final boolean editable;
 
-    private Map<String, ModeSection> sections = new LinkedHashMap<>();
-    private String selectedMode = "";
+    private Map<String, TaskGroup> sections = new LinkedHashMap<>();
+    private String selectedGroup = "";
     private String searchText = "";
 
     private EditBox searchBox;
@@ -70,7 +77,8 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private final List<RowHit> sidebarHits = new ArrayList<>();
     private final List<TaskRowHit> taskHits = new ArrayList<>();
 
-    private record ModeSection(String gameModeId, String title, int accent, List<TaskDefinition> tasks) {}
+    /** 左侧分区：{@code groupKey} 是 {@link #GROUP_ORIGINAL}/{@link #GROUP_MORE}/{@link #GROUP_OTHER}，不是游戏模式 ID。 */
+    private record TaskGroup(String groupKey, String title, int accent, List<TaskDefinition> tasks) {}
     private record RowHit(String id, int x, int y, int w, int h) {}
     private record TaskRowHit(TaskDefinition def, int toggleX, int toggleW, int editX, int editW, int y, int h) {}
 
@@ -79,7 +87,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         this.font = font;
         this.editable = editable;
         rebuildSections();
-        if (!sections.isEmpty()) selectedMode = sections.keySet().iterator().next();
+        if (!sections.isEmpty()) selectedGroup = sections.keySet().iterator().next();
     }
 
     // ==================== 构建/分组 ====================
@@ -100,9 +108,9 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             tasks.sort(Comparator
                     .comparingInt((TaskDefinition d) -> taskCategoryPriority(d.getCategory()))
                     .thenComparing(TaskDefinition::getDisplayName, String.CASE_INSENSITIVE_ORDER));
-            String title = resolveSectionTitle(sectionKey, tasks);
-            int accent = accentForSection(sectionKey, tasks);
-            sections.put(sectionKey, new ModeSection(sectionKey, title, accent, tasks));
+            String title = resolveSectionTitle(sectionKey);
+            int accent = accentForSection(sectionKey);
+            sections.put(sectionKey, new TaskGroup(sectionKey, title, accent, tasks));
         }
     }
 
@@ -110,7 +118,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
         if (HabiTrainCore.MOD_ID.equals(def.getModId())
                 && "sre:base".equals(def.getGameModeId())
-                && ORIGINAL_SRE_TASK_IDS.contains(def.getTaskId())) {
+                && ORIGINAL_GROUP_TASK_IDS.contains(def.getTaskId())) {
             return GROUP_ORIGINAL;
         }
         if (!HabiTrainCore.MOD_ID.equals(def.getModId()) || "sre:base".equals(def.getGameModeId())) {
@@ -119,7 +127,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         return GROUP_OTHER;
     }
 
-    private String resolveSectionTitle(String sectionKey, List<TaskDefinition> tasks) {
+    private String resolveSectionTitle(String sectionKey) {
         return switch (sectionKey) {
             case GROUP_ORIGINAL -> "原版哈比任务";
             case GROUP_MORE -> "更多任务";
@@ -127,7 +135,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         };
     }
 
-    private int accentForSection(String sectionKey, List<TaskDefinition> tasks) {
+    private int accentForSection(String sectionKey) {
         return switch (sectionKey) {
             case GROUP_ORIGINAL -> MenuTheme.ACCENT_MINT;
             case GROUP_MORE -> MenuTheme.ACCENT_BLUE;
@@ -185,7 +193,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         g.enableScissor(sidebarX, sidebarListY, sidebarX + SIDEBAR_W, sidebarListY + sidebarListH);
         int rowY = sidebarListY - (int) sidebarScroll;
         for (var section : sections.values()) {
-            boolean selected = section.gameModeId().equals(selectedMode);
+            boolean selected = section.groupKey().equals(selectedGroup);
             boolean hover = MenuTheme.inBounds(mx, my, sidebarX, rowY, SIDEBAR_W, ROW_H);
             int bg = selected ? MenuTheme.BG_ROW_SELECTED : (hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_PANEL);
             g.fill(sidebarX, rowY, sidebarX + SIDEBAR_W, rowY + ROW_H, bg);
@@ -194,7 +202,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             String label = section.title() + " §7" + enabled + "/" + section.tasks().size();
             g.drawString(font, label, sidebarX + 8, rowY + (ROW_H - font.lineHeight) / 2,
                     selected ? 0xFFFFFFFF : MenuTheme.TEXT_PRIMARY, false);
-            sidebarHits.add(new RowHit(section.gameModeId(), sidebarX, rowY, SIDEBAR_W, ROW_H));
+            sidebarHits.add(new RowHit(section.groupKey(), sidebarX, rowY, SIDEBAR_W, ROW_H));
             rowY += ROW_H;
         }
         // 滚动条
@@ -205,7 +213,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         g.disableScissor();
 
         // 内容区：任务列表
-        ModeSection section = sections.get(selectedMode);
+        TaskGroup section = sections.get(selectedGroup);
         if (section == null) return;
         taskHits.clear();
         g.enableScissor(contentX, y, contentX + contentW, y + h);
@@ -293,7 +301,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         // 侧边栏点击
         for (RowHit hit : sidebarHits) {
             if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
-                selectedMode = hit.id();
+                selectedGroup = hit.id();
                 contentScroll = 0;
                 MenuSounds.playClick();
                 return true;
@@ -402,9 +410,9 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             com.habitrain.core.config.TaskInstinctColor.normalizeLoadedEntry(cfg, def);
         }
         ConfigManager.getInstance().putTaskConfig(def.getFullId(), cfg);
-        ModeSection section = sections.get(groupKeyFor(def));
-        String modeName = section != null ? section.title() : def.getGameModeId();
+        TaskGroup section = sections.get(groupKeyFor(def));
+        String groupName = section != null ? section.title() : def.getGameModeId();
         int accent = section != null ? section.accent() : MenuTheme.accentFor(def.getGameModeId());
-        Minecraft.getInstance().setScreen(new TaskEditScreen(root, def, cfg, def.getCategory(), modeName, accent));
+        Minecraft.getInstance().setScreen(new TaskEditScreen(root, def, cfg, def.getCategory(), groupName, accent));
     }
 }

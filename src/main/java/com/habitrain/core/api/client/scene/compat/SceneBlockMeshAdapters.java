@@ -1,6 +1,5 @@
 package com.habitrain.core.api.client.scene.compat;
 
-import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 

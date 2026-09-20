@@ -38,9 +38,10 @@ public class HabiTrainCore implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     // ===== 音效事件常量 =====
+    // look_my_eyes 复用原版 minecraft:entity.player.levelup（见 assets/habitrain_core/sounds.json），
+    // 并没有随包分发 .ogg；只有 backpack_search / mike_code_edit 是自带音频文件。
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
-    // look_my_eyes.ogg now bundled in assets
     public static final ResourceLocation BACKPACK_SEARCH_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "backpack_search");
     public static final SoundEvent BACKPACK_SEARCH_SOUND = SoundEvent.createVariableRangeEvent(BACKPACK_SEARCH_ID);
     public static final ResourceLocation MIKE_CODE_EDIT_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "mike_code_edit");
@@ -61,8 +62,11 @@ public class HabiTrainCore implements ModInitializer {
                         .orElseThrow().getMetadata().getVersion().getFriendlyString());
         // 1. 配置系统
         ConfigManager.getInstance().load();
-        // Core is the single authoritative implementation of eat/drink in every SRE mode.
-        com.habitrain.core.game.sre.CoreConsumableTasks.register();
+        // 1a. 装配公开层 SPI（SreRuntime / ExtraSlotReclaim / TaskPoolCache / Scene / MenuGate / Vote）。
+        //     必须在任何公开层调用之前完成，否则 GameModeRegistry 的 SRE 占用判定会退化为「未占用」。
+        //     审核 B14：装配只在 core 生命周期作用域内生效，第三方无法在运行期替换这些桥接。
+        com.habitrain.core.internal.CoreLifecycleScope.run(
+                com.habitrain.core.internal.CoreSpiRegistrar::register);
         // Mod 菜单访问门控（独立文件 config/habitrain_menu_gate.json，服务端权威）
         com.habitrain.core.config.MenuGateService.load();
         // 角色扩展 v2 配置（独立版本化文件 config/habitrain_role_v2.json，服务端权威）
@@ -80,7 +84,7 @@ public class HabiTrainCore implements ModInitializer {
         // 由 CoreRoleExtensionProvider 经 role_extensions entrypoint 注册，并回填
         // HabiRoles.CRIME_SCAPEGOAT，供 HabiRoleEvents.init() 读取。
         com.habitrain.core.role.extension.RoleExtensionRegistry.init();
-        com.habitrain.core.internal.CoreBootstrap.run(() ->
+        com.habitrain.core.internal.CoreLifecycleScope.run(() ->
                 com.habitrain.core.api.role.v2.RoleExtensionApi.instance().loadProviders());
         // MODIFY relation patches are linked only when a compiled lobby/round
         // snapshot is activated. Resolve keys through the catalog at that

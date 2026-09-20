@@ -4,8 +4,8 @@ import com.google.gson.JsonParser;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.scene.SceneInstanceAnchor;
 import com.habitrain.core.api.scene.SceneInstanceSpec;
-import com.habitrain.core.scene.model.SceneInstance;
-import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneInstance;
+import com.habitrain.core.api.scene.model.SceneProfile;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;
@@ -41,7 +41,8 @@ public record SceneInstancesS2C(List<SceneInstance> upserts, List<String> remova
     /** 单个实例的 profile JSON 上限。 */
     public static final int MAX_PROFILE_JSON_BYTES = 128 * 1024;
     /** 单个实例的标签数量上限。 */
-    public static final int MAX_TAGS = 64;
+    /** 审核 S-07：与服务端 {@code SceneInstanceSpec} 的「标签数量上限 32」保持一致。 */
+    public static final int MAX_TAGS = 32;
     /** 单个实例的可见性白名单条目上限。 */
     public static final int MAX_VISIBILITY_ENTRIES = 4096;
 

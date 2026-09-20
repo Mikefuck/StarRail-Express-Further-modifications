@@ -2,10 +2,10 @@ package com.habitrain.core.scene.client;
 
 import com.habitrain.core.client.config.ClientVisualPreferences;
 import com.habitrain.core.client.config.SceneClientPerformanceRules;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDelta;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.asset.SceneRegistryFingerprint;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDelta;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneRegistryFingerprint;
 import com.habitrain.core.scene.network.SceneAssetChunkRequestC2S;
 import com.habitrain.core.scene.network.SceneAssetChunkS2C;
 import com.habitrain.core.scene.network.SceneAssetChunkStatusS2C;

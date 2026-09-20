@@ -3,7 +3,7 @@ package com.habitrain.core.scene;
 import com.habitrain.core.api.scene.SceneInstanceAnchor;
 import com.habitrain.core.api.scene.SceneInstanceSpec;
 import com.habitrain.core.api.scene.SceneProfileBuilder;
-import com.habitrain.core.scene.model.SceneInstance;
+import com.habitrain.core.api.scene.model.SceneInstance;
 import com.habitrain.core.scene.network.SceneInstancesS2C;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

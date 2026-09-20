@@ -1,11 +1,13 @@
 package com.habitrain.core.scene.server;
 
+import com.habitrain.core.api.spi.SceneAssetBridge;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.habitrain.core.persist.AtomicJsonFiles;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 服务端场景资产存储管理器（管理 world/habitrain_scene_assets/ 下的 .hscene 与 index.json）。
  */
-public final class SceneAssetStore {
+public final class SceneAssetStore implements SceneAssetBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneAssetStore.class.getSimpleName());
     private static final String DIR_NAME = "habitrain_scene_assets";
     private static final String INDEX_FILE_NAME = "index.json";

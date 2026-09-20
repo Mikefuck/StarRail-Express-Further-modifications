@@ -153,8 +153,10 @@ public final class RoleActionSpec {
         }
 
         public Builder maxDistance(double maxDistance) {
-            if (maxDistance < 0) {
-                throw new IllegalArgumentException("maxDistance must be >= 0");
+            // 审核 R-06：旧判据只拒 <0，NaN 可以直接通过（NaN < 0 为 false）并静默变成
+            // 「不设上限」。统一为 must be finite && >= 0，0 明确表示不限制。
+            if (!Double.isFinite(maxDistance) || maxDistance < 0) {
+                throw new IllegalArgumentException("maxDistance must be finite and >= 0 (0 = unlimited)");
             }
             this.maxDistance = maxDistance;
             return this;

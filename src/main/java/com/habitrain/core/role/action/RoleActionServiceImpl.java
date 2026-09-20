@@ -419,6 +419,12 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                 if (entityId == null) {
                     return RoleActionResult.reject(RoleActionResult.TARGET, "entity id required");
                 }
+                // 审核 R-01：{@code RoleActionTarget.Entity} 的构造器对 <=0 抛
+                // IllegalArgumentException（公开契约却是「返回 RoleActionResult」）。
+                // 网络路径已被 getEntity 提前拦掉，但嵌入式/测试 dispatch 会直接炸。
+                if (entityId <= 0) {
+                    return RoleActionResult.reject(RoleActionResult.TARGET, "entity id must be positive");
+                }
                 if (player != null && player.level().getEntity(entityId) == null) {
                     return RoleActionResult.reject(RoleActionResult.TARGET, "entity not found");
                 }

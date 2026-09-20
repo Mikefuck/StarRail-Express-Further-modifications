@@ -1,12 +1,12 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneMotionMath;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneLoopSettings;
-import com.habitrain.core.scene.model.SceneProfileValidator;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneMotionMath;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneLoopSettings;
+import com.habitrain.core.api.scene.model.SceneProfileValidator;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

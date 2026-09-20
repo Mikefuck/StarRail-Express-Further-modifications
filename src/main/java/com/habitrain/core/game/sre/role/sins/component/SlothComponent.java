@@ -190,8 +190,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
                 && tasks.tasks.get(SREPlayerTaskComponent.Task.SLEEP) instanceof SREPlayerTaskComponent.SleepTask;
         if (alreadySleepingTask && !tasks.parallelTaskGenerated
                 && minigames.pendingMinigameTasks == 0 && minigames.sabotageMinigameId == null
-                && manager.getActiveTask(target.getUUID()) == null
-                && manager.getFakeTask(target.getUUID()) == null) {
+                && manager.getActiveTask(target.getUUID()) == null) {
             return;
         }
         var existingSleep = tasks.tasks.get(SREPlayerTaskComponent.Task.SLEEP);

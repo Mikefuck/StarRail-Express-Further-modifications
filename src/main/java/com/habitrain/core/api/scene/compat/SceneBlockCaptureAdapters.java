@@ -1,7 +1,5 @@
 package com.habitrain.core.api.scene.compat;
 
-import com.habitrain.core.scene.compat.SceneBlockCaptureAdapterRegistry;
-
 /**
  * 移动场景服务端方块捕获适配器公共注册入口。
  */

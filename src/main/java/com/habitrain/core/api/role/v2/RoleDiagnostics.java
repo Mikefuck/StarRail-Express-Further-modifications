@@ -21,7 +21,7 @@ public interface RoleDiagnostics {
         private DefaultHolder() {}
 
         static final RoleDiagnostics INSTANCE =
-                new com.habitrain.core.role.diag.RoleDiagnosticsImpl();
+                com.habitrain.core.api.spi.RoleSpi.diagnostics();
     }
 
     /** A full diagnostic report. */

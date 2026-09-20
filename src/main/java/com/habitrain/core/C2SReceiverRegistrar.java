@@ -400,8 +400,8 @@ public final class C2SReceiverRegistrar {
                                 String selectedMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
                                         payload.mapKey(), currentMapKey, allowedMapKeys);
                                 String backgroundId = payload.backgroundId() != null && !payload.backgroundId().isBlank()
-                                        ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(payload.backgroundId())
-                                        : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                                        ? com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeBackgroundId(payload.backgroundId())
+                                        : com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
                                 syncSceneToolTarget(player, selectedMapKey, backgroundId);
                             } catch (RuntimeException ignored) {
                                 player.sendSystemMessage(Component.literal("§c场景地图切换被拒绝：地图不存在或未配置"));
@@ -445,20 +445,20 @@ public final class C2SReceiverRegistrar {
         var session = manager.getSession(player.getUUID());
         boolean selectionInDimension = session != null && dimension.equals(session.getDimension());
         String selectionMapKey = selectionInDimension ? session.getMapKey() : mapKey;
-        com.habitrain.core.scene.model.SceneBounds bounds = selectionInDimension
-                ? session.toBounds() : com.habitrain.core.scene.model.SceneBounds.EMPTY;
+        com.habitrain.core.api.scene.model.SceneBounds bounds = selectionInDimension
+                ? session.toBounds() : com.habitrain.core.api.scene.model.SceneBounds.EMPTY;
         ServerPlayNetworking.send(player,
                 com.habitrain.core.scene.network.SceneSelectionStateS2C.fromBounds(
                         dimension, selectionMapKey, bounds, bounds.isEmpty() ? 0L : bounds.volume()));
     }
 
     private static java.util.Set<String> configuredAdditionalSceneAssetKeys(
-            com.habitrain.core.config.SceneMotionSettings settings) {
+            com.habitrain.core.api.scene.SceneMotionSettings settings) {
         java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
         if (settings == null) return keys;
         for (var mapEntry : settings.backgrounds.entrySet()) {
             for (String backgroundId : mapEntry.getValue().keySet()) {
-                keys.add(com.habitrain.core.scene.model.SceneBackgroundKey.assetKey(
+                keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.assetKey(
                         mapEntry.getKey(), backgroundId));
             }
         }

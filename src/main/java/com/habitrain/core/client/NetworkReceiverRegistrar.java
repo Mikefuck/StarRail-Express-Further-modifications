@@ -68,20 +68,12 @@ public class NetworkReceiverRegistrar {
         ClientPlayNetworking.registerGlobalReceiver(ActiveTaskPayload.TYPE, (payload, context) -> {
             context.client().execute(() -> {
                 if (payload.isClear()) {
-                    HabiTrainCore.LOGGER.info("收到活跃自定义任务清空信号 (isFake={})", payload.isFake());
-                    if (payload.isFake()) {
-                        ActiveTaskCache.clearFakeTask();
-                    } else {
-                        ActiveTaskCache.clear();
-                    }
+                    HabiTrainCore.LOGGER.info("收到活跃自定义任务清空信号");
+                    ActiveTaskCache.clear();
                 } else {
-                    HabiTrainCore.LOGGER.info("收到活跃自定义任务同步: {} (isFake={})",
-                            payload.getTaskFullId(), payload.isFake());
-                    if (payload.isFake()) {
-                        ActiveTaskCache.setFakeTask(payload.getTaskFullId());
-                    } else {
-                        ActiveTaskCache.setActiveTask(payload.getTaskFullId());
-                    }
+                    HabiTrainCore.LOGGER.info("收到活跃自定义任务同步: {}",
+                            payload.getTaskFullId());
+                    ActiveTaskCache.setActiveTask(payload.getTaskFullId());
                 }
             });
         });
@@ -434,19 +426,19 @@ public class NetworkReceiverRegistrar {
                             if (payload.editorMapKey() != null && !payload.editorMapKey().isBlank()) {
                                 configuredMapKeys.add(payload.editorMapKey());
                             }
-                            String initialMapKey = com.habitrain.core.scene.model.SceneEditorMapPolicy.resolve(
+                            String initialMapKey = com.habitrain.core.api.scene.model.SceneEditorMapPolicy.resolve(
                                     payload.editorMapKey(), payload.runtimeMapKey(), "",
                                     configuredMapKeys);
                             String initialBackgroundId = payload.editorBackgroundId();
                             if (initialBackgroundId == null || initialBackgroundId.isBlank()) {
-                                initialBackgroundId = com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                                initialBackgroundId = com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
                             }
                             var initialProfile = initialMapKey.equals(payload.editorMapKey())
                                     ? payload.parseProfile() : sceneSettings.getBackgroundProfile(initialMapKey, initialBackgroundId).copy();
-                            String assetKey = com.habitrain.core.scene.model.SceneBackgroundKey.assetKey(initialMapKey, initialBackgroundId);
+                            String assetKey = com.habitrain.core.api.scene.model.SceneBackgroundKey.assetKey(initialMapKey, initialBackgroundId);
                             var initialDescriptor = initialMapKey.equals(payload.editorMapKey())
                                     ? payload.assetDescriptor() : sceneRuntime.getManifest(assetKey);
-                            if (initialDescriptor == null && com.habitrain.core.scene.model.SceneBackgroundKey.isDefault(initialBackgroundId)) {
+                            if (initialDescriptor == null && com.habitrain.core.api.scene.model.SceneBackgroundKey.isDefault(initialBackgroundId)) {
                                 initialDescriptor = sceneRuntime.getManifest(initialMapKey);
                             }
                             mc.setScreen(com.habitrain.core.client.gui.menu.ConfigMenuScreen.openSceneMotion(
@@ -479,7 +471,7 @@ public class NetworkReceiverRegistrar {
                             com.habitrain.core.client.gui.menu.page.SceneMotionPage
                                     .rememberAuthoritativeEditorTarget(
                                             payload.mapKey(), payload.backgroundId());
-                            String backgroundName = com.habitrain.core.scene.model.SceneBackgroundKey
+                            String backgroundName = com.habitrain.core.api.scene.model.SceneBackgroundKey
                                     .isDefault(payload.backgroundId())
                                     ? net.minecraft.network.chat.Component.translatable(
                                             "screen.habitrain_core.scene_motion.background_default").getString()

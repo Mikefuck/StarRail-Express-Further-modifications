@@ -86,7 +86,7 @@ public final class CommandRegistrar {
                             }))
                             .then(Commands.literal("status").executes(ctx -> {
                                 var snap = ModeMapVoteApi.getSnapshot(ctx.getSource().getLevel()).orElse(null);
-                                if (snap == null || "IDLE".equals(snap.phase())) {
+                                if (snap == null || snap.phase() == null || snap.phase().isIdle()) {
                                     ctx.getSource().sendSuccess(
                                             () -> Component.literal("§7当前无投票"), false);
                                 } else {
@@ -424,7 +424,7 @@ public final class CommandRegistrar {
                                 }
                                 ctx.getSource().sendSuccess(() -> Component.literal(
                                         "§a已导出 §e" + result.assets() + " §a个场景资产（§f"
-                                                + com.habitrain.core.scene.asset.SceneAssetSizeReport.humanBytes(result.bytes())
+                                                + com.habitrain.core.api.scene.asset.SceneAssetSizeReport.humanBytes(result.bytes())
                                                 + "§a）\n§7目录: §f" + result.directory()
                                                 + "\n§7把该目录里的 .hscene 放进客户端 §f.habitrain_scene_seed/§7 即可免下载"
                                                 + (result.skipped() > 0 ? "\n§7跳过（无文件/无效）: §e" + result.skipped() : "")), false);

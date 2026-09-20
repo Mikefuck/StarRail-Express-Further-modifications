@@ -1,9 +1,9 @@
 package com.habitrain.core.scene;
 
 import com.google.gson.JsonObject;
-import com.habitrain.core.config.SceneMotionSettings;
+import com.habitrain.core.api.scene.SceneMotionSettings;
 import com.habitrain.core.network.ConfigUpdateAccessPolicy;
-import com.habitrain.core.scene.model.*;
+import com.habitrain.core.api.scene.model.*;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;

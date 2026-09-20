@@ -37,7 +37,7 @@ public final class SceneClientRuntime {
     public static void onMatchFinished() {
         var state = SceneRenderRuntime.getInstance().getCurrentState();
         if (state != null && state.isActive()
-                && com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY.equals(state.getMapKey())) {
+                && com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY.equals(state.getMapKey())) {
             stopPreview();
             resetEditorState();
         } else {

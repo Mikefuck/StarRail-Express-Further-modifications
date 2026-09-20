@@ -25,7 +25,7 @@ public final class TaskSelector {
      * @param total           total accumulated weight
      * @param player          the player (for RNG)
      * @param originalCreator callback to instantiate an original task (wraps the @Shadow createTaskInstance)
-     * @param dlcCreator      callback to create and track a DLC task (captures currentIsFakeTask in closure)
+     * @param dlcCreator      callback to create and track a DLC task
      * @return selected TrainTask, or null if none could be selected
      */
     @Nullable

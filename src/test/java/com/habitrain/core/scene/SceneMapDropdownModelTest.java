@@ -1,6 +1,6 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.model.SceneMapDropdownModel;
+import com.habitrain.core.api.scene.model.SceneMapDropdownModel;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

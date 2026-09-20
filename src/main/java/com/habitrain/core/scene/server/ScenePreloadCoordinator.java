@@ -1,7 +1,7 @@
 package com.habitrain.core.scene.server;
 
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.network.SceneAssetPrefetchS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.ResourceKey;

@@ -43,7 +43,8 @@ class RemovedModePackagingTest {
         for (String retained : new String[] {
                 "HabiTrainCore", "NetworkRegistrar", "C2SReceiverRegistrar",
                 "client/VoteKeyHandler", "game/sre/ForcedReadyJoinGate",
-                "game/sre/CoreConsumableTasks", "role/change/RoleChangeServiceImpl",
+                "internal/CoreSpiRegistrar", "api/spi/CoreSpi",
+                "role/change/RoleChangeServiceImpl",
                 "role/override/RoleOverrideWinHook", "game/sre/SreRoleAssignmentEffects"}) {
             try (var stream = getClass().getResourceAsStream(root + retained + ".class")) {
                 assertNotNull(stream, retained);

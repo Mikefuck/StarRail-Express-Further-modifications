@@ -22,7 +22,7 @@ public interface RoleForceApi {
         private DefaultHolder() {}
 
         static final RoleForceApi INSTANCE =
-                new com.habitrain.core.role.force.RoleForceServiceImpl();
+                com.habitrain.core.api.spi.RoleSpi.force();
     }
 
     /**

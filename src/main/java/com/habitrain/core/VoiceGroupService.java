@@ -29,6 +29,11 @@ public final class VoiceGroupService {
      * 执行 /instantgroup 命令：将范围内玩家加入临时语音群组。
      */
     public static int executeInstantGroup(CommandContext<CommandSourceStack> context, int range) {
+        // 审核 B25：显式的可选依赖守卫（voicechat 只在 fabric.mod.json 里 suggests）。
+        if (!com.habitrain.core.game.sre.VoiceChatPresence.isLoaded()) {
+            context.getSource().sendFailure(net.minecraft.network.chat.Component.literal("u00a7c未安装 Simple Voice Chat，/instantgroup 不可用"));
+            return 0;
+        }
         CommandSourceStack source = context.getSource();
         ServerPlayer sender = source.getPlayer();
         if (sender == null) { source.sendFailure(Component.literal("§c此命令只能由玩家执行")); return 0; }

@@ -1,21 +1,22 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
 import com.habitrain.core.api.scene.SceneInstanceAnchor;
 import com.habitrain.core.client.mixin.FrustumAccessor;
-import com.habitrain.core.scene.model.SceneInstance;
-import com.habitrain.core.scene.model.SceneInstanceBounds;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneMotionMath;
-import com.habitrain.core.scene.model.SceneMotionMode;
-import com.habitrain.core.scene.model.SceneOrbitAxis;
-import com.habitrain.core.scene.model.SceneOrbitMath;
-import com.habitrain.core.scene.model.SceneOrbitSettings;
-import com.habitrain.core.scene.model.SceneInstanceTransform;
-import com.habitrain.core.scene.model.SceneRotation;
-import com.habitrain.core.scene.model.SceneRuntimeState;
-import com.habitrain.core.scene.model.SceneShakeSettings;
-import com.habitrain.core.scene.model.SceneSoundSettings;
+import com.habitrain.core.api.scene.model.SceneInstance;
+import com.habitrain.core.api.scene.model.SceneInstanceBounds;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneMotionMath;
+import com.habitrain.core.api.scene.model.SceneMotionMode;
+import com.habitrain.core.api.scene.model.SceneOrbitAxis;
+import com.habitrain.core.api.scene.model.SceneOrbitMath;
+import com.habitrain.core.api.scene.model.SceneOrbitSettings;
+import com.habitrain.core.api.scene.model.SceneInstanceTransform;
+import com.habitrain.core.api.scene.model.SceneRotation;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.model.SceneShakeSettings;
+import com.habitrain.core.api.scene.model.SceneSoundSettings;
 import com.habitrain.core.scene.network.SceneAssetReadyC2S;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -44,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 客户端移动场景运行时渲染器（根据零Tick网络同步的开局时间戳与位移参数在客户端平滑计算位置并渲染两份无缝循环副本）。
  */
-public final class SceneRenderRuntime {
+public final class SceneRenderRuntime implements com.habitrain.core.api.spi.SceneClientBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneRenderRuntime.class.getSimpleName());
 
     private static final SceneRenderRuntime INSTANCE = new SceneRenderRuntime();
@@ -83,7 +84,7 @@ public final class SceneRenderRuntime {
     /** 显存估算配额；-1 表示尚未从配置读取。 */
     private volatile long meshCacheQuotaBytes = -1L;
     private volatile SceneCompatibilityReport lastCompatibilityReport = new SceneCompatibilityReport();
-    private volatile com.habitrain.core.scene.model.ScenePublishPolicy publishPolicy = com.habitrain.core.scene.model.ScenePublishPolicy.STRICT;
+    private volatile com.habitrain.core.api.scene.model.ScenePublishPolicy publishPolicy = com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT;
 
     // 预览模式覆盖
     private boolean previewActive = false;
@@ -100,7 +101,7 @@ public final class SceneRenderRuntime {
         return lastCompatibilityReport;
     }
 
-    public com.habitrain.core.scene.model.ScenePublishPolicy getPublishPolicy() {
+    public com.habitrain.core.api.scene.model.ScenePublishPolicy getPublishPolicy() {
         return publishPolicy;
     }
 
@@ -114,8 +115,8 @@ public final class SceneRenderRuntime {
         return lastVisibleOrbitInstances;
     }
 
-    public void setPublishPolicy(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
-        this.publishPolicy = policy != null ? policy : com.habitrain.core.scene.model.ScenePublishPolicy.STRICT;
+    public void setPublishPolicy(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
+        this.publishPolicy = policy != null ? policy : com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT;
     }
 
     /**
@@ -319,7 +320,7 @@ public final class SceneRenderRuntime {
                     SceneMeshSet mesh = result != null ? result.meshSet() : null;
                     SceneCompatibilityReport report = result != null ? result.report() : null;
                     boolean fatal = report != null && report.hasBlockingIssues(
-                            com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+                            com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
                     boolean wantedByPrefetch = additionalPrefetchWaiters.containsKey(hash);
                     if (generation != additionalMeshGeneration
                             || (!isWantedAdditionalHash(hash) && !wantedByPrefetch)
@@ -345,9 +346,9 @@ public final class SceneRenderRuntime {
         if (mapKey == null || mapKey.isBlank()) return SceneAssetDescriptor.EMPTY;
         SceneAssetDescriptor descriptor = manifestsByMap.get(mapKey);
         if (descriptor != null && descriptor.isValid()) return descriptor;
-        if (com.habitrain.core.scene.model.SceneBackgroundKey.isDefault(
-                com.habitrain.core.scene.model.SceneBackgroundKey.backgroundIdFromAssetKey(mapKey))) {
-            String bare = com.habitrain.core.scene.model.SceneBackgroundKey.mapKeyFromAssetKey(mapKey);
+        if (com.habitrain.core.api.scene.model.SceneBackgroundKey.isDefault(
+                com.habitrain.core.api.scene.model.SceneBackgroundKey.backgroundIdFromAssetKey(mapKey))) {
+            String bare = com.habitrain.core.api.scene.model.SceneBackgroundKey.mapKeyFromAssetKey(mapKey);
             descriptor = manifestsByMap.get(bare);
             if (descriptor != null && descriptor.isValid()) return descriptor;
         }
@@ -376,8 +377,8 @@ public final class SceneRenderRuntime {
         }
         // 预取包本身不带协议版本，用 manifest 里见到的那个（同一会话内先到的一般就是它）。
         SceneAssetCache.getInstance().considerDeltaProbe(mapKey, descriptor, lastServerProtocolVersion);
-        if (!com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID.equals(
-                com.habitrain.core.scene.model.SceneBackgroundKey.backgroundIdFromAssetKey(mapKey))) {
+        if (!com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID.equals(
+                com.habitrain.core.api.scene.model.SceneBackgroundKey.backgroundIdFromAssetKey(mapKey))) {
             prefetchAdditionalAsset(sessionId, mapKey, descriptor);
             return;
         }
@@ -423,7 +424,7 @@ public final class SceneRenderRuntime {
                     SceneMeshSet mesh = result != null ? result.meshSet() : null;
                     SceneCompatibilityReport report = result != null ? result.report() : null;
                     boolean fatal = report != null && report.hasBlockingIssues(
-                            com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+                            com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
                     success = generation == additionalMeshGeneration && mesh != null
                             && !mesh.isEmpty() && !mesh.isClosed() && !fatal;
                     if (success) {
@@ -564,7 +565,7 @@ public final class SceneRenderRuntime {
         }
         String sha256 = descriptor.sha256();
         manifestsByHash.put(sha256, descriptor);
-        com.habitrain.core.scene.model.ScenePublishPolicy inspectionPolicy = publishPolicy;
+        com.habitrain.core.api.scene.model.ScenePublishPolicy inspectionPolicy = publishPolicy;
         return prepareMesh(descriptor).thenApply(meshReady -> {
             SceneCompatibilityReport report = compatibilityReportsByHash.getOrDefault(
                     sha256, new SceneCompatibilityReport());
@@ -580,14 +581,14 @@ public final class SceneRenderRuntime {
             String assetHash,
             boolean meshReady,
             boolean accepted,
-            com.habitrain.core.scene.model.ScenePublishPolicy policy,
+            com.habitrain.core.api.scene.model.ScenePublishPolicy policy,
             SceneCompatibilityReport report
     ) {
         public boolean isPolicyOnlyFailure() {
             return meshReady && !accepted
-                    && policy == com.habitrain.core.scene.model.ScenePublishPolicy.STRICT
+                    && policy == com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT
                     && report != null
-                    && report.isCompatible(com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+                    && report.isCompatible(com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
         }
     }
 
@@ -648,11 +649,11 @@ public final class SceneRenderRuntime {
             // rejecting the whole VBO here made every supported block disappear too. Missing
             // textures/invalid atlases remain an unconditional client-side safety failure.
             boolean hasFatalMaterialIssue = report != null && report.hasBlockingIssues(
-                    com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+                    com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
             if (hasFatalMaterialIssue) {
                 LOGGER.warn("拒绝加载存在严重材质问题的场景资产: hash={}, blocking={}",
                         shortHash(sha256), report.getBlockingIssues(
-                                com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN).size());
+                                com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN).size());
             }
             success = meshSet != null && !meshSet.isEmpty() && !meshSet.isClosed()
                     && !hasFatalMaterialIssue;
@@ -673,7 +674,7 @@ public final class SceneRenderRuntime {
     private static void logCompatibilityIssues(
             String sha256,
             SceneCompatibilityReport report,
-            com.habitrain.core.scene.model.ScenePublishPolicy policy) {
+            com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
         if (report == null || report.totalIssueCount() == 0L) return;
         java.util.List<SceneCompatibilityReport.Entry> issues = report.getIssues();
         java.util.List<SceneCompatibilityReport.Entry> blocking = report.getBlockingIssues(policy);

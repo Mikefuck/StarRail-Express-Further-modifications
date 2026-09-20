@@ -1,8 +1,8 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRotation;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRotation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.joml.Matrix4f;
@@ -22,11 +22,11 @@ class SceneRenderRuntimePreviewStateTest {
 
     @Test
     void lateMatchFinishRetainsAlreadyReceivedLobbyState() {
-        String lobby = com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY;
-        SceneProfile profile = com.habitrain.core.config.SceneMotionSettings.createDefault().getProfile(lobby);
+        String lobby = com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY;
+        SceneProfile profile = com.habitrain.core.api.scene.SceneMotionSettings.createDefault().getProfile(lobby);
         // A preview suppresses graphics/effect setup while the server state arrives.
         runtime.startPreview("old_match", profile, SceneAssetDescriptor.EMPTY);
-        var state = new com.habitrain.core.scene.model.SceneRuntimeState(true, 100, 2, lobby, "", profile);
+        var state = new com.habitrain.core.api.scene.model.SceneRuntimeState(true, 100, 2, lobby, "", profile);
         runtime.updateRuntimeState(state);
 
         SceneClientRuntime.onMatchFinished();

@@ -376,6 +376,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             if (oldRoleKey == null) {
                 return;
             }
+            SpecialRoleExitCleanup.clear(player);
             lostNotifier.accept(oldRoleKey, player);
             stateResetter.reset(player, oldRoleKey, ResetCause.ROLE_LOST);
         }

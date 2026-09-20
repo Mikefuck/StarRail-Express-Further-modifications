@@ -70,7 +70,7 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
         if (loaded) {
             return;
         }
-        if (!com.habitrain.core.internal.CoreBootstrap.isInBootstrap()) {
+        if (!com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
             LOGGER.warn("RoleClientExtensionApi.loadProviders() ignored: only habitrain_core bootstrap may load providers");
             return;
         }
@@ -83,7 +83,7 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
                 container.getEntrypoint().register(scoped);
                 scoped.commit();
                 loadedProviders.add(providerId);
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
                 scoped.rollback();
                 LOGGER.error("Role client extension provider {} failed", providerId, e);
             }

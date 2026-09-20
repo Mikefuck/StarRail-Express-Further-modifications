@@ -26,7 +26,7 @@ public interface RoleChangeApi {
         private DefaultHolder() {}
 
         static final RoleChangeApi INSTANCE =
-                new com.habitrain.core.role.change.RoleChangeServiceImpl();
+                com.habitrain.core.api.spi.RoleSpi.change();
     }
 
     /**
@@ -67,8 +67,13 @@ public interface RoleChangeApi {
      */
     RoleChangeResult remove(ServerPlayer player, RoleChangeCause cause);
 
-    /** The player's current role view. */
-    RoleView current(ServerPlayer player);
+    /**
+     * The player's current role view.
+     *
+     * <p>审核 R-14：实现（{@code RoleChangeServiceImpl}）在 {@code player == null} 时返回
+     * {@code null}，与旧 javadoc 的「非空」承诺不符。只有传 null 时才可能为 null。</p>
+     */
+    @org.jetbrains.annotations.Nullable RoleView current(@org.jetbrains.annotations.Nullable ServerPlayer player);
 
     /** The player's role history timeline. */
     List<RoleHistoryEntry> history(ServerPlayer player);

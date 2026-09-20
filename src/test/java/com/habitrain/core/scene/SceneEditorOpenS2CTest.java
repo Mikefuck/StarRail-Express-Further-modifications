@@ -1,7 +1,7 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import com.habitrain.core.scene.network.SceneEditorOpenS2C;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -28,7 +28,7 @@ class SceneEditorOpenS2CTest {
         SceneEditorOpenS2C decoded = SceneEditorOpenS2C.CODEC.decode(buffer);
 
         assertEquals("map_editor", decoded.editorMapKey());
-        assertEquals(com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID, decoded.editorBackgroundId());
+        assertEquals(com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID, decoded.editorBackgroundId());
         assertEquals("map_runtime", decoded.runtimeMapKey());
         assertEquals("map_selection", decoded.selectionMapKey());
         assertEquals(7, decoded.profileRevision());
@@ -86,7 +86,7 @@ class SceneEditorOpenS2CTest {
         SceneEditorOpenS2C decoded = SceneEditorOpenS2C.CODEC.decode(v2Buffer);
 
         assertEquals("map_v2", decoded.editorMapKey());
-        assertEquals(com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID, decoded.editorBackgroundId());
+        assertEquals(com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID, decoded.editorBackgroundId());
         assertEquals("runtime_v2", decoded.runtimeMapKey());
         assertEquals("selection_v2", decoded.selectionMapKey());
         assertEquals(3, decoded.profileRevision());

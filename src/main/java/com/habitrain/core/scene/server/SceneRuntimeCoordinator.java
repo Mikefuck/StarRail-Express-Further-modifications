@@ -1,14 +1,18 @@
 package com.habitrain.core.scene.server;
 
+import com.habitrain.core.api.spi.SceneRuntimeBridge;
+
+import com.habitrain.core.api.scene.SceneContextResolver;
+
 import com.habitrain.core.api.match.MatchEvents;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.SceneMotionSettings;
+import com.habitrain.core.api.scene.SceneMotionSettings;
 import com.habitrain.core.game.sre.scene.SreSceneContextResolver;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneBackgroundKey;
-import com.habitrain.core.scene.model.SceneRuntimeState;
-import com.habitrain.core.scene.model.SceneLobbyPolicy;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneBackgroundKey;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.model.SceneLobbyPolicy;
 import com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneRuntimeStateS2C;
@@ -30,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * 场景运行协调器（监听对局生命周期事件，下发开局运行状态与资产 Manifest）。
  */
-public final class SceneRuntimeCoordinator {
+public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneRuntimeCoordinator.class.getSimpleName());
 
     private static final SceneRuntimeCoordinator INSTANCE = new SceneRuntimeCoordinator();

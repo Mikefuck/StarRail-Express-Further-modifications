@@ -47,33 +47,44 @@ public abstract class SREGameModeBase extends AbstractGameMode {
 
     // ========== 原版任务注册 ==========
 
+    /**
+     * 按 {@link SreTaskMirrors} 的单一真相表登记原版 SRE 任务的「配置镜像」。
+     *
+     * <p><b>这里只登记元数据，不派发、也不重做原版逻辑</b>：原版任务的实际派发、加权、
+     * 完成判定、透视渲染全部由上游 {@code SREPlayerTaskComponent} / {@code TaskBlockOverlayRenderer}
+     * 负责（本 mod 只在 {@code GenerateTaskMixin} 里把 DLC 任务并进同一个加权抽取）。
+     * 镜像的作用是给每个原版任务一个 {@code habitrain_core:<id>} 的稳定配置键，
+     * 使下游/服主可以在 ModMenu 任务配置页里对<b>上游任务</b>独立设置：
+     * <ul>
+     *   <li>{@code enabled} —— 单独禁用某个原版任务；</li>
+     *   <li>{@code mapFilterMode / enabledMaps} —— 只在指定地图启用；</li>
+     *   <li>{@code refreshWeight} —— 刷新权重；</li>
+     *   <li>{@code instinctColor / outlineWidth} —— 透视颜色与描边（按
+     *       {@link SreTaskMirrors#blockTypeId()} 命中上游 {@code GameUtils.taskBlocks} 的类型号）；</li>
+     * </ul>
+     *
+     * <p>所有镜像一律 {@code poolEligible(false)}：它们没有 {@code onTick} /
+     * {@code completionChecker}，一旦进入 DLC 加权池就会「分配即完成」。
+     */
     private static void registerBuiltinTasksOnce() {
         if (STATE.isBuiltinTasksRegistered()) return;
         STATE.setBuiltinTasksRegistered(true);
 
-        // Murder mode tasks
-        registerBuiltin("sleep", "睡觉", TaskCategory.MURDER, 1.0f, 4);
-        registerBuiltin("exercise", "锻炼", TaskCategory.MURDER, 1.0f, 5);
-        registerBuiltin("raed_book", "阅读", TaskCategory.MURDER, 1.0f, 6);
-        registerBuiltin("bathe", "洗澡", TaskCategory.MURDER, 1.0f, 3);
-        registerBuiltin("toilet", "上厕所", TaskCategory.MURDER, 1.0f, 8);
-        registerBuiltin("chair", "坐椅子", TaskCategory.MURDER, 1.0f, 9);
-        registerBuiltin("note_block", "音符盒", TaskCategory.MURDER, 1.0f, 10);
-        registerBuiltin("meditate", "冥想", TaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("outside", "外出", TaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("breathe", "呼吸新鲜空气", TaskCategory.MURDER, 1.0f, -1);
-        registerBuiltin("be_alone", "一个人静静", TaskCategory.MURDER, 1.0f, -1);
+        for (SreTaskMirrors mirror : SreTaskMirrors.all()) {
+            registerBuiltin(mirror.id(), mirror.displayName(), mirror.category(),
+                    mirror.weight(), mirror.blockTypeId());
+        }
 
-        // Repair mode tasks
-        registerBuiltin("repair_wire", "修复线路", TaskCategory.REPAIR, 1.0f, -1);
-        registerBuiltin("repair_panel", "修复面板", TaskCategory.REPAIR, 1.0f, -1);
-
-        // Shared tasks
-        registerBuiltin("vending_machine", "售货机", TaskCategory.ALL, 0.5f, 11);
-
-        LOGGER.info("已注册 {} 个内置SRE任务", TaskRegistry.size());
+        LOGGER.info("已注册 {} 个内置SRE任务镜像", SreTaskMirrors.all().size());
     }
 
+    /**
+     * 登记一个「原版 SRE 任务镜像」定义。
+     * <p>这些定义是空壳（无 onTick / completionChecker），登记进 {@link TaskRegistry}
+     * 只为让原版任务能以 {@code habitrain_core:<id>} 参与配置与查询；
+     * 必须以 {@code poolEligible(false)} 显式排除出 DLC 派发池，否则会被
+     * {@code DlcTaskPoolBuilder} 当成普通 DLC 任务派发（分配即完成）。
+     */
     private static void registerBuiltin(String id, String displayName, TaskCategory category,
                                          float weight, int blockTypeId) {
         TaskRegistry.register(new TaskDefinition.Builder(CORE_MOD_ID, id)
@@ -82,6 +93,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
                 .gameMode("sre:base")
                 .weight(weight)
                 .blockTypeId(blockTypeId)
+                .poolEligible(false)
                 .build()
         );
     }
@@ -115,6 +127,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * 大厅语音群组开关关闭时不入队（不产生任何拉入行为）。
      */
     public static void queueLobbyGroupJoin(MinecraftServer server, UUID playerUUID) {
+        // 审核 B25：显式的可选依赖守卫，避免在未安装 voicechat 时靠 try/catch 兜底。
+        if (!VoiceChatPresence.isLoaded()) {
+            return;
+        }
         if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return;
         STATE.getPendingVoiceJoins().put(playerUUID, MAX_VOICE_JOIN_RETRIES);
         LOGGER.info("[VoiceGroup] queued {} for lobby group join", playerUUID);
@@ -125,6 +141,9 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * @return true 表示成功加入 / 已在大厅群 / 无需再试，false 表示需要重试
      */
     private static boolean tryAddPlayerToLobbyGroup(MinecraftServer server, UUID playerUUID) {
+        if (!VoiceChatPresence.isLoaded()) {
+            return false;
+        }
         if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return false;
         if (TrainVoicePlugin.isVoiceChatMissing()) return false;
         if (TrainVoicePlugin.SERVER_API == null) return false;
@@ -199,6 +218,9 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     }
 
     private static void leaveLobbyGroupForAllOnline(MinecraftServer server) {
+        if (!VoiceChatPresence.isLoaded()) {
+            return;
+        }
         if (server == null) return;
         if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
         VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
@@ -316,6 +338,9 @@ public abstract class SREGameModeBase extends AbstractGameMode {
      * 本方法保证大厅空闲期间持续补拉。
      */
     public static void reconcileLobbyGroupMembership(MinecraftServer server) {
+        if (!VoiceChatPresence.isLoaded()) {
+            return;
+        }
         if (server == null) return;
         if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return;
         lobbyReconcileTickCounter++;

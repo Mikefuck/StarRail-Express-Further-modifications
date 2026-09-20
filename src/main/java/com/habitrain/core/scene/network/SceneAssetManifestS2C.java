@@ -1,7 +1,7 @@
 package com.habitrain.core.scene.network;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import io.netty.buffer.ByteBuf;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;

@@ -1,8 +1,9 @@
 # 哈比列车完整角色扩展 API v2 使用教程
 
-> 适用：HabiTrain Core 2.0.2、Role Extension API `2.0`、StarRailExpress 4.3.0、Minecraft 1.21.1、Fabric、Java 21
+> 适用：HabiTrain Core 2.0.11、Role Extension API `2.0`、StarRailExpress 4.3.0、Minecraft 1.21.1、Fabric、Java 21
+> 公开 API 语义版本 `2.1`（`CoreApi.apiVersion()`），角色扩展 API 语义版本 `2.0`（`CoreApi.roleApiVersion()` / `RoleExtensionApi.apiVersion()`）
 > 状态：v2 为 preview / experimental；v1 `RoleOverrideApi` 仍是正式兼容 API
-> 最后更新：2026-08-18
+> 最后更新：2026-09-20
 
 本教程说明附属模组如何通过 HabiTrain Core 的完整角色扩展端口新增、修改、替换和迁移 SRE 角色，以及如何接入受管 hooks、状态、动作、客户端展示、语音/聊天、目录、转职、快照和诊断。
 
@@ -52,7 +53,7 @@ repositories {
 }
 
 dependencies {
-    modImplementation files("libs/habitrain_core-2.0.2.jar")
+    modImplementation files("libs/habitrain_core-2.0.11.jar")
     modImplementation files("libs/star_rail_express-4.3.0-dev.jar")
 }
 ```
@@ -77,7 +78,7 @@ dependencies {
     "minecraft": "~1.21.1",
     "java": ">=21",
     "fabric-api": "*",
-    "habitrain_core": ">=2.0.2",
+    "habitrain_core": ">=2.0.11",
     "starrailexpress": "*"
   }
 }
@@ -107,9 +108,12 @@ public final class ExampleRoleProvider implements RoleExtensionEntrypoint {
 错误示例：
 
 ```java
-// 只读兼容门面；任何注册方法都会抛异常
+// 只读兼容门面；任何注册方法都会抛异常（审核 P1-1）
+// 仅可用于「内省」：例如把 registrar() 交给只读的诊断/列举代码，绝不能用来写声明
 RoleExtensionApi.instance().registrar().add(definition);
 ```
+
+`RoleExtensionApi.instance().registrar()` 只用于兼容与内省，**它上面的每一个方法都会抛**。ADD / MODIFY / REPLACE / ALIAS、hooks、state、action、voice、chat 全部必须写在 `habitrain:role_extensions` 回调参数给出的 provider 作用域 registrar 里。需要在别处持有它时，请显式把该代码标注为 introspection-only。
 
 ## 3. 注册规则与 ID
 
@@ -481,6 +485,8 @@ SOULS = registrar.state(RoleStateSpec.of("example_mod", "souls", Integer.class)
 
 需要 WORLD/PERMANENT persistence 或任何非 NONE sync 时，`codec(...)` 必填。生产环境：`WORLD`/`PERMANENT` 写入 CCA（PLAYER/WORLD scope）；`ROUND`/`NONE` 走内存。`StateScope.ROUND` + `PERMANENT` 仍是局内内存袋，不写世界 NBT。provider 不需要为每个状态注册新 component key。
 
+> ⚠️ **缺 codec 的后果是整批回滚，不是 INVALID 诊断行**：`RoleStateSpec.build()`（以及 `RoleActionSpec` / `RolePatch` / `RoleDefinition` / `RoleReplacement` 的 `build()`）在缺必填项时抛 `IllegalStateException`。该异常会终止 provider 的注册事务，**整个 provider 本次声明的所有条目一起回滚**，`/habitrain roleapi list invalid` 里不会出现对应行（诊断只读已提交条目）；排查请查服务端日志的「entrypoint ... failed and was rolled back」。
+
 ### 8.2 读写
 
 ```java
@@ -539,12 +545,12 @@ Target codec：
 
 | Codec | payload 前缀 | 平台验证 |
 |---|---|---|
-| `NONE` | 不解析 | opaque bytes |
-| `PLAYER_UUID` | 前 16 字节 big-endian UUID | 在线、同世界；可启用 alive/range/LOS |
-| `BLOCK_POS` | 接着 12 字节 big-endian XYZ | 解码 block pos |
-| `ENTITY_ID` | 接着 4 字节 big-endian entity ID | 实体存在 |
+| `NONE` | 不解析 | opaque bytes；不得声明 `maxDistance` / alive / LOS |
+| `PLAYER_UUID` | 前 16 字节 big-endian UUID | 在线、同世界；`maxDistance` / `requireTargetAlive` / `requireLineOfSight` 均可启用 |
+| `BLOCK_POS` | 接着 12 字节 big-endian XYZ | 解码 block pos；**可启用 `maxDistance`**（服务端强制），不可启用 alive / LOS |
+| `ENTITY_ID` | 接着 4 字节 big-endian entity ID | 实体存在；不得声明 `maxDistance` / alive / LOS |
 
-只有 PLAYER_UUID 支持 `requireTargetAlive/maxDistance/requireLineOfSight`。
+只有 PLAYER_UUID 支持 `requireTargetAlive` 与 `requireLineOfSight`；`maxDistance` 对 `PLAYER_UUID` 和 `BLOCK_POS` 都生效（BLOCK_POS 的距离由服务端强制）。把 `requireTargetAlive` / `requireLineOfSight` 配到别的 codec，或把 `maxDistance` 配到 `ENTITY_ID` / `NONE`，会在 `build()` 抛 `IllegalStateException` 并让整个 provider 批次回滚——请在 spec 里声明清楚，不要在 handler 里补判定。
 
 ### 9.2 客户端发送和回调
 
@@ -744,7 +750,7 @@ v1 flags/spawn/shop live 写入 → RoleOverrideTickApplier 在 round start 冻�
 
 Mod Menu 与 `/habitrain roleapi snapshot` 诊断可以同时显示 pending 与 live。禁用 provider 后，本局玩家不会被 v2 目录/hooks 中途替换；这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
 
-v1 flags/spawn/shop 的 live 写入由 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND），局中 rebuild 不会立刻改当前对局。同一 `RoleKey` 同时挂 v1 与 v2 MODIFY/REPLACE 时，Engine 将 v1 标 CONFLICT 并跳过。v1 API 本身不弃用。
+v1 flags/spawn/shop 的 live 写入由内部实现类 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND），局中 rebuild 不会立刻改当前对局。同一 `RoleKey` 同时挂 v1 与 v2 MODIFY/REPLACE 时，Engine 将 v1 标 CONFLICT 并跳过。v1 API 本身不弃用。
 
 ### 13.2 握手
 

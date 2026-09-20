@@ -1,9 +1,11 @@
 package com.habitrain.core.scene.compat;
 
+import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapterRegistry;
+
 import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapter;
 import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapter;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
+import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapterRegistry;
 import com.habitrain.core.scene.client.compat.builtin.BuiltinClientSceneAdapters;
 import com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters;
 import net.minecraft.nbt.CompoundTag;

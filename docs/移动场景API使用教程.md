@@ -1,8 +1,8 @@
 # 哈比列车核心 · 移动场景 API v2 使用教程
 
 > 面向对象：要给自己的 Mod 加"窗外会动的场景"的开发者、需要脚本化控制列车外景的服主。
-> 相关代码：`com.habitrain.core.api.scene`、`com.habitrain.core.scene`。
-> 适用版本：`habitrain_core` 2.0.7 起（含 `SceneApi` v2 门面）。
+> 相关代码：公开层 `com.habitrain.core.api.scene`（值对象在 `api.scene.model` / `api.scene.asset` / `api.scene.compat` / `api.client.scene.compat`）；实现层 `com.habitrain.core.scene` 属于内部实现，**不要在编译期引用**。
+> 适用版本：`habitrain_core` 2.0.11 起（含 `SceneApi` v2 门面）。公开 API 语义版本 `2.1`（`CoreApi.apiVersion()`），可用 `CoreApi.supports("scene.instances")` 做能力判定。
 
 ---
 
@@ -89,7 +89,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:0.116.13+1.21.1"
 
     modImplementation files("libs/star_rail_express-4.3.0-dev.jar")
-    modImplementation files("libs/habitrain_core-2.0.7.jar")   // ← 提供 SceneApi
+    modImplementation files("libs/habitrain_core-2.0.11.jar")   // ← 提供 SceneApi
 }
 ```
 
@@ -97,7 +97,7 @@ dependencies {
 
 ```json
 "depends": {
-  "habitrain_core": ">=2.0.7"
+  "habitrain_core": ">=2.0.11"
 }
 ```
 
@@ -156,6 +156,10 @@ public final class MyAddon implements ModInitializer {
     @Override
     public void onInitialize() {
         // 对局开始时注册一个实例（也可以在任何你需要的时候注册）
+        // ⚠️ MatchEvents 监听器只能在 onInitialize()/onInitializeClient() 里注册一次：
+        //    Fabric Event 没有注销入口，写在 SERVER_STARTED 会随集成服反复启停累积。
+        //    2.0.11 起 GameModeRegistry.start/stop 的对局也会触发这两个事件，
+        //    那种结算的 winners()/participants() 为空集，只能用于逐局重置，不要用来发奖。
         com.habitrain.core.api.match.MatchEvents.STARTED.register(level -> spawn(level));
         com.habitrain.core.api.match.MatchEvents.ROUND_ENDED.register((level, settlement) ->
                 SceneApi.instance().despawn(SCENE_ID));
@@ -218,6 +222,8 @@ boolean ok = api.publishAsset("mymod:my_scene", hscene);
 ### 6.4 用代码构造几何
 
 ```java
+// 公开位置：SceneAssetCodec / SceneAssetDescriptor → com.habitrain.core.api.scene.asset
+//           SceneBounds 等值对象      → com.habitrain.core.api.scene.model
 SceneAssetCodec.AssetData data = new SceneAssetCodec.AssetData(
         SharedConstants.getCurrentVersion().getDataVersion().getVersion(),
         "minecraft:overworld",
@@ -498,7 +504,8 @@ api.addListener(new SceneListener() {
 ```
 
 - 回调都在**服务端主线程**（tick / 玩家事件）里同步触发，可以直接操作世界。
-- `onInstanceRemoved` 的 `reason` 取值：`despawn`（显式回收）、`expired`（存活期到）、`replaced`（被替换）、`reset`（全局清空）。
+- `onInstanceRemoved` 的 `reason` 取值只有四个：`despawn`（显式回收）、`expired`（存活期到）、`dimension_changed`（`setDimension` 迁到另一维度）、`reset`（全局清空 / 停服清理）。
+  **没有 `replaced`**：同 ID 的 `spawn` / `upsert` 覆盖走 `onInstanceUpdated`，不会先触发移除（审核 S-01 / S-08 已更正）。
 - 单个监听器抛异常会被隔离（记日志），不会影响其它监听器与场景系统。
 
 ---
@@ -516,7 +523,7 @@ boolean mapSceneActive = client.isMapSceneActive();     // 地图级场景
 SceneRuntimeState state = client.mapSceneState();
 boolean previewing      = client.isPreviewActive();
 
-List<SceneInstance> mine = client.instancesInCurrentDimension();
+List<SceneInstanceView> mine = client.instancesInCurrentDimension();
 int known               = client.instanceCount();
 boolean ready           = client.isMeshReady("mymod:scene");   // 网格是否已烘焙完成
 boolean inRange         = client.instance("mymod:scene")
@@ -524,6 +531,8 @@ boolean inRange         = client.instance("mymod:scene")
 long gpuBytes           = client.meshBytes();
 client.requestResync();                                  // 主动要求服务端全量重发
 ```
+
+> 2.0.11 起 `SceneClientApi.instances()` / `instance()` 与服务端 `SceneApi` 一致，返回公开视图 `SceneInstanceView`（不再是内部实现类 `SceneInstance`），客户端 Mod 不必再编译期依赖实现包。
 
 客户端 Mod 想做"场景实体化"（比如根据场景相位生成粒子/音源）时，用 `instancesInCurrentDimension()` + `elapsedSeconds(...)` 就能拿到与服务端一致的确定性相位。
 
@@ -795,17 +804,22 @@ v2 新增的是**整条实例通道**（§7–§14），两者可以混用：地
 
 ### 21.2 相关类型
 
-| 类型 | 用途 |
-|---|---|
-| `SceneInstanceSpec` / `SceneInstanceSpec.Builder` | 实例描述与构建 |
-| `SceneProfileBuilder`（含 `Orbit` / `Render` / `Sound` / `Shake`） | 运动参数构建 |
-| `SceneInstanceAnchor` | 空间锚点（`world/player/entity`） |
-| `SceneSpawnResult` / `SceneSpawnResult.SceneSpawnStatus` | 注册结果与失败原因 |
-| `SceneInstanceView` | 实例只读视图 |
-| `SceneListener` | 服务端事件回调 |
-| `SceneClientApi` | 客户端查询 |
-| `SceneProfile` / `SceneBounds` / `SceneLoopSettings` / `SceneOrbitSettings` / `SceneRenderSettings` / `SceneSoundSettings` / `SceneShakeSettings` | 底层值对象（可直接读写） |
-| `SceneAssetDescriptor` / `SceneAssetCodec` | 资产元数据与编解码 |
+| 类型 | 公开包 | 用途 |
+|---|---|---|
+| `SceneInstanceSpec` / `SceneInstanceSpec.Builder` | `api.scene` | 实例描述与构建 |
+| `SceneProfileBuilder`（含 `Orbit` / `Render` / `Sound` / `Shake`） | `api.scene` | 运动参数构建（改参数请走 builder / `editProfile`） |
+| `SceneInstanceAnchor` | `api.scene` | 空间锚点（`world/player/entity`） |
+| `SceneSpawnResult.SceneSpawnStatus` | `api.scene` | **嵌套**枚举（不是顶层类型），注册结果与失败原因 |
+| `SceneInstanceView` | `api.scene` | 实例只读视图（服务端与客户端 API 统一返回它） |
+| `SceneListener` | `api.scene` | 服务端事件回调 |
+| `SceneClientApi` | `api.scene.client` | 客户端查询 |
+| `SceneLimits` / `SceneMotionSettings` / `SceneContextResolver` | `api.scene` | 限制常量、地图级设置、上下文解析器 |
+| `SceneProfile` / `SceneBounds` / `SceneLoopSettings` / `SceneOrbitSettings` / `SceneRenderSettings` / `SceneSoundSettings` / `SceneShakeSettings` / `SceneRotation` / `SceneInstance` / `SceneRuntimeState` 等 | `api.scene.model` | 值对象（字段不可变，没有 setter；要改请构造新对象或走 builder） |
+| `SceneAssetDescriptor` / `SceneAssetCodec` | `api.scene.asset` | 资产元数据与编解码 |
+| `SceneMaterialKey` / `SceneBlockMeshAdapterRegistry` | `api.client.scene.compat` | 客户端材质批次与网格适配器（`SceneMaterialKey.fromLayer(SceneMeshSet.Layer)` 已删除，改用 `fromLayerName(String)`） |
+| `SceneBlockCaptureAdapterRegistry` | `api.scene.compat` | 服务端方块捕获适配器 |
+
+> 旧文档里的 `com.habitrain.core.scene.*` 包在 2.0.11 起一律视为**内部实现**：值对象已迁到 `api.scene.model` / `api.scene.asset` / `api.scene.compat` / `api.client.scene.compat`，实现类（`scene.server` / `scene.network` / `scene.client` 等）不要再引用。
 
 ---
 

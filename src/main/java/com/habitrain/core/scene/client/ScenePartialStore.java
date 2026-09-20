@@ -6,7 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.habitrain.core.client.config.SceneClientPerformanceRules;
 import com.habitrain.core.persist.AtomicJsonFiles;
-import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.api.scene.SceneLimits;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

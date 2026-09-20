@@ -1,5 +1,7 @@
 package com.habitrain.core.scene;
 
+import com.habitrain.core.api.scene.SceneLimits;
+
 import com.habitrain.core.scene.server.SceneTransferService;
 import org.junit.jupiter.api.Test;
 

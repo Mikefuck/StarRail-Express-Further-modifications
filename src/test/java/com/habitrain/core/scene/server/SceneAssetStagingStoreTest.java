@@ -1,8 +1,8 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

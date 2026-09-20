@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.core.BlockPos;
 
 import java.util.Map;
@@ -160,18 +160,18 @@ public final class SceneSelectionSessionManager {
         String normalizedMap = mapKey == null ? "" : mapKey.trim();
         if (normalizedMap.isEmpty()) return;
         String normalizedBg = backgroundId != null && !backgroundId.isBlank()
-                ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(backgroundId)
-                : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                ? com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeBackgroundId(backgroundId)
+                : com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
         editorBackgroundIds.computeIfAbsent(playerId, id -> new ConcurrentHashMap<>())
                 .put(normalizedMap, normalizedBg);
     }
 
     public String getEditorBackgroundId(UUID playerId, String mapKey) {
-        if (playerId == null) return com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        if (playerId == null) return com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
         String normalizedMap = mapKey == null ? "" : mapKey.trim();
         Map<String, String> mapBgs = editorBackgroundIds.get(playerId);
-        if (mapBgs == null) return com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
-        return mapBgs.getOrDefault(normalizedMap, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID);
+        if (mapBgs == null) return com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
+        return mapBgs.getOrDefault(normalizedMap, com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID);
     }
 
     /** Opaque connection-local token used to invalidate pending staging confirmations. */

@@ -1,9 +1,9 @@
 package com.habitrain.core.client.gui.menu.ui;
 
 import com.habitrain.core.client.gui.menu.MenuTheme;
-import com.habitrain.core.scene.model.SceneOrbitAxis;
-import com.habitrain.core.scene.model.SceneOrbitMath;
-import com.habitrain.core.scene.model.SceneOrbitSettings;
+import com.habitrain.core.api.scene.model.SceneOrbitAxis;
+import com.habitrain.core.api.scene.model.SceneOrbitMath;
+import com.habitrain.core.api.scene.model.SceneOrbitSettings;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;

@@ -35,11 +35,11 @@ public final class RoleOverrideApi {
     private RoleOverrideApi() {}
 
     public static void registerReplace(ReplaceRoleDefinition def) {
-        com.habitrain.core.role.override.RoleOverrideRegistry.INSTANCE.registerReplace(def);
+        com.habitrain.core.api.spi.RoleSpi.override().registerReplace(def);
     }
 
     public static void registerModify(ModifyRoleDefinition def) {
-        com.habitrain.core.role.override.RoleOverrideRegistry.INSTANCE.registerModify(def);
+        com.habitrain.core.api.spi.RoleSpi.override().registerModify(def);
     }
 
     /**
@@ -57,30 +57,30 @@ public final class RoleOverrideApi {
     }
 
     public static String getEntryId(ReplaceRoleDefinition def) {
-        return com.habitrain.core.role.override.RoleOverrideRegistry.entryId(def);
+        return com.habitrain.core.api.spi.RoleSpi.override().entryId(def);
     }
 
     public static String getEntryId(ModifyRoleDefinition def) {
-        return com.habitrain.core.role.override.RoleOverrideRegistry.entryId(def);
+        return com.habitrain.core.api.spi.RoleSpi.override().entryId(def);
     }
 
     public static Collection<RoleOverrideEntry> getEffectiveEntries() {
-        return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().getEffectiveEntries();
+        return com.habitrain.core.api.spi.RoleSpi.override().effectiveEntries();
     }
 
     public static boolean isReplaced(ResourceLocation targetRoleId) {
-        return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().isReplaced(targetRoleId);
+        return com.habitrain.core.api.spi.RoleSpi.override().isReplaced(targetRoleId);
     }
 
     public static @Nullable io.wifi.starrailexpress.api.SRERole getReplacement(ResourceLocation targetRoleId) {
-        return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().getReplacement(targetRoleId);
+        return com.habitrain.core.api.spi.RoleSpi.override().replacement(targetRoleId);
     }
 
     public static boolean isModified(ResourceLocation targetRoleId) {
-        return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().isModified(targetRoleId);
+        return com.habitrain.core.api.spi.RoleSpi.override().isModified(targetRoleId);
     }
 
     public static @Nullable ModifyRoleDefinition getActiveModify(ResourceLocation targetRoleId) {
-        return com.habitrain.core.role.override.RoleOverrideEngine.getInstance().getActiveModify(targetRoleId);
+        return com.habitrain.core.api.spi.RoleSpi.override().activeModify(targetRoleId);
     }
 }

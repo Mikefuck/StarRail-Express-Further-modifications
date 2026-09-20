@@ -178,7 +178,10 @@ public final class RoleActionClientSession implements RoleActionClientApi {
             }
         }
         pending.clear();
-        pushListeners.clear();
+        // 审核 R-16：clear() 在每次断线/换世界都会调用（ClientLifecycleHandler），
+        // 旧实现顺带清空 pushListeners，使 provider 注册的推送监听器静默失效且无法感知。
+        // 推送监听器是 provider 级别（不是会话级别）的注册，必须跨会话保留；
+        // 只有显式注销（removePushListener）才移除。
     }
 
     /** Number of in-flight requests (diagnostics/tests). */

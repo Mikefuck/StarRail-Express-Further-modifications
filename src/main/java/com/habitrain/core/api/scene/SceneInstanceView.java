@@ -1,6 +1,6 @@
 package com.habitrain.core.api.scene;
 
-import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneProfile;
 
 import java.util.Set;
 import java.util.UUID;

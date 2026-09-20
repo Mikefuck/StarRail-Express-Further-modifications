@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.SceneShakeSettings;
+import com.habitrain.core.api.scene.model.SceneShakeSettings;
 
 /**
  * 场景镜头震动控制器（通过多频正弦谐波叠加生成程序化车厢微震，并在第一人称/第三人称视口微调相机）。

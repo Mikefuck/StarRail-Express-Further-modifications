@@ -11,10 +11,11 @@ import java.util.UUID;
  *
  * <p>The server decodes the target from the payload before the handler runs, so
  * provider handlers receive a typed value instead of re-parsing raw bytes.
- * {@code Player} is the only target kind that supports distance /
- * line-of-sight / alive precondition checks in the current cut; block and
- * entity targets are decoded and existence-checked but do not yet apply those
- * preconditions.
+ * Preconditions are applied per target kind (审核 R-02，旧文档写反了)：
+ * {@code maxDistance} is honoured for both {@code Player} and {@code Block}
+ * targets; {@code requireLineOfSight} / {@code requireTargetAlive} only apply
+ * to {@code Player}. {@code Entity} targets are decoded and existence-checked
+ * but do not apply any of those preconditions.
  */
 public sealed interface RoleActionTarget {
 

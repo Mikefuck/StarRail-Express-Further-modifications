@@ -31,17 +31,10 @@ public class ActiveTaskCache {
     @Nullable
     private static volatile String activeTaskFullId = null;
 
-    /**
-     * 当前活跃的杀手假任务完整 ID，null = 无假任务。
-     * 杀手双任务机制：杀手的"假任务"来自好人任务池，单独追踪。
-     */
-    @Nullable
-    private static volatile String fakeTaskFullId = null;
-
     private ActiveTaskCache() {}
 
     // ========================================================================
-    //  真实任务缓存
+    //  活跃任务缓存
     // ========================================================================
 
     /**
@@ -70,50 +63,11 @@ public class ActiveTaskCache {
         return activeTaskFullId != null;
     }
 
-    // ========================================================================
-    //  假任务缓存（杀手双任务机制）
-    // ========================================================================
-
     /**
-     * 设置杀手假任务 ID
-     * @param taskFullId 假任务完整 ID，null 或空字符串表示清空
-     */
-    public static void setFakeTask(@Nullable String taskFullId) {
-        fakeTaskFullId = (taskFullId != null && !taskFullId.isEmpty()) ? taskFullId : null;
-        HabiTrainCore.LOGGER.info("[ActiveTaskCache] 设置假任务: {}",
-                fakeTaskFullId != null ? fakeTaskFullId : "(无)");
-    }
-
-    /**
-     * 获取杀手假任务 ID
-     * @return 假任务完整 ID，null 表示无假任务
-     */
-    @Nullable
-    public static String getFakeTaskFullId() {
-        return fakeTaskFullId;
-    }
-
-    /**
-     * 清空真实任务缓存。假任务请用 {@link #clearFakeTask()} 或 {@link #clearAll()}。
-     * <p>注意：真实任务 clear 包不得顺带清掉杀手假任务，否则双任务 ESP 会丢一半。
+     * 清空活跃任务缓存（断线 / 局终 / 完成等需要全清时用）。
      */
     public static void clear() {
         activeTaskFullId = null;
-    }
-
-    /**
-     * 清空真实任务 + 假任务（断线 / 局终等需要全清时用）。
-     */
-    public static void clearAll() {
-        activeTaskFullId = null;
-        fakeTaskFullId = null;
-    }
-
-    /**
-     * 清空假任务缓存
-     */
-    public static void clearFakeTask() {
-        fakeTaskFullId = null;
     }
 
     // ========================================================================

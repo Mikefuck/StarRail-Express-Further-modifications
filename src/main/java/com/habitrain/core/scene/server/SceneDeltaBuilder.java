@@ -1,8 +1,8 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.asset.SceneAssetDelta;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDelta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

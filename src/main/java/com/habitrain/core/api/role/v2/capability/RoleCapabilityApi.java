@@ -33,7 +33,7 @@ public interface RoleCapabilityApi {
         private DefaultHolder() {}
 
         static final RoleCapabilityApi INSTANCE =
-                new com.habitrain.core.role.capability.RoleCapabilityServiceImpl();
+                com.habitrain.core.api.spi.RoleSpi.capability();
     }
 
     Collection<RoleVoicePolicy> voices();

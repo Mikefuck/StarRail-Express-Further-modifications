@@ -1,7 +1,7 @@
 package com.habitrain.core.scene.client;
 
 import com.habitrain.core.scene.item.HabiAdminItems;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.ChatFormatting;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.DeltaTracker;
@@ -136,7 +136,7 @@ public final class SceneToolHud implements HudRenderCallback {
         lines.add(tr("hud.habitrain_core.scene_tool.title", ChatFormatting.GOLD));
         Component mapDisplay = currentMapKey.isBlank()
                 ? tr("hud.habitrain_core.scene_tool.unnamed_map", ChatFormatting.GRAY)
-                : com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY.equals(currentMapKey)
+                : com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY.equals(currentMapKey)
                 ? tr("screen.habitrain_core.scene_motion.map_lobby", ChatFormatting.AQUA)
                 : Component.literal(currentMapKey).withStyle(ChatFormatting.AQUA);
         lines.add(tr("hud.habitrain_core.scene_tool.map", ChatFormatting.GRAY, mapDisplay));

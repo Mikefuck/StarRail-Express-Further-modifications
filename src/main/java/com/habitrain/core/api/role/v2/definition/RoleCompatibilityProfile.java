@@ -26,6 +26,8 @@ public record RoleCompatibilityProfile(
 
     public RoleCompatibilityProfile {
         specialMapRole = specialMapRole == null ? SRERole.SpecialMapRoleMap.ALL : specialMapRole;
+        // 审核 R-11/R-12：occupiedRoleCount < 1 会被静默钳到 1（旧实现未文档化）。
+        // 语义：一个职业至少占用 1 个名额；传 0/负数视为 1。
         if (occupiedRoleCount < 1) {
             occupiedRoleCount = 1;
         }

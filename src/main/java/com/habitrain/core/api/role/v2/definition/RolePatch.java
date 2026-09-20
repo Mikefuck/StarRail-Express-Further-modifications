@@ -346,11 +346,39 @@ public final class RolePatch {
 
         public RolePatch build() {
             if (target == null) throw new IllegalStateException("target required");
+            rejectConflictingPaths();
             RolePatch patch = new RolePatch(this);
             if (patch.isEmpty()) {
                 throw new IllegalStateException("RolePatch must carry at least one field operation");
             }
             return patch;
+        }
+
+        /**
+         * 审核 R-10：同一个字段过去有两条互斥路径，{@code build()} 不拒绝，
+         * 运行期 {@code RoleRuntimeOverlayApplier} 又让 provider/patch 覆盖标量，
+         * 于是 {@code catalog}/{@code profile}/{@code diagnostics} 报的值与活体
+         * {@code SRERole} 不一致。现在在构建期就报错。
+         */
+        private void rejectConflictingPaths() {
+            if (color != null && colorProvider != null) {
+                throw new IllegalStateException(
+                        "RolePatch sets both color(ColorPatch) and colorProvider: pick one");
+            }
+            if (flagsPatch != null && (innocent != null || canUseKiller != null || neutral != null
+                    || vigilanteTeam != null || neutralForKiller != null || neutralForInnocent != null
+                    || canUseInstinct != null || instinctNightVision != null
+                    || canSeeTeammateKiller != null)) {
+                throw new IllegalStateException(
+                        "RolePatch sets both flagsPatch and individual flag patches: "
+                                + "flagsPatch wins at runtime, so the scalar patches would be ignored");
+            }
+            if (spawnInfoPatch != null && (defaultMax != null || enableChance != null
+                    || needPlayerCount != null || maxPlayerCount != null)) {
+                throw new IllegalStateException(
+                        "RolePatch sets both spawnInfoPatch and individual spawn patches: "
+                                + "spawnInfoPatch wins at runtime, so the scalar patches would be ignored");
+            }
         }
     }
 }

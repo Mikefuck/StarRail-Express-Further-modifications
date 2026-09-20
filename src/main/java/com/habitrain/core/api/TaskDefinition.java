@@ -3,8 +3,11 @@ package com.habitrain.core.api;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -16,6 +19,8 @@ import java.util.function.BiPredicate;
  * 新增: timeLimit、canRepeat、tags 等扩展字段。
  */
 public class TaskDefinition {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|TaskDefinition");
 
     private final String modId;
     private final String taskId;
@@ -38,8 +43,20 @@ public class TaskDefinition {
     private final int timeLimit;           // 0 = 不限时
     private final boolean canRepeat;
     private final boolean shareProgress;
+    /**
+     * 是否属于「可派发池」。默认 true。
+     * <p>false 用于登记型定义（原版 SRE 任务的空壳镜像，见
+     * {@code SREGameModeBase#registerBuiltin}）：它们需要出现在
+     * {@link TaskRegistry} 里以便按 fullId 查询/配置，但绝不能进入 DLC 派发池。
+     * <p>这是「注册表成员」与「派发池成员」两个分区的显式分界，取代原先仅靠
+     * 硬编码 ID 清单（{@code GenerateTaskMixin.BUILTIN_SRE_TASK_IDS}）区分的做法。
+     */
+    private final boolean poolEligible;
     private final List<String> tags;
-    /** 旧扩展元数据，仅为兼容保留；Core 不再消费此值。 */
+    /**
+     * 旧扩展元数据，仅为兼容保留；<b>Core 不再消费此值，设置它不产生任何运行时效果</b>
+     *（审核 B12）。
+     */
     private final TimeImpact timeImpact;
 
     // 回调函数
@@ -52,6 +69,8 @@ public class TaskDefinition {
     private final BiFunction<Player, TaskInstance, Boolean> completionChecker;
     private final BiConsumer<Player, TaskInstance> tickHandler;
     private final BiPredicate<Player, TaskInstance> canAssignPredicate;
+    /** 审核 B5：无 TaskInstance 场景的专用谓词；为 null 时回退 canAssignPredicate。 */
+    private final java.util.function.Predicate<Player> canAssignWithoutInstancePredicate;
     private final ProgressUpdateHandler onProgressUpdateHandler;
 
     @FunctionalInterface
@@ -97,6 +116,7 @@ public class TaskDefinition {
         this.timeLimit = builder.timeLimit;
         this.canRepeat = builder.canRepeat;
         this.shareProgress = builder.shareProgress;
+        this.poolEligible = builder.poolEligible;
         this.tags = List.copyOf(builder.tags);
         this.timeImpact = builder.timeImpact;
         this.onAssignHandler = builder.onAssignHandler;
@@ -107,7 +127,27 @@ public class TaskDefinition {
         this.completionChecker = builder.completionChecker;
         this.tickHandler = builder.tickHandler;
         this.canAssignPredicate = builder.canAssignPredicate;
+        this.canAssignWithoutInstancePredicate = builder.canAssignWithoutInstancePredicate;
         this.onProgressUpdateHandler = builder.onProgressUpdateHandler;
+    }
+
+    /**
+     * 去重 + 拒绝 {@code null} 的集合化辅助（审核 C6）。
+     * 旧实现用 {@code Set.of(...)}，重复元素会抛出信息不明确的
+     * {@code IllegalArgumentException: duplicate element}。
+     */
+    private static <T> Set<T> requireNoNulls(T[] values, String what) {
+        LinkedHashSet<T> set = new LinkedHashSet<>();
+        if (values == null) {
+            return set;
+        }
+        for (T value : values) {
+            if (value == null) {
+                throw new IllegalArgumentException(what + " must not contain null elements");
+            }
+            set.add(value);
+        }
+        return set;
     }
 
     // --- Getters ---
@@ -127,9 +167,16 @@ public class TaskDefinition {
     public int getTimeLimit() { return timeLimit; }
     public boolean canRepeat() { return canRepeat; }
     public boolean isShareProgress() { return shareProgress; }
+    /** @see #poolEligible 字段说明；false = 只登记、不派发。 */
+    public boolean isPoolEligible() { return poolEligible; }
     public List<String> getTags() { return Collections.unmodifiableList(tags); }
-    /** 旧扩展元数据（可能为 null），不再影响 Core 任务权重。 */
-    public TimeImpact getTimeImpact() { return timeImpact; }
+    /**
+     * 旧扩展元数据（可能为 {@code null}），不再影响 Core 任务权重或计时。
+     *
+     * @deprecated 审核 B12：该值不产生任何运行时效果，会在 2.0.12 移除。
+     */
+    @Deprecated(forRemoval = true, since = "2.0.11")
+    public @org.jetbrains.annotations.Nullable TimeImpact getTimeImpact() { return timeImpact; }
 
     // --- Callback dispatch ---
     public void onAssign(Player player, TaskInstance instance) {
@@ -149,11 +196,35 @@ public class TaskDefinition {
     public void onFail(Player player, TaskInstance instance) { if (onFailHandler != null) onFailHandler.accept(player, instance); }
     /** 回收发放的物理道具。仅在任务被取消/隐藏路径调用，不在成功完成路径调用。 */
     public void onReclaim(Player player, TaskInstance instance) { if (onReclaimHandler != null) onReclaimHandler.accept(player, instance); }
-    public boolean checkCompletion(Player player, TaskInstance instance) { if (completionChecker != null) return completionChecker.apply(player, instance); return instance.isFulfilled(); }
+    /**
+     * 完成判定。扩展的 completionChecker 返回 null 时视为「未完成」，
+     * 避免自动拆箱 NPE 在每个 tick 抛进 {@link TaskInstance#tick}。
+     */
+    public boolean checkCompletion(Player player, TaskInstance instance) {
+        if (completionChecker == null) return instance.isFulfilled();
+        Boolean result = completionChecker.apply(player, instance);
+        return result != null && result;
+    }
     public void onTick(Player player, TaskInstance instance) { if (tickHandler != null) tickHandler.accept(player, instance); }
     public boolean canAssign(Player player, TaskInstance instance) { if (canAssignPredicate != null) return canAssignPredicate.test(player, instance); return true; }
-    /** 不需要 TaskInstance 的安全重载 — 当调用方没有 instance 时使用，避免传入 null */
-    public boolean canAssign(Player player) { if (canAssignPredicate != null) return canAssignPredicate.test(player, null); return true; }
+
+    /**
+     * 无 {@link TaskInstance} 时的判定重载。
+     *
+     * <p><b>审核 B5</b>：旧注释称本重载「避免传入 null」，但实现恰恰是把 {@code null}
+     * 交给下游的 {@link BiPredicate}——任何在谓词里直接用 {@code instance} 的实现都会 NPE。
+     * 现在优先使用 {@link Builder#canAssignWithoutInstance(java.util.function.Predicate)}
+     * 注册的专用谓词；未注册时<b>不再</b>用 null 调用二元谓词，而是保守返回 {@code true}
+     * （没有 instance 时无法判定，交给调用方自行处理）。</p>
+     */
+    public boolean canAssign(Player player) {
+        if (canAssignWithoutInstancePredicate != null) return canAssignWithoutInstancePredicate.test(player);
+        if (canAssignPredicate != null) {
+            LOGGER.warn("TaskDefinition.canAssign(player) called without an instance for {}; the BiPredicate is skipped. "
+                    + "Register canAssignWithoutInstance(Predicate<Player>) instead.", getFullId());
+        }
+        return true;
+    }
     public void onProgressUpdate(Player player, TaskInstance instance, int oldProgress) { if (onProgressUpdateHandler != null) onProgressUpdateHandler.onProgressUpdate(player, instance, oldProgress); }
 
     // --- Builder ---
@@ -173,6 +244,7 @@ public class TaskDefinition {
         private int timeLimit = 0;
         private boolean canRepeat = false;
         private boolean shareProgress = false;
+        private boolean poolEligible = true;
         private List<String> tags = List.of();
         private TimeImpact timeImpact = null;
 
@@ -184,6 +256,7 @@ public class TaskDefinition {
         private BiFunction<Player, TaskInstance, Boolean> completionChecker;
         private BiConsumer<Player, TaskInstance> tickHandler;
         private BiPredicate<Player, TaskInstance> canAssignPredicate;
+        private java.util.function.Predicate<Player> canAssignWithoutInstancePredicate;
         private ProgressUpdateHandler onProgressUpdateHandler;
 
         public Builder(String modId, String taskId) {
@@ -201,15 +274,42 @@ public class TaskDefinition {
         public Builder instinctColor(int argb) { this.instinctColor = argb; return this; }
         public Builder instinctColor(int r, int g, int b, int a) { this.instinctColor = (a << 24) | (r << 16) | (g << 8) | b; return this; }
         public Builder canDirectlyWin(boolean v) { this.canDirectlyWin = v; return this; }
-        public Builder scanBlocks(Block... blocks) { this.scanBlocks = Set.of(blocks); return this; }
-        public Builder scanBlockIds(String... ids) { this.scanBlockIds = Set.of(ids); return this; }
+        /**
+         * 登记要扫描的方块。
+         *
+         * <p>审核 C6：旧实现用 {@code Set.of(...)}，传入重复元素会抛
+         * {@code IllegalArgumentException: duplicate element}（信息不指向「你传了重复方块」），
+         * 传入 {@code null} 元素抛 NPE。现在改为去重的 {@link java.util.LinkedHashSet}，
+         * 并对 {@code null} 给出明确提示。</p>
+         */
+        public Builder scanBlocks(Block... blocks) {
+            this.scanBlocks = requireNoNulls(blocks, "scanBlocks");
+            return this;
+        }
+
+        /** 登记要扫描的方块 ID（同 {@link #scanBlocks(Block...)}：去重、拒绝 null）。 */
+        public Builder scanBlockIds(String... ids) {
+            this.scanBlockIds = requireNoNulls(ids, "scanBlockIds");
+            return this;
+        }
         public Builder timeLimit(int seconds) { this.timeLimit = seconds; return this; }
         public Builder canRepeat(boolean v) { this.canRepeat = v; return this; }
         public Builder shareProgress(boolean v) { this.shareProgress = v; return this; }
+        /**
+         * 排除出 DLC 派发池（默认 true = 可派发）。
+         * 仅用于登记型定义：需要被 {@link TaskRegistry} 收录以便查询/配置，
+         * 但不应被任务池选中派发给玩家（如原版 SRE 任务的空壳镜像）。
+         */
+        public Builder poolEligible(boolean v) { this.poolEligible = v; return this; }
         public Builder tags(String... t) { this.tags = List.of(t); return this; }
         /**
-         * 兼容旧扩展的时间影响元数据。Core 已不再使用该值修改计时或任务权重。
+         * 兼容旧扩展的时间影响元数据。
+         *
+         * <p><b>本方法不产生任何运行时效果</b>（审核 B12）：Core 已不再消费该值。
+         *
+         * @deprecated 会在 2.0.12 移除；保留仅为已有扩展源码可编译。
          */
+        @Deprecated(forRemoval = true, since = "2.0.11")
         public Builder timeImpact(TimeImpact.TimeAxis axis, int deltaSeconds) {
             this.timeImpact = new TimeImpact(axis, deltaSeconds);
             return this;
@@ -225,6 +325,15 @@ public class TaskDefinition {
         public Builder completionChecker(BiFunction<Player, TaskInstance, Boolean> h) { this.completionChecker = h; return this; }
         public Builder onTick(BiConsumer<Player, TaskInstance> h) { this.tickHandler = h; return this; }
         public Builder canAssign(BiPredicate<Player, TaskInstance> h) { this.canAssignPredicate = h; return this; }
+
+        /**
+         * 无 {@link TaskInstance} 场景的判定谓词（审核 B5）。设置后
+         * {@link TaskDefinition#canAssign(Player)} 使用它，避免把 {@code null} 交给二元谓词。
+         */
+        public Builder canAssignWithoutInstance(java.util.function.Predicate<Player> h) {
+            this.canAssignWithoutInstancePredicate = h;
+            return this;
+        }
         public Builder onProgressUpdate(ProgressUpdateHandler h) { this.onProgressUpdateHandler = h; return this; }
 
         public TaskDefinition build() { return new TaskDefinition(this); }

@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

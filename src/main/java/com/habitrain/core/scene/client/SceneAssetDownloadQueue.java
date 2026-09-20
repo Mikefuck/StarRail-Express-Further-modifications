@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.api.scene.SceneLimits;
 import com.habitrain.core.scene.network.SceneAssetChunkRequestC2S;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

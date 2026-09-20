@@ -11,12 +11,12 @@ import com.habitrain.core.client.gui.menu.ui.ScrollArea;
 import com.habitrain.core.client.gui.menu.ui.SectionHeader;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapVoteEntry;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.SceneMotionSettings;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.client.SceneProjectionDiagnostics;
 import com.habitrain.core.scene.client.SceneRenderRuntime;
 import com.habitrain.core.scene.client.SceneStagingClientController;
-import com.habitrain.core.scene.model.*;
+import com.habitrain.core.api.scene.model.*;
 import com.habitrain.core.scene.network.SceneAssetBuildRequestC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
@@ -1141,7 +1141,7 @@ public class SceneMotionPage implements ConfigPage {
 
         com.habitrain.core.scene.client.SceneCompatibilityReport compatReport =
                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().getLastCompatibilityReport();
-        com.habitrain.core.scene.model.ScenePublishPolicy currentPolicy =
+        com.habitrain.core.api.scene.model.ScenePublishPolicy currentPolicy =
                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().getPublishPolicy();
 
         // 扫描按钮与策略切换行
@@ -1161,10 +1161,10 @@ public class SceneMotionPage implements ConfigPage {
         compatPolicySkipWarnHit = new HitBox(policyX + policyStrictW + 4, sy, policySkipW, BUTTON_HEIGHT);
         renderButton(g, compatPolicyStrictHit,
                 tr("screen.habitrain_core.scene_motion.compat_policy_strict"),
-                MenuTheme.ACCENT_BLUE, editable, currentPolicy == com.habitrain.core.scene.model.ScenePublishPolicy.STRICT, mx, my);
+                MenuTheme.ACCENT_BLUE, editable, currentPolicy == com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT, mx, my);
         renderButton(g, compatPolicySkipWarnHit,
                 tr("screen.habitrain_core.scene_motion.compat_policy_skip_warn"),
-                MenuTheme.ACCENT_AMBER, editable, currentPolicy == com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN, mx, my);
+                MenuTheme.ACCENT_AMBER, editable, currentPolicy == com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN, mx, my);
         addTooltip(innerX + 4, sy, policyLabelWidth + policyStrictW * 2 + 8, BUTTON_HEIGHT,
                 "screen.habitrain_core.scene_motion.compat_policy_help");
         sy += ROW_HEIGHT + 2;
@@ -2141,13 +2141,13 @@ public class SceneMotionPage implements ConfigPage {
 
         if (compatPolicyStrictHit.contains(mx, my) && editable) {
             com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
-                    .setPublishPolicy(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+                    .setPublishPolicy(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
             return true;
         }
 
         if (compatPolicySkipWarnHit.contains(mx, my) && editable) {
             com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
-                    .setPublishPolicy(com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+                    .setPublishPolicy(com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
             SceneStagingClientController.getInstance().retryInspection(currentAssetKey());
             return true;
         }

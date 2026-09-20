@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.server;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;

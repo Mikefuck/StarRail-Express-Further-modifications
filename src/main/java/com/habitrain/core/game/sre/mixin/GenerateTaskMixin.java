@@ -23,20 +23,18 @@ public abstract class GenerateTaskMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GenerateTaskMixin");
     /**
-     * IDs of hollow SRE mirror registrations in {@code SREGameModeBase#registerBuiltin}.
-     * Must stay in sync with that list so they never enter the DLC weighted pool
-     * (empty shells have no onTick / completionChecker and would complete instantly).
-     * Includes {@code outside} (displayName 外出) — previously missing, which caused
-     * assign-and-complete for 外出.
+     * 原版 SRE 任务 ID 清单 —— 直接派生自 {@link com.habitrain.core.game.sre.SreTaskMirrors}
+     * （单一真相表），不再手工维护。
+     *
+     * <p>它是<b>第二道防线</b>：主判据仍是
+     * {@link com.habitrain.core.api.TaskDefinition#isPoolEligible()}
+     * （{@code SREGameModeBase} 登记的空壳镜像都标了 {@code poolEligible(false)}）。
+     * 保留本清单是为了兜住「下游扩展 mod 注册了同名任务却忘了打标」——
+     * 空壳没有 onTick / completionChecker，一旦进池就是「分配即完成」
+     * （{@code outside} 曾漏列，出过这个事故）。
      */
-    private static final Set<String> BUILTIN_SRE_TASK_IDS = Set.of(
-            "sleep", "raed_book", "exercise", "meditate",
-            "bathe", "chair", "note_block", "toilet", "be_alone",
-            "breathe", "outside", "vending_machine",
-            "light_stove", "clean_dust", "transport",
-            "pray", "prune_bush", "harvest_crop",
-            "repair_wire", "repair_panel"
-    );
+    private static final Set<String> BUILTIN_SRE_TASK_IDS =
+            com.habitrain.core.game.sre.SreTaskMirrors.ids();
 
     @Shadow(remap = false) private Player player;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, SREPlayerTaskComponent.TrainTask> tasks;
@@ -70,44 +68,45 @@ public abstract class GenerateTaskMixin {
         TaskManager mgr = TaskManager.getInstance();
         String mapName = mgr.getCurrentMapName(player);
         var currentCategory = mgr.getCurrentGameModeCategory(player);
+        var activeMode = resolveActiveMode();
 
-        FactionFilter.FactionContext ctx = FactionFilter.determineFaction(player, !this.tasks.isEmpty());
-
-        // 电话专属 / 强制恢复供电活跃时：禁止 SRE 再生成任务进左上角。
-
-        LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, killerDual={}, parallel={}",
+        LOGGER.debug("[HabiDebug] mapName='{}', currentMood={}, disabledTasks={}, category={}, activeMode={}",
                 mapName, currentMood, disabledTasks, currentCategory,
-                ctx.killerDualTask(), ctx.hasExistingTask());
+                activeMode != null ? activeMode.getId() : "(none)");
 
         List<Map.Entry<Object, Float>> weightEntries = new ArrayList<>();
         float total = 0f;
 
-        if (!ctx.killerDualTask()) {
-            total += TaskWeightCalculator.addOriginalTasks(
-                    weightEntries, currentMood, disabledTasks, mapName, mgr,
-                    ctx.activeMode(), player, tasks, timesGotten,
-                    BUILTIN_SRE_TASK_IDS, getEnabledSceneTasks());
-        }
+        total += TaskWeightCalculator.addOriginalTasks(
+                weightEntries, currentMood, disabledTasks, mapName, mgr,
+                activeMode, player, tasks, timesGotten,
+                BUILTIN_SRE_TASK_IDS, getEnabledSceneTasks());
         total += DlcTaskPoolBuilder.addDlcTasks(
                 weightEntries, mgr, mapName, currentCategory, disabledTasks,
-                ctx.activeMode(), ctx.forcedCategory(), ctx.skipActiveTaskGuard(),
-                ctx.currentIsFakeTask(), player, BUILTIN_SRE_TASK_IDS);
+                activeMode, player, BUILTIN_SRE_TASK_IDS);
 
         LOGGER.debug("[HabiDebug] Flat pool built: {} entries, total weight={}",
                 weightEntries.size(), String.format("%.2f", total));
 
-        boolean isFakeTask = ctx.currentIsFakeTask();
         SREPlayerTaskComponent.TrainTask selected = TaskSelector.weightedSelect(
                 weightEntries, total, player,
                 this::createTaskInstance,
-                def -> DlcTaskTracker.createAndTrackDlcTask(def, isFakeTask, player));
-
-        if (selected == null && ctx.killerDualTask() && this.tasks.isEmpty()) {
-            LOGGER.info("[HabiDebug] Killer gen returned null (tasks empty, poolEntries={}, total={}) player={}",
-                    weightEntries.size(), String.format("%.2f", total), player.getName().getString());
-        }
+                def -> DlcTaskTracker.createAndTrackDlcTask(def, player));
 
         cir.setReturnValue(selected);
+    }
+
+    /**
+     * 当前维度的活跃 GameMode（可为空）。
+     * <p>原 {@code FactionFilter} 只负责这一件事；其余「阵营/双任务/强制分类/跳过守卫」
+     * 分区已在 2.0.10 连同杀手双任务机制彻底删除。
+     */
+    @org.spongepowered.asm.mixin.Unique
+    private com.habitrain.core.api.GameMode resolveActiveMode() {
+        if (!(player.level() instanceof net.minecraft.server.level.ServerLevel level)) {
+            return null;
+        }
+        return com.habitrain.core.api.GameModeRegistry.getActiveForLevel(level).orElse(null);
     }
 
     // These public paths may bypass generateTaskInternal (e.g. the manic modifier).

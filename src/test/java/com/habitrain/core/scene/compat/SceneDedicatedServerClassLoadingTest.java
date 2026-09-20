@@ -2,11 +2,11 @@ package com.habitrain.core.scene.compat;
 
 import com.habitrain.core.api.client.scene.compat.*;
 import com.habitrain.core.api.scene.compat.*;
-import com.habitrain.core.scene.SceneLimits;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetSizeReport;
-import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.SceneLimits;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetSizeReport;
+import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapterRegistry;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -47,14 +47,14 @@ public class SceneDedicatedServerClassLoadingTest {
             SceneBounds.class,
             com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.class,
             com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters.BuiltinStaticModelCaptureAdapter.class,
-            com.habitrain.core.scene.model.ScenePublishPolicy.class,
-            com.habitrain.core.scene.model.SceneMotionMode.class,
-            com.habitrain.core.scene.model.SceneOrbitAxis.class,
-            com.habitrain.core.scene.model.SceneOrbitCenterMode.class,
-            com.habitrain.core.scene.model.SceneOrbitSettings.class,
-            com.habitrain.core.scene.model.SceneOrbitMath.class,
-            com.habitrain.core.scene.model.SceneInstanceTransform.class,
-            com.habitrain.core.scene.model.SceneProfileValidator.class
+            com.habitrain.core.api.scene.model.ScenePublishPolicy.class,
+            com.habitrain.core.api.scene.model.SceneMotionMode.class,
+            com.habitrain.core.api.scene.model.SceneOrbitAxis.class,
+            com.habitrain.core.api.scene.model.SceneOrbitCenterMode.class,
+            com.habitrain.core.api.scene.model.SceneOrbitSettings.class,
+            com.habitrain.core.api.scene.model.SceneOrbitMath.class,
+            com.habitrain.core.api.scene.model.SceneInstanceTransform.class,
+            com.habitrain.core.api.scene.model.SceneProfileValidator.class
     );
 
     @Test

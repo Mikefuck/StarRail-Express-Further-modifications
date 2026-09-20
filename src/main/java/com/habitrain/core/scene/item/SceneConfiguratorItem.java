@@ -2,11 +2,11 @@ package com.habitrain.core.scene.item;
 
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.sre.scene.SreSceneContextResolver;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneBackgroundKey;
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneEditorMapPolicy;
-import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneBackgroundKey;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneEditorMapPolicy;
+import com.habitrain.core.api.scene.model.SceneProfile;
 import com.habitrain.core.scene.network.SceneEditorOpenS2C;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneSelectionStateS2C;

@@ -11,9 +11,9 @@ import java.util.Objects;
  * {@link RoleKey}s so a definition can be compiled before the counterpart
  * {@code SRERole} objects exist.
  *
- * <p>{@link com.habitrain.core.role.extension.ManagedSRERole#from} only stores
+ * <p>{@link role.extension.ManagedSRERole#from} only stores
  * these keys. Linking onto upstream setters happens later via
- * {@link com.habitrain.core.role.extension.RoleExtensionCompiler#linkRelations}.
+ * {@link role.extension.RoleExtensionCompiler#linkRelations}.
  */
 public record RoleRelationProfile(
         List<RoleKey> occupation,

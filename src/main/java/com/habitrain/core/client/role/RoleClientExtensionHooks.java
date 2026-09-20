@@ -72,7 +72,7 @@ public final class RoleClientExtensionHooks {
             return;
         }
         registered = true;
-        com.habitrain.core.internal.CoreBootstrap.run(() -> {
+        com.habitrain.core.internal.CoreLifecycleScope.run(() -> {
             RoleClientExtensionApi.instance().loadProviders();
             RoleClientExtensionApi.instance().freeze();
         });

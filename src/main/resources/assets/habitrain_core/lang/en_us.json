@@ -630,5 +630,9 @@
     "screen.habitrain_core.scene_motion.background_add_tooltip": "Add a dynamic background (%s/%s; press Insert while the background list is focused)",
     "screen.habitrain_core.scene_motion.background_delete_tooltip": "Delete this dynamic background and its published asset (press Delete while the background list is focused)",
     "screen.habitrain_core.scene_motion.section_shared": "Map-wide settings",
-    "screen.habitrain_core.scene_motion.shared_managed_by_default": "Outside sound and carriage shake belong to the map and are managed only under Default settings. Every dynamic background shares them."
+    "screen.habitrain_core.scene_motion.shared_managed_by_default": "Outside sound and carriage shake belong to the map and are managed only under Default settings. Every dynamic background shares them.",
+    "screen.habitrain_core.map_settings": "Map Settings",
+    "map_intro.section.info": "Map Introduction",
+    "map_intro.section.profile": "Map Profile",
+    "map_intro.section.tags": "Map Tags"
 }

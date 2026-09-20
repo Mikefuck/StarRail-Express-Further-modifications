@@ -18,6 +18,9 @@ public record RoleInventoryProfile(List<ItemStack> defaultItems) {
 
     public RoleInventoryProfile {
         Objects.requireNonNull(defaultItems, "defaultItems");
+        // 审核 R-09：本类型自称 immutable 却没有做防御性拷贝（同组的
+        // RoleRelationProfile / RoleBookContent / RoleSkillPatch 都做了 List.copyOf）。
+        defaultItems = List.copyOf(defaultItems);
     }
 
     public static Builder builder() {

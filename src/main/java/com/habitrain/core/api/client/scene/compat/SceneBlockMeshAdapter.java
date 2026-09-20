@@ -25,7 +25,18 @@ public interface SceneBlockMeshAdapter {
         return 1;
     }
 
-    /** 判断本适配器是否支持该方块状态与视觉载荷 */
+    /**
+     * 判断本适配器是否支持该方块状态与视觉载荷。
+     *
+     * <p><b>调用时机（审核 S-06 澄清）</b>：它<b>只在</b>服务端资产为该方块写入了
+     * {@code adapterId}、且客户端已按 {@code adapterId + dataVersion} 精确匹配到本适配器
+     * 之后才被调用（{@code SceneMeshBuilder} 的「资产指定适配器」分支）。也就是说它是
+     * <b>二次校验</b>，不是选择器——适配器的选择永远由资产携带的 {@code adapterId} 决定。
+     * 因此把「按方块类型挑适配器」的逻辑写进本方法不会生效，
+     * 那种场景请改用 {@code SceneBlockMeshAdapters.register(...)} 的默认回退查找。</p>
+     *
+     * @return {@code false} 表示本方块/载荷不被支持，会被记为 {@code UNSUPPORTED_RENDER_PATH}
+     */
     boolean supports(BlockState state, SceneRenderPayload payload);
 
     /** 向材质接收槽发射静态网格顶点 */

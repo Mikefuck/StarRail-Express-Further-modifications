@@ -4,7 +4,7 @@ import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapter;
 import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapters;
 import com.habitrain.core.api.scene.compat.SceneCaptureContext;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.compat.SceneBlockCaptureAdapterRegistry;
+import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapterRegistry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;

@@ -1,9 +1,9 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.model.SceneBackgroundConfig;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneSoundSettings;
+import com.habitrain.core.api.scene.SceneMotionSettings;
+import com.habitrain.core.api.scene.model.SceneBackgroundConfig;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneSoundSettings;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

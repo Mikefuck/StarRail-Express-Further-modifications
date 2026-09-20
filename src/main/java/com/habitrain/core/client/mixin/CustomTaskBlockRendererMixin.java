@@ -53,80 +53,25 @@ public class CustomTaskBlockRendererMixin {
 
         // Survival: ActiveTaskCache only (never client TaskManager singleton).
         String taskName = ActiveTaskCache.getActiveTaskFullId();
-        String fakeName = ActiveTaskCache.getFakeTaskFullId();
-
-        boolean hasEatOrDrink = isEatOrDrinkTask(taskName) || isEatOrDrinkTask(fakeName);
-        if (CustomTaskBlockCache.isEmpty() && !hasEatOrDrink) {
+        if (taskName == null || CustomTaskBlockCache.isEmpty()) {
             return;
         }
 
-        if (taskName == null) {
-            // Killer dual-task: fall back to fake task ESP when main is non-block / cleared.
-            taskName = fakeName;
-            if (taskName == null) {
-                return;
-            }
-            renderTaskBlocks(renderContext, instance, taskName, true);
-            return;
-        }
-
-        renderTaskBlocks(renderContext, instance, taskName, false);
-
-        // Also outline fake task blocks when both are active and distinct.
-        if (fakeName != null && !fakeName.equals(taskName)) {
-            renderTaskBlocks(renderContext, instance, fakeName, true);
-        }
+        renderTaskBlocks(renderContext, taskName);
     }
 
-    private static boolean isEatOrDrinkTask(String taskName) {
-        return HabiTrainCore.TASK_EAT.equals(taskName) || HabiTrainCore.TASK_DRINK.equals(taskName);
-    }
-
-    private static void renderTaskBlocks(
-            WorldRenderContext renderContext,
-            Minecraft instance,
-            String taskName,
-            boolean fake) {
+    private static void renderTaskBlocks(WorldRenderContext renderContext, String taskName) {
         Color taskColor = resolveColor(taskName);
         float lineWidth = resolveOutlineWidth(taskName);
         int renderedCount = 0;
 
-        // 桥接上游吃喝任务点：当玩家接到 Core 的 eat/drink 任务时，直接高亮 NoellesrolesClient.taskBlocks
-        // (type 1: 食物, type 2: 饮品)
-        if (isEatOrDrinkTask(taskName)) {
-            int targetUpstreamType = HabiTrainCore.TASK_EAT.equals(taskName) ? 1 : 2;
-            var upstreamBlocks = org.agmas.noellesroles.client.NoellesrolesClient.taskBlocks;
-            if (upstreamBlocks != null && !upstreamBlocks.isEmpty()) {
-                for (var entry : upstreamBlocks.entrySet()) {
-                    if (entry.getValue() != null && entry.getValue() == targetUpstreamType) {
-                        BlockPos pos = entry.getKey();
-                        if (TaskOverlayDrawer.isInOverlayRange(renderContext, pos)) {
-                            TaskOverlayDrawer.renderOverlay(renderContext, pos, taskColor, lineWidth);
-                            renderedCount++;
-                        }
-                    }
-                }
-            }
-        }
-
         int blockTypeId = resolveBlockTypeId(taskName);
         if (blockTypeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
-            if (renderedCount > 0) {
-                HabiTrainCore.LOGGER.debug(
-                        "[HabiDebug] CustomTaskBlockRendererMixin: rendered {} upstream-bridged blocks for {} task {}",
-                        renderedCount, fake ? "fake" : "active", taskName);
-            }
             return;
         }
 
         var level = renderContext.world();
-        var upstreamBlocks = org.agmas.noellesroles.client.NoellesrolesClient.taskBlocks;
         for (BlockPos pos : CustomTaskBlockCache.positionsForType(blockTypeId)) {
-            // 吃喝任务若已在上游 taskBlocks 中绘制过该位置，避免重复绘制
-            if (isEatOrDrinkTask(taskName) && upstreamBlocks != null && upstreamBlocks.containsKey(pos)) {
-                continue;
-            }
-
             if (!TaskOverlayDrawer.isInOverlayRange(renderContext, pos)) continue;
 
             Block cachedBlock = CustomTaskBlockCache.getBlockAt(pos);
@@ -145,8 +90,8 @@ public class CustomTaskBlockRendererMixin {
 
         if (renderedCount > 0) {
             HabiTrainCore.LOGGER.debug(
-                    "[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for {} task {}",
-                    renderedCount, fake ? "fake" : "active", taskName);
+                    "[HabiDebug] CustomTaskBlockRendererMixin: rendered {} blocks for task {}",
+                    renderedCount, taskName);
         }
     }
 

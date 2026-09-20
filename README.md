@@ -12,7 +12,7 @@
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
 [![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE)
 [![Mod ID](https://img.shields.io/badge/Mod%20ID-habitrain__core-purple.svg)](#)
-[![Version](https://img.shields.io/badge/Version-2.0.2-blueviolet.svg)](#)
+[![Version](https://img.shields.io/badge/Version-2.0.19-blueviolet.svg)](#)
 
 **哈比列车核心（HabiTrain Core）** 是专为 Minecraft 1.21.1 / Fabric 开发的《星穹列车》（StarRailExpress，简称 SRE）大型扩展核心模组，模组 ID 为 `habitrain_core`。
 
@@ -53,7 +53,7 @@
 | **Fabric API** | 0.116.13+1.21.1 | 核心运行库 |
 | **StarRailExpress (SRE)** | 4.3.0 | 上游本体模组 |
 | **playerAnimator** | 2.0.4+ | 运行前置依赖，用于驱动 MVP 结算画面 3D 玩家角色庆祝动作 |
-| **Simple Voice Chat** | 1.21.1-2.5.x | 可选，用于语音群组划分与静音集成 |
+| **Simple Voice Chat** | 1.21.1-2.6.18 | 可选，用于语音群组划分与静音集成 |
 
 ---
 
@@ -128,7 +128,7 @@
 
 - 🛡️ **Iris 光影白名单检测**：客户端通过反射探测已启用的 Iris 光影包并上报，服务端校验白名单；非允许光影将收到告警或被强制踢出，确保夜间对局的公平性。
 - 🔒 **ModMenu 访问门控（`menugate`）**：支持服务端 OP4 控制台维护可访问 ModMenu 配置界面的白名单玩家，彻底防止普通玩家越权查看或篡改服务端对局参数。
-- 🔄 **角色安全转职策略（ForcedRandomRoleChangePolicy）**：转职时全面执行事务化清理（旧状态、CCA 组件、药水效果与计分板），彻底防止非法转职导致的逻辑崩坏与状态残留。
+- 🔄 **角色安全转职策略（内部实现类 `ForcedRandomRoleChangePolicy`）**：转职时全面执行事务化清理（旧状态、CCA 组件、药水效果与计分板），彻底防止非法转职导致的逻辑崩坏与状态残留。它是内部实现，下游只通过 `RoleChangeApi` + `RoleChangeCause.FORCED_RANDOM` 使用该策略。
 
 ---
 
@@ -161,29 +161,49 @@
 └──────────────┴──────────────────┴──────────────────────────────────────────────────────┘
 ```
 
-> **提示**：大厅阶段修改 v2 配置会立即成为 lobby snapshot。对局中的 v2 修改编译为 pending，本局 gameplay（hooks、受管动作、HUD/直觉/皮肤）继续使用 round snapshot；Mod Menu 诊断可能同时显示 pending 与 live。v1 flags/spawn/shop 的 live 写入由 TickApplier 在 round start 冻结（NEXT_ROUND）。这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
+> **提示**：大厅阶段修改 v2 配置会立即成为 lobby snapshot。对局中的 v2 修改编译为 pending，本局 gameplay（hooks、受管动作、HUD/直觉/皮肤）继续使用 round snapshot；Mod Menu 诊断可能同时显示 pending 与 live。v1 flags/spawn/shop 的 live 写入由内部实现类 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND）。这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
 
 ---
 
 ## 开发者 API 体系总览
 
-稳定公开 API 均位于 `com.habitrain.core.api`。
+稳定公开 API 均位于 `com.habitrain.core.api`。**只有 `com.habitrain.core.api.**` 是公开 API**（含 `api.spi`、`api.scene`、`api.role`、`api.match`、`api.menu`、`api.client`）；`com.habitrain.core.task`、`game`、`role`、`scene`、`config`、`client`、`vote`、`network`、`internal`、`misc`、`persist`、`util`、`betel` 全部是内部实现，包含文档中提到的 `TMMRoles`、`SRERole`、`CcaRoleStateStore`、`RoleOverrideTickApplier`、`ForcedRandomRoleChangePolicy`、`MenuGateService`、`MenuAccessGuard` 等，下游不得编译期引用。
+
+版本与能力判定请用 `CoreApi`（2.0.11 新增），不要比对 mod 版本号：`CoreApi.apiVersion()` 返回公开 API 语义版本 `2.2`，`CoreApi.roleApiVersion()` 返回角色扩展 API 版本 `2.0`，`CoreApi.supports(key)` / `capabilities()` / `capabilityVersions()` 用于能力探测（未知键 fail-closed 返回 `false`；`supports` 会组合查询 SPI 装配探针，未装配的能力键返回 `false`）。**注意区分两个版本概念**：`mod_version`（产物版本，每次修复都递增，可用 `CoreApi.modVersion()` 读取）与 `api_version`（公开 API 语义版本，只在契约变化时递增）不是一回事；下游判断能力只用后者。同一信息也写在 `fabric.mod.json` 的 `custom` 段：`habitrain_core:api_version` = `2.2`、`habitrain_core:role_api` = `2.0`。
+
+安全相关的能力判定（菜单门控、休息区）不要只信 `CoreApi.supports(...)`：请直接读 `com.habitrain.core.api.spi.CoreSpi` 的装配探针（`isMenuGateInstalled()` / `isRestAreaInstalled()`），并且每次判定都读——装配失败会保持未装配状态而不是谎报已装配。
 
 ### API 模块索引
 
 | 子系统 | 核心包路径 | 主要类 / 接口 | 功能定位 |
 |---|---|---|---|
+| **版本与能力** | `com.habitrain.core.api` | `CoreApi` | 机器可读的公开 API 语义版本（`2.2`）、角色扩展 API 版本（`2.0`）与能力键查询 |
+| **对局状态 / 休息区** | `com.habitrain.core.api` | `MatchStateApi`<br>`MatchRestStateApi` | 对局阶段与模式 ID；淘汰玩家是否在休息区（下游门禁必须用它，不得越层引用实现层服务） |
 | **角色扩展 v2** | `com.habitrain.core.api.role.v2.*` | `RoleExtensionEntrypoint`<br>`RoleExtensionRegistrar`<br>`RoleDefinition`<br>`RolePatch`<br>`RoleCatalogApi`<br>`RoleChangeApi`<br>`RoleStateApi`<br>`RoleActionApi` | 完整的声明式角色注册、可撤销补丁、受管 Hooks、受管状态、受管网络动作、客户端 HUD 与目录转职体系 |
 | **角色覆盖 v1** | `com.habitrain.core.api.role.*` | `RoleOverrideApi`<br>`ModifyRoleDefinition`<br>`ReplaceRoleDefinition` | 兼容稳定的角色 REPLACE / MODIFY 接口 |
 | **任务系统** | `com.habitrain.core.api.*` | `TaskRegistry`<br>`TaskDefinition`<br>`TaskInstance`<br>`TaskCategory` | 声明式任务注册、分类、直觉透视、进度监控与回调 |
-| **游戏模式** | `com.habitrain.core.api.*` | `GameModeRegistry`<br>`GameMode`<br>`WinResult` | 自定义游戏模式注册、对局生命周期与胜负判定拦截 |
-| **投票系统** | `com.habitrain.core.api.*` | `OptionVoteApi`<br>`ModeMapVoteApi`<br>`ModeMapVoteConfig` | 通用选项投票与双阶段模式/地图投票系统 |
+| **游戏模式** | `com.habitrain.core.api.*` | `GameModeRegistry`<br>`GameMode`<br>`WinResult`<br>`GameModeIds` | 自定义游戏模式注册、对局生命周期与胜负判定拦截 |
+| **对局状态与结算** | `com.habitrain.core.api.match` | `MatchStateApi`<br>`MatchPhase`<br>`MatchEvents`<br>`MatchSettlement`<br>`MatchWinKind`<br>`MatchWinFaction` | 对局阶段查询、开局/结算事件与逐局结算快照（`factionOfOrEmpty` 可区分「查不到」与「乘客阵营」） |
+| **投票系统** | `com.habitrain.core.api.*` | `OptionVoteApi`<br>`VoteResult`<br>`ModeMapVoteApi`<br>`ModeMapVoteConfig`<br>`ModeMapVoteSnapshot`<br>`ModeMapVotePhase` | 通用选项投票与双阶段模式/地图投票（阶段为公开枚举，取消会回调 `VoteResult.cancelled`） |
+| **ModMenu 门控** | `com.habitrain.core.api.menu` / `api.client.menu` | `MenuGateApi`<br>`MenuGateClientApi` | 服务端 `isBlocked` 门禁判定与客户端 `isScreenAllowed` / `isServerDedicated` 查询。注意 `isAllowed` 只是名单查询，不是 `isBlocked` 的取反；顶层同名 `api.MenuGateApi` 已弃用 |
+| **实现层桥接** | `com.habitrain.core.api.spi` | `CoreSpi`<br>`CoreLifecycle`<br>`Scene*Bridge`<br>`MenuGate*Bridge`<br>`VoteBridge`<br>`RoleSpi` | 实现层与公开层之间的唯一桥；实现由 core 自己装配，第三方只读查询助手，所有桥都有安全 no-op 默认实现 |
 | **道具管理** | `com.habitrain.core.api.*` | `ItemReclaimHelper` | 任务临时道具打标、跟踪与安全回收 |
-| **移动场景 v2** | `com.habitrain.core.api.scene.*` | `SceneApi`<br>`SceneInstanceSpec`<br>`SceneProfileBuilder`<br>`SceneInstanceAnchor`<br>`SceneListener`<br>`SceneClientApi` | 无数量上限的运行时场景实例、逐字段实时调参、锚点跟随、可见性与生命周期控制、资产发布、客户端查询与诊断。教程见 [docs/移动场景API使用教程.md](docs/移动场景API使用教程.md) |
+| **移动场景 v2** | `com.habitrain.core.api.scene.*` | `SceneApi`<br>`SceneInstanceSpec`<br>`SceneProfileBuilder`<br>`SceneInstanceAnchor`<br>`SceneInstanceView`<br>`SceneListener`<br>`SceneClientApi` | 无数量上限的运行时场景实例、逐字段实时调参、锚点跟随、可见性与生命周期控制、资产发布、客户端查询与诊断。值对象位于 `api.scene.model` / `api.scene.asset`。教程见 [docs/移动场景API使用教程.md](docs/移动场景API使用教程.md) |
 
 ---
 
 ### 快速代码示例
+
+#### 0. 按 API 版本 / 能力做分支（推荐）
+```java
+// 不要比对 mod 版本号；用机器可读的语义版本与能力键
+if (CoreApi.supports("scene.instances")) {
+    SceneApi.instance().spawn(level, spec);
+}
+if (CoreApi.apiVersion().compareTo("2.1") >= 0) {
+    // 2.1 起可用：api.spi 桥接、api.scene 公开值对象、MatchEvents 覆盖 GameModeRegistry 对局等
+}
+```
 
 #### 1. 注册自定义任务
 ```java
@@ -311,8 +331,15 @@ src/main/java/com/habitrain/core/
 
 构建完成后，生成的标准交付 JAR 产物位于：
 ```text
-build/release/habitrain_core-2.0.2-restored.jar
+build/libs/habitrain_core-<mod_version>.jar     # 例如 2.0.19
+build/release/habitrain_core-<mod_version>-restored.jar
 ```
+
+> **版本号说明（审核 D-01）**：`mod_version`（`gradle.properties`）是**产物版本**，每次修复递增；
+> `api_version`（`CoreApi.API_VERSION` / `fabric.mod.json` 的 `custom` 段）是**公开 API 语义版本**，
+> 只在契约变化时递增。当前 `mod_version = 2.0.19`、`api_version = 2.2`，两者**不同步**是正常的。
+> 下游判断能力请用 `CoreApi.apiVersion()` / `CoreApi.supports(key)`，不要比对 mod 版本号。
+> 二者的格式与一致性有单测守卫（`VersionConstantsConsistencyTest`）。
 
 按工作区统一规范，验证完成后将该 JAR 复制到同级目录 `../临时/` 即可。
 

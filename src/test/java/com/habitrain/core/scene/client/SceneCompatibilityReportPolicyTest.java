@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.ScenePublishPolicy;
+import com.habitrain.core.api.scene.model.ScenePublishPolicy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;

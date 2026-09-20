@@ -1,22 +1,27 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import com.habitrain.core.api.client.scene.compat.SceneBakeContext;
 import com.habitrain.core.api.client.scene.compat.SceneBakeResult;
 import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapter;
 import com.habitrain.core.api.client.scene.compat.SceneMaterialSink;
 import com.habitrain.core.api.scene.compat.SceneBlockPayloadEntry;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapterRegistry;
 import com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters;
-import com.habitrain.core.scene.SceneLimits;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.SceneLimits;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.client.config.ClientVisualPreferences;
+import com.habitrain.core.client.config.SceneClientPerformanceRules;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexBuffer;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadView;
 import net.fabricmc.fabric.api.renderer.v1.model.SpriteFinder;
 import net.fabricmc.fabric.api.util.TriState;
@@ -52,6 +57,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,11 +73,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class SceneMeshBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneMeshBuilder.class.getSimpleName());
-    private static final Direction[] DIRECTIONS = Direction.values();
     private static final int MAX_SECTIONS = SceneLimits.MAX_MESH_SECTIONS;
-    /** 单个 quad 的顶点数据估算（4 个顶点 × 32 字节的 BLOCK 顶点格式）。 */
-    /** 约 2,097,152 quads * 128 bytes/quad = 256 MiB。 */
-    private static final long MAX_QUADS = 2_097_152L;
+    /** {@link DefaultVertexFormat#BLOCK} 在 1.21.1 中每个顶点占 32 字节。 */
+    private static final int BLOCK_VERTEX_BYTES = 32;
     private static final AtomicBoolean FABRIC_CONTEXT_FALLBACK_WARNED = new AtomicBoolean();
     /**
      * 运行/预取路径默认只做统计与异常抽样；发布诊断与管理员检查会显式要求详细模式。
@@ -145,6 +149,9 @@ public final class SceneMeshBuilder {
         private final CompletableFuture<MeshBuildResult> result;
         private final SceneCompatibilityReport report;
         private final SceneMeshBatchPolicy.Plan batchPlan;
+        /** 单份场景与客户端“网格缓存配额”共享同一容量边界，避免另设冲突的 256 MiB 硬上限。 */
+        private final int meshQuotaMiB;
+        private final long maxVertices;
         /**
          * 分批后的构建器：外层键是层/材质，数组下标是批次。
          *
@@ -157,6 +164,8 @@ public final class SceneMeshBuilder {
                 new EnumMap<>(SceneMeshSet.Layer.class);
         private final Map<SceneMaterialKey, ByteBufferBuilder[]> customByteBuilders = new LinkedHashMap<>();
         private final Map<SceneMaterialKey, BufferBuilder[]> customBuilders = new LinkedHashMap<>();
+        /** 每个原版 BufferBuilder 只创建一个计数代理，按真正写出的顶点执行预算保护。 */
+        private final Map<BufferBuilder, VertexConsumer> budgetedConsumers = new IdentityHashMap<>();
         /** 当前 section 所属的批次。 */
         private int activeBatch;
         private final Map<BlockPos, SceneBlockPayloadEntry> payloadMap = new HashMap<>();
@@ -173,7 +182,7 @@ public final class SceneMeshBuilder {
         private int activeBaseY;
         private int activeBaseZ;
         private int activeLayer;
-        private long quadCount;
+        private long vertexCount;
         private boolean cpuBuildersClosed;
         /** section 阶段是否已经跑完；之后进入 upload 阶段。 */
         private boolean sectionsDone;
@@ -200,6 +209,8 @@ public final class SceneMeshBuilder {
             this.blockView = new SnapshotBlockView(asset, level);
             this.blockSpriteFinder = SpriteFinder.get(
                     Minecraft.getInstance().getModelManager().getAtlas(net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS));
+            this.meshQuotaMiB = ClientVisualPreferences.getMeshCacheQuotaMiB();
+            this.maxVertices = vertexBudgetForMiB(meshQuotaMiB);
             this.batchPlan = SceneMeshBatchPolicy.plan(asset.sections.size(),
                     com.habitrain.core.client.config.ClientVisualPreferences.getMeshBatchMinSections(),
                     asset.sourceBounds);
@@ -330,7 +341,7 @@ public final class SceneMeshBuilder {
                                   SceneRenderPayload.VisualVertex v3) {
                 if (material == null) material = SceneMaterialKey.SOLID;
                 BufferBuilder builder = getOrCreateCustomBuilder(material);
-                countQuads(1L);
+                countVertices(4L);
                 emittedCount++;
                 emitVertex(builder, v0, currentLocalPos, material.emissive());
                 emitVertex(builder, v1, currentLocalPos, material.emissive());
@@ -345,7 +356,7 @@ public final class SceneMeshBuilder {
                                       SceneRenderPayload.VisualVertex v2) {
                 if (material == null) material = SceneMaterialKey.direct(null, SceneMaterialKey.BlendMode.SOLID, SceneMaterialKey.PrimitiveMode.TRIANGLES);
                 BufferBuilder builder = getOrCreateCustomBuilder(material);
-                countQuads(1L);
+                countVertices(3L);
                 emittedCount++;
                 emitVertex(builder, v0, currentLocalPos, material.emissive());
                 emitVertex(builder, v1, currentLocalPos, material.emissive());
@@ -625,22 +636,24 @@ public final class SceneMeshBuilder {
                         //    兼容回退。让活动渲染器创建自己的上下文，避免手工 getQuads
                         //    丢掉 Wathe 等模型的面、材质层和嵌套模型。
                         BufferBuilder builder = builderFor(resolveLayer(state));
-                        long modelQuadCount = countModelQuads(state, model);
+                        long verticesBeforeModel = vertexCount;
                         poses.pushPose();
                         poses.translate(localX, localY, localZ);
-                        dispatcher.renderBatched(state, localPos, blockView, poses, builder, true, random);
+                        dispatcher.renderBatched(state, localPos, blockView, poses,
+                                budgeted(builder), true, random);
                         poses.popPose();
+                        long modelVertexCount = vertexCount - verticesBeforeModel;
 
                         FluidState fluidState = state.getFluidState();
                         if (!fluidState.isEmpty()) {
-                            countQuads(6L);
                             BufferBuilder fluidBuilder = builderFor(resolveLayer(fluidState));
-                            dispatcher.renderLiquid(localPos, blockView, fluidBuilder, state, fluidState);
+                            dispatcher.renderLiquid(localPos, blockView,
+                                    budgeted(fluidBuilder), state, fluidState);
                         }
 
                         reportBlockEntityStaticFallback(
                                 state, localPos, blockId, modelClassName,
-                                hasStaticModelFallback(state, model, modelQuadCount), sky, block);
+                                hasStaticModelFallback(state, model, modelVertexCount), sky, block);
 
                         report.addEntry(new SceneCompatibilityReport.Entry(
                                 localPos, blockId, modelClassName, null, 0,
@@ -649,7 +662,7 @@ public final class SceneMeshBuilder {
                                 legacyStaticModelHint
                                         ? "旧版静态模型标记已通过活动渲染器兼容烘焙"
                                         : "原版静态模型快速路径",
-                                0, SceneMaterialKey.fromLayer(resolveLayer(state)), sky, block
+                                0, SceneMaterialKey.fromLayerName(layerNameOf(resolveLayer(state))), sky, block
                         ));
                     }
                 }
@@ -797,7 +810,7 @@ public final class SceneMeshBuilder {
                     resolveLayer(state)
             );
             BufferBuilder builder = getOrCreateCustomBuilder(material);
-            countQuads(1L);
+            countVertices(4L);
 
             Vector3f faceNormal = quad.faceNormal();
             int snapshotLight = resolveBlockLight(localPos);
@@ -834,28 +847,69 @@ public final class SceneMeshBuilder {
             return shadeArgb(color, shade);
         }
 
-        private long countModelQuads(BlockState state, BakedModel model) {
-            RandomSource estimateRandom = RandomSource.create(42L);
-            long count = 0L;
-            for (Direction direction : DIRECTIONS) {
-                List<?> quads = model.getQuads(state, direction, estimateRandom);
-                count += quads != null ? quads.size() : 0L;
-            }
-            List<?> unculled = model.getQuads(state, null, estimateRandom);
-            count += unculled != null ? unculled.size() : 0L;
-            countQuads(count);
-            return count;
+        private VertexConsumer budgeted(BufferBuilder builder) {
+            return budgetedConsumers.computeIfAbsent(builder, BudgetedVertexConsumer::new);
         }
 
-        private boolean hasStaticModelFallback(BlockState state, BakedModel model, long modelQuadCount) {
+        private boolean hasStaticModelFallback(BlockState state, BakedModel model, long modelVertexCount) {
             return state.getRenderShape() == RenderShape.MODEL
-                    && (modelQuadCount > 0L || SceneFabricModelCollector.isEnhanced(model));
+                    && (modelVertexCount > 0L || SceneFabricModelCollector.isEnhanced(model));
         }
 
-        private void countQuads(long count) {
-            quadCount += count;
-            if (quadCount > MAX_QUADS) {
-                throw new IllegalStateException("Scene VBO estimate exceeds 256 MiB");
+        private void countVertices(long count) {
+            vertexCount += count;
+            if (vertexCount > maxVertices) {
+                throw new IllegalStateException("Scene VBO vertex data exceeds configured mesh quota ("
+                        + meshQuotaMiB + " MiB)");
+            }
+        }
+
+        /**
+         * 原版与 Sodium/Indium 的活动渲染器最终都写向这个代理。预算因而只统计真正通过
+         * 遮挡剔除并写入缓冲的顶点，而不是把每个实心方块的六个理论方向面全部算进去。
+         */
+        private final class BudgetedVertexConsumer implements VertexConsumer {
+            private final VertexConsumer delegate;
+
+            private BudgetedVertexConsumer(VertexConsumer delegate) {
+                this.delegate = delegate;
+            }
+
+            @Override
+            public VertexConsumer addVertex(float x, float y, float z) {
+                countVertices(1L);
+                delegate.addVertex(x, y, z);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+                delegate.setColor(red, green, blue, alpha);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv(float u, float v) {
+                delegate.setUv(u, v);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv1(int u, int v) {
+                delegate.setUv1(u, v);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv2(int u, int v) {
+                delegate.setUv2(u, v);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setNormal(float x, float y, float z) {
+                delegate.setNormal(x, y, z);
+                return this;
             }
         }
 
@@ -993,6 +1047,7 @@ public final class SceneMeshBuilder {
                 }
             }
             customByteBuilders.clear();
+            budgetedConsumers.clear();
         }
     }
 
@@ -1000,6 +1055,12 @@ public final class SceneMeshBuilder {
         if (data == null || data.length != 2048 || blockIndex < 0 || blockIndex >= 4096) return 0;
         int packed = data[blockIndex >> 1] & 0xFF;
         return (blockIndex & 1) == 0 ? packed & 0x0F : packed >>> 4 & 0x0F;
+    }
+
+    /** 把客户端可配置的 MiB 配额转换成 BLOCK 格式可容纳的实际顶点数。 */
+    static long vertexBudgetForMiB(int quotaMiB) {
+        int clamped = SceneClientPerformanceRules.clampMeshCacheQuotaMiB(quotaMiB);
+        return SceneClientPerformanceRules.quotaBytes(clamped) / BLOCK_VERTEX_BYTES;
     }
 
     static int localSectionOrigin(int relativeSection, int sourceMinBlock) {
@@ -1016,6 +1077,11 @@ public final class SceneMeshBuilder {
         return (y << 8) | (z << 4) | x;
     }
 
+    /** {@code null}-safe layer name, used to keep the public material API free of internal enums. */
+    static String layerNameOf(SceneMeshSet.Layer layer) {
+        return layer != null ? layer.name() : null;
+    }
+
     static SceneMaterialKey fabricMaterialKey(String fabricBlendMode,
                                                boolean emissive,
                                                SceneMeshSet.Layer defaultLayer) {
@@ -1024,7 +1090,7 @@ public final class SceneMeshBuilder {
             case "CUTOUT_MIPPED" -> SceneMaterialKey.BlendMode.CUTOUT_MIPPED;
             case "CUTOUT" -> SceneMaterialKey.BlendMode.CUTOUT;
             case "TRANSLUCENT" -> SceneMaterialKey.BlendMode.TRANSLUCENT;
-            case "DEFAULT" -> SceneMaterialKey.fromLayer(defaultLayer).blendMode();
+            case "DEFAULT" -> SceneMaterialKey.fromLayerName(layerNameOf(defaultLayer)).blendMode();
             default -> throw new IllegalArgumentException("Unsupported Fabric blend mode: " + fabricBlendMode);
         };
         SceneMaterialKey.ShaderFamily shader = blendMode == SceneMaterialKey.BlendMode.TRANSLUCENT

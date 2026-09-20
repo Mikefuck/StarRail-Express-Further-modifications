@@ -1,15 +1,11 @@
 package com.habitrain.core.api;
 
-import io.wifi.starrailexpress.cca.ExtraSlotComponent;
+import com.habitrain.core.api.spi.CoreSpi;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 任务道具回收辅助类。
@@ -25,6 +21,9 @@ import java.util.List;
  *
  * 注意：成功完成的任务不回收（玩家保留道具作为奖励）。
  *       仅在取消/隐藏路径（init/clear/forceReplace/timeout/fail）调用 reclaim。
+ *
+ * <p>额外槽位（上游 {@code ExtraSlotComponent}）经
+ * {@link com.habitrain.core.api.spi.ExtraSlotReclaimBridge} 注入，本类不再编译期依赖上游组件。
  */
 public final class ItemReclaimHelper {
 
@@ -91,7 +90,7 @@ public final class ItemReclaimHelper {
         if (player.inventoryMenu != player.containerMenu) {
             carriedChanged |= reclaimMenuCarried(player.inventoryMenu, fullId);
         }
-        reclaimExtraSlots(player, fullId);
+        reclaimExternalSlots(player, fullId);
         player.getInventory().setChanged();
         if (carriedChanged) {
             if (player.containerMenu != null) {
@@ -117,22 +116,11 @@ public final class ItemReclaimHelper {
         return true;
     }
 
-    private static void reclaimExtraSlots(Player player, String fullId) {
-        try {
-            ExtraSlotComponent.KEY.maybeGet(player).ifPresent(extra -> {
-                if (extra.SLOTS == null || extra.SLOTS.isEmpty()) return;
-                List<ResourceLocation> toRemove = new ArrayList<>();
-                for (var entry : extra.SLOTS.entrySet()) {
-                    if (matchesGrant(entry.getValue(), fullId)) {
-                        toRemove.add(entry.getKey());
-                    }
-                }
-                for (ResourceLocation slot : toRemove) {
-                    extra.removeSlot(slot);
-                }
-            });
-        } catch (Throwable ignored) {
-        }
+    /**
+     * 上游额外槽位经 SPI 回收；未安装桥接（或无该组件）时退化为无操作。
+     */
+    private static void reclaimExternalSlots(Player player, String fullId) {
+        CoreSpi.reclaimExtraSlots(player, stack -> matchesGrant(stack, fullId));
     }
 
     /** 检查 ItemStack 是否带匹配的 habitrain_grant 标签 */

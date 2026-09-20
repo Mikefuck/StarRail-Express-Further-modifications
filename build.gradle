@@ -86,6 +86,14 @@ tasks.register("stageTestRuntime", Sync) {
     from(sourceSets.test.output.classesDirs) {
         into("test")
     }
+    // 测试资源（junit-platform.properties / META-INF/services）必须一起进暂存目录，
+    // 否则 JUnit 的自动扩展发现机制在 Windows 暂存 classpath 上失效（审核 A2 的测试装配器依赖它）。
+    def testResources = sourceSets.test.output.resourcesDir
+    if (testResources != null) {
+        from(testResources) {
+            into("test")
+        }
+    }
     from(sourceSets.main.output) {
         into("main")
     }
@@ -130,6 +138,12 @@ processResources {
     }
     from("THIRD_PARTY_LICENSES") {
         into("META-INF/LICENSES/habitrain_core")
+    }
+    // 审核 D-12：项目根的 assets/（上游 starrailexpress 的语言覆盖，2666 行）不在
+    // src/main/resources 下，之前 build.gradle 也没有额外 srcDir，导致该翻译永远不进 jar。
+    // 这里按原路径打进 jar：assets/starrailexpress/lang/*.json。
+    from("assets") {
+        into("assets")
     }
 }
 

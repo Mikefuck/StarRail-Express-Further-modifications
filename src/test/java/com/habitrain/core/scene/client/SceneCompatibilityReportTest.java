@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;

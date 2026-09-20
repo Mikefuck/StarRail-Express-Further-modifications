@@ -20,7 +20,9 @@ import java.util.function.UnaryOperator;
  * under {@code provider/role/state-key}. Serialization is the Codec contract:
  * a spec that declares {@link Persistence#WORLD}/{@link Persistence#PERMANENT}
  * or a non-{@link SyncPolicy#NONE} sync policy MUST provide a {@link Codec},
- * otherwise registration fails with INVALID (fix-doc §10.6 — no declared
+ * otherwise {@code build()} throws {@link IllegalStateException} and the whole
+ * provider batch is rolled back (审核 R-05：旧文档称「注册失败为 INVALID」，
+ * 实际是抛异常并整批回滚，诊断里连 INVALID 行都不会出现；fix-doc §10.6 — no declared
  * persistence/sync is silently ignored).
  *
  * @param <T> value type. Prefer boxed primitives and immutable records.

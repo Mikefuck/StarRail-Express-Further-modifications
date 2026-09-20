@@ -1,6 +1,6 @@
 package com.habitrain.core.api.scene;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 
 /**
  * 移动场景系统服务端事件监听器（全部方法都有空实现，按需重写）。
@@ -20,7 +20,16 @@ public interface SceneListener {
     /**
      * 一个 API 场景实例被回收。
      *
-     * @param reason 回收原因：{@code despawn} / {@code expired} / {@code replaced} / {@code reset}
+     * @param reason 回收原因：
+     *               <ul>
+     *                 <li>{@code despawn} — 调用方显式回收</li>
+     *                 <li>{@code expired} — 存活时长到期自动回收</li>
+     *                 <li>{@code dimension_changed} — 实例被迁移到另一个维度（审核 S-01；
+     *                     旧实现迁移时只广播移除包、不触发本回调，监听器的旧维度缓存/音源/计时器会泄漏）</li>
+     *                 <li>{@code reset} — 全量重置 / 停服清理</li>
+     *               </ul>
+     *               注意：并不存在 {@code replaced} 原因——{@code spawn}/{@code upsert} 覆盖同 ID
+     *               实例走的是 {@link #onInstanceUpdated}，不会先触发移除（审核 S-08 已在文档中更正）。
      */
     default void onInstanceRemoved(SceneInstanceView instance, String reason) {}
 

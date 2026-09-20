@@ -114,5 +114,15 @@ public final class RoleOverrideRegistry {
     public List<ReplaceRoleDefinition> getReplaces() { return Collections.unmodifiableList(replaces); }
     public List<ModifyRoleDefinition> getModifies() { return Collections.unmodifiableList(modifies); }
 
-    public void freeze() { this.frozen = true; }
+    /**
+     * 审核 R-19：与 {@code TaskRegistry}/{@code GameModeRegistry} 的 freeze 对齐——
+     * 只在 core 生命周期作用域内生效，第三方误调会被忽略并告警。
+     */
+    public void freeze() {
+        if (!com.habitrain.core.api.spi.CoreLifecycle.isActive()) {
+            LOGGER.warn("RoleOverrideRegistry.freeze() ignored: only habitrain_core bootstrap may freeze this registry");
+            return;
+        }
+        this.frozen = true;
+    }
 }

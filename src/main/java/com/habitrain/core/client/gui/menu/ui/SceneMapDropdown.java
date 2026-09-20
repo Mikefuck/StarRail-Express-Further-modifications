@@ -1,7 +1,7 @@
 package com.habitrain.core.client.gui.menu.ui;
 
 import com.habitrain.core.client.gui.menu.MenuTheme;
-import com.habitrain.core.scene.model.SceneMapDropdownModel;
+import com.habitrain.core.api.scene.model.SceneMapDropdownModel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;

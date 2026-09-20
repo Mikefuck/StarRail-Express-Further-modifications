@@ -17,16 +17,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Fail-closed safety policy for forced random role rewrites.
- *
- * <p>Upstream role removal only invokes the role component's {@code clear()}.
- * It cannot prove that arbitrary effects, secondary components or global state
- * owned by a future role were released. Core-owned roles use the managed v2
- * lifecycle; unknown upstream roles are therefore accepted only when they are
- * plain, componentless, randomizable {@link NormalRole} instances or have been
- * explicitly audited.
- */
+/** Checks that outgoing runtime state can be inspected before a forced rewrite.
+ * Known cross-role state is cleaned at commit; incoming pool rules stay separate. */
 public final class ForcedRandomRoleChangePolicy {
     public static final String REASON_SAFE = "safe";
     public static final String REASON_NO_CURRENT_ROLE = "no_current_role";
@@ -119,31 +111,13 @@ public final class ForcedRandomRoleChangePolicy {
         if (signals == null || signals.roleId() == null) {
             return Assessment.denied(REASON_NO_CURRENT_ROLE, null, List.of("missing_current_role"));
         }
-        if (signals.knownUnsafeLifecycle()) {
-            return Assessment.denied(REASON_MONOKUMA_LIFECYCLE, signals.roleId(),
-                    signals.lifecycleSignals());
-        }
         if (signals.inspectionFailed()) {
             return Assessment.denied(REASON_INSPECTION_FAILED, signals.roleId(),
                     List.of("runtime_state_inspection_failed"));
         }
-        if (signals.coreOwned() || signals.auditedSafe()) {
-            return Assessment.allowed(signals.roleId());
-        }
-
-        List<String> risks = new ArrayList<>();
-        if (signals.componentBacked()) {
-            risks.add("component_backed");
-        }
-        if (!signals.randomizableByOtherRoles()) {
-            risks.add("not_randomizable_by_other_roles");
-        }
-        if (!signals.plainNormalRole()) {
-            risks.add("custom_role_implementation");
-        }
-        if (!risks.isEmpty()) {
-            return Assessment.denied(REASON_UNAUDITED_UPSTREAM_STATE, signals.roleId(), risks);
-        }
+        // Component/class shape does not establish an unsafe removal lifecycle.
+        // Random-pool eligibility applies to the incoming role, not the outgoing one.
+        // Known panda/monokuma state is released by SpecialRoleExitCleanup at commit.
         return Assessment.allowed(signals.roleId());
     }
 

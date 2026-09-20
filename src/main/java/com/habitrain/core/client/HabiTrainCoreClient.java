@@ -24,6 +24,18 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // 审核 A2/B14：装配客户端侧 SPI（场景渲染运行时 + 菜单门控客户端状态）。
+        // 与主入口一致，只在 core 生命周期作用域内生效。
+        com.habitrain.core.internal.CoreLifecycleScope.run(() -> {
+            com.habitrain.core.api.spi.CoreSpi.installSceneClient(
+                    com.habitrain.core.scene.client.SceneRenderRuntime.getInstance());
+            com.habitrain.core.api.spi.CoreSpi.installMenuGateClient(
+                    com.habitrain.core.client.menu.MenuGateClientBridgeImpl.INSTANCE);
+            com.habitrain.core.api.spi.RoleSpi.installClientExtension(
+                    com.habitrain.core.role.client.RoleClientExtensionRegistry::new);
+            com.habitrain.core.api.spi.RoleSpi.installActionClient(
+                    () -> com.habitrain.core.client.role.RoleActionClientSession.INSTANCE);
+        });
         com.habitrain.core.client.config.ClientVisualPreferences.load();
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.START.register(
                 com.habitrain.core.scene.client.SceneCameraShakeRenderer::apply);

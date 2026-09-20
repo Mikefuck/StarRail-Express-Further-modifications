@@ -11,25 +11,18 @@ import org.slf4j.LoggerFactory;
 /**
  * 适配器 — 将 {@link TaskInstance} 包装为 SRE 的 {@link TrainTask}。
  * 使 API 层的 TaskInstance 不直接依赖 SRE 接口，保持 API 层干净。
+ *
+ * <p>包装器占用的永远是 {@link TaskEnumHelper#getCustom()} 槽位；
+ * 曾经的「杀手假任务用 PRAY 槽位规避冲突」分支已随杀手双任务机制删除（2.0.10）。
  */
 public class SRETrainTaskWrapper implements TrainTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("SRETrainTaskWrapper");
 
     private final TaskInstance instance;
-    private final SREPlayerTaskComponent.Task typeOverride;
 
     public SRETrainTaskWrapper(TaskInstance instance) {
-        this(instance, null);
-    }
-
-    /**
-     * @param typeOverride 非空时用指定 Task 枚举槽位，避免与主 DLC 任务(CUSTOM)冲突。
-     *                     杀手假任务用此构造函数传一个空闲的原版枚举（如 PRAY）。
-     */
-    public SRETrainTaskWrapper(TaskInstance instance, SREPlayerTaskComponent.Task typeOverride) {
         this.instance = instance;
-        this.typeOverride = typeOverride;
     }
 
     public TaskInstance unwrap() {
@@ -53,9 +46,6 @@ public class SRETrainTaskWrapper implements TrainTask {
 
     @Override
     public SREPlayerTaskComponent.Task getType() {
-        if (typeOverride != null) {
-            return typeOverride;
-        }
         // S6-004: When CUSTOM isn't available (older SRE version), return null instead of SLEEP.
         // SLEEP conflicts with the vanilla sleep-task slot; null tells callers
         // "no slot available" and they must handle it (e.g. fall back to display-only).

@@ -17,7 +17,11 @@ final class ScenePacketIo {
     /** sha256 十六进制串固定 64 字节，留一倍余量。 */
     static final int MAX_HASH_BYTES = 128;
     /** 地图键、指纹等标识串。 */
-    static final int MAX_ID_BYTES = 32767;
+    /**
+     * 审核 S-07：与服务端 {@code SceneInstanceSpec.MAX_ID_LENGTH = 128} 对齐——
+     * 128 个字符在 UTF-8 下最多占 512 字节，旧值 32767 远宽于校验上限。
+     */
+    static final int MAX_ID_BYTES = 512;
 
     private ScenePacketIo() {}
 

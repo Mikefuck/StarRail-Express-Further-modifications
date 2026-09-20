@@ -20,8 +20,7 @@ public final class TaskTextNormalizer {
         }
 
         // DLC 任务包装器：直接用 displayName 字面量，不依赖 getType()==CUSTOM。
-        // 杀手假任务用 Task.PRAY 槽位包装，getType() 返回 PRAY 而非 CUSTOM，
-        // 若不在此拦截会命中 SRE 原版 task.pray 翻译（"祷告..."）产生错误文本。
+        // 包装器挂在 CUSTOM 槽位，若不在此拦截会走 SRE 原版 task.* 翻译产生错误文本。
         if (task instanceof SRETrainTaskWrapper) {
             String name = task.getName();
             if (name == null || name.isBlank()) {

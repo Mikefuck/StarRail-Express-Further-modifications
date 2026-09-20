@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;

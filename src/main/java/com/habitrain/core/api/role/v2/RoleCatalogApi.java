@@ -28,7 +28,7 @@ public interface RoleCatalogApi {
         private DefaultHolder() {}
 
         static final RoleCatalogApi INSTANCE =
-                com.habitrain.core.role.catalog.RoleCatalogImpl.defaultInstance();
+                com.habitrain.core.api.spi.RoleSpi.catalog();
     }
 
     /**
@@ -100,27 +100,27 @@ public interface RoleCatalogApi {
      * still the just-ended catalog until the next server tick promotes pending.
      * Downstream settlement code should prefer {@link #lastEndedSnapshot()} or
      * {@code currentSnapshot()}, never assume the live lobby overlay.
+     *
+     * <p><b>审核 A-04</b>：本方法（以及 {@link #roundSnapshot()} /
+     * {@link #lastEndedSnapshot()}）在 2.0.11 及以前是 {@code default} 方法，
+     * 默认返回 {@link Optional#empty()}——于是「实现忘了覆盖」与「此刻确实没有快照」
+     * <b>不可区分</b>：替换实现会静默退化，而消费方无法察觉自己拿到的是空壳。
+     * 2.0.12 起三者改为<b>抽象方法</b>，任何实现都必须显式表态，编译器兜住这个问题。
      */
-    default Optional<RoleSnapshot> currentSnapshot() {
-        return Optional.empty();
-    }
+    Optional<RoleSnapshot> currentSnapshot();
 
     /**
      * The in-progress round snapshot only. Empty in lobby and after
      * {@code endRound()} has cleared the round slot.
      */
-    default Optional<RoleSnapshot> roundSnapshot() {
-        return Optional.empty();
-    }
+    Optional<RoleSnapshot> roundSnapshot();
 
     /**
      * The just-ended settlement snapshot held until pending is promoted.
      * Empty when no settlement is held (lobby, live round, or after
      * {@code activatePending()}).
      */
-    default Optional<RoleSnapshot> lastEndedSnapshot() {
-        return Optional.empty();
-    }
+    Optional<RoleSnapshot> lastEndedSnapshot();
 
     /**
      * Restores an effective role from an archived snapshot (replay / history).

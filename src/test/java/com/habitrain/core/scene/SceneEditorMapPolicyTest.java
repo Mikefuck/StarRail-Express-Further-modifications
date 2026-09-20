@@ -1,6 +1,6 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.model.SceneEditorMapPolicy;
+import com.habitrain.core.api.scene.model.SceneEditorMapPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;

@@ -1,6 +1,5 @@
 package com.habitrain.core.api.scene;
 
-import java.util.Objects;
 
 /**
  * 场景实例注册/更新结果。

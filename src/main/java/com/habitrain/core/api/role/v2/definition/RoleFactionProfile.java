@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * Immutable faction/alignment profile of a role.
  *
- * <p>{@link com.habitrain.core.role.extension.ManagedSRERole} constructs the
+ * <p>{@link role.extension.ManagedSRERole} constructs the
  * upstream object through {@code NormalRole}'s constructor, which already
  * derives {@code passiveIncome = canUseKiller} and
  * {@code neutral = !innocent && !canUseKiller}. The profile only

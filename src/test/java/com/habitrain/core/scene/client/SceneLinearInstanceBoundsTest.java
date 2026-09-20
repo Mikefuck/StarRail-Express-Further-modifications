@@ -1,11 +1,11 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneInstanceBounds;
-import com.habitrain.core.scene.model.SceneMotionMath;
-import com.habitrain.core.scene.model.SceneMotionMode;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRotation;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneInstanceBounds;
+import com.habitrain.core.api.scene.model.SceneMotionMath;
+import com.habitrain.core.api.scene.model.SceneMotionMode;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRotation;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;

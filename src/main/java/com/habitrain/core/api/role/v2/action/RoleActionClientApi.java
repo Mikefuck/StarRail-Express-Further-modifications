@@ -31,22 +31,21 @@ public interface RoleActionClientApi {
         try {
             env = FabricLoader.getInstance().getEnvironmentType();
         } catch (Throwable ignored) {
-            // JUnit / unloaded Fabric still resolves by reflection.
+            // JUnit / unloaded Fabric still resolves through the SPI bridge.
         }
         if (env != null && env != EnvType.CLIENT) {
             throw new IllegalStateException(
                     "RoleActionClientApi.instance() may only be called from ClientModInitializer or other client-side code");
         }
-        try {
-            Class<?> type = Class.forName("com.habitrain.core.client.role.RoleActionClientSession");
-            Object value = type.getField("INSTANCE").get(null);
-            if (value instanceof RoleActionClientApi api) {
-                return api;
-            }
-            throw new IllegalStateException("RoleActionClientApi client session is unavailable");
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("RoleActionClientApi client session is unavailable", e);
+        // 审核 A2：旧实现用 Class.forName 直接解析 client.role.RoleActionClientSession，
+        // 既依赖实现包又绕过 SPI。现在由客户端入口通过 RoleSpi 装配。
+        com.habitrain.core.api.spi.RoleSpi.RoleActionClientBridge bridge =
+                com.habitrain.core.api.spi.RoleSpi.actionClientOrNull();
+        Object session = bridge != null ? bridge.session() : null;
+        if (session instanceof RoleActionClientApi api) {
+            return api;
         }
+        throw new IllegalStateException("RoleActionClientApi client session is unavailable");
     }
 
     /**

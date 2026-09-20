@@ -44,6 +44,23 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     private final Map<UUID, UUID> groups = new ConcurrentHashMap<>();
     private volatile boolean frozen;
 
+    static {
+        // 审核 R-04：隔离组过去永不清理，陈旧组会被 withStoredGroups 注入后续每一轮与
+        // 重连后的语音评估。这里挂到「对局结束 / 停服」的统一清理点。
+        com.habitrain.core.task.ClearableHandlerRegistry.register(
+                RoleCapabilityServiceImpl::clearGroupsOnRoundEnd);
+    }
+
+    private static void clearGroupsOnRoundEnd() {
+        try {
+            if (RoleCapabilityApi.instance() instanceof RoleCapabilityServiceImpl impl) {
+                impl.clearAllGroups();
+            }
+        } catch (Throwable t) {
+            // RoleSpi 未装配（例如纯单元测试）时无需清理。
+        }
+    }
+
     public RoleCapabilityServiceImpl() {}
 
     /**
@@ -132,6 +149,10 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     public void bindAdapter(RoleCapabilityKey key, RoleCapabilityStatus status) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(status, "status");
+        // 审核 R-20：本入口无 provider 归属，过去 freeze 之后仍可写——任意 mod 谎报
+        // bindAdapter(VOICE, AVAILABLE) 就能让 supports(VOICE) 撒谎，provider 据此
+        // 加载 voicechat 类即崩。现在与其它写入一样受 freeze 门控。
+        rejectIfFrozen();
         adapters.put(key, status);
         LOGGER.info("Capability {} -> {}", key, status);
     }
@@ -190,6 +211,21 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
             groups.remove(playerId);
         } else {
             groups.put(playerId, groupId);
+        }
+    }
+
+    /** 审核 R-04：断开连接时清除该玩家的隔离组，避免重连后仍被旧组影响。 */
+    public void onPlayerDisconnect(@Nullable UUID playerId) {
+        if (playerId != null) {
+            groups.remove(playerId);
+        }
+    }
+
+    /** 审核 R-04：对局结束时清空全部隔离组（组是「本轮」的临时编排）。 */
+    public void clearAllGroups() {
+        if (!groups.isEmpty()) {
+            groups.clear();
+            LOGGER.debug("已清空角色能力隔离组");
         }
     }
 

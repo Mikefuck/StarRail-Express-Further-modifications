@@ -21,6 +21,8 @@ public record RoleEconomyProfile(List<ShopEntry> shopEntries,
 
     public RoleEconomyProfile {
         Objects.requireNonNull(shopEntries, "shopEntries");
+        // 审核 R-09：本类型自称 immutable 却没有做防御性拷贝。
+        shopEntries = List.copyOf(shopEntries);
     }
 
     public RoleEconomyProfile(List<ShopEntry> shopEntries) {
@@ -37,7 +39,8 @@ public record RoleEconomyProfile(List<ShopEntry> shopEntries,
             List<ShopEntry> fresh = live.get();
             return fresh == null ? List.of() : List.copyOf(fresh);
         }
-        return shopEntries;
+        // 审核 R-09：旧实现直接返回内部列表，调用方可以绕过不可变性。
+        return List.copyOf(shopEntries);
     }
 
     public static final class Builder {

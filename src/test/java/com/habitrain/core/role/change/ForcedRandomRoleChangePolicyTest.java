@@ -10,6 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForcedRandomRoleChangePolicyTest {
+    @Test
+    void inspectionFailureStillRejectsEvenKnownSpecialState() {
+        var result = ForcedRandomRoleChangePolicy.assessSignals(
+                new ForcedRandomRoleChangePolicy.RiskSignals(
+                        ResourceLocation.fromNamespaceAndPath("noellesroles", "monokuma"),
+                        false, false, true, false, false, true, true, List.of("panda_form")));
+        assertFalse(result.allowed());
+        assertEquals(ForcedRandomRoleChangePolicy.REASON_INSPECTION_FAILED, result.reasonCode());
+    }
 
     @Test
     void coreOwnedRoleIsAllowedEvenWhenComplex() {
@@ -26,29 +35,24 @@ class ForcedRandomRoleChangePolicyTest {
     }
 
     @Test
-    void componentBackedUpstreamRoleIsDenied() {
+    void componentBackedUpstreamRoleIsAllowed() {
         var result = assess("future_roles", false, false, true, true, true, false);
 
-        assertFalse(result.allowed());
-        assertEquals(ForcedRandomRoleChangePolicy.REASON_UNAUDITED_UPSTREAM_STATE,
-                result.reasonCode());
-        assertTrue(result.riskSignals().contains("component_backed"));
+        assertTrue(result.allowed());
     }
 
     @Test
-    void nonRandomizableUpstreamRoleIsDenied() {
+    void nonRandomizableUpstreamRoleIsAllowed() {
         var result = assess("future_roles", false, false, false, false, true, false);
 
-        assertFalse(result.allowed());
-        assertTrue(result.riskSignals().contains("not_randomizable_by_other_roles"));
+        assertTrue(result.allowed());
     }
 
     @Test
-    void customUpstreamRoleImplementationIsDenied() {
+    void customUpstreamRoleImplementationIsAllowed() {
         var result = assess("future_roles", false, false, false, true, false, false);
 
-        assertFalse(result.allowed());
-        assertTrue(result.riskSignals().contains("custom_role_implementation"));
+        assertTrue(result.allowed());
     }
 
     @Test
@@ -59,12 +63,11 @@ class ForcedRandomRoleChangePolicyTest {
     }
 
     @Test
-    void knownMonokumaLifecycleAlwaysWinsOverAllowRules() {
+    void knownMonokumaLifecycleIsAllowedWithCommitCleanup() {
         var result = assess("habitrain_core", true, true, false, true, true, true);
 
-        assertFalse(result.allowed());
-        assertEquals(ForcedRandomRoleChangePolicy.REASON_MONOKUMA_LIFECYCLE,
-                result.reasonCode());
+        assertTrue(result.allowed());
+
     }
 
     private static ForcedRandomRoleChangePolicy.Assessment assess(

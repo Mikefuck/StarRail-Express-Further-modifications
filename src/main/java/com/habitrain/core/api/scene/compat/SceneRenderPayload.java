@@ -1,6 +1,6 @@
 package com.habitrain.core.api.scene.compat;
 
-import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.api.scene.SceneLimits;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;

@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexBuffer;
 import net.minecraft.client.renderer.RenderType;

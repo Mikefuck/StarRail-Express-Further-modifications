@@ -2,9 +2,9 @@ package com.habitrain.core.scene.network;
 
 import com.google.gson.JsonParser;
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.SceneMotionSettings;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;

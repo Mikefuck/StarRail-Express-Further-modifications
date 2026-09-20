@@ -17,6 +17,7 @@ import com.habitrain.core.role.snapshot.RoleSnapshotArchive;
 import com.habitrain.core.role.snapshot.RoleSnapshotCompiler;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import com.habitrain.core.role.snapshot.RoleSnapshotVersions;
+import com.habitrain.core.role.config.RoleExtensionConfigService;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 
@@ -49,6 +50,10 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
     }
 
     private final RawRoleLookup lookup;
+
+    /** 审核 R-22：TEMP 编译快照缓存与其失效判据（见 {@link #tempVersion()}）。 */
+    private volatile @org.jetbrains.annotations.Nullable RoleSnapshot cachedTempSnapshot;
+    private volatile long cachedTempVersion = Long.MIN_VALUE;
 
     /** @param rawRoles the raw upstream role map this directory reads */
     public RoleCatalogImpl(Map<ResourceLocation, SRERole> rawRoles) {
@@ -107,13 +112,44 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
      * single authoritative {@link RoleSnapshotCompiler} from the injected raw
      * source (unit tests, pre-{@code SERVER_STARTED}). Temp compiles are not
      * archived and do not consume a published generation.
+     *
+     * <p><b>审核 R-22</b>：旧实现每次读都全量重编译 TEMP——而客户端
+     * {@code lobby} 快照永不被设置（只有服务端 {@code setLobby}），教程又鼓励把所有查询
+     * 都走目录，于是 HUD / 每帧查询变成一个性能陷阱。现在按「原始角色来源指纹 +
+     * 覆盖引擎快照版本 + 角色扩展配置修订号」缓存 TEMP，三者任一变化才重编译。
+     * 该指纹是廉价 O(n) 扫描（不构建 EffectiveRole），因此每帧查询仍有成本，
+     * 但不再触发完整编译。</p>
      */
     private RoleSnapshot compiledSnapshot() {
         RoleSnapshot frozen = RoleSnapshotManager.INSTANCE.current();
         if (frozen != null) {
             return frozen;
         }
-        return RoleSnapshotCompiler.compile(RoleSnapshotVersions.TEMP, lookup);
+        long version = tempVersion();
+        RoleSnapshot cached = cachedTempSnapshot;
+        if (cached != null && cachedTempVersion == version) {
+            return cached;
+        }
+        RoleSnapshot compiled = RoleSnapshotCompiler.compile(RoleSnapshotVersions.TEMP, lookup);
+        cachedTempSnapshot = compiled;
+        cachedTempVersion = version;
+        return compiled;
+    }
+
+    /** 审核 R-22：TEMP 编译缓存的失效判据。 */
+    private long tempVersion() {
+        long h = 17L;
+        int count = 0;
+        for (SRERole role : lookup.all()) {
+            count++;
+            // 原始角色对象被替换（REPLACE / 直接注册）时 identityHashCode 会变。
+            h = h * 31L + (role == null ? 0 : System.identityHashCode(role));
+        }
+        h = h * 31L + count;
+        // MODIFY / ALIAS / 配置门控变化分别经这两条路径体现。
+        h = h * 31L + engine().getSnapshotVersion();
+        h = h * 31L + RoleExtensionConfigService.INSTANCE.revision();
+        return h;
     }
 
     private static boolean matches(EffectiveRole er, RoleQuery query) {

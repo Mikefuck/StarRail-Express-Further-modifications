@@ -1,8 +1,8 @@
 package com.habitrain.core.client.gui.menu.ui;
 
 import com.habitrain.core.client.gui.menu.MenuTheme;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneMotionMath;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneMotionMath;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;

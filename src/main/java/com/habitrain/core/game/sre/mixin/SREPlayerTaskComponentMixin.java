@@ -62,7 +62,7 @@ public abstract class SREPlayerTaskComponentMixin {
         clearTrackedTasks(getPlayer(), "clear");
     }
 
-    /** 对称清理主任务 + 假任务，避免 activeFakeTasks 残留继续 tick/发奖。 */
+    /** 清理该玩家的活跃任务，避免旧实例继续 tick/发奖。 */
     private static void clearTrackedTasks(Player p, String reason) {
         if (p == null) return;
         TaskManager mgr = TaskManager.getInstance();
@@ -70,11 +70,6 @@ public abstract class SREPlayerTaskComponentMixin {
         if (oldTask != null) {
             LOGGER.debug("[HabiDebug] {}() - clearing activeCustomTask {} for player {}",
                     reason, oldTask.getFullId(), p.getName().getString());
-        }
-        TaskInstance fake = mgr.getFakeTask(p.getUUID());
-        if (fake != null) {
-            LOGGER.debug("[HabiDebug] {}() - clearing fakeTask {} for player {}",
-                    reason, fake.getFullId(), p.getName().getString());
         }
         mgr.cancelAllTrackedTasks(p);
     }

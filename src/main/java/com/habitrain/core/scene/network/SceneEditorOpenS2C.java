@@ -3,9 +3,9 @@ package com.habitrain.core.scene.network;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneProfile;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;
@@ -38,7 +38,7 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
     public SceneEditorOpenS2C(String editorMapKey, String runtimeMapKey, String selectionMapKey,
                               int profileRevision, String profileJson,
                               SceneBounds sessionSelection, SceneAssetDescriptor assetDescriptor) {
-        this(editorMapKey, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+        this(editorMapKey, com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID,
                 runtimeMapKey, selectionMapKey, profileRevision, profileJson, sessionSelection, assetDescriptor);
     }
 
@@ -48,8 +48,8 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
                               SceneBounds sessionSelection, SceneAssetDescriptor assetDescriptor) {
         this.editorMapKey = normalizeMapKey(editorMapKey, "__default__");
         this.editorBackgroundId = editorBackgroundId != null && !editorBackgroundId.isBlank()
-                ? com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(editorBackgroundId)
-                : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                ? com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeBackgroundId(editorBackgroundId)
+                : com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
         this.runtimeMapKey = normalizeMapKey(runtimeMapKey, "");
         this.selectionMapKey = normalizeMapKey(selectionMapKey, "");
         this.profileRevision = profileRevision;
@@ -90,7 +90,7 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
             String editorMapKey = readString(buf);
             String editorBackgroundId = protocolVersion >= 3
                     ? readString(buf)
-                    : com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+                    : com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
             String runtimeMapKey = readString(buf);
             String selectionMapKey = readString(buf);
             int revision = buf.readInt();

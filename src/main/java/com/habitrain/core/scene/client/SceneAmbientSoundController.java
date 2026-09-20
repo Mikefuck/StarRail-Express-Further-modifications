@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.SceneSoundSettings;
+import com.habitrain.core.api.scene.model.SceneSoundSettings;
 import com.habitrain.core.client.RepairModeClientState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;

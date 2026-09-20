@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * 移动场景实例的空间锚点：决定实例每帧的「显示原点」从哪里取得。
  *
- * <p>场景几何的显示原点来自 {@link com.habitrain.core.scene.model.SceneProfile#getDisplayOrigin()}。
+ * <p>场景几何的显示原点来自 {@link com.habitrain.core.api.scene.model.SceneProfile#getDisplayOrigin()}。
  * 锚点把这份原点变成"动态解析"：</p>
  * <ul>
  *   <li>{@link Mode#WORLD}：直接使用 profile 里写死的显示原点（不产生任何额外分配）。</li>

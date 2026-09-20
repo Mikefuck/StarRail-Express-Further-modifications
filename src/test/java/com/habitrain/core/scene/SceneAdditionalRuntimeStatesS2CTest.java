@@ -1,7 +1,7 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
 import com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

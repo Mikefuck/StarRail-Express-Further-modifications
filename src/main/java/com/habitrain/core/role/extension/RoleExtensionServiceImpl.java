@@ -63,7 +63,7 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
         if (loaded) {
             return;
         }
-        if (!com.habitrain.core.internal.CoreBootstrap.isInBootstrap()) {
+        if (!com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
             LOGGER.warn("RoleExtensionApi.loadProviders() ignored: only habitrain_core bootstrap may load providers");
             return;
         }
@@ -78,7 +78,7 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
                 entrypoint.register(registrar);
                 tx.setRequiresClient(entrypoint.requiresClient());
                 tx.commit();
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
                 tx.rollback();
                 LOGGER.error("Role extension entrypoint {} failed and was rolled back",
                         container.getEntrypoint().getClass().getName(), e);

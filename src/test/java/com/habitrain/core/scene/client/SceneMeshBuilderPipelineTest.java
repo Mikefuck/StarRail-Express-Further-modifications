@@ -1,8 +1,10 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import com.habitrain.core.api.client.scene.compat.SceneMaterialSink;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,14 @@ public class SceneMeshBuilderPipelineTest {
         assertEquals(10, SceneMeshBuilder.readNibble(lightData, 1));
         assertEquals(0, SceneMeshBuilder.readNibble(lightData, -1));
         assertEquals(0, SceneMeshBuilder.readNibble(lightData, 4096));
+    }
+
+    @Test
+    public void testVertexBudgetUsesConfiguredMeshQuota() {
+        assertEquals(4_194_304L, SceneMeshBuilder.vertexBudgetForMiB(128));
+        assertEquals(16_777_216L, SceneMeshBuilder.vertexBudgetForMiB(512));
+        assertEquals(67_108_864L, SceneMeshBuilder.vertexBudgetForMiB(4096),
+                "values above the supported range must clamp to the 2048 MiB maximum");
     }
 
     @Test

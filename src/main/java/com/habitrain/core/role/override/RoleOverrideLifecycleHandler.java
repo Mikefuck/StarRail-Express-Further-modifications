@@ -19,7 +19,7 @@ public final class RoleOverrideLifecycleHandler {
 
     /** 由 LifecycleEventsRegistrar 在配置加载后调用。 */
     public static void rebuildAfterConfigLoad() {
-        com.habitrain.core.internal.CoreBootstrap.run(() -> {
+        com.habitrain.core.internal.CoreLifecycleScope.run(() -> {
             RoleOverrideRegistry.INSTANCE.freeze();
             com.habitrain.core.role.extension.RoleExtensionRegistry.INSTANCE.freeze();
             com.habitrain.core.role.behavior.RoleHookRegistry.INSTANCE.freeze();

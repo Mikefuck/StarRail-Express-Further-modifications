@@ -63,10 +63,53 @@ public final class OptionVoteManager {
         return STATES.computeIfAbsent(level.dimension(), k -> new State());
     }
 
+    /** 网络层 {@code writeUtf/readUtf(64)} 的硬上限。 */
+    static final int MAX_WIRE_ID_LENGTH = 64;
+
+    /** 审核 B17：voteId 必须非空且不超网络上限。 */
+    static boolean isValidWireId(@Nullable String value) {
+        return value != null && !value.isBlank() && value.length() <= MAX_WIRE_ID_LENGTH;
+    }
+
+    /**
+     * 审核 B17：option id / displayName 必须非空、不超网络上限，且 id 互不重复
+     * （{@link VoteOption} 是含 displayName 的 record，用 {@code Set} 去重救不回来）。
+     */
+    static boolean hasValidOptionIds(List<VoteOption> options) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (VoteOption option : options) {
+            if (option == null) {
+                LOGGER.warn("[OptionVote] start refused: null VoteOption element");
+                return false;
+            }
+            if (!isValidWireId(option.id())) {
+                LOGGER.warn("[OptionVote] start refused: invalid option id (blank or longer than {} chars)",
+                        MAX_WIRE_ID_LENGTH);
+                return false;
+            }
+            if (option.displayName() == null || option.displayName().length() > MAX_WIRE_ID_LENGTH) {
+                LOGGER.warn("[OptionVote] start refused: displayName of option {} is null or longer than {} chars",
+                        option.id(), MAX_WIRE_ID_LENGTH);
+                return false;
+            }
+            if (!seen.add(option.id())) {
+                LOGGER.warn("[OptionVote] start refused: duplicate option id {}", option.id());
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * 发起一次选项投票。
      *
-     * @return true 成功发起；false 已有 active / 选项空 / duration &lt; 1
+     * <p><b>审核 B17</b>：入参在改动任何状态<b>之前</b>完成校验——
+     * {@code voteId}/{@code id}/{@code displayName} 非空且长度不超过网络层上限（64），
+     * 且 option id 互不重复。旧实现不校验重复与长度，重复 id 会在 0 票随机选一时
+     * 按重复次数放大命中概率，超长 id 则会在 {@code state.active = true} <b>之后</b>
+     * 于广播编码时抛异常，让投票卡在 active。</p>
+     *
+     * @return true 成功发起；false 已有 active / 选项空 / duration &lt; 1 / 入参非法
      */
     public static boolean start(ServerLevel level, String voteId, String title, String description,
                                 List<VoteOption> options, int durationSeconds,
@@ -74,7 +117,11 @@ public final class OptionVoteManager {
         if (level == null || options == null || options.isEmpty() || durationSeconds < 1) {
             return false;
         }
-        if (voteId == null || voteId.isBlank()) {
+        if (!isValidWireId(voteId)) {
+            LOGGER.warn("[OptionVote] start refused: invalid voteId (blank or longer than {} chars)", MAX_WIRE_ID_LENGTH);
+            return false;
+        }
+        if (!hasValidOptionIds(options)) {
             return false;
         }
         State state = getOrCreate(level);
@@ -393,39 +440,73 @@ public final class OptionVoteManager {
         broadcastState(level);
     }
 
-    /** 取消当前投票：不调用 onResolved，广播 close。 */
+    /**
+     * 取消当前投票，并以 {@link VoteResult#cancelled(String)} 回调 {@code onResolved}。
+     *
+     * <p>审核 B16：旧实现把 {@code onResolved} 直接丢弃，按官方示例
+     * （在 {@code onResolved} 里广播结果）写的消费方状态机会永远悬挂。</p>
+     */
     public static void cancel(ServerLevel level) {
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
         state.active = false;
         state.resolvedOptionId = "";
+        Consumer<VoteResult> callback = state.onResolved;
         state.onResolved = null;
         state.votesByVoter.clear();
         markChanged(state);
         broadcastState(level);
         LOGGER.info("[OptionVote] cancelled voteId={}", state.voteId);
+        notifyCancelled(callback, state.voteId);
     }
 
-    /** 对局/维度清理：移除 state。 */
+    /** 对局/维度清理：移除 state，并以 cancelled 结果回调。 */
     public static void reset(ServerLevel level) {
         if (level == null) return;
-        STATES.remove(level.dimension());
+        State state = STATES.remove(level.dimension());
+        if (state == null) return;
+        Consumer<VoteResult> callback = state.onResolved;
+        state.onResolved = null;
+        notifyCancelled(callback, state.voteId);
     }
 
-    /** 全局/服务器关闭/对局结束清理：移除所有维度的投票 state。 */
+    /** 全局/服务器关闭/对局结束清理：移除所有维度的投票 state，并逐个回调 cancelled。 */
     public static void resetAll() {
-        STATES.clear();
-    }
-
-    /** 全局取消所有维度的活动投票。 */
-    public static void cancelAll() {
         for (State state : STATES.values()) {
-            state.active = false;
-            state.resolvedOptionId = "";
+            Consumer<VoteResult> callback = state.onResolved;
             state.onResolved = null;
-            state.votesByVoter.clear();
+            state.active = false;
+            notifyCancelled(callback, state.voteId);
         }
         STATES.clear();
+    }
+
+    /** 全局取消所有维度的活动投票，并逐个回调 cancelled。 */
+    public static void cancelAll() {
+        for (State state : STATES.values()) {
+            Consumer<VoteResult> callback = state.onResolved;
+            state.onResolved = null;
+            state.active = false;
+            state.resolvedOptionId = "";
+            state.votesByVoter.clear();
+            notifyCancelled(callback, state.voteId);
+        }
+        STATES.clear();
+    }
+
+    /**
+     * 审核 B16：以 cancelled 结果回调，并隔离下游异常
+     * （与 {@link #resolve} 的 {@code try/catch} 策略一致）。
+     */
+    private static void notifyCancelled(@Nullable Consumer<VoteResult> callback, String voteId) {
+        if (callback == null) {
+            return;
+        }
+        try {
+            callback.accept(VoteResult.cancelled(voteId));
+        } catch (Exception e) {
+            LOGGER.error("[OptionVote] onResolved(cancelled) threw for voteId={}", voteId, e);
+        }
     }
 
     public static boolean isActive(ServerLevel level) {

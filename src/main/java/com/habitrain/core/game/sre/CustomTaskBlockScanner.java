@@ -1,17 +1,13 @@
 package com.habitrain.core.game.sre;
 
-import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
-import io.wifi.starrailexpress.content.block.FoodPlatterBlock;
-import io.wifi.starrailexpress.content.block_entity.BeveragePlateBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -102,13 +98,11 @@ public final class CustomTaskBlockScanner {
         int totalAddedCount = 0;
 
         Map<Block, Set<Integer>> blockToTypeIds = new HashMap<>();
-        int foodPlatterEatTypeId = -1;
-        int foodPlatterDrinkTypeId = -1;
 
         for (TaskDefinition def : TaskRegistry.getAll()) {
             int blockTypeId = def.getBlockTypeId();
-            if (HabiTrainCore.TASK_EAT.equals(def.getFullId())) foodPlatterEatTypeId = blockTypeId;
-            else if (HabiTrainCore.TASK_DRINK.equals(def.getFullId())) foodPlatterDrinkTypeId = blockTypeId;
+            // 原版任务镜像（sleep/bathe/eat/drink/… 的 typeId 1–24）由上游 MapScanner
+            // 自己扫描并作为 SRE 原生 taskBlocks 下发；本 mod 只扫描 <b>自定义</b> overlay 类型。
             if (blockTypeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) continue;
 
             boolean anyResolved = false;
@@ -190,34 +184,6 @@ public final class CustomTaskBlockScanner {
                                 continue;
                             }
                             Block block = state.getBlock();
-
-                            if (block instanceof FoodPlatterBlock) {
-                                if (serverLevel.getBlockEntity(cursor) instanceof BeveragePlateBlockEntity entity) {
-                                    var items = entity.getStoredItems();
-                                    if (items.isEmpty()) continue;
-                                    ItemStack item0 = items.get(0);
-                                    ConsumableClassificationPolicy.Kind kind =
-                                            FoodDrinkConsumableClassifier.classify(item0);
-                                    if (kind == ConsumableClassificationPolicy.Kind.DRINK) {
-                                        if (foodPlatterDrinkTypeId > 0) {
-                                            BlockPos immutable = cursor.immutable();
-                                            if (scannedBlocks.computeIfAbsent(immutable, k -> new HashSet<>()).add(foodPlatterDrinkTypeId)) {
-                                                scannedBlockTypes.put(immutable, block);
-                                                totalAddedCount++;
-                                            }
-                                        }
-                                    } else if (kind == ConsumableClassificationPolicy.Kind.EAT) {
-                                        if (foodPlatterEatTypeId > 0) {
-                                            BlockPos immutable = cursor.immutable();
-                                            if (scannedBlocks.computeIfAbsent(immutable, k -> new HashSet<>()).add(foodPlatterEatTypeId)) {
-                                                scannedBlockTypes.put(immutable, block);
-                                                totalAddedCount++;
-                                            }
-                                        }
-                                    }
-                                }
-                                continue;
-                            }
 
                             Set<Integer> typeIds = blockToTypeIds.get(block);
                             if (typeIds != null) {

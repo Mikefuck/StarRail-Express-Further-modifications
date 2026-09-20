@@ -35,7 +35,7 @@ public class TaskManager {
     /** SRE 游戏状态提供者 — 通过 setter 注入以解除对 SRE 具体类的编译依赖。 */
     private GameStateProvider gameStateProvider;
 
-    private record PendingReclaim(TaskInstance task, boolean fake) {}
+    private record PendingReclaim(TaskInstance task) {}
 
     /** Offline players whose tasks were dropped at round end; reclaim on JOIN. */
     private final ConcurrentHashMap<UUID, List<PendingReclaim>> pendingReclaim = new ConcurrentHashMap<>();
@@ -63,11 +63,6 @@ public class TaskManager {
     // 以及未来 off-thread 访问的可见性问题。
     private final Map<UUID, TaskInstance> activeCustomTasks = new ConcurrentHashMap<>();
 
-    /**
-     * 杀手双任务机制：杀手的"假任务"（并行任务）单独追踪，不覆盖主任务。
-     * key = playerUUID, value = 假任务实例（来自好人任务池，完成只给金币不推进胜利）
-     */
-    private final Map<UUID, TaskInstance> activeFakeTasks = new ConcurrentHashMap<>();
 
     private final Map<UUID, Map<String, Integer>> dlcTaskCounts = new ConcurrentHashMap<>();
 
@@ -90,17 +85,13 @@ public class TaskManager {
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
 
-    public TaskInstance getFakeTask(UUID playerUuid) { return activeFakeTasks.get(playerUuid); }
-    public void setFakeTask(UUID playerUuid, TaskInstance task) { activeFakeTasks.put(playerUuid, task); }
-    public void removeFakeTask(UUID playerUuid) { activeFakeTasks.remove(playerUuid); }
-
     /**
      * DISCONNECT only: drop {@code Player} entity refs so the instance can outlive
      * the disconnected entity. Does <em>not</em> remove the UUID from
-     * {@link #activeCustomTasks} / {@link #activeFakeTasks}.
+     * {@link #activeCustomTasks}.
      * <p>
-     * JOIN resync re-sends {@link ActiveTaskPayload} iff {@link #getActiveTask} /
-     * {@link #getFakeTask} still return an instance. It does not recreate a slot
+     * JOIN resync re-sends {@link ActiveTaskPayload} iff {@link #getActiveTask}
+     * still returns an instance. It does not recreate a slot
      * that upstream {@code task.init()} / PlayerDiscard already cleared, so an
      * ACTIVE reconnect can still find an empty map (F-G9-015 / F-G9-024).
      */
@@ -108,12 +99,10 @@ public class TaskManager {
         if (playerUuid == null) return;
         TaskInstance active = activeCustomTasks.get(playerUuid);
         if (active != null) active.unbindOwner();
-        TaskInstance fake = activeFakeTasks.get(playerUuid);
-        if (fake != null) fake.unbindOwner();
     }
 
     /** 清空所有玩家的活跃任务（游戏结束时调用） */
-    public void clearAllActiveTasks() { activeCustomTasks.clear(); activeFakeTasks.clear(); dlcTaskCounts.clear(); }
+    public void clearAllActiveTasks() { activeCustomTasks.clear(); dlcTaskCounts.clear(); }
 
     /** Stop-server / world-swap: clear active tasks and offline reclaim backlog. */
     public void clearAll() {
@@ -136,12 +125,11 @@ public class TaskManager {
 
     private void clearActiveTasksForLevel(ResourceKey<Level> dimension, MinecraftServer server) {
         if (dimension == null) return;
-        dropAndReclaim(activeCustomTasks, dimension, server, false);
-        dropAndReclaim(activeFakeTasks, dimension, server, true);
+        dropAndReclaim(activeCustomTasks, dimension, server);
     }
 
     private void dropAndReclaim(Map<UUID, TaskInstance> map, ResourceKey<Level> dimension,
-                                MinecraftServer server, boolean fake) {
+                                MinecraftServer server) {
         List<UUID> toDrop = new ArrayList<>();
         for (var e : map.entrySet()) {
             if (dimension.equals(e.getValue().getDimension())) {
@@ -153,11 +141,11 @@ public class TaskManager {
             if (task == null) continue;
             Player player = server != null ? server.getPlayerList().getPlayer(id) : null;
             if (player != null) {
-                cancelTrackedTask(player, task, fake);
+                cancelTrackedTask(player, task);
             } else {
                 map.remove(id, task);
                 pendingReclaim.computeIfAbsent(id, k -> new ArrayList<>())
-                        .add(new PendingReclaim(task, fake));
+                        .add(new PendingReclaim(task));
             }
         }
     }
@@ -168,7 +156,7 @@ public class TaskManager {
         List<PendingReclaim> pending = pendingReclaim.remove(player.getUUID());
         if (pending == null || pending.isEmpty()) return;
         for (PendingReclaim entry : pending) {
-            cancelTrackedTask(player, entry.task(), entry.fake());
+            cancelTrackedTask(player, entry.task());
         }
     }
 
@@ -176,7 +164,7 @@ public class TaskManager {
      * 取消路径：onRemove + 回收道具 + 摘 SRE wrapper + 清 HUD，不发奖。
      * 成功完成不要走这里。
      */
-    public void cancelTrackedTask(Player player, TaskInstance instance, boolean fake) {
+    public void cancelTrackedTask(Player player, TaskInstance instance) {
         if (player == null || instance == null) return;
         UUID id = player.getUUID();
         try {
@@ -191,13 +179,9 @@ public class TaskManager {
         }
         if (player instanceof ServerPlayer sp) {
             DlcTaskTracker.stripSreWrapper(sp, instance);
-            ActiveTaskPayload.clearForPlayer(sp, fake);
+            ActiveTaskPayload.clearForPlayer(sp);
         }
-        if (fake) {
-            if (getFakeTask(id) == instance) {
-                removeFakeTask(id);
-            }
-        } else if (getActiveTask(id) == instance) {
+        if (getActiveTask(id) == instance) {
             removeActiveTask(id);
         }
     }
@@ -206,11 +190,7 @@ public class TaskManager {
         if (player == null) return;
         TaskInstance active = getActiveTask(player.getUUID());
         if (active != null) {
-            cancelTrackedTask(player, active, false);
-        }
-        TaskInstance fake = getFakeTask(player.getUUID());
-        if (fake != null) {
-            cancelTrackedTask(player, fake, true);
+            cancelTrackedTask(player, active);
         }
     }
 
@@ -219,8 +199,7 @@ public class TaskManager {
         if (existing != null && existing.getFullId().equals(fullId)) {
             return true;
         }
-        TaskInstance fake = activeFakeTasks.get(playerUuid);
-        return fake != null && fake.getFullId().equals(fullId);
+        return false;
     }
 
     // ==================== SRE 集成方法（供 Mixin 使用） ====================

@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

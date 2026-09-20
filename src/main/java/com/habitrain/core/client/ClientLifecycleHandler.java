@@ -141,7 +141,7 @@ public class ClientLifecycleHandler {
         MapVotePreviewCache.clearAll();
         ClientMapIntroCache.clear();
         if (clearEspCaches) {
-            ActiveTaskCache.clearAll();
+            ActiveTaskCache.clear();
             CustomTaskBlockCache.clear();
         }
         if (reloadLocalConfig) {

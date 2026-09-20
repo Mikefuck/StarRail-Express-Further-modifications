@@ -3,13 +3,13 @@ package com.habitrain.core.network;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.habitrain.core.scene.SceneLimits;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneMotionMode;
-import com.habitrain.core.scene.model.SceneOrbitAxis;
-import com.habitrain.core.scene.model.SceneOrbitCenterMode;
-import com.habitrain.core.scene.model.SceneOrbitSettings;
+import com.habitrain.core.api.scene.SceneLimits;
+import com.habitrain.core.api.scene.SceneMotionSettings;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneMotionMode;
+import com.habitrain.core.api.scene.model.SceneOrbitAxis;
+import com.habitrain.core.api.scene.model.SceneOrbitCenterMode;
+import com.habitrain.core.api.scene.model.SceneOrbitSettings;
 
 import java.util.Collection;
 
@@ -158,7 +158,7 @@ public final class ConfigUpdateAccessPolicy {
         if (requested.isBlank()) requested = current;
         if (requested.isBlank()) throw new IllegalArgumentException("Scene map key is unavailable");
         if ("__default__".equals(requested)
-                || com.habitrain.core.config.SceneMotionSettings.LOBBY_MAP_KEY.equals(requested)
+                || com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY.equals(requested)
                 || requested.equals(current)
                 || configuredMapKeys != null && configuredMapKeys.contains(requested)) {
             return requested;

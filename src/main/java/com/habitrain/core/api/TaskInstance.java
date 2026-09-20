@@ -5,11 +5,15 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Runtime task instance that stores progress and lifecycle state.
  */
 public class TaskInstance {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|TaskInstance");
 
     private final TaskDefinition definition;
     private boolean fulfilled = false;
@@ -17,6 +21,9 @@ public class TaskInstance {
     private int maxProgress = 1;
     private int elapsedTicks = 0;
     private boolean failed = false;
+    // 审核 B4：回调期重入守卫。setProgress 会同步触发下游回调，若回调里再调用
+    // setProgress 旧实现会无限递归（无保护）。
+    private boolean inCallback = false;
     // tick 外调用 setProgress() 时用作 onProgressUpdate 回调的 player。
     // tick 内会临时覆盖为当前 tick 的 player，并在 finally 中恢复为 owner。
     private Player progressUpdatePlayer = null;
@@ -48,6 +55,14 @@ public class TaskInstance {
         this.progressUpdatePlayer = null;
     }
 
+    /**
+     * 写入进度并在变化时同步派发回调。
+     *
+     * <p><b>审核 B4</b>：回调期间的重入会被忽略（{@code DEBUG} 记录），
+     * 避免下游在 {@code onProgressUpdate} 里再调 {@code setProgress} 造成无限递归。
+     * 另外当任务没有 owner（{@link #unbindOwner()} 之后）时，回调会被跳过并记录 DEBUG——
+     * 旧实现是静默丢弃，下游无法感知。</p>
+     */
     public void setProgress(int progress) {
         int old = this.progress;
         this.progress = progress;
@@ -55,20 +70,43 @@ public class TaskInstance {
             // tick 内 progressUpdatePlayer 是当前 tick 的 player；
             // tick 外调用时回退到 ownerPlayer，避免回调静默丢失。
             Player p = progressUpdatePlayer != null ? progressUpdatePlayer : ownerPlayer;
-            if (p != null) {
+            if (p == null) {
+                LOGGER.debug("TaskInstance.setProgress({}) on {} has no owner; callbacks skipped",
+                        progress, getFullId());
+                return;
+            }
+            if (inCallback) {
+                LOGGER.debug("TaskInstance.setProgress({}) on {} ignored: re-entrant during callback",
+                        progress, getFullId());
+                return;
+            }
+            inCallback = true;
+            try {
                 definition.onProgressUpdate(p, this, old);
                 if (p instanceof ServerPlayer serverPlayer) {
                     GameModeRegistry.getActiveForLevel(serverPlayer.serverLevel()).ifPresent(mode ->
                             mode.onTaskProgressChange(serverPlayer, this, old));
                 }
+            } finally {
+                inCallback = false;
             }
         }
     }
 
+    /**
+     * 写入完成进度阈值。
+     *
+     * <p><b>审核 B3</b>：{@code maxProgress} 会被静默钳制到 {@code >= 1}
+     * （0 → 立即完成、负数 → 永不完成，都会破坏 {@code progress >= maxProgress} 判定）。
+     * 现在钳制行为保持不变，但会记录 DEBUG 日志，且 javadoc 显式声明该范围。</p>
+     *
+     * @param maxProgress 目标进度；小于 1 的值会被钳制为 1
+     */
     public void setMaxProgress(int maxProgress) {
-        // 防止 0/负值导致 completionChecker 里 progress >= maxProgress 逻辑错乱：
-        //   maxProgress=0 → 任务一分配就立即完成
-        //   maxProgress<0 → 永不完成
+        if (maxProgress < 1) {
+            LOGGER.debug("TaskInstance.setMaxProgress({}) on {} clamped to 1",
+                    maxProgress, definition != null ? definition.getFullId() : "?");
+        }
         this.maxProgress = Math.max(1, maxProgress);
     }
     public void setFulfilled(boolean fulfilled) { this.fulfilled = fulfilled; }

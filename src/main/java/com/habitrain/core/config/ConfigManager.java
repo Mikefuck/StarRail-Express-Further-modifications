@@ -1,5 +1,9 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.api.spi.SceneConfigBridge;
+
+import com.habitrain.core.api.scene.SceneMotionSettings;
+
 import com.habitrain.core.task.TaskPoolBuilder;
 import net.minecraft.server.MinecraftServer;
 import org.jetbrains.annotations.Nullable;
@@ -10,7 +14,7 @@ import java.io.File;
 import java.util.List;
 import java.util.Map;
 
-public class ConfigManager implements ConfigQueryService {
+public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger("ConfigManager");
     private static volatile ConfigManager INSTANCE;
 

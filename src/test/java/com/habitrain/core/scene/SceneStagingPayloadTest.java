@@ -1,6 +1,6 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import com.habitrain.core.scene.network.SceneStagingDecisionC2S;
 import com.habitrain.core.scene.network.SceneStagingOfferS2C;
 import com.habitrain.core.scene.network.SceneStagingReportC2S;

@@ -32,7 +32,13 @@ public record RoleKey(ResourceLocation location) {
         return new RoleKey(ResourceLocation.fromNamespaceAndPath(ns, p));
     }
 
-    /** Wraps an existing location as a canonical key. */
+    /**
+     * Wraps an existing location as a canonical key.
+     *
+     * <p><b>审核 R-13</b>：本重载<b>不</b>做 trim/lowercase，要求传入的
+     * {@link ResourceLocation} 已经是规范形式（上游角色 ID 就是规范形式）。
+     * 需要规范化大小写/空白时请用 {@link #of(String, String)} 或 {@link #tryParse(String)}。</p>
+     */
     public static RoleKey of(ResourceLocation location) {
         return new RoleKey(location);
     }
@@ -40,13 +46,18 @@ public record RoleKey(ResourceLocation location) {
     /**
      * Parses the {@code namespace:path} string form.
      *
+     * <p><b>审核 R-13</b>：旧实现直接 {@code ResourceLocation.tryParse(原始串)}，而
+     * 1.21 的 {@link ResourceLocation} 是严格校验且<b>不会</b>自动小写——同一个
+     * {@code "Example_Mod:Shadow_Killer"} 走 {@link #of(String, String)} 会成功并规范化，
+     * 走本方法却返回 {@code null}。现在这里先 trim + lowercase，与 {@code of} 保持一致。</p>
+     *
      * @return the parsed key, or {@code null} if the value is null/invalid
      */
     public static RoleKey tryParse(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        ResourceLocation location = ResourceLocation.tryParse(value);
+        ResourceLocation location = ResourceLocation.tryParse(value.trim().toLowerCase(Locale.ROOT));
         return location == null ? null : new RoleKey(location);
     }
 

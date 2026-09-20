@@ -1,5 +1,7 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.api.scene.SceneMotionSettings;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -386,15 +388,22 @@ public class ConfigStore {
         return SREIntegration.getAllMinigameIds();
     }
 
+    /**
+     * 「DLC 任务」= 可进入派发池的注册定义（{@link TaskDefinition#isPoolEligible()}）。
+     * <p>不再按 modId 判定：Core 自身也提供了真实 DLC 任务（eat/drink/pet_cat 等），
+     * 而原版 SRE 任务的空壳镜像才是「原版」侧。这与运行时
+     * {@code DlcTaskPoolBuilder} 的口径一致，避免展示/迁移用的比例与实际派发比例不符。
+     */
     public long countDlcTasks() {
         return TaskRegistry.getAll().stream()
-                .filter(t -> !"habitrain_core".equals(t.getModId()))
+                .filter(TaskDefinition::isPoolEligible)
                 .count();
     }
 
+    /** 「原版任务」= 仅登记、不派发的原版 SRE 任务镜像定义。 */
     public long countOriginalTasks() {
         return TaskRegistry.getAll().stream()
-                .filter(t -> "habitrain_core".equals(t.getModId()))
+                .filter(t -> !t.isPoolEligible())
                 .count();
     }
 

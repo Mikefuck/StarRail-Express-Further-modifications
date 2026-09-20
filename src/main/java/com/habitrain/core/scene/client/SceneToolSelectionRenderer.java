@@ -3,7 +3,7 @@ package com.habitrain.core.scene.client;
 import net.minecraft.core.BlockPos;
 
 import com.habitrain.core.scene.item.HabiAdminItems;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -104,9 +104,9 @@ public final class SceneToolSelectionRenderer {
 
     private static void renderOrbitCircle(PoseStack poseStack, VertexConsumer lineConsumer, Vec3 camPos,
                                           double cx, double cy, double cz, double[] origin,
-                                          com.habitrain.core.scene.model.SceneOrbitAxis axis,
+                                          com.habitrain.core.api.scene.model.SceneOrbitAxis axis,
                                           float red, float green, float blue) {
-        double[] a = com.habitrain.core.scene.model.SceneOrbitMath.unitAxis(axis);
+        double[] a = com.habitrain.core.api.scene.model.SceneOrbitMath.unitAxis(axis);
         double dx = origin[0] - cx;
         double dy = origin[1] - cy;
         double dz = origin[2] - cz;
@@ -121,8 +121,8 @@ public final class SceneToolSelectionRenderer {
         for (int i = 0; i < segments; i++) {
             double angle1 = (i * 360.0) / segments;
             double angle2 = ((i + 1) * 360.0) / segments;
-            double[] b1 = com.habitrain.core.scene.model.SceneOrbitMath.unitRadiusVector(axis, angle1);
-            double[] b2 = com.habitrain.core.scene.model.SceneOrbitMath.unitRadiusVector(axis, angle2);
+            double[] b1 = com.habitrain.core.api.scene.model.SceneOrbitMath.unitRadiusVector(axis, angle1);
+            double[] b2 = com.habitrain.core.api.scene.model.SceneOrbitMath.unitRadiusVector(axis, angle2);
             double px1 = cx + a[0] * h + b1[0] * radius;
             double py1 = cy + a[1] * h + b1[1] * radius;
             double pz1 = cz + a[2] * h + b1[2] * radius;

@@ -33,7 +33,7 @@ public interface RoleActionApi {
         private DefaultHolder() {}
 
         static final RoleActionApi INSTANCE =
-                new com.habitrain.core.role.action.RoleActionServiceImpl();
+                com.habitrain.core.api.spi.RoleSpi.action();
     }
 
     /** The spec bound to {@code id}, or {@code null} if it was never registered. */
@@ -66,7 +66,7 @@ public interface RoleActionApi {
      */
     void sendTo(@Nullable ServerPlayer player, ResourceLocation actionId, byte[] payload);
 
-    /** Prevents further {@link #register} calls. Idempotent. */
+    /** Prevents further schema registration. Idempotent. */
     void freeze();
 
     /** Whether {@link #freeze()} has been called. */

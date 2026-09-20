@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.server;
 
+import com.habitrain.core.api.spi.SceneInstanceBridge;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.habitrain.core.api.scene.SceneInstanceSpec;
@@ -7,8 +9,8 @@ import com.habitrain.core.api.scene.SceneInstanceView;
 import com.habitrain.core.api.scene.SceneListener;
 import com.habitrain.core.api.scene.SceneSpawnResult;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneInstance;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneInstance;
 import com.habitrain.core.scene.network.SceneAssetManifestS2C;
 import com.habitrain.core.scene.network.SceneInstancesS2C;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -57,7 +59,7 @@ import java.util.function.Predicate;
  *   <li>生命周期：实例是<b>纯运行时</b>状态，不写配置、不跨存档保存；服务器停止即全部清空。</li>
  * </ul>
  */
-public final class SceneInstanceService {
+public final class SceneInstanceService implements SceneInstanceBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneInstanceService.class.getSimpleName());
 
     private static final SceneInstanceService INSTANCE = new SceneInstanceService();
@@ -225,10 +227,9 @@ public final class SceneInstanceService {
         if (spec == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, "", "spec 为 null");
         }
-        ServerLevel level = levelOf(spec.dimensionKey());
+        ServerLevel level = resolveLevelForSpec(spec);
         if (level == null) {
-            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.LEVEL_NOT_FOUND,
-                    spec.id(), "找不到维度: " + spec.dimensionKey());
+            return levelFailure(spec);
         }
         return spawn(level, spec, false);
     }
@@ -248,12 +249,36 @@ public final class SceneInstanceService {
         if (spec == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, "", "spec 为 null");
         }
-        ServerLevel level = levelOf(spec.dimensionKey());
+        ServerLevel level = resolveLevelForSpec(spec);
         if (level == null) {
-            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.LEVEL_NOT_FOUND,
-                    spec.id(), "找不到维度: " + spec.dimensionKey());
+            return levelFailure(spec);
         }
         return spawn(level, spec, true);
+    }
+
+    private ServerLevel resolveLevelForSpec(SceneInstanceSpec spec) {
+        String dimensionKey = spec.dimensionKey();
+        return dimensionKey == null || dimensionKey.isBlank() ? null : levelOf(dimensionKey);
+    }
+
+    /**
+     * 审核 S-04：{@code spawn(spec)} / {@code upsert(spec)} 找不到维度时，
+     * 旧实现只回一句 {@code 找不到维度: null}——既不区分「未指定维度」与「维度不存在」，
+     * 也不提示正确的重载（文档与 {@link SceneInstanceSpec#dimensionKey()} 的 javadoc
+     * 都把 dimension 写成可选项）。
+     */
+    private SceneSpawnResult levelFailure(SceneInstanceSpec spec) {
+        String dimensionKey = spec.dimensionKey();
+        if (dimensionKey == null || dimensionKey.isBlank()) {
+            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.LEVEL_NOT_FOUND,
+                    spec.id(),
+                    "spec 未指定维度：请调用 spec.builder(...).dimension(\"<维度键>\")，"
+                            + "或改用 spawn(ServerLevel, spec) / upsert(ServerLevel, spec)");
+        }
+        return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.LEVEL_NOT_FOUND,
+                spec.id(),
+                "维度不存在或未加载: " + dimensionKey
+                        + "（可用 spawn(ServerLevel, spec) / upsert(ServerLevel, spec) 直接指定 level）");
     }
 
     private SceneSpawnResult spawn(ServerLevel level, SceneInstanceSpec spec, boolean allowReplace) {
@@ -345,6 +370,9 @@ public final class SceneInstanceService {
         // 先从旧维度清掉，再在新维度注册：否则客户端会同时保留两份。
         broadcastRemoval(instanceId);
         instances.remove(instanceId);
+        // 审核 S-01：迁移实例过去只 broadcastRemoval 就直接 remove，不触发 onInstanceRemoved，
+        // 第三方监听器的旧维度缓存/音源/计时器会泄漏。
+        fire(listener -> listener.onInstanceRemoved(current, "dimension_changed"));
         return spawn(target, current.spec(), true).isSuccess();
     }
 

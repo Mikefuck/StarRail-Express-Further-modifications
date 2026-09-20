@@ -7,7 +7,7 @@ import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapters;
 import com.habitrain.core.api.client.scene.compat.SceneMaterialSink;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
 import com.habitrain.core.scene.compat.builtin.BuiltinSceneAdapters;
-import com.habitrain.core.scene.client.compat.SceneBlockMeshAdapterRegistry;
+import com.habitrain.core.api.client.scene.compat.SceneBlockMeshAdapterRegistry;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.resources.ResourceLocation;

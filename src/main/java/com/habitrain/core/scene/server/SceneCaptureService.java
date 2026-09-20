@@ -1,12 +1,12 @@
 package com.habitrain.core.scene.server;
 
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.scene.SceneLimits;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.asset.SceneAssetSizeReport;
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.SceneLimits;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.asset.SceneAssetSizeReport;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneProfile;
 import com.habitrain.core.scene.network.SceneAssetBuildProgressS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
@@ -28,7 +28,7 @@ import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapter;
 import com.habitrain.core.api.scene.compat.SceneBlockPayloadEntry;
 import com.habitrain.core.api.scene.compat.SceneCaptureContext;
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.compat.SceneBlockCaptureAdapterRegistry;
+import com.habitrain.core.api.scene.compat.SceneBlockCaptureAdapterRegistry;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +40,7 @@ import java.util.concurrent.Executors;
 /**
  * 场景资产捕获服务（两阶段分预算捕获：主线程时间预算快照 -> 单后台线程压缩哈希落盘）。
  */
-public final class SceneCaptureService {
+public final class SceneCaptureService implements com.habitrain.core.api.spi.SceneCaptureBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneCaptureService.class.getSimpleName());
 
     public static final int MAX_AXIS_LENGTH = SceneLimits.MAX_AXIS_LENGTH;
@@ -187,9 +187,9 @@ public final class SceneCaptureService {
 
         ServerLevel level = requester.serverLevel();
         String requestedAssetKey = mapKey == null ? "" : mapKey.trim();
-        String requestedMapKey = com.habitrain.core.scene.model.SceneBackgroundKey
+        String requestedMapKey = com.habitrain.core.api.scene.model.SceneBackgroundKey
                 .mapKeyFromAssetKey(requestedAssetKey);
-        String requestedBackgroundId = com.habitrain.core.scene.model.SceneBackgroundKey
+        String requestedBackgroundId = com.habitrain.core.api.scene.model.SceneBackgroundKey
                 .backgroundIdFromAssetKey(requestedAssetKey);
         String currentMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
                 .resolve(level).mapKey();
@@ -204,7 +204,7 @@ public final class SceneCaptureService {
                 && requestedMapKey.equals(toolSession.getMapKey());
         String editorMapKey = SceneSelectionSessionManager.getInstance().getEditorMapKey(requester.getUUID());
         boolean matchesEditorMap = requestedMapKey.equals(
-                com.habitrain.core.scene.model.SceneBackgroundKey.mapKeyFromAssetKey(editorMapKey));
+                com.habitrain.core.api.scene.model.SceneBackgroundKey.mapKeyFromAssetKey(editorMapKey));
         if (!requestedMapKey.equals(currentMapKey) && !matchesValidatedToolSession && !matchesEditorMap) {
             requester.sendSystemMessage(net.minecraft.network.chat.Component.literal("§c构建请求地图与服务端当前地图不一致"));
             return false;
@@ -489,7 +489,7 @@ public final class SceneCaptureService {
             try {
                 int dataVersion = net.minecraft.SharedConstants.getCurrentVersion().getDataVersion().getVersion();
                 String dimension = task.level.dimension().location().toString();
-                String fingerprint = com.habitrain.core.scene.asset.SceneRegistryFingerprint.calculate();
+                String fingerprint = com.habitrain.core.api.scene.asset.SceneRegistryFingerprint.calculate();
 
                 SceneAssetCodec.AssetData assetData = new SceneAssetCodec.AssetData(
                         SceneAssetCodec.FORMAT_VERSION,

@@ -3,7 +3,13 @@ package com.habitrain.core.config;
 import java.util.ArrayList;
 import java.util.Map;
 
-/** One-way migration from the former blackout-only IDs to the canonical Core IDs. */
+/**
+ * One-way migration from the former blackout-only IDs to the canonical Core IDs.
+ *
+ * <p>2.0.10 起 {@code habitrain_core:eat} / {@code habitrain_core:drink} 不再是 Core 自建的
+ * 可派发任务，而是上游 EAT / DRINK 的<b>配置镜像</b>（{@code SreTaskMirrors}）。配置键
+ * 不变，因此本迁移（以及服主已保存的开关 / 颜色 / 地图过滤）继续有效。
+ */
 final class CoreConsumableTaskConfigMigration {
 
     private static final String EAT = "habitrain_core:eat";

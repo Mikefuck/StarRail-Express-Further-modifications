@@ -1,24 +1,19 @@
 package com.habitrain.core.api.scene;
 
 import com.google.gson.JsonObject;
-import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.asset.SceneAssetCodec;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneBackgroundConfig;
-import com.habitrain.core.scene.model.SceneBackgroundKey;
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneMotionMode;
-import com.habitrain.core.scene.model.SceneOrbitSettings;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRuntimeState;
-import com.habitrain.core.scene.server.SceneAssetStore;
-import com.habitrain.core.scene.server.SceneCaptureService;
-import com.habitrain.core.scene.server.SceneContextResolver;
-import com.habitrain.core.scene.server.SceneInstanceService;
-import com.habitrain.core.scene.server.SceneRuntimeCoordinator;
-import com.habitrain.core.scene.server.SceneTransferService;
+import com.habitrain.core.api.spi.CoreSpi;
+import com.habitrain.core.api.spi.SceneInstanceBridge;
+import com.habitrain.core.api.spi.SceneRuntimeBridge;
+import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneBackgroundConfig;
+import com.habitrain.core.api.scene.model.SceneBackgroundKey;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneMotionMode;
+import com.habitrain.core.api.scene.model.SceneOrbitSettings;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -89,16 +84,16 @@ public final class SceneApi {
 
     private SceneApi() {}
 
-    private static SceneInstanceService service() {
-        return SceneInstanceService.getInstance();
+    private static SceneInstanceBridge service() {
+        return CoreSpi.sceneInstances();
     }
 
-    private static SceneRuntimeCoordinator coordinator() {
-        return SceneRuntimeCoordinator.getInstance();
+    private static SceneRuntimeBridge coordinator() {
+        return CoreSpi.sceneRuntime();
     }
 
     private static SceneMotionSettings settings() {
-        return ConfigManager.getInstance().getSceneMotionSettings();
+        return CoreSpi.sceneConfig().getSceneMotionSettings();
     }
 
     // ==================================================================
@@ -118,7 +113,7 @@ public final class SceneApi {
     /** 修改总开关并标记落盘。 */
     public void setGlobalEnabled(boolean enabled) {
         settings().enabled = enabled;
-        ConfigManager.getInstance().markSceneMotionDirty();
+        CoreSpi.sceneConfig().markSceneMotionDirty();
     }
 
     /** 地图键常量：未配置地图的回退键。 */
@@ -343,7 +338,7 @@ public final class SceneApi {
 
     /** 循环平铺设置。 */
     public boolean setLoop(String instanceId, boolean enabled, SceneLoopDistanceMode mode, double distanceBlocks) {
-        return editProfile(instanceId, profile -> profile.loop(new com.habitrain.core.scene.model.SceneLoopSettings(
+        return editProfile(instanceId, profile -> profile.loop(new com.habitrain.core.api.scene.model.SceneLoopSettings(
                 enabled,
                 mode != null ? mode : SceneLoopDistanceMode.AUTO,
                 distanceBlocks,
@@ -519,7 +514,7 @@ public final class SceneApi {
         Objects.requireNonNull(profile, "profile cannot be null");
         String key = (mapKey != null && !mapKey.isBlank()) ? mapKey : settings().defaultMapKey;
         settings().profiles.put(key, profile);
-        ConfigManager.getInstance().markSceneMotionDirty();
+        CoreSpi.sceneConfig().markSceneMotionDirty();
     }
 
     /** 就地修改某地图的主背景 profile。 */
@@ -553,14 +548,14 @@ public final class SceneApi {
     public boolean putBackground(String mapKey, String backgroundId, String name, SceneProfile profile) {
         boolean ok = settings().putBackground(mapKey, backgroundId,
                 new SceneBackgroundConfig(name, profile));
-        if (ok) ConfigManager.getInstance().markSceneMotionDirty();
+        if (ok) CoreSpi.sceneConfig().markSceneMotionDirty();
         return ok;
     }
 
     /** 删除一个附加背景。 */
     public boolean removeBackground(String mapKey, String backgroundId) {
         boolean ok = settings().removeBackground(mapKey, backgroundId);
-        if (ok) ConfigManager.getInstance().markSceneMotionDirty();
+        if (ok) CoreSpi.sceneConfig().markSceneMotionDirty();
         return ok;
     }
 
@@ -570,7 +565,7 @@ public final class SceneApi {
 
     /** 查询某资产键已发布的描述符。 */
     public SceneAssetDescriptor asset(String assetKey) {
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
+        SceneAssetDescriptor descriptor = CoreSpi.sceneAssets().getDescriptor(assetKey);
         return descriptor != null ? descriptor : SceneAssetDescriptor.EMPTY;
     }
 
@@ -582,13 +577,13 @@ public final class SceneApi {
 
     /** 全部已发布资产的只读视图。 */
     public Map<String, SceneAssetDescriptor> assets() {
-        return SceneAssetStore.getInstance().getAllDescriptors();
+        return CoreSpi.sceneAssets().getAllDescriptors();
     }
 
     /** 删除某资产键（配置文件不会被删除，只是从索引里摘掉）。 */
     public boolean deleteAsset(String assetKey) {
         if (!hasAsset(assetKey)) return false;
-        SceneAssetStore.getInstance().deleteAsset(assetKey);
+        CoreSpi.sceneAssets().deleteAsset(assetKey);
         return true;
     }
 
@@ -605,7 +600,7 @@ public final class SceneApi {
         if (assetKey == null || assetKey.isBlank() || compressedBytes == null || compressedBytes.length == 0) {
             return false;
         }
-        if (compressedBytes.length > SceneTransferService.MAX_FILE_SIZE) {
+        if (compressedBytes.length > SceneAssetCodec.MAX_COMPRESSED_BYTES) {
             return false;
         }
         MinecraftServer server = service().server();
@@ -620,7 +615,7 @@ public final class SceneApi {
             SceneAssetDescriptor descriptor = new SceneAssetDescriptor(
                     sha256, uncompressed, compressedBytes.length, data.sections.size(),
                     data.dataVersion, data.fingerprint, System.currentTimeMillis());
-            if (!SceneAssetStore.getInstance().saveAsset(assetKey, compressedBytes, descriptor)) {
+            if (!CoreSpi.sceneAssets().saveAsset(assetKey, compressedBytes, descriptor)) {
                 return false;
             }
             coordinator().onAssetPublished(server, assetKey, descriptor);
@@ -657,12 +652,12 @@ public final class SceneApi {
     public boolean requestCapture(ServerLevel level, String assetKey, SceneBounds bounds, ServerPlayer requester) {
         if (level == null || requester == null || bounds == null || bounds.isEmpty()) return false;
         String key = (assetKey != null && !assetKey.isBlank()) ? assetKey : settings().defaultMapKey;
-        return SceneCaptureService.getInstance().requestCapture(level, key, bounds, requester);
+        return CoreSpi.sceneCapture().requestCapture(level, key, bounds, requester);
     }
 
     /** 取消某发起者正在进行的捕获任务。 */
     public boolean cancelCapture(UUID requesterPlayerId, String reason) {
-        return SceneCaptureService.getInstance()
+        return CoreSpi.sceneCapture()
                 .cancelCapture(requesterPlayerId, reason != null ? reason : "api_cancel");
     }
 

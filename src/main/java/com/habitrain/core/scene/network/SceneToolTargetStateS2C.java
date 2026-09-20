@@ -1,7 +1,7 @@
 package com.habitrain.core.scene.network;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.scene.model.SceneBackgroundKey;
+import com.habitrain.core.api.scene.model.SceneBackgroundKey;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;

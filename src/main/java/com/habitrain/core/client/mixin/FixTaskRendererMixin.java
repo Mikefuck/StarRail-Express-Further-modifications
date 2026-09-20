@@ -1,9 +1,6 @@
 package com.habitrain.core.client.mixin;
 
-import com.habitrain.core.client.cache.ActiveTaskCache;
 import com.habitrain.core.client.util.TaskTextNormalizer;
-import com.habitrain.core.game.sre.SRETrainTaskWrapper;
-import com.habitrain.core.api.TaskInstance;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.client.SREClient;
@@ -37,6 +34,8 @@ public class FixTaskRendererMixin {
         // 专属任务（电话/恢复供电）已插入 SRE map 以显示左上角，走正常归一化，不再清空。
 
         Component taskNameComponent = TaskTextNormalizer.normalizeTaskTitle(task);
+        // 杀手任务显示"你可以假装去..."（SRE 原生语义）；本 mod 不再区分"真/假任务"——
+        // 杀手双任务机制已删除，所有模组任务都是真实任务。
         boolean killer = SREClient.isKiller();
         // 关灯模式警长虽因 canUseKiller=true 被判为 killer，但任务都是真实有效的，
         // 不应显示"你可以假装去..."的 killer 前缀。
@@ -51,22 +50,7 @@ public class FixTaskRendererMixin {
             }
         }
 
-        // 杀手双任务区分：只有假任务（来自好人任务池，包装为 SRETrainTaskWrapper 且
-        // 在 ActiveTaskCache.fakeTaskFullId 中追踪）才显示"你可以假装去..."前缀；
-        // 真任务（坏人任务池）显示"感觉要去..."前缀，避免两个任务都带"假装"。
-        // ★ 使用客户端 ActiveTaskCache 代替服务端 TaskManager 单例，
-        //   避免专用服务器上客户端 JVM 的空 TaskManager 导致假任务前缀永不出现在多人模式。
-        boolean isFakeTask = false;
-        if (killer && task instanceof SRETrainTaskWrapper wrapper) {
-            TaskInstance instance = wrapper.unwrap();
-            if (instance != null) {
-                String fakeFullId = ActiveTaskCache.getFakeTaskFullId();
-                isFakeTask = fakeFullId != null && fakeFullId.equals(instance.getFullId());
-            }
-        }
-        boolean useFakePrefix = killer && isFakeTask;
-
-        this.text = Component.translatable("task." + (useFakePrefix ? "fake" : "feel"))
+        this.text = Component.translatable("task." + (killer ? "fake" : "feel"))
                 .append(taskNameComponent);
     }
 }

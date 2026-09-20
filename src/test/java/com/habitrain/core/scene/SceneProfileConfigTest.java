@@ -2,15 +2,15 @@ package com.habitrain.core.scene;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneLoopSettings;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRotation;
-import com.habitrain.core.scene.model.SceneSoundSettings;
-import com.habitrain.core.scene.model.SceneBackgroundConfig;
-import com.habitrain.core.scene.model.SceneBackgroundKey;
+import com.habitrain.core.api.scene.SceneMotionSettings;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneLoopSettings;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRotation;
+import com.habitrain.core.api.scene.model.SceneSoundSettings;
+import com.habitrain.core.api.scene.model.SceneBackgroundConfig;
+import com.habitrain.core.api.scene.model.SceneBackgroundKey;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -87,7 +87,7 @@ public class SceneProfileConfigTest {
         assertNotNull(profile);
         assertEquals(SceneLoopDistanceMode.CUSTOM, profile.getLoop().getDistanceMode());
         assertEquals(80.0, profile.getLoop().getDistanceBlocks(), 0.001);
-        assertEquals(80.0, com.habitrain.core.scene.model.SceneMotionMath.effectiveLoopDistance(
+        assertEquals(80.0, com.habitrain.core.api.scene.model.SceneMotionMath.effectiveLoopDistance(
                 profile.getSourceBounds(), profile.getDirection(), profile.getLoop()), 0.001);
 
         JsonObject saved = migrated.toJson();
@@ -117,7 +117,7 @@ public class SceneProfileConfigTest {
         profile.setLoop(new SceneLoopSettings(true, SceneLoopDistanceMode.CUSTOM, 91.5, 2));
 
         SceneProfile copy = profile.copy();
-        SceneProfile fromDraft = new com.habitrain.core.scene.model.SceneProfileDraft(profile).toProfile();
+        SceneProfile fromDraft = new com.habitrain.core.api.scene.model.SceneProfileDraft(profile).toProfile();
         SceneProfile fromJson = SceneProfile.fromJson(profile.toJson());
 
         assertEquals(profile, copy);
@@ -130,11 +130,11 @@ public class SceneProfileConfigTest {
     @Test
     public void orbitSettingsSurviveProfileCopyDraftAndJsonRoundtrip() {
         SceneProfile profile = new SceneProfile();
-        profile.setMotionMode(com.habitrain.core.scene.model.SceneMotionMode.ORBIT);
+        profile.setMotionMode(com.habitrain.core.api.scene.model.SceneMotionMode.ORBIT);
         var orbit = profile.getOrbit();
-        orbit.setCenterMode(com.habitrain.core.scene.model.SceneOrbitCenterMode.WORLD_BLOCK);
+        orbit.setCenterMode(com.habitrain.core.api.scene.model.SceneOrbitCenterMode.WORLD_BLOCK);
         orbit.setCenterWorld(120.5, 64.5, -30.5);
-        orbit.setAxis(com.habitrain.core.scene.model.SceneOrbitAxis.Y);
+        orbit.setAxis(com.habitrain.core.api.scene.model.SceneOrbitAxis.Y);
         orbit.setStartAngleDegrees(45.0);
         orbit.setSweepDegrees(180.0);
         orbit.setClockwise(false);
@@ -147,14 +147,14 @@ public class SceneProfileConfigTest {
         orbit.setRotateModelWithOrbit(true);
 
         SceneProfile copy = profile.copy();
-        SceneProfile fromDraft = new com.habitrain.core.scene.model.SceneProfileDraft(profile).toProfile();
+        SceneProfile fromDraft = new com.habitrain.core.api.scene.model.SceneProfileDraft(profile).toProfile();
         SceneProfile fromJson = SceneProfile.fromJson(profile.toJson());
 
         assertEquals(profile, copy);
         assertEquals(profile.hashCode(), copy.hashCode());
         assertEquals(profile, fromDraft);
         assertEquals(profile, fromJson);
-        assertEquals(com.habitrain.core.scene.model.SceneMotionMode.ORBIT, fromJson.getMotionMode());
+        assertEquals(com.habitrain.core.api.scene.model.SceneMotionMode.ORBIT, fromJson.getMotionMode());
         assertEquals(180.0, fromJson.getOrbit().getSweepDegrees(), 0.001);
         assertEquals(4, fromJson.getOrbit().getInstanceCount());
         assertFalse(fromJson.getOrbit().isClockwise());
@@ -172,9 +172,9 @@ public class SceneProfileConfigTest {
         SceneMotionSettings migrated = SceneMotionSettings.fromJson(legacy);
         SceneProfile profile = migrated.profiles.get("legacy_map");
         assertNotNull(profile);
-        assertEquals(com.habitrain.core.scene.model.SceneMotionMode.LINEAR, profile.getMotionMode());
+        assertEquals(com.habitrain.core.api.scene.model.SceneMotionMode.LINEAR, profile.getMotionMode());
         assertNotNull(profile.getOrbit());
-        assertEquals(com.habitrain.core.scene.model.SceneOrbitCenterMode.WORLD_BLOCK, profile.getOrbit().getCenterMode());
+        assertEquals(com.habitrain.core.api.scene.model.SceneOrbitCenterMode.WORLD_BLOCK, profile.getOrbit().getCenterMode());
     }
 
     @Test

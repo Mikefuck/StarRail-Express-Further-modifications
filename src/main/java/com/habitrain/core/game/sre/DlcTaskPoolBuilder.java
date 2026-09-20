@@ -4,6 +4,7 @@ import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.config.ConfigManager;
+import com.habitrain.core.task.TaskBalancer;
 import com.habitrain.core.task.TaskManager;
 import com.habitrain.core.task.TaskPoolBuilder;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
@@ -23,15 +24,15 @@ public final class DlcTaskPoolBuilder {
     /**
      * Builds the DLC task pool with filtering and adaptive auto-boost.
      *
+     * <p>只有一个「分区」：当前活跃模式 + 当前分类。曾经的强制分类 / 跳过 active 守卫 /
+     * 假任务分区已随杀手双任务机制一并删除（见 2.0.10 变更记录），不再有恒真/恒假的开关。
+     *
      * @param entries             mutable list to append weighted entries into
      * @param mgr                 task manager instance
      * @param mapName             current map name
      * @param currentCategory     current game mode category
      * @param disabledTasks       globally disabled task IDs
      * @param activeMode          active game mode (nullable)
-     * @param forcedCategory      category override from faction context
-     * @param skipActiveTaskGuard whether to skip the active-task guard
-     * @param currentIsFakeTask   whether the current context is a fake task call
      * @param player              the player
      * @param builtinSreTaskIds   set of built-in SRE task IDs for pool building
      * @return total accumulated weight
@@ -43,19 +44,16 @@ public final class DlcTaskPoolBuilder {
             TaskCategory currentCategory,
             Set<String> disabledTasks,
             @Nullable GameMode activeMode,
-            @Nullable TaskCategory forcedCategory,
-            boolean skipActiveTaskGuard,
-            boolean currentIsFakeTask,
             Player player,
             Set<String> builtinSreTaskIds
     ) {
-        if (!skipActiveTaskGuard && mgr.getActiveTask(player.getUUID()) != null) {
+        if (mgr.getActiveTask(player.getUUID()) != null) {
             LOGGER.debug("[HabiDebug] Player already has an active DLC task, skipping DLC pool");
             return 0f;
         }
 
         List<TaskDefinition> dlcCandidates = TaskPoolBuilder.getPool(
-                activeMode, mapName, forcedCategory, currentCategory, player, builtinSreTaskIds);
+                activeMode, mapName, currentCategory, player, builtinSreTaskIds);
 
         if (dlcCandidates.isEmpty()) return 0f;
 
@@ -88,14 +86,8 @@ public final class DlcTaskPoolBuilder {
         }
 
         float target = getTargetRatio();
-        float autoBoost;
-        if (dlcCount > 0 && origCount > 0) {
-            float safeRemainder = Math.max(0.01f, 1f - target);
-            autoBoost = (target / safeRemainder) * ((float) origCount / (float) dlcCount);
-            autoBoost = Math.max(0.0f, Math.min(10.0f, autoBoost));
-        } else {
-            autoBoost = 1.0f;
-        }
+        // 单一真相：自动平衡公式只在 TaskBalancer 实现一次（ConfigStore 的展示/迁移也用它）。
+        float autoBoost = TaskBalancer.calcBoost(target, dlcCount, origCount);
 
         LOGGER.debug("[HabiDebug] ★ 自适应平衡: 目标={}%, {}个可用原版 + {}个可用DLC → autoBoost={}",
                 Math.round(target * 100), origCount, dlcCount, String.format("%.2f", autoBoost));

@@ -93,6 +93,9 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
 
     @Override
     public List<RoleHudSpec> hudsFor(RoleKey role) {
+        // 审核 R-23：role 为 null 时返回空表，与全局 RoleClientExtensionRegistry 语义一致
+        //（旧实现在这里抛 NPE，同名方法两种 null 语义）。
+        if (role == null) return List.of();
         return huds.stream().filter(s -> role.equals(s.role())).toList();
     }
 
@@ -103,6 +106,7 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
 
     @Override
     public List<RoleInstinctRule> instinctsFor(RoleKey viewerRole) {
+        if (viewerRole == null) return List.of();
         return instincts.stream().filter(r -> viewerRole.equals(r.viewerRole())).toList();
     }
 
@@ -113,6 +117,7 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
 
     @Override
     public List<RoleSkinSpec> skinsFor(RoleKey role) {
+        if (role == null) return List.of();
         return skins.stream().filter(s -> role.equals(s.role())).toList();
     }
 
@@ -123,11 +128,13 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
 
     @Override
     public List<RoleNameRenderRule> nameRendersFor(RoleKey role) {
+        if (role == null) return List.of();
         return nameRenders.stream().filter(r -> role.equals(r.role())).toList();
     }
 
     @Override
     public Collection<RoleHudWidget> hudWidgetsFor(RoleKey role) {
+        if (role == null) return List.of();
         return hudWidgets.stream().filter(e -> role.equals(e.role())).map(HudWidgetEntry::widget).toList();
     }
 
@@ -138,6 +145,7 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
 
     @Override
     public List<RoleScreenSpec> screensFor(RoleKey role) {
+        if (role == null) return List.of();
         return screens.stream().filter(s -> role.equals(s.role())).toList();
     }
 

@@ -86,9 +86,9 @@ public class ConfigMenuScreen extends Screen {
             String editorBackgroundId,
             String runtimeMapKey,
             String selectionMapKey,
-            com.habitrain.core.scene.model.SceneProfile profile,
-            com.habitrain.core.scene.model.SceneBounds selection,
-            com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+            com.habitrain.core.api.scene.model.SceneProfile profile,
+            com.habitrain.core.api.scene.model.SceneBounds selection,
+            com.habitrain.core.api.scene.asset.SceneAssetDescriptor descriptor) {
     }
 
     public ConfigMenuScreen(Screen parent) {
@@ -134,19 +134,19 @@ public class ConfigMenuScreen extends Screen {
     /** 场景配置器道具入口：直接定位到游戏内 -> 移动场景页。 */
     public static ConfigMenuScreen openSceneMotion(Screen parent, String editorMapKey, String runtimeMapKey,
                                                    String selectionMapKey,
-                                                   com.habitrain.core.scene.model.SceneProfile profile,
-                                                   com.habitrain.core.scene.model.SceneBounds selection,
-                                                   com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
-        return openSceneMotion(parent, editorMapKey, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+                                                   com.habitrain.core.api.scene.model.SceneProfile profile,
+                                                   com.habitrain.core.api.scene.model.SceneBounds selection,
+                                                   com.habitrain.core.api.scene.asset.SceneAssetDescriptor descriptor) {
+        return openSceneMotion(parent, editorMapKey, com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID,
                 runtimeMapKey, selectionMapKey, profile, selection, descriptor);
     }
 
     public static ConfigMenuScreen openSceneMotion(Screen parent, String editorMapKey, String editorBackgroundId,
                                                    String runtimeMapKey,
                                                    String selectionMapKey,
-                                                   com.habitrain.core.scene.model.SceneProfile profile,
-                                                   com.habitrain.core.scene.model.SceneBounds selection,
-                                                   com.habitrain.core.scene.asset.SceneAssetDescriptor descriptor) {
+                                                   com.habitrain.core.api.scene.model.SceneProfile profile,
+                                                   com.habitrain.core.api.scene.model.SceneBounds selection,
+                                                   com.habitrain.core.api.scene.asset.SceneAssetDescriptor descriptor) {
         ConfigMenuScreen screen = new ConfigMenuScreen(parent, AccessMode.SCENE_SETTINGS_ONLY);
         screen.topTab = TOP_IN_GAME;
         screen.subTab = 3;

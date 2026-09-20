@@ -154,13 +154,44 @@ public final class RoleQuery {
             return this;
         }
 
+        /**
+         * 地图能力过滤（审核 A-08）。
+         *
+         * <p>{@code null} 数组或数组内含 {@code null} 元素过去会直接
+         * {@link Collections#addAll} → 写入 {@code null} 元素（或抛 NPE），
+         * 之后在过滤阶段以一个难以定位的 NPE 爆炸。现在显式校验并跳过 {@code null} 元素，
+         * 与 {@link #factions(RoleFaction...)} / {@link #tags(String...)} 策略一致。
+         */
         public Builder mapAbilities(SRERole.SpecialMapRoleMap... abilities) {
-            Collections.addAll(this.mapAbilities, abilities);
+            if (abilities == null) {
+                throw new NullPointerException("mapAbilities must not be null (audit A-08)");
+            }
+            for (SRERole.SpecialMapRoleMap ability : abilities) {
+                if (ability != null) {
+                    this.mapAbilities.add(ability);
+                }
+            }
             return this;
         }
 
+        /**
+         * 阵营过滤（审核 A-08）。
+         *
+         * <p>旧实现 {@code Collections.addAll(this.factions, factions)} 在
+         * {@code factions == null} 时抛 NPE（{@code Collections.addAll} 对 null 数组的行为），
+         * 而 javadoc 从未声明该约束；数组里有 {@code null} 元素则会把 {@code null} 塞进集合。
+         * 现在：{@code null} 数组显式抛带参数名的 NPE，{@code null} 元素静默跳过
+         * （调用方常见写法是 {@code factions(a, maybeNull, b)}）。
+         */
         public Builder factions(RoleFaction... factions) {
-            Collections.addAll(this.factions, factions);
+            if (factions == null) {
+                throw new NullPointerException("factions must not be null (audit A-08)");
+            }
+            for (RoleFaction faction : factions) {
+                if (faction != null) {
+                    this.factions.add(faction);
+                }
+            }
             return this;
         }
 
@@ -200,8 +231,19 @@ public final class RoleQuery {
             return this;
         }
 
+        /**
+         * 标签过滤（审核 A-08：与 {@code factions} / {@code mapAbilities} 同策略——
+         * {@code null} 数组显式抛 NPE，{@code null} 元素跳过）。
+         */
         public Builder tags(String... tags) {
-            Collections.addAll(this.tags, tags);
+            if (tags == null) {
+                throw new NullPointerException("tags must not be null (audit A-08)");
+            }
+            for (String tag : tags) {
+                if (tag != null) {
+                    this.tags.add(tag);
+                }
+            }
             return this;
         }
 

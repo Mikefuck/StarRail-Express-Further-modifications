@@ -34,6 +34,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 对局，开局/结尾黑场都不应出现在其客户端。维修状态由服务端
  * {@link com.habitrain.core.network.RepairModeSyncPayload} 同步；该判断同样位于
  * {@code isClientSide()} 守卫之内，单机下不影响服务端线程的 fade 读取。</p>
+ *
+ * <p><b>审核 S-03（加载面说明）</b>：目标类 {@code SREGameWorldComponent} 是<b>客户端与服务端
+ * 共用</b>的通用 SRE 类，而本 mixin 只登记在 {@code habitrain_core.client.mixins.json}
+ * （{@code "client": [...]} + {@code environment: client}）。Fabric 只会在客户端加载该配置，
+ * 因此<b>专用服务端不会被注入</b>，两端字节码「看起来分叉」但实际一致。
+ * 关键约束是：<b>本 mixin 必须留在 client 配置里</b>——一旦被移到主配置，
+ * 专用服务端也会让 {@code getFade()} 变成可能返回 0，而服务端正是用
+ * {@code getFade() >= 60} 推进开局/结束判定的（见上文单机约束）。</p>
  */
 @Mixin(value = SREGameWorldComponent.class, remap = false)
 public abstract class VoteLaunchFadeBlockMixin {

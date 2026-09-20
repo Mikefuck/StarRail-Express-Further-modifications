@@ -134,7 +134,13 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             return null;
         }
         ManagedDeclaration<RoleStateSpec<?>> decl = specs.get(StorageKey.of(key));
-        return decl == null ? null : (RoleStateSpec<T>) decl.declaration();
+        if (decl == null) {
+            return null;
+        }
+        // 审核 R-07：索引不按 type() 建键，因此在唯一的解析点校验类型参数一致，
+        // 避免 get/set 里的未检查转换造成堆污染。
+        requireMatchingType(key, decl.declaration());
+        return (RoleStateSpec<T>) decl.declaration();
     }
 
     @Override
@@ -169,12 +175,34 @@ public final class RoleStateServiceImpl implements RoleStateApi {
     }
 
     @Override
+    public @Nullable <T> T getOrNull(RoleStateKey<T> key, @Nullable ServerPlayer player) {
+        return getOrNull(key, player == null ? null : player.getUUID(), worldKeyOf(player));
+    }
+
+    @Override
+    public @Nullable <T> T getOrNull(RoleStateKey<T> key, @Nullable UUID playerId) {
+        return getOrNull(key, playerId, null);
+    }
+
+    @Override
+    public @Nullable <T> T getOrNull(RoleStateKey<T> key, @Nullable UUID playerId,
+                                     @Nullable ResourceLocation worldKey) {
+        // 审核 R-03：宽松读取入口，key 未注册时返回 null 而不是抛异常。
+        if (spec(key) == null) {
+            return null;
+        }
+        return get(key, playerId, worldKey);
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public @Nullable <T> T get(RoleStateKey<T> key, @Nullable UUID playerId,
                                @Nullable ResourceLocation worldKey) {
         RoleStateSpec<T> spec = spec(key);
         if (spec == null) {
-            return null;
+            // 审核 R-03：与 set 保持一致的异常策略（旧实现此处静默返回 null，
+            // 同一个「key 未注册」错误在 get/set 上有两种行为）。
+            throw new IllegalArgumentException("Unregistered role state: " + key);
         }
         if (!gateEnabled(spec)) {
             // Disabled provider/entry (audit P1-2): the slot is retained but
@@ -647,6 +675,23 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         @Override
         public String toString() {
             return id + "@" + role;
+        }
+    }
+
+    /**
+     * 审核 R-07：校验「用 key 查到 spec」时两者的类型参数一致。
+     *
+     * <p>存储索引只按 {@code (id, role)} 建键（{@code type()} 不参与），因此手工构造一个
+     * 同 {@code id}/{@code role} 但不同 {@code Class<T>} 的 {@link RoleStateKey} 会命中
+     * 别人的 spec，然后在 {@code get} 里做未检查转换 → 堆污染，{@code ClassCastException}
+     * 落在调用方。这里在入口显式拒绝，给出可诊断的错误。</p>
+     */
+    private static void requireMatchingType(RoleStateKey<?> key, RoleStateSpec<?> spec) {
+        if (key != null && spec != null && !spec.type().equals(key.type())) {
+            throw new IllegalArgumentException(
+                    "RoleStateKey type mismatch for " + key.id() + "@" + key.role()
+                            + ": key expects " + key.type().getName()
+                            + " but the registered spec stores " + spec.type().getName());
         }
     }
 

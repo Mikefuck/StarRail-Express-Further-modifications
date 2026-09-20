@@ -29,7 +29,7 @@ public interface RoleExtensionApi {
         private DefaultHolder() {}
 
         static final RoleExtensionApi INSTANCE =
-                new com.habitrain.core.role.extension.RoleExtensionServiceImpl();
+                com.habitrain.core.api.spi.RoleSpi.extension();
     }
 
     /**

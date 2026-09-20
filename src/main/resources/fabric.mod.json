@@ -23,6 +23,8 @@
         "habitrain:role_client_extensions": []
     },
     "custom": {
+        "habitrain_core:api_version": "2.2",
+        "habitrain_core:role_api": "2.0",
         "cardinal-components": [
             "habitrain_core:crime_scapegoat",
             "habitrain_core:flower_girl",
@@ -50,8 +52,13 @@
         "minecraft": "~1.21.1",
         "java": ">=21",
         "fabric-api": "*",
-        "starrailexpress": "*",
-        "playeranimator": ">=2.0.4"
+        "starrailexpress": "~4.3.0",
+        "playeranimator": ">=2.0.4",
+        "datasync_minecraft": ">=0.10.2",
+        "cardinal-components-base": ">=6.1.3",
+        "cardinal-components-entity": ">=6.1.3",
+        "cardinal-components-world": ">=6.1.3",
+        "cardinal-components-scoreboard": ">=6.1.3"
     },
     "suggests": {
         "modmenu": "*",

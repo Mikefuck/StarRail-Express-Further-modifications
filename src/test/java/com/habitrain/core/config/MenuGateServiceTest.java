@@ -1,6 +1,6 @@
 package com.habitrain.core.config;
 
-import com.habitrain.core.api.MenuGateApi;
+import com.habitrain.core.api.menu.MenuGateApi;
 import com.habitrain.core.persist.AtomicJsonFiles;
 import net.minecraft.server.level.ServerPlayer;
 import org.junit.jupiter.api.AfterEach;

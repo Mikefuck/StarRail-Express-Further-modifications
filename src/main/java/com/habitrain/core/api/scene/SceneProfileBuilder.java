@@ -1,17 +1,17 @@
 package com.habitrain.core.api.scene;
 
-import com.habitrain.core.scene.model.SceneBounds;
-import com.habitrain.core.scene.model.SceneLoopDistanceMode;
-import com.habitrain.core.scene.model.SceneLoopSettings;
-import com.habitrain.core.scene.model.SceneMotionMode;
-import com.habitrain.core.scene.model.SceneOrbitAxis;
-import com.habitrain.core.scene.model.SceneOrbitCenterMode;
-import com.habitrain.core.scene.model.SceneOrbitSettings;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRenderSettings;
-import com.habitrain.core.scene.model.SceneRotation;
-import com.habitrain.core.scene.model.SceneShakeSettings;
-import com.habitrain.core.scene.model.SceneSoundSettings;
+import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneLoopDistanceMode;
+import com.habitrain.core.api.scene.model.SceneLoopSettings;
+import com.habitrain.core.api.scene.model.SceneMotionMode;
+import com.habitrain.core.api.scene.model.SceneOrbitAxis;
+import com.habitrain.core.api.scene.model.SceneOrbitCenterMode;
+import com.habitrain.core.api.scene.model.SceneOrbitSettings;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRenderSettings;
+import com.habitrain.core.api.scene.model.SceneRotation;
+import com.habitrain.core.api.scene.model.SceneShakeSettings;
+import com.habitrain.core.api.scene.model.SceneSoundSettings;
 import net.minecraft.core.BlockPos;
 
 import java.util.Objects;

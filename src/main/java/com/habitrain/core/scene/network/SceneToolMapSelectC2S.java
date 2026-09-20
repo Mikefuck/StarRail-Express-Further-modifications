@@ -17,14 +17,14 @@ public record SceneToolMapSelectC2S(String mapKey, String backgroundId) implemen
     private static final int MAX_MAP_KEY_BYTES = 1024;
 
     public SceneToolMapSelectC2S(String mapKey) {
-        this(mapKey, com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID);
+        this(mapKey, com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID);
     }
 
     public SceneToolMapSelectC2S {
         mapKey = mapKey == null ? "" : mapKey.trim();
         backgroundId = backgroundId == null || backgroundId.isBlank()
-                ? com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID
-                : com.habitrain.core.scene.model.SceneBackgroundKey.normalizeBackgroundId(backgroundId);
+                ? com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID
+                : com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeBackgroundId(backgroundId);
     }
 
     public static final StreamCodec<ByteBuf, SceneToolMapSelectC2S> CODEC = new StreamCodec<>() {
@@ -38,7 +38,7 @@ public record SceneToolMapSelectC2S(String mapKey, String backgroundId) implemen
             buf.readBytes(bytes);
             String map = new String(bytes, StandardCharsets.UTF_8);
 
-            String bgId = com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID;
+            String bgId = com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
             if (buf.isReadable(4)) {
                 int bgLen = buf.readInt();
                 if (bgLen >= 0 && bgLen <= MAX_MAP_KEY_BYTES && buf.isReadable(bgLen)) {

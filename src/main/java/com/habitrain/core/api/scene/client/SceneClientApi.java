@@ -1,9 +1,9 @@
 package com.habitrain.core.api.scene.client;
 
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.client.SceneRenderRuntime;
-import com.habitrain.core.scene.model.SceneInstance;
-import com.habitrain.core.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.scene.SceneInstanceView;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.spi.CoreSpi;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
@@ -19,6 +19,9 @@ import java.util.Optional;
  * {@link #requestResync()}），可以在渲染线程安全调用。</p>
  *
  * <p>本类只能在客户端加载；专用服务端上引用它会抛 {@link NoClassDefFoundError}。</p>
+ *
+ * <p>2.0.11 起返回值统一收窄为公开视图 {@link SceneInstanceView}（审核 S-03），
+ * 客户端 Mod 不再被迫编译期依赖实现类 {@code scene.model.SceneInstance}。</p>
  */
 @Environment(EnvType.CLIENT)
 public final class SceneClientApi {
@@ -30,28 +33,24 @@ public final class SceneClientApi {
 
     private SceneClientApi() {}
 
-    private static SceneRenderRuntime runtime() {
-        return SceneRenderRuntime.getInstance();
-    }
-
     // ------------------------------------------------------------------
     // 地图级场景
     // ------------------------------------------------------------------
 
     /** 服务端下发的当前地图级场景运行状态（未激活时 {@code isActive()} 为 false）。 */
     public SceneRuntimeState mapSceneState() {
-        return runtime().getCurrentState();
+        return CoreSpi.sceneClient().getCurrentState();
     }
 
     /** 地图级场景是否正在运动。 */
     public boolean isMapSceneActive() {
-        SceneRuntimeState state = runtime().getCurrentState();
+        SceneRuntimeState state = CoreSpi.sceneClient().getCurrentState();
         return state != null && state.isActive();
     }
 
     /** 设置页预览是否占用着渲染通道。 */
     public boolean isPreviewActive() {
-        return runtime().isPreviewActive();
+        return CoreSpi.sceneClient().isPreviewActive();
     }
 
     // ------------------------------------------------------------------
@@ -59,43 +58,45 @@ public final class SceneClientApi {
     // ------------------------------------------------------------------
 
     /** 本地已知的全部 API 场景实例（所有维度，按 priority 排序）。 */
-    public List<SceneInstance> instances() {
-        return List.copyOf(runtime().dynamicInstances());
+    public List<SceneInstanceView> instances() {
+        return List.copyOf(CoreSpi.sceneClient().dynamicInstances());
     }
 
     /** 只返回属于本地玩家当前维度的实例。 */
-    public List<SceneInstance> instancesInCurrentDimension() {
+    public List<SceneInstanceView> instancesInCurrentDimension() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return List.of();
         String dimensionKey = mc.level.dimension().location().toString();
-        return runtime().dynamicInstances().stream()
+        return CoreSpi.sceneClient().dynamicInstances().stream()
                 .filter(instance -> instance.belongsTo(dimensionKey))
+                .map(instance -> (SceneInstanceView) instance)
                 .toList();
     }
 
     /** 本地已知的实例数量。 */
     public int instanceCount() {
-        return runtime().dynamicInstanceCount();
+        return CoreSpi.sceneClient().dynamicInstanceCount();
     }
 
     /** 按 ID 查询本地已知的实例。 */
-    public Optional<SceneInstance> instance(String instanceId) {
-        return Optional.ofNullable(runtime().dynamicInstance(instanceId));
+    public Optional<SceneInstanceView> instance(String instanceId) {
+        return Optional.ofNullable(CoreSpi.sceneClient().dynamicInstance(instanceId));
     }
 
     /** 某实例的网格是否已经烘焙完成（可以立即绘制）。 */
     public boolean isMeshReady(String instanceId) {
-        return runtime().isDynamicInstanceMeshReady(instanceId);
+        return CoreSpi.sceneClient().isDynamicInstanceMeshReady(instanceId);
     }
 
     /** 本地已知的资产描述符（按资产键查询，未见过时返回 {@link SceneAssetDescriptor#EMPTY}）。 */
     public SceneAssetDescriptor manifest(String assetKey) {
-        return runtime().getManifest(assetKey);
+        SceneAssetDescriptor descriptor = CoreSpi.sceneClient().getManifest(assetKey);
+        return descriptor != null ? descriptor : SceneAssetDescriptor.EMPTY;
     }
 
     /** 当前所有活跃场景占用的 GPU 网格估算字节数。 */
     public long meshBytes() {
-        return runtime().totalMeshBytes();
+        return CoreSpi.sceneClient().totalMeshBytes();
     }
 
     /**
@@ -104,6 +105,6 @@ public final class SceneClientApi {
      * <p>客户端在"清空过本地状态但没换会话"之后应当调用一次（本模组在对局结束时已自动调用）。</p>
      */
     public void requestResync() {
-        com.habitrain.core.scene.client.SceneClientRuntime.requestInstanceResync();
+        CoreSpi.sceneClient().requestInstanceResync();
     }
 }

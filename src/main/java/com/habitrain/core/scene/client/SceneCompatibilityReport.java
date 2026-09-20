@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.core.BlockPos;
@@ -95,11 +97,11 @@ public final class SceneCompatibilityReport {
         }
 
         public boolean isBlocking() {
-            return isBlocking(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+            return isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
         }
 
-        public boolean isBlocking(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
-            if (policy == com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN) {
+        public boolean isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
+            if (policy == com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN) {
                 // 跳过并警告模式下，缺少适配器和不支持路径被降级为非阻断（跳过与警告），
                 // 但严重缺失纹理与无效图集永远阻断，禁止将紫黑缺失材质发布给玩家
                 return issueType == IssueType.MISSING_TEXTURE
@@ -260,11 +262,11 @@ public final class SceneCompatibilityReport {
     }
 
     public List<Entry> getBlockingIssues() {
-        return getBlockingIssues(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+        return getBlockingIssues(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
     }
 
-    public List<Entry> getBlockingIssues(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
-        com.habitrain.core.scene.model.ScenePublishPolicy p = policy != null ? policy : com.habitrain.core.scene.model.ScenePublishPolicy.STRICT;
+    public List<Entry> getBlockingIssues(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
+        com.habitrain.core.api.scene.model.ScenePublishPolicy p = policy != null ? policy : com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT;
         return retained.stream().filter(e -> e.isBlocking(p)).toList();
     }
 
@@ -273,23 +275,23 @@ public final class SceneCompatibilityReport {
     }
 
     public boolean isCompatible() {
-        return isCompatible(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+        return isCompatible(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
     }
 
-    public boolean isCompatible(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
+    public boolean isCompatible(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
         return blockingPositions(policy) == 0;
     }
 
     public boolean hasBlockingIssues() {
-        return hasBlockingIssues(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+        return hasBlockingIssues(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
     }
 
-    public boolean hasBlockingIssues(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
+    public boolean hasBlockingIssues(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
         return blockingPositions(policy) > 0;
     }
 
-    private int blockingPositions(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
-        boolean skipAndWarn = policy == com.habitrain.core.scene.model.ScenePublishPolicy.SKIP_AND_WARN;
+    private int blockingPositions(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
+        boolean skipAndWarn = policy == com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN;
         return skipAndWarn ? skipWarnBlockingPositions : strictBlockingPositions;
     }
 
@@ -323,7 +325,7 @@ public final class SceneCompatibilityReport {
         return droppedIssues;
     }
 
-    public double compatibilityPercentage(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
+    public double compatibilityPercentage(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
         if (distinctPositions == 0) return 100.0;
         int blocking = blockingPositions(policy);
         return Math.max(0.0, Math.min(100.0,
@@ -331,10 +333,10 @@ public final class SceneCompatibilityReport {
     }
 
     public String toSummaryString() {
-        return toSummaryString(com.habitrain.core.scene.model.ScenePublishPolicy.STRICT);
+        return toSummaryString(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
     }
 
-    public String toSummaryString(com.habitrain.core.scene.model.ScenePublishPolicy policy) {
+    public String toSummaryString(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
         long total = totalBlocks();
         long adapted = adaptedBlocks();
         long issues = totalIssueCount();

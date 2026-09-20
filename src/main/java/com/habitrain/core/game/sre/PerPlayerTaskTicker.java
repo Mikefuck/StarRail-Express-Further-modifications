@@ -20,9 +20,15 @@ public class PerPlayerTaskTicker {
             return;
         }
         TaskManager mgr = TaskManager.getInstance();
+        // 上游可能在上一次 serverTick / 指令 / 方块交互里直接把 wrapper 从 SRE tasks 摘掉
+        // （并列任务互相顶掉、清空任务等）。先对账再 tick，避免幽灵任务继续推进/发奖、
+        // 旧任务点继续透视、以及 DLC 任务池被 active 守卫永久挡住不再刷新。
+        if (player instanceof ServerPlayer reconcileTarget) {
+            DlcTaskTracker.reconcileDroppedTasks(reconcileTarget);
+        }
         TaskInstance customTask = mgr.getActiveTask(player.getUUID());
-        TaskInstance fakeTask = mgr.getFakeTask(player.getUUID());
-        if (customTask == null && fakeTask == null) {
+        if (customTask == null) {
+            DlcTaskTracker.forgetObserved(player.getUUID());
             return;
         }
         if (!canTickCustomTasks(player)) {
@@ -31,18 +37,9 @@ public class PerPlayerTaskTicker {
             return;
         }
 
-        if (customTask != null) {
-            customTask.tick(player);
-            if (customTask.isFulfilled()) {
-                handleMainTaskDone(mgr, customTask, player);
-            }
-        }
-
-        if (fakeTask != null) {
-            fakeTask.tick(player);
-            if (fakeTask.isFulfilled()) {
-                handleFakeTaskDone(mgr, fakeTask, player);
-            }
+        customTask.tick(player);
+        if (customTask.isFulfilled()) {
+            handleMainTaskDone(mgr, customTask, player);
         }
     }
 
@@ -76,7 +73,7 @@ public class PerPlayerTaskTicker {
         if (customTask.isFailed()) {
             LOGGER.debug("[HabiDebug] Custom task {} failed, removing tracking without completion reward",
                     customTask.getFullId());
-            mgr.cancelTrackedTask(player, customTask, false);
+            mgr.cancelTrackedTask(player, customTask);
         } else {
             LOGGER.debug("[HabiDebug] Custom task {} fulfilled, removing tracking", customTask.getFullId());
             if (player instanceof ServerPlayer sp) {
@@ -84,23 +81,10 @@ public class PerPlayerTaskTicker {
                 DlcTaskTracker.stripSreWrapper(sp, customTask);
                 mgr.handleTaskCompletion(sp, customTask);
                 ActiveTaskPayload.clearForPlayer(sp);
+                // 并列任务状态下顺带让"另一个任务"消失（上游同样语义），
+                // 否则它会一直占住刷新槽位，玩家表现为"还有一个任务、而且不给刷新"。
+                DlcTaskTracker.dismissParallelSiblings(sp);
             }
-        }
-    }
-
-    private static void handleFakeTaskDone(TaskManager mgr, TaskInstance fakeTask, Player player) {
-        if (fakeTask.isFailed()) {
-            LOGGER.info("[KillerDualTask] fake task {} failed for {}",
-                    fakeTask.getFullId(), player.getName().getString());
-            mgr.cancelTrackedTask(player, fakeTask, true);
-        } else {
-            LOGGER.info("[KillerDualTask] fake task {} fulfilled for {}, clearing slot without true completion",
-                    fakeTask.getFullId(), player.getName().getString());
-            if (player instanceof ServerPlayer sp) {
-                DlcTaskTracker.stripSreWrapper(sp, fakeTask);
-                ActiveTaskPayload.clearForPlayer(sp, true);
-            }
-            mgr.removeFakeTask(player.getUUID());
         }
     }
 }

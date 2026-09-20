@@ -128,6 +128,14 @@ public final class RoleDiagnosticsImpl implements RoleDiagnostics {
         return fields.isEmpty() ? null : String.join(",", fields);
     }
 
+    /**
+     * 诊断条目的短指纹。
+     *
+     * <p><b>审核 R-21</b>：它与握手指纹（{@code RoleManifestHashes} 的 SHA-256）<b>同名但不同义</b>——
+     * 这里只是 {@code Integer.toHexString(declaration.hashCode())}，对没有 {@code equals/hashCode}
+     * 的 {@code RolePatch}/{@code RoleDefinition}/{@code RoleReplacement} 就是 identity hash，
+     * <b>每次 JVM 启动都不同</b>。只可用于同一进程内的对比，不要跨进程比对或持久化。</p>
+     */
     private static String definitionHash(ManagedRoleEntry<?> entry) {
         Object declaration = entry.declaration();
         if (declaration == null) {

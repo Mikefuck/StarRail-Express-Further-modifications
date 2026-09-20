@@ -81,13 +81,13 @@ class SceneSelectionSessionManagerTest {
     void remembersEditorBackgroundPerPlayerAndMap() {
         UUID playerId = UUID.randomUUID();
         // Defaults to DEFAULT_ID
-        assertEquals(com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+        assertEquals(com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID,
                 manager.getEditorBackgroundId(playerId, "map_a"));
 
         manager.selectEditorBackground(playerId, "map_a", "custom_bg_1");
         assertEquals("custom_bg_1", manager.getEditorBackgroundId(playerId, "map_a"));
         // map_b is independent and still default
-        assertEquals(com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+        assertEquals(com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID,
                 manager.getEditorBackgroundId(playerId, "map_b"));
 
         manager.selectEditorBackground(playerId, "map_b", "custom_bg_2");
@@ -95,7 +95,7 @@ class SceneSelectionSessionManagerTest {
         assertEquals("custom_bg_1", manager.getEditorBackgroundId(playerId, "map_a"));
 
         manager.onPlayerDisconnect(playerId);
-        assertEquals(com.habitrain.core.scene.model.SceneBackgroundKey.DEFAULT_ID,
+        assertEquals(com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID,
                 manager.getEditorBackgroundId(playerId, "map_a"));
     }
 }

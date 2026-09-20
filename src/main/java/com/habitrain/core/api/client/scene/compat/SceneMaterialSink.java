@@ -1,7 +1,6 @@
 package com.habitrain.core.api.client.scene.compat;
 
 import com.habitrain.core.api.scene.compat.SceneRenderPayload;
-import com.habitrain.core.scene.client.SceneMaterialKey;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.resources.ResourceLocation;

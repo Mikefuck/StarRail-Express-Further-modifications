@@ -1,13 +1,9 @@
 package com.habitrain.core.api.scene;
 
-import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.SceneMotionSettings;
-import com.habitrain.core.scene.asset.SceneAssetDescriptor;
-import com.habitrain.core.scene.model.SceneProfile;
-import com.habitrain.core.scene.model.SceneRuntimeState;
-import com.habitrain.core.scene.server.SceneAssetStore;
-import com.habitrain.core.scene.server.SceneContextResolver;
-import com.habitrain.core.scene.server.SceneRuntimeCoordinator;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
+import com.habitrain.core.api.scene.model.SceneProfile;
+import com.habitrain.core.api.scene.model.SceneRuntimeState;
+import com.habitrain.core.api.spi.CoreSpi;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.Objects;
@@ -28,7 +24,7 @@ public final class SceneMotionApi {
      * 获取场景系统全局配置根节点。
      */
     public SceneMotionSettings getSettings() {
-        return ConfigManager.getInstance().getSceneMotionSettings();
+        return CoreSpi.sceneConfig().getSceneMotionSettings();
     }
 
     /**
@@ -45,7 +41,7 @@ public final class SceneMotionApi {
         Objects.requireNonNull(profile, "profile cannot be null");
         String key = (mapKey != null && !mapKey.isBlank()) ? mapKey : "__default__";
         getSettings().profiles.put(key, profile);
-        ConfigManager.getInstance().markSceneMotionDirty();
+        CoreSpi.sceneConfig().markSceneMotionDirty();
     }
 
     /**
@@ -53,7 +49,7 @@ public final class SceneMotionApi {
      */
     public boolean isSceneActive(ServerLevel level) {
         if (level == null) return false;
-        SceneRuntimeState state = SceneRuntimeCoordinator.getInstance().getRuntimeState(level);
+        SceneRuntimeState state = CoreSpi.sceneRuntime().getRuntimeState(level);
         return state != null && state.isActive();
     }
 
@@ -61,27 +57,34 @@ public final class SceneMotionApi {
      * 手动启动指定维度的场景运动。
      */
     public boolean startScene(ServerLevel level, String mapKey) {
-        return SceneRuntimeCoordinator.getInstance().activate(level, mapKey);
+        return CoreSpi.sceneRuntime().activate(level, mapKey);
     }
 
     /**
      * 手动停止指定维度的场景运动。
      */
     public boolean stopScene(ServerLevel level) {
-        return SceneRuntimeCoordinator.getInstance().deactivate(level);
+        return CoreSpi.sceneRuntime().deactivate(level);
     }
 
     /**
      * 获取指定地图已发布的场景资产元数据描述符。
+     *
+     * <p><b>审核 A-10</b>：本方法过去直接返回桥接结果，未发布 / 键不存在时为 {@code null}，
+     * 而 {@code SceneApi.asset(String)} 已经明确用 {@link SceneAssetDescriptor#EMPTY} 兜底——
+     * 同一个概念两个公开入口返回两种「空」（{@code null} vs {@code EMPTY}），
+     * 调用方只要复制另一处的写法就会 NPE。现在统一返回 {@code EMPTY}
+     * （{@link SceneAssetDescriptor#isValid()} 为 {@code false}），调用方无需判空。
      */
     public SceneAssetDescriptor getAssetDescriptor(String mapKey) {
-        return SceneAssetStore.getInstance().getDescriptor(mapKey);
+        SceneAssetDescriptor descriptor = CoreSpi.sceneAssets().getDescriptor(mapKey);
+        return descriptor != null ? descriptor : SceneAssetDescriptor.EMPTY;
     }
 
     /**
      * 注册自定义地图上下文解析器（替换默认的 SRE 解析器）。
      */
     public void registerContextResolver(SceneContextResolver resolver) {
-        SceneRuntimeCoordinator.getInstance().setContextResolver(resolver);
+        CoreSpi.sceneRuntime().setContextResolver(resolver);
     }
 }

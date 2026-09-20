@@ -1,6 +1,6 @@
 package com.habitrain.core.api;
 
-import com.habitrain.core.internal.CoreBootstrap;
+import com.habitrain.core.internal.CoreLifecycleScope;
 import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ class GameModeRegistryTest {
 
     @Test
     void freezeInsideBootstrapIsIdempotent() {
-        CoreBootstrap.run(() -> {
+        CoreLifecycleScope.run(() -> {
             GameModeRegistry.freeze();
             TaskRegistry.freeze();
             assertTrue(GameModeRegistry.isFrozen());
@@ -39,14 +39,14 @@ class GameModeRegistryTest {
             assertTrue(GameModeRegistry.isFrozen());
             assertTrue(TaskRegistry.isFrozen());
         });
-        assertFalse(CoreBootstrap.isInBootstrap());
+        assertFalse(CoreLifecycleScope.isActive());
     }
 
     @Test
     void nestedBootstrapStillFreezes() {
-        CoreBootstrap.run(() -> CoreBootstrap.run(GameModeRegistry::freeze));
+        CoreLifecycleScope.run(() -> CoreLifecycleScope.run(GameModeRegistry::freeze));
         assertTrue(GameModeRegistry.isFrozen());
-        assertFalse(CoreBootstrap.isInBootstrap());
+        assertFalse(CoreLifecycleScope.isActive());
     }
 
     @Test

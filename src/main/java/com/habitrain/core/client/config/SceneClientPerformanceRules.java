@@ -1,6 +1,6 @@
 package com.habitrain.core.client.config;
 
-import com.habitrain.core.scene.SceneLimits;
+import com.habitrain.core.api.scene.SceneLimits;
 
 /**
  * 客户端场景性能与传输的取值边界与默认值。

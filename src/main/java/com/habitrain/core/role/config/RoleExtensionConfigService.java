@@ -52,6 +52,16 @@ public final class RoleExtensionConfigService {
     private volatile @Nullable File fileOverride;
     private volatile @Nullable Supplier<File> fileResolverForTests;
     private volatile @Nullable String lastSaveError;
+    /**
+     * 审核 R-22：配置修订号。任何可能改变 provider/entry 门控的操作（load / applyFromJson /
+     * 各 setter 触发的 save）都会自增，供角色目录的 TEMP 编译缓存做失效判据。
+     */
+    private volatile long revision;
+
+    /** 配置修订号；每次门控可能变化时自增（只增不减）。 */
+    public long revision() {
+        return revision;
+    }
 
     private RoleExtensionConfigService() {}
 
@@ -177,6 +187,8 @@ public final class RoleExtensionConfigService {
     // ------------------------------------------------------------------
 
     public void load() {
+        // 审核 R-22：load 会（可能）整体替换门控 section，修订号必须推进。
+        revision++;
         File target = file();
         if (target == null) {
             // No usable config dir (bare unit-test JVM / hostile environment):
@@ -247,6 +259,8 @@ public final class RoleExtensionConfigService {
      * the previous good file survives until the replacement lands.
      */
     public void save() {
+        // 审核 R-22：即便因缺少 config 目录而只保留内存变更，门控也已经变了，必须自增修订号。
+        revision++;
         File target = file();
         if (target == null) {
             lastSaveError = "no config dir (non-Fabric environment); changes kept in memory only";
@@ -341,6 +355,8 @@ public final class RoleExtensionConfigService {
                     ? root.getAsJsonObject("roleExtensionsV2") : root;
             RoleExtensionConfigSection parsed = parse(sectionJson);
             this.section = parsed;
+            // 审核 R-22：门控整体替换，推进修订号使角色目录缓存失效。
+            revision++;
             return true;
         } catch (RuntimeException e) {
             LOGGER.warn("角色扩展配置 JSON 无效，未应用: {}", e.toString());

@@ -95,6 +95,10 @@ public final class RoleVoicePolicy {
         }
 
         public Builder maxDistance(double maxDistance) {
+            // 审核 R-06：与 RoleActionSpec 保持一致——只接受有限且 >= 0 的值（0 = 不限制）。
+            if (!Double.isFinite(maxDistance) || maxDistance < 0) {
+                throw new IllegalArgumentException("maxDistance must be finite and >= 0 (0 = unlimited)");
+            }
             this.maxDistance = maxDistance;
             return this;
         }

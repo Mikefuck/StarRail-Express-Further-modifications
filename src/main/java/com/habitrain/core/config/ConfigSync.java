@@ -1,5 +1,7 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.api.scene.SceneMotionSettings;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.slf4j.Logger;
@@ -10,7 +12,7 @@ import java.util.*;
 public class ConfigSync {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConfigSync.class.getSimpleName());
 
-    @SuppressWarnings("unused") // Kept for callers that construct ConfigSync with a store.
+    // Kept for callers that construct ConfigSync with a store.
     public ConfigSync(ConfigStore store) {
     }
 

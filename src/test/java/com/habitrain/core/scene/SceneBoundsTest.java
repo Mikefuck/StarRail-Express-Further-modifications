@@ -1,6 +1,6 @@
 package com.habitrain.core.scene;
 
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 

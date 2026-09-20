@@ -1,6 +1,6 @@
 package com.habitrain.core.scene.client;
 
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 
 /**
  * 网格分批策略：**只有足够大的场景才分批**，其余保持与历史完全一致的单份网格。

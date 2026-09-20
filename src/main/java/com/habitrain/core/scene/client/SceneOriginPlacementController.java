@@ -3,7 +3,7 @@ package com.habitrain.core.scene.client;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.page.SceneMotionPage;
 import com.habitrain.core.scene.item.HabiAdminItems;
-import com.habitrain.core.scene.model.SceneBounds;
+import com.habitrain.core.api.scene.model.SceneBounds;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.client.Minecraft;
@@ -40,7 +40,7 @@ public final class SceneOriginPlacementController {
     private int sizeY;
     private int sizeZ;
     private double[] displayOrigin = new double[]{0.0, 64.0, 0.0};
-    private com.habitrain.core.scene.model.SceneOrbitAxis orbitAxis = com.habitrain.core.scene.model.SceneOrbitAxis.Y;
+    private com.habitrain.core.api.scene.model.SceneOrbitAxis orbitAxis = com.habitrain.core.api.scene.model.SceneOrbitAxis.Y;
     private boolean active;
 
     private SceneOriginPlacementController() {}
@@ -93,13 +93,13 @@ public final class SceneOriginPlacementController {
     }
 
     public synchronized void startOrbitCenter(ConfigMenuScreen screen, SceneMotionPage page,
-                                             double[] displayOrigin, com.habitrain.core.scene.model.SceneOrbitAxis axis) {
+                                             double[] displayOrigin, com.habitrain.core.api.scene.model.SceneOrbitAxis axis) {
         if (screen == null || page == null) return;
         this.targetType = TargetType.ORBIT_CENTER;
         this.returnScreen = screen;
         this.returnPage = page;
         this.displayOrigin = displayOrigin != null ? java.util.Arrays.copyOf(displayOrigin, 3) : new double[]{0.0, 64.0, 0.0};
-        this.orbitAxis = axis != null ? axis : com.habitrain.core.scene.model.SceneOrbitAxis.Y;
+        this.orbitAxis = axis != null ? axis : com.habitrain.core.api.scene.model.SceneOrbitAxis.Y;
         this.sizeX = 1;
         this.sizeY = 1;
         this.sizeZ = 1;
@@ -118,8 +118,8 @@ public final class SceneOriginPlacementController {
         return displayOrigin;
     }
 
-    public synchronized com.habitrain.core.scene.model.SceneOrbitAxis getOrbitAxis() {
-        return orbitAxis != null ? orbitAxis : com.habitrain.core.scene.model.SceneOrbitAxis.Y;
+    public synchronized com.habitrain.core.api.scene.model.SceneOrbitAxis getOrbitAxis() {
+        return orbitAxis != null ? orbitAxis : com.habitrain.core.api.scene.model.SceneOrbitAxis.Y;
     }
 
     public synchronized SceneBounds getPreviewBounds() {
