@@ -19,6 +19,8 @@ public final class HabiAdminItems {
 
     public static final ResourceLocation SCENE_CONFIGURATOR_ID = HabiTrainCore.id("scene_configurator");
     public static final ResourceLocation ITEMS_TAB_ID = HabiTrainCore.id("items");
+    private static final ResourceLocation DAILY_TASK_BOARD_ID =
+            ResourceLocation.fromNamespaceAndPath("habitrain_lottery", "daily_task_board");
     public static final Item SCENE_CONFIGURATOR = new SceneConfiguratorItem(
             new Item.Properties().stacksTo(1).rarity(Rarity.EPIC));
 
@@ -30,7 +32,14 @@ public final class HabiAdminItems {
                 FabricItemGroup.builder()
                         .title(Component.translatable("itemGroup.habitrain_core.items"))
                         .icon(() -> SCENE_CONFIGURATOR.getDefaultInstance())
-                        .displayItems((parameters, entries) -> entries.accept(SCENE_CONFIGURATOR))
+                        .displayItems((parameters, entries) -> {
+                            entries.accept(SCENE_CONFIGURATOR);
+                            // The lottery mod is optional for core. Resolve its item only when
+                            // the creative tab is populated, after mod item registration.
+                            if (BuiltInRegistries.ITEM.containsKey(DAILY_TASK_BOARD_ID)) {
+                                entries.accept(BuiltInRegistries.ITEM.get(DAILY_TASK_BOARD_ID));
+                            }
+                        })
                         .build());
         LOGGER.info("已注册哈比列车 API 物品标签页");
     }
