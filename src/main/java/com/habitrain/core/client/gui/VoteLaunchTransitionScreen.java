@@ -96,6 +96,9 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private int killerCount = 0;
     private String mapId = "";
     private String modeId = "";
+    /** 平滑后的显示进度：服务端进度是阶梯式跳变，直接绘制会一顿一顿。 */
+    private float displayedProgress = -1.0f;
+    private long lastFrameMillis;
 
     // 阶段状态
     private boolean launchConfirmed;
@@ -324,6 +327,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        advanceDisplayedProgress();
         if (exitStarted) {
             renderExit(g, mouseX, mouseY, partialTick);
             return;
@@ -335,7 +339,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         }
         if (VoteLaunchSession.isRecoverPath() && launchConfirmed) {
             renderPanelBackground(g);
-            renderLaunchContent(g, 1.0f, !gameActive);
+            renderLaunchContent(g, !gameActive);
             return;
         }
         // 可见路径：加载 → 原地切标题
@@ -353,20 +357,32 @@ public final class VoteLaunchTransitionScreen extends Screen {
 
     private void renderLoadingEntry(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         float enter = skipEnterAnimation ? 1.0f : enterProgress();
-        float local = easeInOutCubic(enter);
+        float local = TransitionFx.easeInOutQuart(enter);
         float edgeX = width * (1.0f - local);
 
         if (coveredScreen != null && edgeX > 0.5f) {
             coveredScreen.render(g, mouseX, mouseY, partialTick);
         }
 
+        g.flush();
+        if (edgeX > 0.5f && local > 0.0f) {
+            // 被覆盖的投票页随面板推进逐渐压暗，面板像是从前景推过来而不是贴图平移
+            g.pose().pushPose();
+            g.pose().translate(0.0f, 0.0f, PANEL_FOREGROUND_Z - 1.0f);
+            g.fill(0, 0, Math.round(edgeX), height, withAlpha(VOID, Math.round(150 * local)));
+            g.pose().popPose();
+        }
+
         // 先提交投票页的文字/控件批次，再在更高的固定深度画整块不透明面板。
         // 仅依赖调用顺序会让字体 RenderType 的深度与背景 fill 竞争，出现文字残留穿透。
-        g.flush();
         g.pose().pushPose();
         g.pose().translate(edgeX, 0.0f, PANEL_FOREGROUND_Z);
         renderPanelBackground(g);
-        renderLoadingContent(g, 1.0f);
+        // 内容比面板晚一步落定（视差），整体不再像一整块硬板平移
+        float contentLag = 1.0f - TransitionFx.easeOutCubic(
+                skipEnterAnimation ? 1.0f : TransitionFx.segment(enter, 0.25f, 0.75f));
+        g.pose().translate(contentLag * 70.0f, 0.0f, 0.0f);
+        renderLoadingContent(g, 1.0f - contentLag * 0.8f);
         g.pose().popPose();
 
         if (enter < 1.0f) {
@@ -386,7 +402,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
      */
     private void renderRecoverEntry(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         float enter = recoverEnterProgress();
-        float local = easeInOutCubic(enter);
+        float local = TransitionFx.easeInOutQuart(enter);
         // 面板右缘从 0 → width
         float edgeX = width * local;
 
@@ -396,7 +412,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         // 面板整体：左缘 = edgeX - width，右缘 = edgeX
         g.pose().translate(edgeX - width, 0.0f, PANEL_FOREGROUND_Z);
         renderPanelBackground(g);
-        renderLaunchContent(g, 1.0f, !gameActive);
+        renderLaunchContent(g, !gameActive);
         g.pose().popPose();
 
         if (enter < 1.0f) {
@@ -416,11 +432,15 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private void renderLoadingContent(GuiGraphics g, float alphaMul) {
         if (alphaMul <= 0.01f) return;
 
+        long now = Util.getMillis();
         int cx = width / 2;
         int cy = height / 2 - 12;
-        // 徽章呼吸
-        float breathe = 0.5f + 0.5f * Mth.sin((Util.getMillis() % 2_600L) / 2_600f * (float) Math.PI * 2.0f);
-        drawEmblem(g, cx, cy - 66, Math.round((140 + 90 * breathe) * alphaMul), breathe);
+        // 徽章呼吸 + 外圈彗尾点环缓慢旋转，表明仍在工作
+        float breathe = 0.5f + 0.5f * Mth.sin((now % 2_600L) / 2_600f * (float) Math.PI * 2.0f);
+        TransitionFx.drawGlow(g, cx, cy - 66, 46.0f, 30.0f, GOLD_DARK,
+                Math.round((18 + 16 * breathe) * alphaMul));
+        drawEmblem(g, cx, cy - 66, Math.round((150 + 80 * breathe) * alphaMul), breathe,
+                now / 1000.0f * 2.4f);
 
         Component title = Component.translatable("vote.habitrain_core.transition.loading")
                 .copy().withStyle(ChatFormatting.BOLD);
@@ -432,25 +452,54 @@ public final class VoteLaunchTransitionScreen extends Screen {
                 + shortOptionId(modeId) + " · " + shortOptionId(mapId));
         g.drawCenteredString(font, info, cx, cy + 20, withAlpha(TEXT, Math.round(255 * alphaMul)));
 
-        // 细进度线（无边框）+ 前缘柔光
+        // 细进度线（无边框）+ 流光 + 前缘柔光
         int barW = Math.min(320, Math.max(140, width - 200));
         int barY = cy + 42;
-        g.fill(cx - barW / 2, barY, cx + barW / 2, barY + 2,
+        int barLeft = cx - barW / 2;
+        g.fill(barLeft, barY, cx + barW / 2, barY + 2,
                 withAlpha(GOLD_DARK, Math.round(100 * alphaMul)));
-        int fillW = Math.round(barW * progress / 100.0f);
+        float shown = Math.max(0.0f, displayedProgress);
+        int fillW = Math.round(barW * shown / 100.0f);
         if (fillW > 0) {
-            g.fillGradient(cx - barW / 2, barY, cx - barW / 2 + fillW, barY + 2,
+            g.fillGradient(barLeft, barY, barLeft + fillW, barY + 2,
                     withAlpha(GOLD, Math.round(255 * alphaMul)),
                     withAlpha(GOLD_BRIGHT, Math.round(255 * alphaMul)));
-            int headX = Math.min(width - 1, cx - barW / 2 + fillW);
-            for (int i = 1; i <= 5; i++) {
-                g.fill(headX + i - 1, barY - 1, Math.min(width, headX + i), barY + 3,
-                        withAlpha(GOLD, Math.round(80 * (1.0f - i / 5.0f) * alphaMul)));
+            // 沿已填充段循环扫过的高光
+            float sweep = (now % 1_400L) / 1_400f;
+            int shineX = barLeft + Math.round((fillW + 24) * sweep) - 12;
+            for (int i = -12; i <= 12; i++) {
+                int x = shineX + i;
+                if (x < barLeft || x >= barLeft + fillW) continue;
+                float s = 1.0f - Math.abs(i) / 12.0f;
+                g.fill(x, barY - 1, x + 1, barY + 3,
+                        withAlpha(IVORY, Math.round(120 * s * s * alphaMul)));
             }
+            int headX = Math.min(width - 1, barLeft + fillW);
+            float headPulse = 0.7f + 0.3f * Mth.sin(now / 160.0f);
+            for (int i = 1; i <= 8; i++) {
+                g.fill(headX + i - 1, barY - 1, Math.min(width, headX + i), barY + 3,
+                        withAlpha(GOLD, Math.round(95 * (1.0f - i / 8.0f) * headPulse * alphaMul)));
+            }
+            TransitionFx.drawDiamond(g, headX, barY + 1, 2,
+                    withAlpha(GOLD_BRIGHT, Math.round(230 * headPulse * alphaMul)));
         }
         g.drawCenteredString(font,
-                Component.literal(progress + "%").withStyle(ChatFormatting.BOLD),
+                Component.literal(Math.round(shown) + "%").withStyle(ChatFormatting.BOLD),
                 cx, barY + 8, withAlpha(GOLD, Math.round(255 * alphaMul)));
+    }
+
+    /** 每帧把显示进度指数逼近服务端进度。 */
+    private void advanceDisplayedProgress() {
+        long now = Util.getMillis();
+        float seconds = lastFrameMillis <= 0L ? 0.0f
+                : Mth.clamp((now - lastFrameMillis) / 1000.0f, 0.0f, 0.1f);
+        lastFrameMillis = now;
+        if (displayedProgress < 0.0f || progress < displayedProgress) {
+            displayedProgress = progress;
+            return;
+        }
+        displayedProgress += (progress - displayedProgress)
+                * (1.0f - (float) Math.exp(-seconds * 6.0f));
     }
 
     /** 加载期右上角隐藏提示 + ×。 */
@@ -487,9 +536,27 @@ public final class VoteLaunchTransitionScreen extends Screen {
 
         renderPanelBackground(g);
         if (loadingAlpha > 0.01f) {
+            // 加载内容上浮并淡出，给标题让出舞台
+            g.pose().pushPose();
+            g.pose().translate(0.0f, -16.0f * (1.0f - loadingAlpha), 0.0f);
             renderLoadingContent(g, loadingAlpha);
+            g.pose().popPose();
         }
-        renderLaunchContent(g, content, !gameActive);
+        renderLaunchContent(g, !gameActive);
+    }
+
+    /**
+     * 「对局开始」标题时刻的本地时钟（毫秒）。可见路径从确认后、加载内容淡出一段时间起算；
+     * 补盖路径跟随左→右入场，在面板推进过半时开始。
+     */
+    private long titleElapsedMillis() {
+        long now = Util.getMillis();
+        if (VoteLaunchSession.isRecoverPath() || recoverMode) {
+            if (recoverEnterAtMillis <= 0L) return Long.MAX_VALUE / 4;
+            return now - recoverEnterAtMillis - ENTER_MILLIS * 2 / 5;
+        }
+        if (!launchConfirmed) return 0L;
+        return now - launchConfirmedAtMillis - 220L;
     }
 
     /** 同一面板的动态背景，加载、开场标题和滑出阶段共用。 */
@@ -499,9 +566,17 @@ public final class VoteLaunchTransitionScreen extends Screen {
         renderParticles(g);
     }
 
-    /** 「对局开始」内容层；不再绘制或滑入第二个全屏页面。 */
-    private void renderLaunchContent(GuiGraphics g, float content, boolean showWaitStatus) {
-        long elapsed = Util.getMillis() - launchConfirmedAtMillis;
+    /**
+     * 「对局开始」内容层；不再绘制或滑入第二个全屏页面。
+     *
+     * <p>标题时刻按本地时钟编排：耀光线自中心展开 → 徽章冲击波 → 标题逐字落下并收拢字距
+     * → 火花 → 目的地逐字升起、两侧饰线延展 → 对局信息淡入。之后进入巡航：整体降亮、
+     * 柔光缓慢呼吸。</p>
+     */
+    private void renderLaunchContent(GuiGraphics g, boolean showWaitStatus) {
+        long now = Util.getMillis();
+        long elapsed = now - launchConfirmedAtMillis;
+        long t = titleElapsedMillis();
         // 巡航系数：标题时刻结束后，画面进入平静氛围（标题柔和降亮、等待提示淡入）
         float cruise = easeOutCubic(Mth.clamp(
                 (elapsed - CONTENT_SWITCH_MILLIS - TITLE_HOLD_MILLIS) / (float) CRUISE_TRANSITION_MILLIS,
@@ -512,53 +587,95 @@ public final class VoteLaunchTransitionScreen extends Screen {
                     (elapsed - TITLE_HOLD_MILLIS) / (float) CRUISE_TRANSITION_MILLIS,
                     0.0f, 1.0f));
         }
+        if (t <= 0L) {
+            return;
+        }
 
         int cx = width / 2;
         int cy = height / 2 - 18;
+        int emblemY = cy - 98;
 
-        // 中部柔光：上下渐变的暖色晕染，为标题提供干净的视觉重心（巡航期减半）
-        float glowScale = 1.0f - 0.5f * cruise;
+        // 中部柔光：标题落下时短暂"爆亮"，随后回落，巡航期缓慢呼吸
+        float bloom = TransitionFx.segment(t, 120, 260) * (1.0f - 0.6f * TransitionFx.segment(t, 380, 900));
+        float breathe = 0.85f + 0.15f * Mth.sin(now / 900.0f);
         int glowW = Math.min(600, width - 40);
-        int glowH = 230;
-        int gy = cy - glowH / 2;
-        g.fillGradient(cx - glowW / 2, gy, cx + glowW / 2, cy,
-                withAlpha(GOLD_DARK, Math.round(30 * glowScale)),
-                withAlpha(GOLD_DARK, Math.round(8 * glowScale)));
-        g.fillGradient(cx - glowW / 2, cy, cx + glowW / 2, gy + glowH,
-                withAlpha(GOLD_DARK, Math.round(8 * glowScale)),
-                withAlpha(GOLD_DARK, 0));
+        float glowAlpha = (0.55f + 0.9f * bloom) * (1.0f - 0.45f * cruise) * breathe;
+        TransitionFx.drawGlow(g, cx, cy + 12, glowW / 2.0f, 70.0f, GOLD_DARK, Math.round(60 * glowAlpha));
 
-        // 徽章与标题只做内容层级联入场，面板本身不再重复滑动。
-        float emblemT = easeOutCubic(Mth.clamp((content - 0.30f) / 0.25f, 0.0f, 1.0f));
+        // 耀光线：自中心向两侧迅速展开，随后淡成标题下方的细饰线
+        float flareOpen = TransitionFx.easeOutExpo(TransitionFx.segment(t, 0, 520));
+        float flareFlash = 1.0f - TransitionFx.segment(t, 260, 700);
+        int flareAlpha = Math.round((70 + 170 * flareFlash) * (1.0f - 0.5f * cruise));
+        TransitionFx.drawFlare(g, cx, cy + 34, glowW * 0.5f * flareOpen, GOLD_BRIGHT, flareAlpha);
+
+        // 徽章：缩放落位 + 两道冲击波
+        float emblemT = TransitionFx.segment(t, 0, 420);
         if (emblemT > 0.0f) {
-            drawEmblem(g, cx, cy - 98, Math.round(230 * emblemT), 1.0f);
+            float pop = TransitionFx.easeOutBack(emblemT, 2.4f);
+            g.pose().pushPose();
+            g.pose().translate(cx, emblemY, 0.0f);
+            g.pose().scale(pop, pop, 1.0f);
+            g.pose().translate(-cx, -emblemY, 0.0f);
+            drawEmblem(g, cx, emblemY, Math.round(230 * TransitionFx.easeOutCubic(emblemT)
+                    * (1.0f - 0.35f * cruise)), 1.0f, now / 1000.0f * 1.6f);
+            g.pose().popPose();
+        }
+        for (int wave = 0; wave < 2; wave++) {
+            float ring = TransitionFx.segment(t, 60 + wave * 180L, 820);
+            if (ring > 0.0f && ring < 1.0f) {
+                float r = 14.0f + 150.0f * TransitionFx.easeOutCubic(ring);
+                TransitionFx.drawRing(g, cx, emblemY, r, wave == 0 ? GOLD_BRIGHT : GOLD,
+                        Math.round(170 * (1.0f - ring) * (1.0f - ring)));
+            }
         }
 
-        // 大标题：弹入，巡航期柔和降亮
-        float titleT = easeOutBack(Mth.clamp((content - 0.42f) / 0.40f, 0.0f, 1.0f));
-        float titleAlpha = 255.0f * easeOutCubic(Mth.clamp((content - 0.38f) / 0.45f, 0.0f, 1.0f))
-                * (1.0f - 0.45f * cruise);
+        // 大标题：逐字落下，字距由宽到窄收拢；巡航期柔和降亮
+        float titleEnter = TransitionFx.segment(t, 120, 900);
+        float tracking = 2.0f + 14.0f * (1.0f - TransitionFx.easeOutExpo(TransitionFx.segment(t, 120, 1_500)));
         Component title = Component.translatable("vote.habitrain_core.transition.go_title")
                 .copy().withStyle(ChatFormatting.BOLD);
-        drawScaledCentered(g, title, cx, cy, 3.25f * (0.84f + 0.16f * titleT),
-                withAlpha(GOLD_BRIGHT, Math.round(titleAlpha)));
+        int titleAlpha = Math.round(255 * (1.0f - 0.45f * cruise));
+        TransitionFx.drawCascade(g, font, title, cx, cy, 3.25f,
+                withAlpha(GOLD_BRIGHT, titleAlpha), titleEnter, 0.0f, tracking,
+                TransitionFx.Cascade.DROP);
+        TransitionFx.drawSparks(g, cx, cy + 14, TransitionFx.segment(t, 260, 1_100), 34, 7,
+                Math.min(260.0f, width * 0.4f), GOLD_BRIGHT, 220);
 
-        // 目的地 + 对局信息：紧随浮现
-        float lineT = easeOutCubic(Mth.clamp((content - 0.56f) / 0.34f, 0.0f, 1.0f));
-        float lineAlpha = 255.0f * lineT * (1.0f - 0.5f * cruise);
-        if (lineAlpha > 0.5f) {
-            Component dest = OptionVoteTexts.transitionDestination(winnerLabel());
-            drawScaledCentered(g, dest, cx, cy + 44, 1.15f, withAlpha(GOLD, Math.round(lineAlpha)));
+        // 目的地：逐字升起，两侧饰线向外延展
+        Component dest = OptionVoteTexts.transitionDestination(winnerLabel());
+        float destEnter = TransitionFx.segment(t, 620, 620);
+        float lineFade = 1.0f - 0.5f * cruise;
+        if (destEnter > 0.0f) {
+            TransitionFx.drawCascade(g, font, dest, cx, cy + 44, 1.15f,
+                    withAlpha(GOLD, Math.round(255 * lineFade)), destEnter, 0.0f, 0.0f,
+                    TransitionFx.Cascade.RISE);
+            float ruleT = TransitionFx.easeOutCubic(TransitionFx.segment(t, 760, 600));
+            int destHalf = Math.round(font.width(dest) * 1.15f / 2.0f) + 10;
+            int ruleLen = Math.round(56 * ruleT);
+            int ruleY = cy + 48;
+            int ruleAlpha = Math.round(150 * ruleT * lineFade);
+            if (ruleLen > 0) {
+                g.fill(cx - destHalf - ruleLen, ruleY, cx - destHalf, ruleY + 1, withAlpha(GOLD_DARK, ruleAlpha));
+                g.fill(cx + destHalf, ruleY, cx + destHalf + ruleLen, ruleY + 1, withAlpha(GOLD_DARK, ruleAlpha));
+                TransitionFx.drawDiamond(g, cx - destHalf - ruleLen, ruleY, 1, withAlpha(GOLD, ruleAlpha));
+                TransitionFx.drawDiamond(g, cx + destHalf + ruleLen, ruleY, 1, withAlpha(GOLD, ruleAlpha));
+            }
+        }
+
+        float infoT = TransitionFx.easeOutCubic(TransitionFx.segment(t, 900, 450));
+        int infoAlpha = Math.round(255 * 0.85f * infoT * lineFade);
+        if (infoAlpha > 5) {
             Component info = Component.literal(playerCount + " 人 · 杀手 " + killerCount + " · "
                     + shortOptionId(modeId));
-            g.drawCenteredString(font, info, cx, cy + 64,
-                    withAlpha(TEXT, Math.round(lineAlpha * 0.85f)));
+            g.drawCenteredString(font, info, cx, cy + 64 + Math.round(6 * (1.0f - infoT)),
+                    withAlpha(TEXT, infoAlpha));
         }
 
         // 等待提示：巡航期淡入（秒数递增证明未卡死，服务端仍在推进）
-        if (showWaitStatus && cruise > 0.01f) {
+        int waitAlpha = Math.round(175 * cruise);
+        if (showWaitStatus && waitAlpha > 5) {
             g.drawCenteredString(font, waitStatusLine(elapsed), cx, cy + 104,
-                    withAlpha(TEXT_MUTED, Math.round(175 * cruise)));
+                    withAlpha(TEXT_MUTED, waitAlpha));
         }
     }
 
@@ -575,16 +692,27 @@ public final class VoteLaunchTransitionScreen extends Screen {
 
     // ==================== 阶段三：左向滑出交还（露出游戏世界） ====================
 
-    /** 开场画面整体向左滑出，游戏世界从画面右缘露出，流动线条保持运动连续。 */
+    /**
+     * 开场画面整体向左滑出，游戏世界从画面右缘露出，流动线条保持运动连续。
+     * 内容层比背景走得更快并略微放大，像镜头穿过标题冲进车厢。
+     */
     private void renderExit(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         float exit = exitProgress();
-        float local = easeInOutCubic(exit);
+        float local = TransitionFx.easeInOutQuart(exit);
         float edgeX = width * (1.0f - local); // 开场画面右缘：width → 0
 
         g.pose().pushPose();
         g.pose().translate(-width * local, 0.0f, 0.0f);
         renderPanelBackground(g);
-        renderLaunchContent(g, 1.0f, false);
+        g.pose().pushPose();
+        float zoom = 1.0f + 0.08f * TransitionFx.easeInCubic(exit);
+        float cx = width / 2.0f;
+        float cy = height / 2.0f;
+        g.pose().translate(-width * 0.35f * TransitionFx.easeInCubic(exit) + cx, cy, 0.0f);
+        g.pose().scale(zoom, zoom, 1.0f);
+        g.pose().translate(-cx, -cy, 0.0f);
+        renderLaunchContent(g, false);
+        g.pose().popPose();
         g.pose().popPose();
 
         if (exit < 1.0f) {
@@ -705,16 +833,10 @@ public final class VoteLaunchTransitionScreen extends Screen {
         }
     }
 
-    private void drawEmblem(GuiGraphics g, int cx, int cy, int alpha, float breathe) {
+    private void drawEmblem(GuiGraphics g, int cx, int cy, int alpha, float breathe, float spin) {
         if (alpha <= 0) return;
-        // 外环
-        int ringR = 24;
-        for (int i = 0; i < 40; i++) {
-            double a = i * Math.PI * 2.0 / 40;
-            int x = cx + (int) Math.round(Math.cos(a) * ringR);
-            int y = cy + (int) Math.round(Math.sin(a) * ringR);
-            g.fill(x, y, x + 1, y + 1, withAlpha(GOLD_DARK, Math.round(alpha * 0.55f)));
-        }
+        // 外环：彗尾点环缓慢旋转
+        TransitionFx.drawOrbit(g, cx, cy, 24, spin, GOLD_DARK, GOLD_BRIGHT, alpha);
         // 菱形层
         drawDiamond(g, cx, cy, 15, withAlpha(GOLD_DARK, alpha));
         drawDiamond(g, cx, cy, 11, withAlpha(GOLD, alpha));
@@ -825,24 +947,9 @@ public final class VoteLaunchTransitionScreen extends Screen {
         }
     }
 
-    private static float easeInOutCubic(float value) {
-        float t = Mth.clamp(value, 0.0f, 1.0f);
-        return t < 0.5f ? 4.0f * t * t * t
-                : 1.0f - (float) Math.pow(-2.0f * t + 2.0f, 3.0) / 2.0f;
-    }
-
     private static float easeOutCubic(float value) {
         float inverse = 1.0f - value;
         return 1.0f - inverse * inverse * inverse;
-    }
-
-    /** 带轻微回弹的缓出：用于标题弹入。 */
-    private static float easeOutBack(float value) {
-        float t = Mth.clamp(value, 0.0f, 1.0f);
-        float c1 = 1.70158f;
-        float c3 = c1 + 1.0f;
-        return 1.0f + c3 * (float) Math.pow(t - 1.0f, 3.0)
-                + c1 * (float) Math.pow(t - 1.0f, 2.0);
     }
 
     private static int withAlpha(int color, int alpha) {

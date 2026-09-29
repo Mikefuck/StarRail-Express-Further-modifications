@@ -114,6 +114,16 @@ public class OptionVoteScreen extends Screen {
     private int lastMouseY = -1;
     private long lastAutoPickStepMillis;
     private String revealedAutoPickId = "";
+    /** 随机抽选开始时刻：步进间隔随时间拉长，轮盘逐渐减速而非匀速跳动。 */
+    private long autoPickStartedMillis;
+
+    // ---- 卡片反馈动画 ----
+    private String pulseOptionId = "";
+    private long pulseAtMillis;
+    /** 大脉冲：随机抽选揭晓时使用，附带整屏闪光与火花。 */
+    private boolean pulseBig;
+    private final Map<String, Integer> lastVotes = new HashMap<>();
+    private final Map<String, Long> voteBumpAtMillis = new HashMap<>();
 
     public OptionVoteScreen(Screen parent) {
         super(OptionVoteTexts.titleFor(OptionVoteState.getVoteId()));
@@ -173,6 +183,14 @@ public class OptionVoteScreen extends Screen {
                 g, candidates, mouseX, mouseY, frameSeconds, elapsedSeconds);
         renderDetails(g, focused, candidates.size(), elapsedSeconds);
 
+        // 随机抽选揭晓：整屏一次柔和金色闪光
+        if (pulseBig) {
+            float flash = 1.0f - TransitionFx.clamp01((now - pulseAtMillis) / 520.0f);
+            if (flash > 0.0f) {
+                g.fill(0, 0, width, height, withAlpha(GOLD_BRIGHT, Math.round(42 * flash * flash)));
+            }
+        }
+
         super.render(g, mouseX, mouseY, partialTick);
     }
 
@@ -213,7 +231,10 @@ public class OptionVoteScreen extends Screen {
 
         if (OptionVoteState.isAutoPickAnimating()) {
             applyMapEvent(MapVoteInteractionPolicy.Event.AUTO_PICK);
-            if (lastAutoPickStepMillis == 0L || now - lastAutoPickStepMillis >= 90L) {
+            if (autoPickStartedMillis == 0L) autoPickStartedMillis = now;
+            // 55ms 起步，约 3 秒后放慢到 ~280ms 一格，像真正的轮盘在减速
+            long stepInterval = 55L + Math.min(240L, (now - autoPickStartedMillis) * 3L / 40L);
+            if (lastAutoPickStepMillis == 0L || now - lastAutoPickStepMillis >= stepInterval) {
                 int next = focusedIndex < 0 ? 0 : (focusedIndex + 1) % candidates.size();
                 setFocus(next, candidates, false);
                 playUiSound(0.90f + (next % 4) * 0.08f);
@@ -221,6 +242,7 @@ public class OptionVoteScreen extends Screen {
             }
             return;
         }
+        autoPickStartedMillis = 0L;
 
         String autoPickedId = OptionVoteState.getAutoPickedOptionId();
         if (autoPickedId == null || autoPickedId.isBlank()
@@ -232,6 +254,7 @@ public class OptionVoteScreen extends Screen {
                 setFocus(i, candidates, false);
                 applyMapEvent(MapVoteInteractionPolicy.Event.AUTO_PICK);
                 revealedAutoPickId = autoPickedId;
+                startPulse(autoPickedId, true);
                 playUiSound(1.45f);
                 break;
             }
@@ -313,12 +336,21 @@ public class OptionVoteScreen extends Screen {
 
         // 中央标题：地图介绍展开时平滑淡出，避免覆盖在地图介绍页面上面
         float titleFade = 1.0f - easeOutCubic(Mth.clamp(detailProgress, 0.0f, 1.0f));
+        // 打开时标题逐字落下，副标题稍后升起
+        float headingIn = TransitionFx.clamp01(elapsedSeconds / 0.55f);
+        float descIn = TransitionFx.clamp01((elapsedSeconds - 0.25f) / 0.4f);
         int titleAlpha = Math.round(255 * titleFade);
-        if (titleAlpha > 0) {
+        if (titleAlpha > 5) {
             Component heading = OptionVoteTexts.titleFor(voteId).copy().withStyle(ChatFormatting.BOLD);
-            drawScaledCentered(g, heading, width / 2.0f, 8.0f, 1.22f, withAlpha(IVORY, titleAlpha));
-            g.drawCenteredString(font, OptionVoteTexts.descriptionFor(voteId),
-                    width / 2, 27, withAlpha(TEXT_MUTED, titleAlpha));
+            TransitionFx.drawCascade(g, font, heading, width / 2.0f, 8.0f, 1.22f,
+                    withAlpha(IVORY, titleAlpha), headingIn, 0.0f,
+                    2.5f * (1.0f - TransitionFx.easeOutExpo(headingIn)), TransitionFx.Cascade.DROP);
+            int descAlpha = Math.round(titleAlpha * easeOutCubic(descIn));
+            if (descAlpha > 5) {
+                g.drawCenteredString(font, OptionVoteTexts.descriptionFor(voteId),
+                        width / 2, 27 + Math.round(5 * (1.0f - easeOutCubic(descIn))),
+                        withAlpha(TEXT_MUTED, descAlpha));
+            }
         }
 
         if (OptionVoteState.isAutoPickAnimating()) {
@@ -393,19 +425,26 @@ public class OptionVoteScreen extends Screen {
             emphasis += (target - emphasis) * approachFactor(frameSeconds, focused ? 13.0f : 10.0f);
             cardEmphasis.put(entry.optionId(), emphasis);
 
+            float distance = (float) Math.abs(i - carouselPosition);
+            // 入场：由焦点向两侧错峰升起，带轻微回弹
+            float introDelay = 0.12f + Math.min(distance, 6.0f) * 0.07f;
+            float introT = TransitionFx.clamp01((elapsedSeconds - introDelay) / 0.5f);
+            if (introT <= 0.0f) continue;
+            float intro = easeOutCubic(introT);
+            int introLift = Math.round((1.0f - TransitionFx.easeOutBack(introT, 1.6f)) * 28.0f);
+
             int extraWidth = Math.round(emphasis * 6.0f);
             int extraHeight = Math.round(emphasis * 14.0f);
             int drawX = baseX - extraWidth / 2;
-            int drawY = baseY - extraHeight / 2 - Math.round(emphasis * 3.0f);
+            int drawY = baseY - extraHeight / 2 - Math.round(emphasis * 3.0f) + introLift;
             int drawW = cardWidth + extraWidth;
             int drawH = cardHeight + extraHeight;
-            float distance = (float) Math.abs(i - carouselPosition);
             float visibility = Mth.clamp(1.0f - Math.max(0.0f, distance - 2.2f) * 0.26f,
                     0.22f, 1.0f);
 
             Rect bounds = new Rect(drawX, drawY, drawW, drawH);
             visuals.add(new CardVisual(i, entry, bounds, hovered, focused, selected,
-                    emphasis, visibility));
+                    emphasis, visibility, intro));
         }
 
         // 从远到近绘制，焦点卡永远位于视觉最上层。
@@ -450,7 +489,14 @@ public class OptionVoteScreen extends Screen {
         int y = b.y();
         int w = b.width();
         int h = b.height();
-        int alpha = Mth.clamp(Math.round(255.0f * visual.visibility()), 50, 255);
+        int alpha = Math.round(Mth.clamp(Math.round(255.0f * visual.visibility()), 50, 255)
+                * visual.intro());
+        // 字体在极低 alpha 下会被当作不透明绘制，入场初期直接跳过
+        if (alpha < 8) return;
+        long now = Util.getMillis();
+        String optionId = visual.entry().optionId();
+        float pulse = optionId.equals(pulseOptionId)
+                ? TransitionFx.clamp01((now - pulseAtMillis) / (pulseBig ? 900.0f : 650.0f)) : 1.0f;
 
         int border = visual.selected() ? GOLD_BRIGHT
                 : (visual.focused() ? GOLD : (visual.hovered() ? GOLD_DARK : BRONZE));
@@ -471,14 +517,45 @@ public class OptionVoteScreen extends Screen {
         float scanPhase = (elapsedSeconds * 0.38f + visual.index() * 0.17f) % 1.0f;
         int scanY = y + 7 + Math.round(scanPhase * Math.max(1, h - 15));
         g.fill(x + 3, scanY, x + w - 3, scanY + 1,
-                withAlpha(GOLD_BRIGHT, Math.round(visual.emphasis() * 72.0f * visual.visibility())));
+                withAlpha(GOLD_BRIGHT, Math.round(visual.emphasis() * 72.0f * visual.visibility()
+                        * visual.intro())));
+
+        // 投票确认：卡面闪白 + 由卡片向外扩散的描边脉冲
+        if (pulse < 1.0f) {
+            float fade = 1.0f - pulse;
+            g.fill(x + 1, y + 1, x + w - 1, y + h - 1,
+                    withAlpha(IVORY, Math.round(90 * fade * fade * fade)));
+            int rings = pulseBig ? 2 : 1;
+            for (int r = 0; r < rings; r++) {
+                float ringT = TransitionFx.clamp01(pulse * (1.0f + r * 0.35f) - r * 0.12f);
+                if (ringT <= 0.0f || ringT >= 1.0f) continue;
+                int grow = Math.round((pulseBig ? 26.0f : 14.0f) * easeOutCubic(ringT));
+                int ringAlpha = Math.round(220 * (1.0f - ringT) * (1.0f - ringT));
+                g.renderOutline(x - grow, y - grow, w + grow * 2, h + grow * 2,
+                        withAlpha(GOLD_BRIGHT, ringAlpha));
+                g.renderOutline(x - grow + 1, y - grow + 1, w + grow * 2 - 2, h + grow * 2 - 2,
+                        withAlpha(GOLD, ringAlpha / 2));
+            }
+            if (pulseBig) {
+                TransitionFx.drawSparks(g, x + w / 2.0f, y + h / 2.0f, pulse, 28, visual.index(),
+                        Math.max(60.0f, w * 1.4f), GOLD_BRIGHT, 230);
+            }
+        }
 
         String ordinal = String.format(Locale.ROOT, "%02d", visual.index() + 1);
         g.drawString(font, ordinal, x + 7, y + 8,
                 withAlpha(TEXT_MUTED, alpha), false);
         if (visual.selected()) {
-            g.drawString(font, Component.literal("✓"), x + w - 14, y + 7,
-                    withAlpha(GOLD_BRIGHT, alpha), true);
+            // ✓ 在确认瞬间弹出
+            float checkPop = pulse < 1.0f ? TransitionFx.easeOutBack(TransitionFx.clamp01(pulse / 0.45f), 2.6f) : 1.0f;
+            if (checkPop > 0.05f) {
+                g.pose().pushPose();
+                g.pose().translate(x + w - 11.0f, y + 11.0f, 0.0f);
+                g.pose().scale(checkPop, checkPop, 1.0f);
+                g.drawString(font, Component.literal("✓"), -3, -4,
+                        withAlpha(GOLD_BRIGHT, alpha), true);
+                g.pose().popPose();
+            }
         }
 
         Component label = OptionVoteTexts.candidateLabel(
@@ -509,9 +586,27 @@ public class OptionVoteScreen extends Screen {
                     withAlpha(TEXT, alpha));
         }
 
-        Component votes = OptionVoteTexts.compactVotes(visual.entry().votes());
-        g.drawCenteredString(font, votes, x + w / 2, footerY,
-                withAlpha(visual.selected() ? GOLD_BRIGHT : TEXT_MUTED, alpha));
+        // 票数变化时弹跳并短暂发亮
+        int voteCount = visual.entry().votes();
+        Integer previousVotes = lastVotes.put(optionId, voteCount);
+        if (previousVotes != null && previousVotes != voteCount) {
+            voteBumpAtMillis.put(optionId, now);
+        }
+        long bumpAt = voteBumpAtMillis.getOrDefault(optionId, 0L);
+        float bump = bumpAt > 0L ? 1.0f - TransitionFx.clamp01((now - bumpAt) / 480.0f) : 0.0f;
+        Component votes = OptionVoteTexts.compactVotes(voteCount);
+        int voteColor = visual.selected() ? GOLD_BRIGHT : TEXT_MUTED;
+        if (bump > 0.0f) {
+            voteColor = mixColor(voteColor, GOLD_BRIGHT, bump);
+            float voteScale = 1.0f + 0.4f * bump * bump;
+            g.pose().pushPose();
+            g.pose().translate(x + w / 2.0f, footerY + 4.0f, 0.0f);
+            g.pose().scale(voteScale, voteScale, 1.0f);
+            g.drawCenteredString(font, votes, 0, -4, withAlpha(voteColor, alpha));
+            g.pose().popPose();
+        } else {
+            g.drawCenteredString(font, votes, x + w / 2, footerY, withAlpha(voteColor, alpha));
+        }
 
         if (visual.focused()) {
             int markerX = x + w / 2;
@@ -1571,6 +1666,12 @@ public class OptionVoteScreen extends Screen {
         }
     }
 
+    private void startPulse(String optionId, boolean big) {
+        pulseOptionId = optionId == null ? "" : optionId;
+        pulseAtMillis = Util.getMillis();
+        pulseBig = big;
+    }
+
     private void castVote(int index) {
         if (!OptionVoteState.isActive()) return;
         List<OptionVotePayload.Entry> candidates = OptionVoteState.getCandidates();
@@ -1584,6 +1685,7 @@ public class OptionVoteScreen extends Screen {
             applyMapEvent(MapVoteInteractionPolicy.Event.LEFT_CLICK_CONFIRM);
             if (changed) {
                 PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), entry.optionId());
+                startPulse(entry.optionId(), false);
             }
             playUiSound(1.05f);
             return;
@@ -1593,6 +1695,7 @@ public class OptionVoteScreen extends Screen {
         OptionVoteState.toggleSelection(entry.optionId());
         if (OptionVoteState.isSelected(entry.optionId())) {
             PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), entry.optionId());
+            startPulse(entry.optionId(), false);
             playUiSound(1.05f);
         } else if (wasSelected) {
             PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), null);
@@ -1851,5 +1954,6 @@ public class OptionVoteScreen extends Screen {
                               boolean focused,
                               boolean selected,
                               float emphasis,
-                              float visibility) {}
+                              float visibility,
+                              float intro) {}
 }

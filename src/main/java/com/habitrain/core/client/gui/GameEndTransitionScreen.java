@@ -219,8 +219,12 @@ extends Screen {
 
     private void renderLaunch(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         float sweep = this.sweepProgress();
-        float local = GameEndTransitionScreen.easeInOutCubic(sweep);
+        float local = TransitionFx.easeInOutQuart(sweep);
         float edgeX = (float)this.width * (1.0f - local);
+        if (edgeX > 0.5f) {
+            // 面板推入时，尚未覆盖的游戏画面随之压暗
+            g.fill(0, 0, Math.round(edgeX), this.height, GameEndTransitionScreen.withAlpha(0, Math.round(140.0f * local)));
+        }
         g.pose().pushPose();
         g.pose().translate(edgeX, 0.0f, 0.0f);
         this.renderComposition(g, sweep);
@@ -235,14 +239,10 @@ extends Screen {
         float winAlpha;
         float emblemT;
         long elapsed = Util.getMillis() - this.startedAtMillis;
-        float titleEnterLinear = Mth.clamp((float)((float)(elapsed - 1150L) / 650.0f), (float)0.0f, (float)1.0f);
-        float titleEnter = GameEndTransitionScreen.easeOutBack(titleEnterLinear);
-        float titleEnterAlpha = GameEndTransitionScreen.easeOutCubic(titleEnterLinear);
         long titleFadeStart = 3000L;
         float titleFade = GameEndTransitionScreen.easeInOutCubic(Mth.clamp((float)((float)(elapsed - titleFadeStart) / 650.0f), (float)0.0f, (float)1.0f));
         long winEnterStart = titleFadeStart + 650L + 120L;
         float winLinear = Mth.clamp((float)((float)(elapsed - winEnterStart) / 900.0f), (float)0.0f, (float)1.0f);
-        float winT = GameEndTransitionScreen.easeOutBack(winLinear);
         float winAlphaT = GameEndTransitionScreen.easeOutCubic(winLinear);
         float winLift = this.mvpPlayers.isEmpty() ? 0.0f : GameEndTransitionScreen.easeInOutCubic(Mth.clamp((float)((float)(elapsed - winEnterStart - 520L) / 900.0f), (float)0.0f, (float)1.0f));
         long mvpElapsed = Util.getMillis() - this.mvpStageStartMillis();
@@ -250,15 +250,22 @@ extends Screen {
         g.fillGradient(0, 0, this.width, this.height, GameEndTransitionScreen.withAlpha(1116935, 255), GameEndTransitionScreen.withAlpha(-16251126, 255));
         int cx = this.width / 2;
         int cy = this.height / 2 - 18;
-        float glowScale = 1.0f - 0.25f * winAlphaT;
         int glowW = Math.min(600, this.width - 40);
-        int glowH = 230;
-        int gy = cy - glowH / 2;
-        g.fillGradient(cx - glowW / 2, gy, cx + glowW / 2, cy, GameEndTransitionScreen.withAlpha(-7444434, Math.round(30.0f * glowScale)), GameEndTransitionScreen.withAlpha(-7444434, Math.round(8.0f * glowScale)));
-        g.fillGradient(cx - glowW / 2, cy, cx + glowW / 2, gy + glowH, GameEndTransitionScreen.withAlpha(-7444434, Math.round(8.0f * glowScale)), GameEndTransitionScreen.withAlpha(-7444434, 0));
+        // 胜方揭晓后，中部柔光由暗金染成胜方色，整个画面随结果换气氛
+        int glowColor = TransitionFx.mixRgb(-7444434, this.winColor(), 0.7f * winAlphaT);
+        float titleBloom = TransitionFx.segment(elapsed, 1250.0f, 220.0f) * (1.0f - 0.6f * TransitionFx.segment(elapsed, 1470.0f, 700.0f));
+        float winBloom = TransitionFx.segment(elapsed, winEnterStart + 180.0f, 200.0f) * (1.0f - 0.55f * TransitionFx.segment(elapsed, winEnterStart + 380.0f, 900.0f));
+        float breathe = 0.85f + 0.15f * Mth.sin((float)elapsed / 900.0f);
+        float glowAlpha = (0.55f + 0.9f * Math.max(titleBloom, winBloom)) * breathe * (1.0f - 0.6f * mvpStageT);
+        TransitionFx.drawGlow(g, cx, cy + 12, glowW / 2.0f, 72.0f, glowColor, Math.round(62.0f * glowAlpha));
         float ambientStrength = 1.0f - 0.72f * mvpStageT;
         this.renderFlowingLines(g, ambientStrength);
         this.renderParticles(g, ambientStrength);
+        // 胜方落定瞬间的整屏色闪
+        float flash = 1.0f - TransitionFx.segment(elapsed, winEnterStart + 200.0f, 480.0f);
+        if (elapsed >= winEnterStart + 200L && flash > 0.0f) {
+            g.fill(0, 0, this.width, this.height, GameEndTransitionScreen.withAlpha(this.winColor(), Math.round(46.0f * flash * flash)));
+        }
         if (mvpStageT > 0.0f) {
             this.renderMvpBackdrop(g, mvpStageT, this.mvpPlayers.size() == 1);
             if (this.mvpPlayers.size() == 1) {
@@ -267,27 +274,58 @@ extends Screen {
                 this.renderSquadMvp(g, Math.max(0L, mvpElapsed), mvpStageT);
             }
         }
+        int emblemY = cy - 98;
         if ((emblemT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sweep - 0.3f) / 0.25f), (float)0.0f, (float)1.0f))) > 0.0f) {
-            this.drawEmblem(g, cx, cy - 98, Math.round(230.0f * emblemT * (1.0f - 0.65f * titleFade) * (1.0f - mvpStageT)), 1.0f);
+            float pop = TransitionFx.easeOutBack(Mth.clamp((sweep - 0.3f) / 0.4f, 0.0f, 1.0f), 2.2f);
+            g.pose().pushPose();
+            g.pose().translate(cx, emblemY, 0.0f);
+            g.pose().scale(pop, pop, 1.0f);
+            g.pose().translate(-cx, -emblemY, 0.0f);
+            this.drawEmblem(g, cx, emblemY, Math.round(230.0f * emblemT * (1.0f - 0.65f * titleFade) * (1.0f - mvpStageT)), 1.0f, (float)elapsed / 1000.0f * 1.6f);
+            g.pose().popPose();
         }
-        float titleAlpha = 255.0f * titleEnterAlpha * (1.0f - titleFade);
+        // 标题落下时：耀光线展开 + 徽章冲击波
+        float flareOpen = TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, 1150.0f, 520.0f));
+        float flareFlash = 1.0f - TransitionFx.segment(elapsed, 1400.0f, 600.0f);
+        int flareAlpha = Math.round((60.0f + 170.0f * flareFlash) * (1.0f - titleFade));
+        TransitionFx.drawFlare(g, cx, cy + 34, glowW * 0.5f * flareOpen, -7776, flareAlpha);
+        float ring = TransitionFx.segment(elapsed, 1200.0f, 820.0f);
+        if (ring > 0.0f && ring < 1.0f) {
+            TransitionFx.drawRing(g, cx, emblemY, 14.0f + 150.0f * TransitionFx.easeOutCubic(ring), -7776, Math.round(170.0f * (1.0f - ring) * (1.0f - ring)));
+        }
+        // 「对局结束」：逐字落下、字距收拢；退场时逐字上飘消散
         MutableComponent title = Component.translatable((String)"gameend.habitrain_core.title").copy().withStyle(ChatFormatting.BOLD);
-        if (titleAlpha > 0.5f) {
-            this.drawScaledCentered(g, (Component)title, cx, (float)cy - 18.0f * titleFade, 3.25f * (0.84f + 0.16f * titleEnter) * (1.0f + 0.04f * titleFade), GameEndTransitionScreen.withAlpha(-7776, Math.round(titleAlpha)));
-        }
+        float titleIn = TransitionFx.segment(elapsed, 1100.0f, 850.0f);
+        float titleOut = TransitionFx.segment(elapsed, (float)titleFadeStart, 650.0f);
+        float tracking = 2.0f + 14.0f * (1.0f - TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, 1100.0f, 1500.0f)));
+        TransitionFx.drawCascade(g, this.font, title, cx, cy, 3.25f, -7776, titleIn, titleOut, tracking, TransitionFx.Cascade.DROP);
         if ((winAlpha = 255.0f * winAlphaT) > 0.5f) {
             Component win = this.winLine();
-            float centeredY = (float)cy + 8.0f + 34.0f * (1.0f - winAlphaT);
+            float centeredY = (float)cy + 8.0f;
             float headerY = Math.max(14.0f, Math.min(30.0f, (float)this.height * 0.072f));
             float winY = Mth.lerp((float)winLift, (float)centeredY, (float)headerY);
-            float centerScale = this.fittedScale(win) * (0.82f + 0.18f * winT);
+            float centerScale = this.fittedScale(win);
             float headerScale = Math.max(0.82f, Math.min(1.75f, this.fittedScale(win) * 0.55f));
             float winScale = Mth.lerp((float)winLift, (float)centerScale, (float)headerScale);
-            this.drawScaledCentered(g, win, cx, winY, winScale, GameEndTransitionScreen.withAlpha(this.winColor(), Math.round(winAlpha)));
+            // 胜方：逐字"盖章"砸入，落定时冲击环 + 火花
+            float impactY = centeredY + 4.5f * centerScale;
+            float impact = TransitionFx.segment(elapsed, winEnterStart + 200.0f, 900.0f);
+            if (impact > 0.0f && impact < 1.0f && winLift < 0.5f) {
+                float r = 20.0f + Math.min(260.0f, this.width * 0.42f) * TransitionFx.easeOutCubic(impact);
+                TransitionFx.drawRing(g, cx, impactY, r, this.winColor(), Math.round(180.0f * (1.0f - impact) * (1.0f - impact)));
+                TransitionFx.drawRing(g, cx, impactY, r * 0.7f, -7776, Math.round(110.0f * (1.0f - impact) * (1.0f - impact)));
+            }
+            TransitionFx.drawSparks(g, cx, impactY, TransitionFx.segment(elapsed, winEnterStart + 200.0f, 1000.0f), 44, 3, Math.min(300.0f, this.width * 0.45f), this.winColor(), 230);
+            float winRule = TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, winEnterStart + 220.0f, 700.0f));
+            TransitionFx.drawFlare(g, cx, Math.round(winY + 9.0f * winScale + 6.0f), glowW * 0.45f * winRule * (1.0f - 0.35f * winLift), this.winColor(), Math.round(150.0f * winRule));
+            TransitionFx.drawCascade(g, this.font, win, cx, winY, winScale, GameEndTransitionScreen.withAlpha(this.winColor(), 255), winLinear, 0.0f, 0.0f, TransitionFx.Cascade.STAMP);
         }
         if ((modeT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((winLinear - 0.45f) / 0.55f), (float)0.0f, (float)1.0f))) > 0.01f) {
-            float modeY = Mth.lerp((float)winLift, (float)((float)cy + 58.0f), (float)Math.max(38.0f, Math.min(54.0f, (float)this.height * 0.145f)));
-            this.drawScaledCentered(g, this.modeLine(), cx, modeY, Mth.lerp((float)winLift, (float)0.9f, (float)0.78f), GameEndTransitionScreen.withAlpha(-4675179, Math.round(205.0f * modeT)));
+            float modeY = Mth.lerp((float)winLift, (float)((float)cy + 58.0f), (float)Math.max(38.0f, Math.min(54.0f, (float)this.height * 0.145f))) + 8.0f * (1.0f - modeT);
+            int modeAlpha = Math.round(205.0f * modeT);
+            if (modeAlpha > 5) {
+                this.drawScaledCentered(g, this.modeLine(), cx, modeY, Mth.lerp((float)winLift, (float)0.9f, (float)0.78f), GameEndTransitionScreen.withAlpha(-4675179, modeAlpha));
+            }
         }
     }
 
@@ -852,12 +890,16 @@ extends Screen {
 
     private void renderExit(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         float exit = this.exitProgress();
-        float local = GameEndTransitionScreen.easeInOutCubic(exit);
+        float local = TransitionFx.easeInOutQuart(exit);
         float edgeX = (float)this.width * (1.0f - local);
         g.pose().pushPose();
         g.pose().translate((float)(-this.width) * local, 0.0f, 0.0f);
         this.renderComposition(g, 1.0f);
         g.pose().popPose();
+        // 滑出期间整体压暗，面板离场更有"落幕"感
+        if (edgeX > 0.5f) {
+            g.fill(0, 0, Math.round(edgeX), this.height, GameEndTransitionScreen.withAlpha(0, Math.round(110.0f * TransitionFx.easeInCubic(exit))));
+        }
         if (exit < 1.0f) {
             this.renderSlideEdge(g, edgeX, local, -1);
         }
@@ -955,17 +997,11 @@ extends Screen {
         }
     }
 
-    private void drawEmblem(GuiGraphics g, int cx, int cy, int alpha, float breathe) {
+    private void drawEmblem(GuiGraphics g, int cx, int cy, int alpha, float breathe, float spin) {
         if (alpha <= 0) {
             return;
         }
-        int ringR = 24;
-        for (int i = 0; i < 40; ++i) {
-            double a = (double)i * Math.PI * 2.0 / 40.0;
-            int x = cx + (int)Math.round(Math.cos(a) * (double)ringR);
-            int y = cy + (int)Math.round(Math.sin(a) * (double)ringR);
-            g.fill(x, y, x + 1, y + 1, GameEndTransitionScreen.withAlpha(-7444434, Math.round((float)alpha * 0.55f)));
-        }
+        TransitionFx.drawOrbit(g, cx, cy, 24, spin, -7444434, -7776, alpha);
         GameEndTransitionScreen.drawDiamond(g, cx, cy, 15, GameEndTransitionScreen.withAlpha(-7444434, alpha));
         GameEndTransitionScreen.drawDiamond(g, cx, cy, 11, GameEndTransitionScreen.withAlpha(-2511271, alpha));
         GameEndTransitionScreen.drawDiamond(g, cx, cy, 6, GameEndTransitionScreen.withAlpha(-7776, alpha));
@@ -1058,13 +1094,6 @@ extends Screen {
     private static float easeOutCubic(float value) {
         float inverse = 1.0f - value;
         return 1.0f - inverse * inverse * inverse;
-    }
-
-    private static float easeOutBack(float value) {
-        float t = Mth.clamp((float)value, (float)0.0f, (float)1.0f);
-        float c1 = 1.70158f;
-        float c3 = c1 + 1.0f;
-        return 1.0f + c3 * (float)Math.pow(t - 1.0f, 3.0) + c1 * (float)Math.pow(t - 1.0f, 2.0);
     }
 
     private static int withAlpha(int color, int alpha) {
