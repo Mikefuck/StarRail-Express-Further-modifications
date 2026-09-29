@@ -17,14 +17,15 @@ public abstract class SwiftWindThrowCooldownMixin {
     @Inject(method = "(Lorg/agmas/noellesroles/packet/TryThrowItemPacket;Lnet/fabricmc/fabric/api/networking/v1/ServerPlayNetworking$Context;)V",
             at = @At(value = "NEW", target = "org/agmas/noellesroles/content/entity/ThrowingKnifeEntity"),
             require = 1, allow = 1)
-    private static void habitrain$frenzyThrowCooldown(TryThrowItemPacket payload,
+    private static void habitrain$throwCooldown(TryThrowItemPacket payload,
             ServerPlayNetworking.Context context, CallbackInfo ci) {
         var player = context.player();
-        // Start at throw time; a player hit clears this even if armour prevents a kill.
         // This point is after the upstream cooldown write and all rejected-throw checks.
-        if (SwiftWindComponent.isPsychoActive(player)) {
-            player.getCooldowns().addCooldown(ModItems.THROWING_KNIFE,
-                    SwiftWindComponent.PSYCHO_THROWING_KNIFE_CD_TICKS);
+        if (HabiRoles.isHabiRole(player, HabiRoles.SWIFT_WIND)) {
+            int cooldownTicks = SwiftWindComponent.isPsychoActive(player)
+                    ? SwiftWindComponent.PSYCHO_THROWING_KNIFE_CD_TICKS
+                    : SwiftWindComponent.THROWING_KNIFE_CD_SECONDS * 20;
+            player.getCooldowns().addCooldown(ModItems.THROWING_KNIFE, cooldownTicks);
         }
     }
 

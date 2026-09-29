@@ -36,7 +36,7 @@ public final class SwiftWindComponent implements RoleComponent {
             HabiTrainCore.id("swift_wind"), SwiftWindComponent.class);
 
     public static final int DASH_BLOCKS = 6;
-    public static final int THROWING_KNIFE_CD_SECONDS = 60;
+    public static final int THROWING_KNIFE_CD_SECONDS = 30;
     public static final int PSYCHO_THROWING_KNIFE_CD_TICKS = 5 * 20;
     public static final int STARTING_BALANCE = 100;
     private static final String PSYCHO_KNIFE_TAG = "habitrain_swift_wind_psycho_knife";
