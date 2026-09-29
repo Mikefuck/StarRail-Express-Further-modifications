@@ -19,7 +19,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.agmas.noellesroles.init.ModEffects;
 import org.jetbrains.annotations.NotNull;
 import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
@@ -53,6 +52,7 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
      * 此 map 只负责到期后恢复可见。
      */
     private static final Map<UUID, Integer> HIDDEN_BODIES = new HashMap<>();
+    private static final Map<UUID, Long> MUTED_UNTIL = new java.util.concurrent.ConcurrentHashMap<>();
 
     public MimeKillerComponent(Player player) {
         this.player = player;
@@ -166,6 +166,19 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
     /** 局终 / 重置时清空隐藏表，防止静态 map 泄漏。 */
     public static void clearHiddenBodies() {
         HIDDEN_BODIES.clear();
+        MUTED_UNTIL.clear();
+    }
+
+    /** 被默剧杀手禁言（聊天 + 语音）；纯服务端状态，不依赖任何药水效果。 */
+    public static boolean isMuted(Player player) {
+        if (player == null) return false;
+        Long until = MUTED_UNTIL.get(player.getUUID());
+        if (until == null) return false;
+        if (player.level().getGameTime() >= until) {
+            MUTED_UNTIL.remove(player.getUUID());
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -247,10 +260,7 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
         int ticks = MIME_DURATION_SECONDS * 20;
         target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, ticks, 255, false, false, true));
         target.addEffect(new MobEffectInstance(MobEffects.JUMP, ticks, 128, false, false, true));
-        try {
-            target.addEffect(new MobEffectInstance(ModEffects.VOICE_SILENCE, ticks, 0, false, false, false));
-            target.addEffect(new MobEffectInstance(ModEffects.CHAT_BAN, ticks, 0, false, false, false));
-        } catch (Throwable ignored) {}
+        MUTED_UNTIL.put(target.getUUID(), target.level().getGameTime() + ticks);
 
         try {
             KEY.maybeGet(self).ifPresent(comp -> comp.rootedTicks.put(target.getUUID(), ticks));

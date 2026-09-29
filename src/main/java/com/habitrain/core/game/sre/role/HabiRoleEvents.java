@@ -5,6 +5,7 @@ import com.habitrain.core.game.sre.role.component.FlowerGirlComponent;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -61,6 +62,10 @@ public final class HabiRoleEvents {
             );
             return InteractionResultHolder.sidedSuccess(stack, world.isClientSide());
         });
+
+        // 默剧杀手禁言：聊天
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) ->
+                !MimeKillerComponent.isMuted(sender));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             MimeKillerComponent.tickHiddenBodies(server.getAllLevels());

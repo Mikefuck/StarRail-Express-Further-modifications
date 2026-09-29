@@ -34,7 +34,8 @@ public final class SlothVoicePlugin implements VoicechatPlugin {
             if (vcPlayer == null) return;
             Object entity = vcPlayer.getPlayer();
             if (!(entity instanceof ServerPlayer sp)) return;
-            if (SlothComponent.isSleepingSloth(sp)) {
+            if (SlothComponent.isSleepingSloth(sp)
+                    || com.habitrain.core.game.sre.role.component.MimeKillerComponent.isMuted(sp)) {
                 event.cancel();
             }
         } catch (Throwable ignored) {
