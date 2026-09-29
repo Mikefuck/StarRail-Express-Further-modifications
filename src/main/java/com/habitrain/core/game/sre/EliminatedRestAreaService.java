@@ -2,7 +2,6 @@ package com.habitrain.core.game.sre;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
-import com.habitrain.core.network.EliminatedRestTogglePayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.compat.TrainVoicePlugin;
@@ -10,12 +9,16 @@ import io.wifi.starrailexpress.event.AllowSpectatorPlayerInAreas;
 import io.wifi.starrailexpress.event.OnGameEnd;
 import io.wifi.starrailexpress.event.OnGameStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeath;
+import com.mojang.brigadier.context.CommandContext;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -64,6 +67,8 @@ public final class EliminatedRestAreaService {
     private static final Map<UUID, RestPromptState> PROMPT_STATES = new HashMap<>();
     private static final Map<UUID, Long> TOGGLE_COOLDOWN_UNTIL = new HashMap<>();
     private static final int TOGGLE_COOLDOWN_TICKS = 10;
+    /** 往返等待房间的玩家命令；客户端右上角提示里显示的就是它。 */
+    public static final String REST_COMMAND = "rest";
     private static boolean initialized;
 
     private EliminatedRestAreaService() {
@@ -105,8 +110,10 @@ public final class EliminatedRestAreaService {
         });
         ServerTickEvents.END_SERVER_TICK.register(EliminatedRestAreaService::syncPromptStates);
 
-        ServerPlayNetworking.registerGlobalReceiver(EliminatedRestTogglePayload.TYPE, (payload, context) ->
-                context.server().execute(() -> toggle(context.player())));
+        // 不占用按键：出局玩家在右上角提示里看到 /rest，输入即可往返等待房间。
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(Commands.literal(REST_COMMAND)
+                        .executes(EliminatedRestAreaService::executeRestCommand)));
 
         // The rest area is deliberately outside the map's playArea, so SRE's
         // per-tick spectator limiter (limitPlayerToBox against the playArea)
@@ -291,14 +298,35 @@ public final class EliminatedRestAreaService {
         return true;
     }
 
-    private static void toggle(ServerPlayer player) {
+    private static int executeRestCommand(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
         if (player == null) {
-            return;
+            ctx.getSource().sendFailure(Component.translatable("commands.habitrain_core.rest.player_only"));
+            return 0;
         }
+        ToggleResult result = toggle(player);
+        switch (result) {
+            case ENTERED -> ctx.getSource().sendSuccess(
+                    () -> Component.translatable("commands.habitrain_core.rest.entered"), false);
+            case RETURNED -> ctx.getSource().sendSuccess(
+                    () -> Component.translatable("commands.habitrain_core.rest.returned"), false);
+            case COOLDOWN -> ctx.getSource().sendFailure(
+                    Component.translatable("commands.habitrain_core.rest.cooldown"));
+            case NOT_RUNNING -> ctx.getSource().sendFailure(
+                    Component.translatable("commands.habitrain_core.rest.not_running"));
+            case NOT_ELIMINATED -> ctx.getSource().sendFailure(
+                    Component.translatable("commands.habitrain_core.rest.not_eliminated"));
+        }
+        return result == ToggleResult.ENTERED || result == ToggleResult.RETURNED ? 1 : 0;
+    }
+
+    private enum ToggleResult { ENTERED, RETURNED, COOLDOWN, NOT_RUNNING, NOT_ELIMINATED }
+
+    private static ToggleResult toggle(ServerPlayer player) {
         long now = player.serverLevel().getGameTime();
         Long until = TOGGLE_COOLDOWN_UNTIL.get(player.getUUID());
         if (until != null && now < until) {
-            return;
+            return ToggleResult.COOLDOWN;
         }
         TOGGLE_COOLDOWN_UNTIL.put(player.getUUID(), now + TOGGLE_COOLDOWN_TICKS);
 
@@ -309,23 +337,24 @@ public final class EliminatedRestAreaService {
             if (matchLevel == null || matchWorld == null || !matchWorld.isRunning()) {
                 RESTING_MATCH_LEVELS.remove(player.getUUID());
                 syncPrompt(player, true);
-                return;
+                return ToggleResult.NOT_RUNNING;
             }
             returnToSpectator(player, matchLevel);
-            return;
+            return ToggleResult.RETURNED;
         }
 
         ServerLevel matchLevel = player.serverLevel();
         SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(matchLevel);
         if (gameWorld == null || !gameWorld.isRunning()) {
             syncPrompt(player, true);
-            return;
+            return ToggleResult.NOT_RUNNING;
         }
         if (!ELIMINATED_PLAYERS.contains(player.getUUID()) || !GameUtils.isPlayerEliminated(player)) {
             syncPrompt(player, true);
-            return;
+            return ToggleResult.NOT_ELIMINATED;
         }
         moveToRestArea(player, matchLevel);
+        return ToggleResult.ENTERED;
     }
 
     private static void moveToRestArea(ServerPlayer player, ServerLevel matchLevel) {

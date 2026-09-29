@@ -50,6 +50,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // HUD 叠加层 + 快捷键注册
         new HudRegistrar();
         EliminatedRestPromptState.registerLifecycle();
+        EliminatedRestCommandTip.register();
 
         // 任务点统一在世界渲染 LAST 阶段直绘，避免深度状态和延迟 buffer 重新遮挡。
         TaskOverlayDrawer.registerFinalPass();

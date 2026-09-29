@@ -53,9 +53,6 @@ public class VoteKeyHandler {
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openVoteKey.consumeClick()) {
-                if (EliminatedRestAreaKeyHandler.handleVoteKeyPress(client)) {
-                    continue;
-                }
                 openVote(client);
             }
         });
