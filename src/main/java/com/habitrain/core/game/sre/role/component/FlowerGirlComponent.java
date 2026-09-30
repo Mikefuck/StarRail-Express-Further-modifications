@@ -6,8 +6,6 @@ import com.habitrain.core.game.sre.role.HabiRoles;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREArmorPlayerComponent;
-import io.wifi.starrailexpress.cca.SREWeakArmorPlayerComponent;
-import io.wifi.starrailexpress.cca.SREPlayerPsychoComponent;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -29,14 +27,16 @@ import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
 import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 卖花女：赠送花束、静止落叶计时、死亡清场。
+ * 卖花女：赠送花束、静止落叶计时、死亡回收赠花护盾。
  */
 public final class FlowerGirlComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<FlowerGirlComponent> KEY = ComponentRegistry.getOrCreate(
@@ -56,6 +56,12 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     private final Map<UUID, Integer> stillTicks = new HashMap<>();
     private final Map<UUID, Vec3> lastPos = new HashMap<>();
     private final Map<UUID, Boolean> rewarded = new HashMap<>();
+    /**
+     * 目标 UUID → 各层未消耗馨香护盾的"垫底层数"（赠花前目标已有的护盾层数）。
+     * 护盾按栈处理：后加的层先被消耗，目标护盾数跌到 ≤ 垫底层数即视为该层馨香护盾已消耗。
+     * 护盾可能经由击杀抵挡、狙击、限时盾到期等多条上游路径被扣减，故每 tick 观察层数而非拦截扣减调用。
+     */
+    private final Map<UUID, List<Integer>> shieldFloors = new HashMap<>();
 
     /** 全服近战免疫截止 gameTime（按玩家 UUID 存于该组件所属卖花女不合适；用静态弱表） */
     private static final Map<UUID, Long> MELEE_IMMUNE_UNTIL = new ConcurrentHashMap<>();
@@ -118,7 +124,11 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
         try {
             SREArmorPlayerComponent armor = SREArmorPlayerComponent.KEY.get(target);
             if (armor != null) {
+                int floor = armor.getArmor();
                 armor.addArmor();
+                if (comp != null) {
+                    comp.shieldFloors.computeIfAbsent(target.getUUID(), k -> new ArrayList<>()).add(floor);
+                }
             }
         } catch (Throwable ignored) {}
 
@@ -162,6 +172,8 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     public void serverTick() {
         if (!(player instanceof ServerPlayer self) || self.level().isClientSide) return;
         if (!HabiRoles.isHabiRole(self, HabiRoles.FLOWER_GIRL)) return;
+
+        pruneConsumedShields(self.level());
 
         Iterator<Map.Entry<UUID, Integer>> it = stillTicks.entrySet().iterator();
         while (it.hasNext()) {
@@ -216,36 +228,69 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
         }
     }
 
-    /** 卖花女死亡：清全场花束标记、护盾、发光。 */
-    public static void clearAllBouquets(ServerLevel level) {
-        if (level == null) return;
-        for (ServerPlayer p : level.players()) {
+    /** 卖花女死亡：仅回收其赠花对象的花束、馨香护盾与发光。 */
+    public static void revokeGifts(ServerPlayer flowerGirl) {
+        if (flowerGirl == null || !(flowerGirl.level() instanceof ServerLevel level)) return;
+        FlowerGirlComponent comp;
+        try {
+            comp = KEY.get(flowerGirl);
+        } catch (Throwable ignored) {
+            return;
+        }
+        comp.pruneConsumedShields(level);
+        for (UUID id : giftedIds(comp)) {
+            if (!(level.getPlayerByUUID(id) instanceof ServerPlayer p)) continue;
             // 移除花束物品
             for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
                 if (HabiRoleItems.isBouquet(p.getInventory().getItem(i))) {
                     p.getInventory().setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
                 }
             }
-            // 清护盾
-            try {
-                SREArmorPlayerComponent armor = SREArmorPlayerComponent.KEY.get(p);
-                if (armor != null) armor.clear();
-                SREWeakArmorPlayerComponent.KEY.get(p).clear();
-                SREPlayerPsychoComponent.KEY.get(p).setArmour(0);
-            } catch (Throwable ignored) {}
-            p.removeEffect(MobEffects.GLOWING);
-            try {
-                FlowerGirlComponent c = KEY.get(p);
-                c.stillTicks.clear();
-                c.lastPos.clear();
-                c.rewarded.clear();
-            } catch (Throwable ignored) {}
+            // 只收回尚未消耗的馨香护盾层，不动其他来源的护盾
+            List<Integer> floors = comp.shieldFloors.get(id);
+            int intact = floors == null ? 0 : floors.size();
+            if (intact > 0) {
+                try {
+                    SREArmorPlayerComponent armor = SREArmorPlayerComponent.KEY.get(p);
+                    if (armor != null) armor.removeArmor(Math.min(intact, armor.getArmor()));
+                } catch (Throwable ignored) {}
+            }
+            if (Boolean.TRUE.equals(comp.rewarded.get(id))) {
+                p.removeEffect(MobEffects.GLOWING);
+            }
         }
-        MELEE_IMMUNE_UNTIL.clear();
+        comp.shieldFloors.clear();
+        comp.stillTicks.clear();
+        comp.lastPos.clear();
+        comp.rewarded.clear();
+        MELEE_IMMUNE_UNTIL.remove(flowerGirl.getUUID());
+    }
+
+    /** 护盾数已跌到垫底层数及以下的馨香护盾层视为已消耗，移出追踪。目标离线时保持原状。 */
+    private void pruneConsumedShields(net.minecraft.world.level.Level level) {
+        for (Map.Entry<UUID, List<Integer>> e : shieldFloors.entrySet()) {
+            if (e.getValue().isEmpty()) continue;
+            if (!(level.getPlayerByUUID(e.getKey()) instanceof ServerPlayer target)) continue;
+            int current;
+            try {
+                current = SREArmorPlayerComponent.KEY.get(target).getArmor();
+            } catch (Throwable ignored) {
+                continue;
+            }
+            e.getValue().removeIf(floor -> current <= floor);
+        }
+    }
+
+    /** 赠花对象：静止追踪表（仅成功赠花时写入）与护盾追踪表的并集。 */
+    private static java.util.Set<UUID> giftedIds(FlowerGirlComponent comp) {
+        java.util.Set<UUID> ids = new java.util.HashSet<>(comp.rewarded.keySet());
+        ids.addAll(comp.shieldFloors.keySet());
+        return ids;
     }
 
     @Override
     public void init() {
+        shieldFloors.clear();
         stillTicks.clear();
         lastPos.clear();
         rewarded.clear();
@@ -287,13 +332,33 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
             rewardedTag.add(line);
         }
         tag.put("Rewarded", rewardedTag);
+        ListTag shieldTag = new ListTag();
+        for (Map.Entry<UUID, List<Integer>> e : shieldFloors.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            CompoundTag line = new CompoundTag();
+            line.putUUID("Id", e.getKey());
+            line.putIntArray("Floors", e.getValue());
+            shieldTag.add(line);
+        }
+        tag.put("ShieldFloors", shieldTag);
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
+        shieldFloors.clear();
         stillTicks.clear();
         lastPos.clear();
         rewarded.clear();
+        if (tag.contains("ShieldFloors", Tag.TAG_LIST)) {
+            ListTag shieldTag = tag.getList("ShieldFloors", Tag.TAG_COMPOUND);
+            for (int i = 0; i < shieldTag.size(); i++) {
+                CompoundTag line = shieldTag.getCompound(i);
+                if (!line.hasUUID("Id")) continue;
+                List<Integer> floors = new ArrayList<>();
+                for (int floor : line.getIntArray("Floors")) floors.add(floor);
+                shieldFloors.put(line.getUUID("Id"), floors);
+            }
+        }
         if (tag.contains("StillTicks", Tag.TAG_LIST)) {
             ListTag still = tag.getList("StillTicks", Tag.TAG_COMPOUND);
             for (int i = 0; i < still.size(); i++) {

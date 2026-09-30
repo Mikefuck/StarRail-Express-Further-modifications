@@ -114,9 +114,7 @@ public final class HabiRoleHooks {
                 .combat(new RoleCombatHooks() {
                     @Override
                     public void onDeath(ServerPlayer player, ResourceLocation deathReason, RoleHookContext ctx) {
-                        if (player != null && player.level() instanceof ServerLevel level) {
-                            FlowerGirlComponent.clearAllBouquets(level);
-                        }
+                        FlowerGirlComponent.revokeGifts(player);
                     }
                 })
                 .build();
