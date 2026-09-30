@@ -431,9 +431,13 @@ public final class SevenSinV2BehaviorHooks {
         }
     }
 
-    /** All inventory items are eligible except keys, correspondence and food/drink. */
+    /** All inventory items are eligible except keys, correspondence, food/drink and shop markers. */
     private static boolean canEnvyTake(@Nullable ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
+        // Upstream shops park vanilla command blocks in hidden slots as "already bought" markers
+        // (e.g. Firefighter fire axe/extinguisher, Accountant passbook); they are not real loot.
+        if (stack.is(Items.COMMAND_BLOCK) || stack.is(Items.CHAIN_COMMAND_BLOCK)
+                || stack.is(Items.REPEATING_COMMAND_BLOCK)) return false;
         var item = stack.getItem();
         if (item instanceof KeyItem || item instanceof NoteItem) return false;
         // Include separately implemented role keys/letters and plain bridge items.
