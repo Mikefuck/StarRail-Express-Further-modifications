@@ -27,9 +27,8 @@ public final class OptionVoteState {
      */
     private static boolean uiHiddenByUser = false;
     /**
-     * 地图投票结算后是否已触发过一次开局转场开屏。
-     * 必须边沿触发：电平触发会在重处理同一 resolved 包时反复 begin()+重开加载页，
-     * 清掉玩家的 hide 意图。
+     * 地图投票结算后是否已触发过一次开局流程（收起投票页、挂出重置进度牌）。
+     * 必须边沿触发：电平触发会在 1Hz 重发同一 resolved 包时反复处理。
      */
     private static boolean mapLaunchTransitionConsumed = false;
 
@@ -72,7 +71,7 @@ public final class OptionVoteState {
         boolean mapResolved = !active
                 && "map".equals(voteId)
                 && !resolvedOptionId.isBlank();
-        // 边沿触发：同一局地图结算只开一次加载转场，避免重处理清掉 hide 意图
+        // 边沿触发：同一局地图结算只处理一次
         boolean shouldStartMapTransition = mapResolved && !mapLaunchTransitionConsumed;
         if (shouldStartMapTransition) {
             mapLaunchTransitionConsumed = true;

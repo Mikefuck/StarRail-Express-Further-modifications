@@ -1,53 +1,10 @@
-/*
- * Decompiled with CFR 0.152.
- *
- * Could not load the following classes:
- *  com.google.common.collect.Multimap
- *  com.habitrain.core.client.gui.GameEndOverlayState
- *  com.habitrain.core.client.gui.OptionVoteTexts
- *  com.habitrain.core.client.gui.VoteLaunchOverlayState
- *  com.mojang.authlib.GameProfile
- *  com.mojang.math.Axis
- *  net.minecraft.ChatFormatting
- *  net.minecraft.Util
- *  net.minecraft.client.Minecraft
- *  net.minecraft.client.gui.GuiGraphics
- *  net.minecraft.client.gui.screens.Screen
- *  net.minecraft.client.gui.screens.inventory.InventoryScreen
- *  net.minecraft.client.multiplayer.ClientLevel
- *  net.minecraft.client.player.AbstractClientPlayer
- *  net.minecraft.client.player.RemotePlayer
- *  net.minecraft.core.HolderLookup$Provider
- *  net.minecraft.core.RegistryAccess
- *  net.minecraft.core.RegistryAccess$Frozen
- *  net.minecraft.core.registries.BuiltInRegistries
- *  net.minecraft.locale.Language
- *  net.minecraft.network.chat.Component
- *  net.minecraft.network.chat.Component$Serializer
- *  net.minecraft.network.chat.FormattedText
- *  net.minecraft.network.chat.MutableComponent
- *  net.minecraft.resources.ResourceLocation
- *  net.minecraft.util.Mth
- *  net.minecraft.world.entity.EquipmentSlot
- *  net.minecraft.world.entity.LivingEntity
- *  net.minecraft.world.entity.Pose
- *  net.minecraft.world.entity.player.PlayerModelPart
- *  net.minecraft.world.item.Item
- *  net.minecraft.world.item.ItemStack
- *  net.minecraft.world.item.Items
- *  net.minecraft.world.level.ItemLike
- */
 package com.habitrain.core.client.gui;
 
-import com.habitrain.core.client.mvp.MvpAnimationController;
-import com.habitrain.core.client.mvp.MvpAnimationDefinition;
-import com.habitrain.core.client.mvp.MvpAnimationSelector;
-import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.MvpAnimationSettings;
+import com.habitrain.core.client.mvp.MvpStillPose;
 import com.habitrain.core.network.GameEndTransitionPayload;
 import com.mojang.authlib.GameProfile;
-import com.mojang.math.Axis;
-import java.util.ArrayList;
+import com.mojang.blaze3d.platform.Window;
+import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,32 +21,100 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.RemotePlayer;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.ItemLike;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
-public final class GameEndTransitionScreen
-extends Screen {
-    private static final List<ResourceLocation> KILLER_KNIFE_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"knife"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"knife"));
-    private static final List<ResourceLocation> SHERIFF_REVOLVER_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"revolver"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"revolver"));
-    private static final List<ResourceLocation> NEUTRAL_CROWBAR_IDS = List.of(ResourceLocation.fromNamespaceAndPath((String)"trainmurdermystery", (String)"crowbar"), ResourceLocation.fromNamespaceAndPath((String)"starrailexpress", (String)"crowbar"));
+/**
+ * 对局结束转场：一张纪念车票像纸片一样从屏幕上方左右摇摆着飘落，越飘越近，最后底边先贴上屏幕、
+ * 上半张随之铺平。
+ *
+ * <p>节奏刻意压得很慢、很静：落定后先是一阵寂静；随后胜方印章伴着一声心跳重重盖下，
+ * 印泥顺着章框往下淌。若有 MVP，数据像打字机一样一行行敲出来；停顿片刻后，票面左下角的黑暗慢慢漫开，
+ * 一个只剩轮廓光的人影从黑暗里一点点浮上来（{@link MvpStillPose} 固定姿势，头歪着盯住镜头）——
+ * 浮到头时人影伴着心跳清清楚楚地显形，并缓缓向镜头靠近一点。
+ * 交还时车票迅速做旧、泛黄起皱，随后从底边燃起，烧穿处露出大厅。退出时机见 {@link #tick()}。</p>
+ *
+ * <p>车票整张先画进离屏画布（{@link PaperCanvas}），再由 {@link PaperSheet} 以可弯曲的网格贴回屏幕；
+ * 灯光、做旧、燃烧与人影浮现由 {@link TicketShaders} 的着色器逐像素完成，火星与纸灰见 {@link TicketFire}。
+ * 只展示一名 MVP（得分最高者）。</p>
+ */
+public final class GameEndTransitionScreen extends Screen {
+    private static final List<ResourceLocation> KILLER_KNIFE_IDS = List.of(
+            ResourceLocation.fromNamespaceAndPath("trainmurdermystery", "knife"),
+            ResourceLocation.fromNamespaceAndPath("starrailexpress", "knife"));
+    private static final List<ResourceLocation> SHERIFF_REVOLVER_IDS = List.of(
+            ResourceLocation.fromNamespaceAndPath("trainmurdermystery", "revolver"),
+            ResourceLocation.fromNamespaceAndPath("starrailexpress", "revolver"));
+    private static final List<ResourceLocation> NEUTRAL_CROWBAR_IDS = List.of(
+            ResourceLocation.fromNamespaceAndPath("trainmurdermystery", "crowbar"),
+            ResourceLocation.fromNamespaceAndPath("starrailexpress", "crowbar"));
+
+    // ---- 时间轴（毫秒，相对打开时刻） ----
+    /** 车票从屏幕上方摇摆着飘落、贴到屏幕上。 */
+    private static final long FLIGHT_MILLIS = 2_600L;
+    /** 贴上屏幕后纸面被压平前的余颤。 */
+    private static final long SETTLE_MILLIS = 650L;
+    /** 胜方印章盖下。 */
+    private static final long STAMP_AT = FLIGHT_MILLIS + 1_150L;
+    private static final long STAMP_SLAM_MILLIS = 160L;
+    /** 印泥顺着章框往下淌。 */
+    private static final long DRIP_AT = STAMP_AT + 260L;
+    private static final long DRIP_MILLIS = 2_600L;
+    /** 模式与票面其余文字。 */
+    private static final long DETAILS_AT = STAMP_AT + 450L;
+    /** MVP 数据开始打字的计划时刻（MVP 数据晚到则顺延）。 */
+    private static final long MVP_DATA_AT = STAMP_AT + 900L;
+    // ---- MVP 阶段（相对 MVP 数据开始打字） ----
+    /** 打完字停顿片刻，左下角的黑暗开始漫开、人影开始浮现。 */
+    private static final long FIGURE_AT = 2_300L;
+    private static final long FIGURE_RISE_MILLIS = 2_200L;
+    /** 人影浮到头时完全显形。 */
+    private static final long REVEALED_AT = FIGURE_AT + FIGURE_RISE_MILLIS;
+    /** 显形时人影平滑地靠近镜头、显影到位。 */
+    private static final long REVEAL_EASE_MILLIS = 320L;
+    private static final long FIGURE_HOLD_MILLIS = 2_400L;
+    /** 没有 MVP 时，印章盖下后停留多久。 */
+    private static final long NO_MVP_HOLD_MILLIS = 2_600L;
+    /** 尚无 MVP 阶段时 mvpElapsed 的取值（远小于任何时刻，且相减不会溢出）。 */
+    private static final long NO_MVP = Long.MIN_VALUE / 4L;
+    // ---- 退场：做旧 → 燃烧（相对退场开始） ----
+    private static final long AGE_MILLIS = 1_000L;
+    private static final long BURN_AT = 800L;
+    private static final long BURN_MILLIS = 2_600L;
+    private static final long EXIT_MILLIS = BURN_AT + BURN_MILLIS + 600L;
+    /** 退场最后这段时间里残余的火星与纸灰淡出。 */
+    private static final long EMBER_FADE_MILLIS = 500L;
+    /** 投票层/HUD 可能写入深度；转场整体抬到更高深度绘制。 */
+    private static final float LAYER_Z = 400.0f;
+
+    // ---- 配色 ----
+    private static final int VOID = RailArt.NIGHT_0;
+    private static final int GOLD_DARK = RailArt.BRASS_DIM;
+    private static final int GOLD = RailArt.BRASS;
+    private static final int GOLD_BRIGHT = RailArt.BRASS_LIGHT;
+    private static final int IVORY = RailArt.CHAMPAGNE;
+    /** 心跳时屏幕四周泛起的暗红。 */
+    private static final int BLOOD = 0xFF7A0A10;
+
     private final long startedAtMillis = Util.getMillis();
+    private final int serial = 100_000 + Math.floorMod((int) (Util.getMillis() / 1000L) * 7919, 900_000);
+    private final float fireSeed = Math.floorMod(this.serial, 997) * 0.013f;
     private String winStatusName = "";
     private String modeId = "";
     private String customWinnerId = "";
@@ -97,12 +122,27 @@ extends Screen {
     private String customTitleJson = "";
     private List<GameEndTransitionPayload.MvpPlayer> mvpPlayers = List.of();
     private long mvpAvailableAtMillis;
-    private final Map<UUID, AbstractClientPlayer> previewPlayers = new LinkedHashMap<UUID, AbstractClientPlayer>();
+    private final Map<UUID, AbstractClientPlayer> previewPlayers = new LinkedHashMap<>();
     private ClientLevel previewLevel;
-    private final Map<Integer, ItemStack> victoryWeaponTemplates = new LinkedHashMap<Integer, ItemStack>();
-    private final MvpAnimationController mvpAnimations = new MvpAnimationController();
-    private final Map<UUID, MvpAnimationDefinition> selectedMvpAnimations = new LinkedHashMap<UUID, MvpAnimationDefinition>();
-    private final Set<UUID> mvpAnimationStarted = new HashSet<UUID>();
+    private final Map<Integer, ItemStack> victoryWeaponTemplates = new LinkedHashMap<>();
+
+    // ---- 纸面 ----
+    private final PaperCanvas ticketCanvas = new PaperCanvas();
+    private final PaperCanvas ghostCanvas = new PaperCanvas();
+    private final PaperSheet sheet = new PaperSheet();
+    private final TicketFire fire = new TicketFire(this.fireSeed);
+    /** 车票在画布上的左上角（静止贴屏时即屏幕位置）。 */
+    private float ticketX;
+    private float ticketY;
+    private boolean ghostReady;
+    private long lastFrameMillis;
+
+    /** 已经响过的音效节点。 */
+    private final Set<String> cues = new HashSet<>();
+    /** 本帧打字机已打出的字数，与上一次击键音时的字数。 */
+    private int typedChars;
+    private int typedHeard;
+    private long lastTypeSoundMillis;
     private boolean environmentReady;
     private boolean exitStarted;
     private long exitStartAtMillis;
@@ -110,14 +150,15 @@ extends Screen {
     private boolean gameFinished;
 
     public GameEndTransitionScreen(GameEndTransitionPayload payload) {
-        super((Component)Component.translatable((String)"gameend.habitrain_core.title"));
+        super(Component.translatable("gameend.habitrain_core.title"));
         this.applyPayload(payload);
     }
 
+    @Override
     protected void init() {
         super.init();
-        GameEndOverlayState.setActive((boolean)true);
-        VoteLaunchOverlayState.scheduleGrace((long)0L);
+        GameEndOverlayState.setActive(true);
+        VoteLaunchOverlayState.scheduleGrace(0L);
     }
 
     private void applyPayload(GameEndTransitionPayload payload) {
@@ -159,19 +200,16 @@ extends Screen {
         this.applyPayload(payload);
     }
 
+    @Override
     public void tick() {
-        this.mvpAnimations.tick();
         long now = Util.getMillis();
         if (!this.exitStarted) {
-            boolean hardRelease;
-            long winEnterEndAt = this.startedAtMillis + 1150L + 650L + 1200L + 650L + 120L + 900L;
-            long minExitAt = winEnterEndAt + this.resultHoldMillis();
-            if (!this.mvpPlayers.isEmpty()) {
-                minExitAt = Math.max(winEnterEndAt, this.mvpStageStartMillis()) + this.resultHoldMillis();
-            }
+            long minExitAt = this.mvpPlayers.isEmpty()
+                    ? this.startedAtMillis + STAMP_AT + NO_MVP_HOLD_MILLIS
+                    : this.mvpStageStartMillis() + REVEALED_AT + FIGURE_HOLD_MILLIS;
             boolean normalRelease = this.environmentReady && this.gameFinished;
             boolean environmentFallback = this.gameFinished && now >= minExitAt + 3000L;
-            hardRelease = !this.environmentReady && now >= this.startedAtMillis + 30000L;
+            boolean hardRelease = !this.environmentReady && now >= this.startedAtMillis + 30000L;
             if (now >= minExitAt && (normalRelease || environmentFallback) || hardRelease) {
                 this.startExit(now);
             }
@@ -188,179 +226,767 @@ extends Screen {
         this.exitStartAtMillis = now;
     }
 
-    private long resultHoldMillis() {
-        if (this.mvpPlayers.size() == 1) {
-            return 6900L;
-        }
-        if (this.mvpPlayers.size() > 1) {
-            return 5900L;
-        }
-        return 1500L;
-    }
+    // ==================== 绘制 ====================
 
+    @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        long now = Util.getMillis();
+        long elapsed = now - this.startedAtMillis;
+        long mvpElapsed = this.mvpPlayers.isEmpty() ? NO_MVP : now - this.mvpStageStartMillis();
+        float dt = this.lastFrameMillis == 0L ? 0.0f : Mth.clamp((now - this.lastFrameMillis) / 1000.0f, 0.0f, 0.05f);
+        this.lastFrameMillis = now;
+        long exitElapsed = this.exitStarted ? now - this.exitStartAtMillis : 0L;
+        float age = this.exitStarted ? TransitionFx.easeInOutCubic(exitElapsed / (float) AGE_MILLIS) : 0.0f;
+        float burn = this.exitStarted ? burnProgress(exitElapsed) : 0.0f;
+        this.playSounds(elapsed, mvpElapsed, exitElapsed);
+        float exposure = this.exposure(elapsed, mvpElapsed);
+
+        float margin = Mth.clamp(Math.min(this.width, this.height) * 0.035f, 6.0f, 18.0f);
+        float tw = this.width - margin * 2.0f;
+        float th = this.height - margin * 2.0f;
+        TicketArt.Shape shape = TicketArt.Shape.of(tw, th, 0.8f);
+        this.ticketX = TicketArt.snap(margin);
+        this.ticketY = TicketArt.snap(margin);
+
+        // 1) 离屏：先画 MVP 人像，再画整张车票（人像合成进票面左下角）
+        this.renderGhostCanvas(g, shape, mvpElapsed);
+        this.typedChars = 0;
+        this.ticketCanvas.begin(g);
+        try {
+            g.pose().pushPose();
+            g.pose().translate(this.ticketX, this.ticketY, 0.0f);
+            this.renderTicket(g, shape, elapsed, mvpElapsed);
+            this.sealPaper(g, shape);
+            g.pose().popPose();
+        } finally {
+            this.ticketCanvas.end(g);
+        }
+        this.playTyping(now);
+
+        // 2) 背景：随车票飘近逐渐压暗；燃烧时随烧穿而消退，露出大厅
+        float flight = TransitionFx.clamp01(elapsed / (float) FLIGHT_MILLIS);
+        float cover = TransitionFx.easeInOutCubic(flight / 0.92f);
         if (this.exitStarted) {
-            this.renderExit(g, mouseX, mouseY, partialTick);
-            return;
-        }
-        this.renderLaunch(g, mouseX, mouseY, partialTick);
-        this.renderSkipHint(g);
-    }
-
-    /** 右上角纯文字提示：按 ESC 跳过（无底色）。 */
-    private void renderSkipHint(GuiGraphics g) {
-        if (this.completed) {
-            return;
-        }
-        Component skipHint = Component.translatable((String)"gameend.habitrain_core.skip_hint");
-        int hx = this.width - 12 - this.font.width((FormattedText)skipHint);
-        g.drawString(this.font, skipHint, hx, 12, GameEndTransitionScreen.withAlpha(-4675179, 220), false);
-    }
-
-    private void renderLaunch(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        float sweep = this.sweepProgress();
-        float local = TransitionFx.easeInOutQuart(sweep);
-        float edgeX = (float)this.width * (1.0f - local);
-        if (edgeX > 0.5f) {
-            // 面板推入时，尚未覆盖的游戏画面随之压暗
-            g.fill(0, 0, Math.round(edgeX), this.height, GameEndTransitionScreen.withAlpha(0, Math.round(140.0f * local)));
+            cover *= 1.0f - TransitionFx.easeInOutCubic((burn - 0.08f) / 0.72f);
         }
         g.pose().pushPose();
-        g.pose().translate(edgeX, 0.0f, 0.0f);
-        this.renderComposition(g, sweep);
+        g.pose().translate(0.0f, 0.0f, LAYER_Z);
+        if (cover > 0.005f) {
+            GuiGeo veil = GuiGeo.begin(g);
+            veil.rect(0, 0, this.width, this.height, RailArt.a(VOID, cover * (0.94f + 0.06f * (1.0f - exposure))));
+            veil.end();
+            GuiGeo glow = GuiGeo.glow(g);
+            glow.softGlow(this.width / 2.0f, this.height / 2.0f, this.width * 0.75f, this.height * 0.7f,
+                    TransitionFx.mixRgb(0xFF1A1426, this.winColor(), 0.2f), Math.round(50 * cover * exposure));
+            glow.end();
+        }
+
+        // 3) 纸面：飘落时摇摆、弯折、起波纹；做旧时起皱；燃烧处卷起
+        float aspect = tw / th;
+        PaperSheet.Pose pose = this.sheetPose(elapsed, mvpElapsed, age, this.ticketX + tw / 2.0f, this.ticketY + th / 2.0f);
+        PaperSheet.Lift curl = burn > 0.0f ? (u, v) -> this.curl(u, v, aspect, burn) : null;
+        this.sheet.layout(this.width, this.height, this.ticketX, this.ticketY, tw, th, pose, curl, this.serial);
+        float lift = (float) Math.pow(1.0f - flight, 0.8f);
+        float shadowOffset = 4.0f + 30.0f * lift;
+        // 投影只在背景压暗后才明显，免得在明亮的天空上拖出一块灰影
+        float shadowAlpha = (0.55f * lift + 0.3f * (1.0f - lift)) * (0.2f + 0.8f * cover) * (1.0f - age);
+        this.sheet.shadow(g, shadowOffset * 0.7f, shadowOffset, 0.01f + 0.05f * lift, shadowAlpha);
+        ShaderInstance shader = TicketShaders.paper();
+        if (shader != null) {
+            float seconds = (now % 600_000L) / 1000.0f;
+            float lampIn = TransitionFx.clamp01((elapsed - FLIGHT_MILLIS) / 700.0f) * (1.0f - 0.5f * age);
+            shader.safeGetUniform("TicketRect").set(PaperCanvas.u(this.ticketX), PaperCanvas.v(this.ticketY),
+                    PaperCanvas.u(this.ticketX + tw), PaperCanvas.v(this.ticketY + th));
+            shader.safeGetUniform("TicketSize").set(tw, th);
+            shader.safeGetUniform("Age").set(age);
+            shader.safeGetUniform("Burn").set(burn);
+            shader.safeGetUniform("Front").set(TicketFire.front(burn));
+            shader.safeGetUniform("Time").set(seconds);
+            shader.safeGetUniform("Seed").set(this.fireSeed);
+            // 一盏吊灯挂在票面上方，随车厢缓缓晃动
+            shader.safeGetUniform("Lamp").set(0.42f + 0.05f * Mth.sin(seconds * 0.8f), -0.15f, 1.1f, 0.6f * lampIn);
+            shader.safeGetUniform("Exposure").set(exposure);
+        }
+        // 着色器不可用时退化为整体淡出
+        float sheetAlpha = shader != null ? 1.0f : 1.0f - TransitionFx.easeInCubic(burn);
+        this.sheet.draw(g, this.ticketCanvas.textureId(), shader, sheetAlpha);
+
+        // 4) 心跳时屏幕四周泛起暗红
+        this.renderPulse(g, this.pulse(elapsed, mvpElapsed) * (1.0f - age));
+
+        // 5) 火光、纸灰与火星
+        this.fire.update(dt, burn, this.exitStarted && shader != null, this.sheet, aspect, th / 400.0f);
+        float embers = 1.0f - TransitionFx.clamp01((exitElapsed - (EXIT_MILLIS - EMBER_FADE_MILLIS)) / (float) EMBER_FADE_MILLIS);
+        this.fire.render(g, Mth.sin(Mth.clamp(burn, 0.0f, 1.0f) * Mth.PI) * 0.6f + 0.4f, embers);
         g.pose().popPose();
-        if (sweep < 1.0f) {
-            this.renderSlideEdge(g, edgeX, local, 1);
-        }
     }
 
-    private void renderComposition(GuiGraphics g, float sweep) {
-        float modeT;
-        float winAlpha;
-        float emblemT;
-        long elapsed = Util.getMillis() - this.startedAtMillis;
-        long titleFadeStart = 3000L;
-        float titleFade = GameEndTransitionScreen.easeInOutCubic(Mth.clamp((float)((float)(elapsed - titleFadeStart) / 650.0f), (float)0.0f, (float)1.0f));
-        long winEnterStart = titleFadeStart + 650L + 120L;
-        float winLinear = Mth.clamp((float)((float)(elapsed - winEnterStart) / 900.0f), (float)0.0f, (float)1.0f);
-        float winAlphaT = GameEndTransitionScreen.easeOutCubic(winLinear);
-        float winLift = this.mvpPlayers.isEmpty() ? 0.0f : GameEndTransitionScreen.easeInOutCubic(Mth.clamp((float)((float)(elapsed - winEnterStart - 520L) / 900.0f), (float)0.0f, (float)1.0f));
-        long mvpElapsed = Util.getMillis() - this.mvpStageStartMillis();
-        float mvpStageT = this.mvpPlayers.isEmpty() ? 0.0f : GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((float)mvpElapsed / 520.0f), (float)0.0f, (float)1.0f));
-        g.fillGradient(0, 0, this.width, this.height, GameEndTransitionScreen.withAlpha(1116935, 255), GameEndTransitionScreen.withAlpha(-16251126, 255));
-        int cx = this.width / 2;
-        int cy = this.height / 2 - 18;
-        int glowW = Math.min(600, this.width - 40);
-        // 胜方揭晓后，中部柔光由暗金染成胜方色，整个画面随结果换气氛
-        int glowColor = TransitionFx.mixRgb(-7444434, this.winColor(), 0.7f * winAlphaT);
-        float titleBloom = TransitionFx.segment(elapsed, 1250.0f, 220.0f) * (1.0f - 0.6f * TransitionFx.segment(elapsed, 1470.0f, 700.0f));
-        float winBloom = TransitionFx.segment(elapsed, winEnterStart + 180.0f, 200.0f) * (1.0f - 0.55f * TransitionFx.segment(elapsed, winEnterStart + 380.0f, 900.0f));
-        float breathe = 0.85f + 0.15f * Mth.sin((float)elapsed / 900.0f);
-        float glowAlpha = (0.55f + 0.9f * Math.max(titleBloom, winBloom)) * breathe * (1.0f - 0.6f * mvpStageT);
-        TransitionFx.drawGlow(g, cx, cy + 12, glowW / 2.0f, 72.0f, glowColor, Math.round(62.0f * glowAlpha));
-        float ambientStrength = 1.0f - 0.72f * mvpStageT;
-        this.renderFlowingLines(g, ambientStrength);
-        this.renderParticles(g, ambientStrength);
-        // 胜方落定瞬间的整屏色闪
-        float flash = 1.0f - TransitionFx.segment(elapsed, winEnterStart + 200.0f, 480.0f);
-        if (elapsed >= winEnterStart + 200L && flash > 0.0f) {
-            g.fill(0, 0, this.width, this.height, GameEndTransitionScreen.withAlpha(this.winColor(), Math.round(46.0f * flash * flash)));
+    /**
+     * 纸面姿态：像落叶一样左右摆荡着下落、由远及近；滑翔时整张纸沿运动方向弯折，迎风边被压回、
+     * 后缘甩起，摆到两端失速时拱起最明显，自由边上一直有细小的波纹。最后底边先贴上屏幕，
+     * 上半张像被气垫托着一样一点点铺平，再轻颤两下压实。此后完全静止（与画布逐像素对齐），
+     * 只在盖章与人影显形时随心跳震一下。做旧时整张起皱。
+     */
+    private PaperSheet.Pose sheetPose(long elapsed, long mvpElapsed, float age, float restX, float restY) {
+        float crumple = 0.016f * age;
+        if (elapsed >= FLIGHT_MILLIS + SETTLE_MILLIS) {
+            PaperSheet.Pose rest = PaperSheet.Pose.rest(restX, restY).withCrumple(crumple);
+            float shake = Math.max(shake(elapsed - STAMP_AT), shake(mvpElapsed - REVEALED_AT));
+            if (shake <= 0.0f) {
+                return rest;
+            }
+            int frame = (int) (elapsed / 30L);
+            return rest.shifted(TicketArt.snap((TicketArt.hash(frame * 2 + 1) - 0.5f) * 2.0f * shake),
+                    TicketArt.snap((TicketArt.hash(frame * 2 + 2) - 0.5f) * 2.0f * shake));
         }
-        if (mvpStageT > 0.0f) {
-            this.renderMvpBackdrop(g, mvpStageT, this.mvpPlayers.size() == 1);
-            if (this.mvpPlayers.size() == 1) {
-                this.renderSoloMvp(g, Math.max(0L, mvpElapsed), mvpStageT);
+        float w = this.width;
+        float h = this.height;
+        float t = TransitionFx.clamp01(elapsed / (float) FLIGHT_MILLIS);
+        float rest = 1.0f - t;
+        float s = 1.0f - (float) Math.pow(rest, 1.25f);
+        float phase = -Mth.HALF_PI + Mth.PI * 2.3f * s;
+        float sway = Mth.sin(phase);
+        float swing = Mth.cos(phase);
+        float cx = restX + w * 0.26f * (float) Math.pow(rest, 1.3f) * sway;
+        float fall = 1.0f - rest * rest;
+        float cy = Mth.lerp(fall, -h * 0.25f, restY) - h * 0.07f * rest * sway * sway;
+        float depth = 1.0f + 2.4f * (float) Math.pow(rest, 1.5f);
+        float roll = 0.38f * (float) Math.pow(rest, 1.2f) * swing;
+        float yaw = -0.5f * (float) Math.pow(rest, 1.2f) * swing;
+        // 远处时明显后仰（像从斜上方看一张往下飘的纸），弯折才看得出来
+        float pitch = -(0.85f * (float) Math.pow(rest, 1.1f) + 0.25f * rest * Mth.sin(phase * 2.0f + 0.8f));
+        float amp = (float) Math.pow(rest, 0.7f);
+        float land = smoothstep(0.62f, 0.88f, t);
+        float free = amp * (1.0f - land);
+        // 滑翔时沿票宽弯折、方向随摆动微微转；落地时转为沿票高，从下往上铺平
+        float bendAngle = Mth.lerp(land, 0.4f * Mth.sin(phase * 0.5f + 0.6f), -Mth.HALF_PI + 0.35f);
+        float bend = free * (0.22f + 0.10f * Mth.sin(phase * 2.0f + 0.9f));
+        float curlAmount = free * 0.22f * Mth.cos(phase - 0.55f);
+        float ripple = 0.035f * (float) Math.sqrt(amp);
+        float twist = free * 0.14f * Mth.sin(phase + 1.4f);
+        float hinge = 0.45f * land;
+        float hingeAt = Mth.lerp(smoothstep(0.72f, 1.0f, t), -1.0f, 1.0f);
+        if (elapsed > FLIGHT_MILLIS) {
+            float tau = (elapsed - FLIGHT_MILLIS) / 1000.0f;
+            float decay = (float) Math.exp(-tau * 7.5f);
+            bend += 0.06f * Mth.sin(tau * 24.0f) * decay;
+            ripple += 0.02f * decay * (1.0f - (float) Math.exp(-tau * 30.0f));
+        }
+        return new PaperSheet.Pose(cx, cy, depth, roll, pitch, yaw, bendAngle, bend, curlAmount, ripple,
+                elapsed * 0.011f, twist, hinge, hingeAt, crumple);
+    }
+
+    /** 心跳的一震：瞬间顶到 3.5 像素，随即衰减。 */
+    private static float shake(long since) {
+        if (since < 0L || since > 320L) {
+            return 0.0f;
+        }
+        return 3.5f * (float) Math.exp(-since / 80.0f);
+    }
+
+    /** 燃烧前沿附近的纸受热卷起，越靠近火线翘得越高。 */
+    private float curl(float u, float v, float aspect, float burn) {
+        float d = this.fire.field(u, v, aspect) - TicketFire.front(burn);
+        if (d >= 0.22f) {
+            return 0.0f;
+        }
+        float k = 1.0f - Math.max(0.0f, d) / 0.22f;
+        return 0.05f * k * k;
+    }
+
+    /** 起火后火势略微加快，整体接近匀速地烧过票面。 */
+    private static float burnProgress(long exitElapsed) {
+        float t = TransitionFx.clamp01((exitElapsed - BURN_AT) / (float) BURN_MILLIS);
+        return t <= 0.0f ? 0.0f : (float) Math.pow(t, 1.15f);
+    }
+
+    private static float smoothstep(float edge0, float edge1, float x) {
+        float t = TransitionFx.clamp01((x - edge0) / (edge1 - edge0));
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    // ==================== 灯光 / 心跳 ====================
+
+    /**
+     * 车厢灯的亮度：落定后一直有电压不稳的细微抖动；人影浮现时一点点暗下去，显形后略回亮一些。
+     */
+    private float exposure(long elapsed, long mvpElapsed) {
+        if (elapsed < FLIGHT_MILLIS) {
+            return 1.0f;
+        }
+        float e = 0.95f + 0.05f * TicketArt.hash((int) (elapsed / 70L) * 31 + 7);
+        if (mvpElapsed >= FIGURE_AT) {
+            if (mvpElapsed < REVEALED_AT) {
+                e *= 1.0f - 0.3f * TransitionFx.clamp01((mvpElapsed - FIGURE_AT) / (float) FIGURE_RISE_MILLIS);
             } else {
-                this.renderSquadMvp(g, Math.max(0L, mvpElapsed), mvpStageT);
+                e *= Mth.lerp(TransitionFx.easeOutCubic((mvpElapsed - REVEALED_AT) / 220.0f), 0.7f, 0.9f);
             }
         }
-        int emblemY = cy - 98;
-        if ((emblemT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sweep - 0.3f) / 0.25f), (float)0.0f, (float)1.0f))) > 0.0f) {
-            float pop = TransitionFx.easeOutBack(Mth.clamp((sweep - 0.3f) / 0.4f, 0.0f, 1.0f), 2.2f);
-            g.pose().pushPose();
-            g.pose().translate(cx, emblemY, 0.0f);
-            g.pose().scale(pop, pop, 1.0f);
-            g.pose().translate(-cx, -emblemY, 0.0f);
-            this.drawEmblem(g, cx, emblemY, Math.round(230.0f * emblemT * (1.0f - 0.65f * titleFade) * (1.0f - mvpStageT)), 1.0f, (float)elapsed / 1000.0f * 1.6f);
-            g.pose().popPose();
-        }
-        // 标题落下时：耀光线展开 + 徽章冲击波
-        float flareOpen = TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, 1150.0f, 520.0f));
-        float flareFlash = 1.0f - TransitionFx.segment(elapsed, 1400.0f, 600.0f);
-        int flareAlpha = Math.round((60.0f + 170.0f * flareFlash) * (1.0f - titleFade));
-        TransitionFx.drawFlare(g, cx, cy + 34, glowW * 0.5f * flareOpen, -7776, flareAlpha);
-        float ring = TransitionFx.segment(elapsed, 1200.0f, 820.0f);
-        if (ring > 0.0f && ring < 1.0f) {
-            TransitionFx.drawRing(g, cx, emblemY, 14.0f + 150.0f * TransitionFx.easeOutCubic(ring), -7776, Math.round(170.0f * (1.0f - ring) * (1.0f - ring)));
-        }
-        // 「对局结束」：逐字落下、字距收拢；退场时逐字上飘消散
-        MutableComponent title = Component.translatable((String)"gameend.habitrain_core.title").copy().withStyle(ChatFormatting.BOLD);
-        float titleIn = TransitionFx.segment(elapsed, 1100.0f, 850.0f);
-        float titleOut = TransitionFx.segment(elapsed, (float)titleFadeStart, 650.0f);
-        float tracking = 2.0f + 14.0f * (1.0f - TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, 1100.0f, 1500.0f)));
-        TransitionFx.drawCascade(g, this.font, title, cx, cy, 3.25f, -7776, titleIn, titleOut, tracking, TransitionFx.Cascade.DROP);
-        if ((winAlpha = 255.0f * winAlphaT) > 0.5f) {
-            Component win = this.winLine();
-            float centeredY = (float)cy + 8.0f;
-            float headerY = Math.max(14.0f, Math.min(30.0f, (float)this.height * 0.072f));
-            float winY = Mth.lerp((float)winLift, (float)centeredY, (float)headerY);
-            float centerScale = this.fittedScale(win);
-            float headerScale = Math.max(0.82f, Math.min(1.75f, this.fittedScale(win) * 0.55f));
-            float winScale = Mth.lerp((float)winLift, (float)centerScale, (float)headerScale);
-            // 胜方：逐字"盖章"砸入，落定时冲击环 + 火花
-            float impactY = centeredY + 4.5f * centerScale;
-            float impact = TransitionFx.segment(elapsed, winEnterStart + 200.0f, 900.0f);
-            if (impact > 0.0f && impact < 1.0f && winLift < 0.5f) {
-                float r = 20.0f + Math.min(260.0f, this.width * 0.42f) * TransitionFx.easeOutCubic(impact);
-                TransitionFx.drawRing(g, cx, impactY, r, this.winColor(), Math.round(180.0f * (1.0f - impact) * (1.0f - impact)));
-                TransitionFx.drawRing(g, cx, impactY, r * 0.7f, -7776, Math.round(110.0f * (1.0f - impact) * (1.0f - impact)));
-            }
-            TransitionFx.drawSparks(g, cx, impactY, TransitionFx.segment(elapsed, winEnterStart + 200.0f, 1000.0f), 44, 3, Math.min(300.0f, this.width * 0.45f), this.winColor(), 230);
-            float winRule = TransitionFx.easeOutExpo(TransitionFx.segment(elapsed, winEnterStart + 220.0f, 700.0f));
-            TransitionFx.drawFlare(g, cx, Math.round(winY + 9.0f * winScale + 6.0f), glowW * 0.45f * winRule * (1.0f - 0.35f * winLift), this.winColor(), Math.round(150.0f * winRule));
-            TransitionFx.drawCascade(g, this.font, win, cx, winY, winScale, GameEndTransitionScreen.withAlpha(this.winColor(), 255), winLinear, 0.0f, 0.0f, TransitionFx.Cascade.STAMP);
-        }
-        if ((modeT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((winLinear - 0.45f) / 0.55f), (float)0.0f, (float)1.0f))) > 0.01f) {
-            float modeY = Mth.lerp((float)winLift, (float)((float)cy + 58.0f), (float)Math.max(38.0f, Math.min(54.0f, (float)this.height * 0.145f))) + 8.0f * (1.0f - modeT);
-            int modeAlpha = Math.round(205.0f * modeT);
-            if (modeAlpha > 5) {
-                this.drawScaledCentered(g, this.modeLine(), cx, modeY, Mth.lerp((float)winLift, (float)0.9f, (float)0.78f), GameEndTransitionScreen.withAlpha(-4675179, modeAlpha));
-            }
-        }
+        return e;
     }
 
-    private Component winLine() {
-        Object winKey;
-        boolean customWin;
-        boolean customComponentWin = "CUSTOM_COMPONENT".equals(this.winStatusName);
-        customWin = "CUSTOM".equals(this.winStatusName) || customComponentWin;
-        if (customComponentWin && !this.customTitleJson.isBlank()) {
-            try {
-                RegistryAccess access = Minecraft.getInstance().level != null
-                        ? Minecraft.getInstance().level.registryAccess()
-                        : RegistryAccess.EMPTY;
-                MutableComponent parsed = Component.Serializer.fromJson((String)this.customTitleJson, (HolderLookup.Provider)access);
-                if (parsed != null && !parsed.getString().isBlank()) {
-                    return parsed;
+    /** 心跳的暗红：盖章一下；人影显形时「咚—咚」两下。 */
+    private float pulse(long elapsed, long mvpElapsed) {
+        float p = beat(elapsed - STAMP_AT);
+        p = Math.max(p, beat(mvpElapsed - REVEALED_AT));
+        return Math.max(p, 0.7f * beat(mvpElapsed - REVEALED_AT - 300L));
+    }
+
+    private static float beat(long since) {
+        if (since < 0L || since > 1200L) {
+            return 0.0f;
+        }
+        return Math.min(1.0f, since / 40.0f) * (float) Math.exp(-since / 220.0f);
+    }
+
+    /** 屏幕四周的暗红晕边。 */
+    private void renderPulse(GuiGraphics g, float pulse) {
+        if (pulse <= 0.01f) {
+            return;
+        }
+        int color = TransitionFx.mixRgb(BLOOD, this.winColor(), 0.2f);
+        int strong = RailArt.a(color, 0.5f * pulse);
+        int clear = RailArt.a(color, 0.0f);
+        float ew = this.width * 0.2f;
+        float eh = this.height * 0.24f;
+        GuiGeo geo = GuiGeo.begin(g);
+        geo.rectH(0, 0, ew, this.height, strong, clear);
+        geo.rectH(this.width - ew, 0, this.width, this.height, clear, strong);
+        geo.rectV(0, 0, this.width, eh, strong, clear);
+        geo.rectV(0, this.height - eh, this.width, this.height, clear, strong);
+        geo.end();
+    }
+
+    // ==================== 音效 ====================
+
+    /** 节点到时只响一次。 */
+    private boolean cue(String id, boolean due) {
+        return due && this.cues.add(id);
+    }
+
+    /**
+     * 飘落时几声纸响、落定；盖章的心跳、滴墨；人影浮现时的钟声与低语、显形的心跳；
+     * 退场时揉皱、点燃、燃烧与熄灭。打字声见 {@link #playTyping}。
+     */
+    private void playSounds(long elapsed, long mvpElapsed, long exitElapsed) {
+        if (!this.exitStarted) {
+            float[] flutterAt = {0.04f, 0.3f, 0.62f};
+            for (int i = 0; i < flutterAt.length; i++) {
+                if (this.cue("flutter" + i, elapsed >= FLIGHT_MILLIS * flutterAt[i])) {
+                    TicketSounds.flutter(0.78f + 0.06f * i);
                 }
             }
-            catch (Throwable access) {
-                // empty catch block
+            if (this.cue("land", elapsed >= FLIGHT_MILLIS - 40L)) {
+                TicketSounds.land(0.85f);
+            }
+            if (this.cue("stamp", elapsed >= STAMP_AT)) {
+                TicketSounds.stamp();
+                TicketSounds.heartbeat(0.85f, 1.0f);
+            }
+            if (this.cue("drip0", elapsed >= DRIP_AT + 700L)) {
+                TicketSounds.drip(0.55f);
+            }
+            if (this.cue("drip1", elapsed >= DRIP_AT + 1_700L)) {
+                TicketSounds.drip(0.45f);
+            }
+            if (this.cue("toll", mvpElapsed >= FIGURE_AT)) {
+                TicketSounds.toll();
+            }
+            if (this.cue("whisper", mvpElapsed >= FIGURE_AT + 700L)) {
+                TicketSounds.whisper();
+            }
+            if (this.cue("revealed", mvpElapsed >= REVEALED_AT)) {
+                TicketSounds.heartbeat(0.75f, 1.0f);
+            }
+            if (this.cue("revealed2", mvpElapsed >= REVEALED_AT + 300L)) {
+                TicketSounds.heartbeat(0.75f, 0.75f);
+            }
+            return;
+        }
+        if (this.cue("crumple", true)) {
+            TicketSounds.crumple();
+        }
+        if (this.cue("ignite", exitElapsed >= BURN_AT)) {
+            TicketSounds.ignite();
+        }
+        if (this.cue("burn0", exitElapsed >= BURN_AT + 150L)) {
+            TicketSounds.burn(1.0f);
+        }
+        if (this.cue("burn1", exitElapsed >= BURN_AT + 900L)) {
+            TicketSounds.burn(1.2f);
+        }
+        if (this.cue("smother", exitElapsed >= BURN_AT + BURN_MILLIS - 150L)) {
+            TicketSounds.smother();
+        }
+    }
+
+    /** 打字机击键：打出新字时响一下，太密时合并。 */
+    private void playTyping(long now) {
+        if (this.typedChars <= this.typedHeard || this.exitStarted) {
+            return;
+        }
+        if (now - this.lastTypeSoundMillis >= 45L) {
+            this.lastTypeSoundMillis = now;
+            this.typedHeard = this.typedChars;
+            TicketSounds.type(1.7f + 0.4f * TicketArt.hash(this.typedChars * 13 + 5));
+        }
+    }
+
+    /**
+     * 画布上 GUI 的混合会把半透明叠层的 alpha 写进画布，在票面上留下「透明洞」；
+     * 最后只写 alpha 通道，把整张票纸重新铺满为不透明。
+     */
+    private void sealPaper(GuiGraphics g, TicketArt.Shape s) {
+        g.flush();
+        RenderSystem.colorMask(false, false, false, true);
+        TicketArt.paper(g, s, TicketArt.MIDNIGHT, TicketArt.Part.WHOLE, 1.0f);
+        RenderSystem.colorMask(true, true, true, true);
+    }
+
+    /** 纪念车票：票纸 → 防伪底纹 → 票头 → 左下角的黑暗与人影 → 胜方印章与 MVP 数据 → 票根。 */
+    private void renderTicket(GuiGraphics g, TicketArt.Shape s, long elapsed, long mvpElapsed) {
+        TicketArt.Palette p = TicketArt.MIDNIGHT;
+        TicketArt.paper(g, s, p, TicketArt.Part.WHOLE, 1.0f);
+        TicketArt.details(g, s, p, TicketArt.Part.WHOLE, 1.0f, 2024, true);
+        float unit = Mth.clamp(s.h() / 228.0f, 1.0f, 2.2f);
+        float b = s.band();
+        float in = s.inset();
+        float left = in + 10.0f;
+        float right = s.bodyRight() - 8.0f;
+        float span = right - left;
+        float small = TicketArt.crisp(0.5f * unit);
+        float bandText = TicketArt.crisp(0.75f * unit);
+        int win = this.winColor();
+
+        // 票头：路徽 + 线路名 ／ 对局结束
+        float emblemR = b * 0.27f;
+        float emblemX = in + 5.0f + emblemR * 3.1f;
+        RailArt.drawWingedWheel(g, emblemX, b / 2.0f, emblemR, 0.0f, 1.0f, 1.0f);
+        float bandY = TicketArt.snap((b - 8.0f * bandText) / 2.0f + 0.5f);
+        Component header = Component.translatable("gameend.habitrain_core.ticket.header").withStyle(ChatFormatting.BOLD);
+        float headerX = emblemX + emblemR * 3.3f + 3.0f;
+        TicketArt.drawScaled(g, this.font, header, headerX, bandY, bandText, p.bandInk());
+        String headerSub = OptionVoteTexts.subtitle("gameend.habitrain_core.ticket.header");
+        Component over = Component.translatable("gameend.habitrain_core.title");
+        String overSub = OptionVoteTexts.subtitle("gameend.habitrain_core.title");
+        float subDesired = 0.5f * unit;
+        float headerEnd = headerX + this.font.width(header) * bandText;
+        float overW = this.font.width(over) * bandText;
+        // 票头放不下时先省略左侧英文，再省略右侧英文
+        if (headerEnd + 5.0f + TicketArt.subWidth(this.font, headerSub, subDesired) + 10.0f
+                > right - overW - 5.0f - TicketArt.subWidth(this.font, overSub, subDesired)) {
+            headerSub = "";
+        }
+        if (headerEnd + 10.0f > right - overW - 5.0f - TicketArt.subWidth(this.font, overSub, subDesired)) {
+            overSub = "";
+        }
+        TicketArt.drawSub(g, this.font, headerSub, headerEnd + 5.0f, bandY, bandText, subDesired,
+                TicketArt.fade(p.bandInk(), 0.7f));
+        float overSubW = overSub.isEmpty() ? 0.0f : TicketArt.subWidth(this.font, overSub, subDesired) + 5.0f;
+        TicketArt.drawSub(g, this.font, overSub, right - overSubW + 5.0f, bandY, bandText, subDesired,
+                TicketArt.fade(p.bandInk(), 0.7f));
+        TicketArt.drawRight(g, this.font, over, right - overSubW, bandY, bandText, p.bandInk());
+        // 票头下缘一道胜方色细线
+        GuiGeo accent = GuiGeo.begin(g);
+        accent.rectH(in, b, s.bodyRight(), b + 1.2f, RailArt.a(win, 0.95f), RailArt.a(win, 0.15f));
+        accent.end();
+
+        if (!this.mvpPlayers.isEmpty()) {
+            this.renderFigureLayer(g, s, mvpElapsed);
+            this.renderMvpLayout(g, s, p, left, right, unit, elapsed, mvpElapsed);
+        } else {
+            float area = s.h() - in - b;
+            this.renderWinBlock(g, p, left + span / 2.0f, b + area * 0.42f, span, unit, elapsed, true);
+            float thanksIn = TransitionFx.clamp01((elapsed - DETAILS_AT - 600L) / 700.0f);
+            Component thanks = Component.translatable("gameend.habitrain_core.ticket.thanks");
+            TicketArt.drawCentered(g, this.font, TicketArt.fit(this.font, thanks, span / small), left + span / 2.0f,
+                    TicketArt.snap(b + area * 0.8f), small, TicketArt.fade(p.inkSoft(), thanksIn));
+        }
+
+        // 票面右下角：跳过提示
+        float hintIn = TransitionFx.clamp01((elapsed - FLIGHT_MILLIS) / 400.0f);
+        if (!this.exitStarted && hintIn > 0.02f) {
+            Component skip = Component.translatable("gameend.habitrain_core.skip_hint");
+            TicketArt.drawRight(g, this.font, skip, right, TicketArt.snap(s.h() - in - 4.0f - 8.0f * small), small,
+                    TicketArt.fade(p.inkSoft(), 0.6f * hintIn));
+        }
+
+        this.renderStub(g, s, p, unit, elapsed, mvpElapsed);
+    }
+
+    // ==================== 胜方印章 ====================
+
+    /**
+     * 胜方印章：胜方色双线章框 + 粗体胜方文字 + 另一种语言的副标题；盖下时从大落到原位并溅出墨点，
+     * 随后印泥顺着章框下缘往下淌。模式写在章框上方。
+     */
+    private void renderWinBlock(GuiGraphics g, TicketArt.Palette p, float cx, float cy, float maxWidth, float unit,
+                                long elapsed, boolean large) {
+        Component winText = this.winLine();
+        float textScale = TicketArt.crisp((large ? 3.0f : 2.0f) * unit);
+        float limit = maxWidth - 30.0f;
+        while (textScale > TicketArt.crisp(1.0f) && this.font.width(winText) * textScale > limit) {
+            textScale = TicketArt.crisp(textScale - 0.5f);
+        }
+        if (this.font.width(winText) * textScale > limit) {
+            winText = TicketArt.fit(this.font, winText, limit / textScale);
+        }
+        String sub = this.winSubtitle();
+        float[] box = TicketArt.stampBox(this.font, winText, sub, textScale);
+        float modeIn = TransitionFx.clamp01((elapsed - DETAILS_AT) / 420.0f);
+        Component mode = this.modeLine();
+        if (modeIn > 0.02f && !mode.getString().isBlank()) {
+            float modeScale = TicketArt.crisp(1.0f * unit);
+            float modeY = TicketArt.snap(cy - box[1] / 2.0f - 9.0f - 8.0f * modeScale
+                    - (1.0f - TransitionFx.easeOutCubic(modeIn)) * 3.0f);
+            Component labelled = Component.translatable("gameend.habitrain_core.ticket.mode", mode);
+            TicketArt.drawCentered(g, this.font, TicketArt.fit(this.font, labelled, maxWidth / modeScale), cx, modeY,
+                    modeScale, TicketArt.fade(p.inkSoft(), modeIn));
+        }
+        float slam = TransitionFx.clamp01((elapsed - STAMP_AT) / (float) STAMP_SLAM_MILLIS);
+        if (slam <= 0.0f) {
+            return;
+        }
+        float sc = Mth.lerp(slam * slam, 2.4f, 1.0f);
+        int ink = TransitionFx.mixRgb(this.winColor(), IVORY, 0.08f);
+        TicketArt.stamp(g, this.font, cx, cy, winText, sub, textScale, sc, -4.0f, ink,
+                Math.min(1.0f, slam * 1.5f), p.paperTop(), 31);
+        TicketArt.inkSplash(g, cx, cy, 18.0f * textScale, ink, (elapsed - STAMP_AT - STAMP_SLAM_MILLIS) / 480.0f, 57);
+        TicketArt.stampDrips(g, cx, cy, box[0], box[1], -4.0f, (large ? 26.0f : 20.0f) * unit, ink,
+                (elapsed - DRIP_AT) / (float) DRIP_MILLIS, 31);
+    }
+
+    // ==================== MVP ====================
+
+    /**
+     * 人影区域（票面局部坐标）：票身左下角、票头之下直到底框。人影按半身像取景——
+     * 头顶在票头下方不远，腰部落在底框附近，再往下沉进黑暗。
+     */
+    private record GhostFrame(float x0, float y0, float x1, float y1, float figureX, float feetY, float modelScale) {
+        static GhostFrame of(TicketArt.Shape s) {
+            float b = s.band();
+            float in = s.inset();
+            float left = in + 10.0f;
+            float span = s.bodyRight() - 8.0f - left;
+            float area = s.h() - in - b;
+            return new GhostFrame(in + 1.5f, b + 1.5f, left + span * 0.4f, s.h() - in - 1.5f,
+                    left + span * 0.17f, s.h() - in + area * 0.3f, area * 0.5f);
+        }
+    }
+
+    /** 右上是胜方印章，右下是逐行打出的 MVP 数据；人影在左下角，见 {@link #renderFigureLayer}。 */
+    private void renderMvpLayout(GuiGraphics g, TicketArt.Shape s, TicketArt.Palette p, float left, float right,
+                                 float unit, long elapsed, long mvpElapsed) {
+        float b = s.band();
+        float in = s.inset();
+        float span = right - left;
+        float area = s.h() - in - b;
+        this.renderWinBlock(g, p, left + span * 0.64f, b + area * 0.27f, span * 0.6f, unit, elapsed, false);
+        if (mvpElapsed < 0L) {
+            return;
+        }
+        GameEndTransitionPayload.MvpPlayer entry = this.mvpPlayers.get(0);
+        float x = TicketArt.snap(left + span * 0.47f);
+        float colW = right - x;
+        String key = "gameend.habitrain_core.mvp.solo";
+        float labelScale = TicketArt.crisp(0.75f * unit);
+        float nameScale = TicketArt.crisp(1.5f * unit);
+        float statScale = TicketArt.crisp(0.75f * unit);
+        float scoreScale = TicketArt.crisp(1.25f * unit);
+        Component label = Component.translatable(key).withStyle(ChatFormatting.BOLD);
+        String name = entry.playerName().isBlank() ? "Player" : entry.playerName();
+        Component nameText = TicketArt.fit(this.font, Component.literal(name).withStyle(ChatFormatting.BOLD), colW / nameScale);
+        Component stats = TicketArt.fit(this.font, Component.translatable("gameend.habitrain_core.mvp.stats",
+                entry.kills(), entry.survivalSeconds(), entry.itemUses()), colW / statScale);
+        Component score = Component.translatable("gameend.habitrain_core.mvp.score", entry.score()).withStyle(ChatFormatting.BOLD);
+
+        float y = TicketArt.snap(b + area * 0.56f);
+        float nameY = TicketArt.snap(y + 8.0f * labelScale + 5.0f);
+        float statsY = TicketArt.snap(nameY + 8.0f * nameScale + 6.0f);
+        float scoreY = TicketArt.snap(statsY + 8.0f * statScale + 7.0f);
+        long labelDone = this.typeLine(g, label, x, y, labelScale, GOLD_BRIGHT, mvpElapsed, 0L, 45L, 260L);
+        float subIn = TransitionFx.clamp01((mvpElapsed - labelDone) / 300.0f);
+        if (subIn > 0.0f) {
+            TicketArt.drawSub(g, this.font, OptionVoteTexts.subtitle(key), x + this.font.width(label) * labelScale + 5.0f,
+                    y, labelScale, 0.5f * unit, TicketArt.fade(GOLD, subIn * 0.8f));
+        }
+        long nameDone = this.typeLine(g, nameText, x, nameY, nameScale, IVORY, mvpElapsed, labelDone + 140L, 60L, 720L);
+        long statsDone = this.typeLine(g, stats, x, statsY, statScale, p.inkSoft(), mvpElapsed, nameDone + 140L, 22L, 700L);
+        this.typeLine(g, score, x, scoreY, scoreScale, GOLD, mvpElapsed, statsDone + 140L, 45L, 420L);
+    }
+
+    /**
+     * 打字机：从 start 起逐字打出，返回这一行打完的时刻；正在打的行尾跟着光标，打完后再闪两下熄掉。
+     */
+    private long typeLine(GuiGraphics g, Component text, float x, float y, float scale, int color, long now,
+                          long start, long perChar, long maxMillis) {
+        String plain = text.getString();
+        int total = plain.codePointCount(0, plain.length());
+        long duration = Math.min(maxMillis, perChar * total);
+        long end = start + duration;
+        if (now < start || total == 0) {
+            return end;
+        }
+        int shown = now >= end ? total : (int) Math.min(total, total * (now - start) / Math.max(1L, duration) + 1);
+        this.typedChars += shown;
+        Component part = Component.literal(plain.substring(0, plain.offsetByCodePoints(0, shown))).withStyle(text.getStyle());
+        TicketArt.drawScaled(g, this.font, part, x, y, scale, color);
+        boolean cursor = now < end || (now < end + 520L && ((now - end) / 130L & 1L) == 1L);
+        if (cursor) {
+            float cx = x + this.font.width(part) * scale + scale;
+            GuiGeo caret = GuiGeo.begin(g);
+            caret.rect(cx, y, cx + Math.max(1.0f, 0.9f * scale), y + 8.0f * scale, RailArt.a(color, 0.85f));
+            caret.end();
+        }
+        return end;
+    }
+
+    /**
+     * 左下角：黑暗先像墨一样从角落漫开，人影从黑暗里浮上来，以半透明底纹合成进票面。
+     * 人像本身在 {@link #renderGhostCanvas} 里画进人像画布。
+     */
+    private void renderFigureLayer(GuiGraphics g, TicketArt.Shape s, long mvpElapsed) {
+        float pool = TransitionFx.easeInOutCubic((mvpElapsed - FIGURE_AT + 500L) / 1_600.0f);
+        if (pool <= 0.0f) {
+            return;
+        }
+        float b = s.band();
+        float in = s.inset();
+        float area = s.h() - in - b;
+        float span = s.bodyRight() - in;
+        g.enableScissor(Math.round(this.ticketX + in), Math.round(this.ticketY + b + 1.2f),
+                Math.round(this.ticketX + s.bodyRight()), Math.round(this.ticketY + s.h() - in));
+        GuiGeo dark = GuiGeo.begin(g);
+        dark.disc(in, s.h() - in, span * 0.7f * (0.4f + 0.6f * pool), area * 1.25f * (0.4f + 0.6f * pool),
+                RailArt.a(VOID, 0.97f * pool), RailArt.a(VOID, 0.0f));
+        dark.end();
+        g.disableScissor();
+        if (!this.ghostReady) {
+            return;
+        }
+        GhostFrame f = GhostFrame.of(s);
+        float u0 = PaperCanvas.u(this.ticketX + f.x0());
+        float v0 = PaperCanvas.v(this.ticketY + f.y0());
+        float u1 = PaperCanvas.u(this.ticketX + f.x1());
+        float v1 = PaperCanvas.v(this.ticketY + f.y1());
+        float rise = TransitionFx.clamp01((mvpElapsed - FIGURE_AT) / (float) FIGURE_RISE_MILLIS);
+        float reveal = TransitionFx.easeInOutCubic(rise);
+        float settle = TransitionFx.easeOutCubic((mvpElapsed - REVEALED_AT) / (float) REVEAL_EASE_MILLIS);
+        ShaderInstance shader = TicketShaders.ghost();
+        float alpha = 1.0f;
+        if (shader != null) {
+            Window window = Minecraft.getInstance().getWindow();
+            int rim = TransitionFx.mixRgb(this.winColor(), BLOOD, 0.25f);
+            shader.safeGetUniform("GhostRect").set(u0, v0, u1, v1);
+            shader.safeGetUniform("TexelSize").set(1.0f / Math.max(1, window.getWidth()), 1.0f / Math.max(1, window.getHeight()));
+            shader.safeGetUniform("Reveal").set(reveal);
+            shader.safeGetUniform("Develop").set(Mth.lerp(settle, 0.1f + 0.12f * rise, 1.0f));
+            shader.safeGetUniform("Glitch").set(this.glitch(mvpElapsed));
+            shader.safeGetUniform("Time").set(mvpElapsed / 1000.0f);
+            shader.safeGetUniform("Tint").set(0.8f, 0.86f, 1.0f, 0.7f);
+            shader.safeGetUniform("Rim").set(((rim >> 16) & 0xFF) / 255.0f, ((rim >> 8) & 0xFF) / 255.0f,
+                    (rim & 0xFF) / 255.0f, Mth.lerp(settle, 1.4f, 0.7f));
+        } else {
+            alpha = 0.7f * reveal;
+        }
+        PaperCanvas.blit(g, this.ghostCanvas.textureId(), shader, f.x0(), f.y0(), f.x1(), f.y1(), u0, v0, u1, v1, alpha);
+    }
+
+    /** 人影的横向撕裂：浮现途中偶尔抽一下，显形时一阵强烈的撕裂，之后极偶尔地抽动。 */
+    private float glitch(long mvpElapsed) {
+        long since = mvpElapsed - REVEALED_AT;
+        float strength = since >= 0L && since < 420L ? 1.0f - since / 420.0f : 0.0f;
+        long rising = mvpElapsed - FIGURE_AT;
+        if (rising > 0L && since < 0L && TicketArt.hash((int) (rising / 80L) * 13 + 5) > 0.88f) {
+            strength = Math.max(strength, 0.5f);
+        }
+        if (since > 600L && TicketArt.hash((int) (since / 90L) * 7 + 1) > 0.965f) {
+            strength = Math.max(strength, 0.35f);
+        }
+        return strength;
+    }
+
+    /**
+     * 把 MVP 人像画进人像画布（与票面同一坐标系）：固定姿势，自下而上缓缓升起；
+     * 显形后人影平滑地向镜头靠近一点。画布就绪后 {@link #ghostReady} 为 true。
+     */
+    private void renderGhostCanvas(GuiGraphics g, TicketArt.Shape s, long mvpElapsed) {
+        this.ghostReady = false;
+        if (this.mvpPlayers.isEmpty() || mvpElapsed < FIGURE_AT) {
+            return;
+        }
+        GameEndTransitionPayload.MvpPlayer entry = this.mvpPlayers.get(0);
+        AbstractClientPlayer player = this.previewPlayer(entry.playerId(), entry.playerName());
+        if (player == null) {
+            return;
+        }
+        GhostFrame frame = GhostFrame.of(s);
+        float area = s.h() - s.inset() - s.band();
+        float rise = TransitionFx.easeOutCubic((mvpElapsed - FIGURE_AT) / (float) FIGURE_RISE_MILLIS);
+        float closer = TransitionFx.easeOutCubic((mvpElapsed - REVEALED_AT) / (float) REVEAL_EASE_MILLIS);
+        float scale = frame.modelScale() * (1.0f + 0.07f * closer);
+        float feetY = frame.feetY() + (1.0f - rise) * area * 0.3f + closer * area * 0.04f;
+        this.ghostCanvas.begin(g);
+        try {
+            g.pose().pushPose();
+            g.pose().translate(this.ticketX, this.ticketY, 0.0f);
+            this.drawModel(g, player, frame.figureX(), feetY, scale, this.victoryWeapon(entry.roleType()));
+            g.pose().popPose();
+        } finally {
+            this.ghostCanvas.end(g);
+        }
+        this.ghostReady = true;
+    }
+
+    /**
+     * 人物模型绘制：原版 {@code renderEntityInInventoryFollowsMouse} 自带的裁剪不适用于离屏画布，
+     * 因此直接调用底层渲染并自己设置朝向。身体侧过一点，头由 {@link MvpStillPose} 转回来正对镜头。
+     */
+    private void drawModel(GuiGraphics g, AbstractClientPlayer player, float centerX, float feetY, float scale,
+                           ItemStack held) {
+        if (player == null || scale < 2.0f) {
+            return;
+        }
+        ItemStack oldMain = player.getMainHandItem().copy();
+        Pose oldPose = player.getPose();
+        boolean oldInvisible = player.isInvisible();
+        float oldBody = player.yBodyRot;
+        float oldYRot = player.getYRot();
+        float oldXRot = player.getXRot();
+        float oldHeadO = player.yHeadRotO;
+        float oldHead = player.yHeadRot;
+        boolean pushed = false;
+        try {
+            player.setInvisible(false);
+            player.setPose(Pose.STANDING);
+            player.stopUsingItem();
+            player.setItemSlot(EquipmentSlot.MAINHAND, held == null ? ItemStack.EMPTY : held.copy());
+            player.walkAnimation.setSpeed(0.0f);
+            float turn = MvpStillPose.BODY_TURN_DEGREES;
+            Quaternionf pose = new Quaternionf().rotateZ((float) Math.PI);
+            Quaternionf camera = new Quaternionf().rotateX(-3.0f * Mth.DEG_TO_RAD);
+            pose.mul(camera);
+            player.yBodyRot = 180.0f + turn;
+            player.setYRot(180.0f + turn);
+            player.setXRot(0.0f);
+            player.yHeadRot = player.getYRot();
+            player.yHeadRotO = player.getYRot();
+            float entityScale = player.getScale();
+            float offset = player.getBbHeight() / 2.0f + 0.0625f * entityScale;
+            float renderScale = scale / entityScale;
+            g.pose().pushPose();
+            pushed = true;
+            g.pose().translate(0.0f, 0.0f, 150.0f);
+            InventoryScreen.renderEntityInInventory(g, centerX, feetY - offset * renderScale, renderScale,
+                    new Vector3f(0.0f, offset, 0.0f), pose, camera, player);
+        } catch (Throwable ignored) {
+            // 预览模型渲染失败不影响结算转场本身
+        } finally {
+            if (pushed) {
+                g.pose().popPose();
+            }
+            player.stopUsingItem();
+            player.setItemSlot(EquipmentSlot.MAINHAND, oldMain);
+            player.setPose(oldPose);
+            player.setInvisible(oldInvisible);
+            player.yBodyRot = oldBody;
+            player.setYRot(oldYRot);
+            player.setXRot(oldXRot);
+            player.yHeadRotO = oldHeadO;
+            player.yHeadRot = oldHead;
+        }
+    }
+
+    // ==================== 票根 ====================
+
+    /** 票根：纪念票字样、MVP 纪念章（或终点章）、编号与条码；结果揭晓后打孔。 */
+    private void renderStub(GuiGraphics g, TicketArt.Shape s, TicketArt.Palette p, float unit, long elapsed,
+                            long mvpElapsed) {
+        float b = s.band();
+        float in = s.inset();
+        float left = s.stubLeft() + 2.0f;
+        float right = s.w() - in - 3.0f;
+        float cx = (left + right) / 2.0f;
+        float small = TicketArt.crisp(0.5f * unit);
+        float bandText = TicketArt.crisp(0.75f * unit);
+        TicketArt.drawCentered(g, this.font, Component.translatable("gameend.habitrain_core.ticket.souvenir"), cx,
+                TicketArt.snap((b - 8.0f * bandText) / 2.0f + 0.5f), bandText, p.bandInk());
+        float area = s.h() - in - b;
+
+        // 纪念章：黄铜圆环 + 中央胜方色星，背后一团暗淡的光
+        float medalIn = TransitionFx.easeOutCubic((elapsed - DETAILS_AT) / 500.0f);
+        float r = Math.min((right - left) * 0.36f, area * 0.18f);
+        float my = b + area * 0.3f;
+        if (medalIn > 0.01f && r > 4.0f) {
+            float mr = r * (0.8f + 0.2f * medalIn);
+            GuiGeo halo = GuiGeo.glow(g);
+            halo.softGlow(cx, my, mr * 2.0f, mr * 2.0f, GOLD_DARK, Math.round(45 * medalIn));
+            halo.end();
+            GuiGeo medal = GuiGeo.begin(g);
+            medal.disc(cx, my, mr, mr, RailArt.a(GOLD_BRIGHT, medalIn), RailArt.a(GOLD_DARK, medalIn));
+            medal.disc(cx, my, mr * 0.8f, mr * 0.8f, RailArt.a(0xFF1D2A55, medalIn), RailArt.a(VOID, medalIn));
+            medal.ring(cx, my, mr * 0.66f, mr * 0.7f, RailArt.a(GOLD, medalIn));
+            medal.end();
+            GuiGeo star = GuiGeo.glow(g);
+            float sr = mr * 0.5f;
+            star.diamond(cx, my, sr * 0.3f, sr, RailArt.a(this.winColor(), medalIn));
+            star.diamond(cx, my, sr, sr * 0.3f, RailArt.a(this.winColor(), medalIn));
+            star.diamond(cx, my, sr * 0.22f, sr * 0.22f, RailArt.a(IVORY, medalIn));
+            star.end();
+            boolean hasMvp = !this.mvpPlayers.isEmpty();
+            Component caption = hasMvp ? Component.literal("MVP").withStyle(ChatFormatting.BOLD)
+                    : Component.translatable("gameend.habitrain_core.ticket.terminus").withStyle(ChatFormatting.BOLD);
+            float capScale = TicketArt.crisp(0.75f * unit);
+            float capY = TicketArt.snap(my + mr + 5.0f);
+            TicketArt.drawCentered(g, this.font, TicketArt.fit(this.font, caption, (right - left) / capScale), cx, capY,
+                    capScale, TicketArt.fade(GOLD_BRIGHT, medalIn));
+            if (hasMvp) {
+                Component score = Component.translatable("gameend.habitrain_core.mvp.score", this.mvpPlayers.get(0).score());
+                TicketArt.drawCentered(g, this.font, TicketArt.fit(this.font, score, (right - left) / small), cx,
+                        TicketArt.snap(capY + 8.0f * capScale + 3.0f), small, TicketArt.fade(p.inkSoft(), medalIn));
             }
         }
-        if (customWin && !this.customWinnerId.isBlank()) {
-            String winnerId = GameEndTransitionScreen.shortOptionId(this.customWinnerId).toLowerCase(Locale.ROOT);
-            winKey = "announcement.star.win." + winnerId;
-            if (Language.getInstance().has((String)winKey)) {
-                return Component.translatable((String)winKey);
-            }
-            String roleKey = "announcement.star.role." + winnerId;
-            if (Language.getInstance().has(roleKey)) {
-                return Component.translatable((String)"gameend.habitrain_core.win.custom", (Object[])new Object[]{Component.translatable((String)roleKey)});
-            }
-            return Component.translatable((String)"gameend.habitrain_core.win.custom", (Object[])new Object[]{Component.literal((String)winnerId)});
+
+        float serialY = TicketArt.snap(b + area * 0.66f);
+        TicketArt.drawCentered(g, this.font, Component.literal("No."), cx, serialY, small, p.inkSoft());
+        TicketArt.drawCentered(g, this.font, Component.literal(String.format(Locale.ROOT, "%06d", this.serial))
+                        .withStyle(ChatFormatting.BOLD), cx, TicketArt.snap(serialY + 8.0f * small + 2.0f),
+                TicketArt.crisp(0.75f * unit), p.serial());
+        GuiGeo code = GuiGeo.begin(g);
+        float codeH = Math.max(8.0f, area * 0.12f);
+        TicketArt.barcode(code, left, s.h() - in - 4.0f - codeH, right - left, codeH, this.serial, TicketArt.fade(p.ink(), 0.9f));
+        // 检票打孔：没有 MVP 时印章盖下后打孔；有 MVP 时在人影显形那一刻打孔
+        boolean punched = this.mvpPlayers.isEmpty() ? elapsed >= DETAILS_AT + 300L : mvpElapsed >= REVEALED_AT;
+        long punchSince = this.mvpPlayers.isEmpty() ? elapsed - DETAILS_AT - 300L : mvpElapsed - REVEALED_AT;
+        if (punched) {
+            float hole = TransitionFx.easeOutCubic(punchSince / 140.0f);
+            TicketArt.punchHole(code, cx, b + 1.0f, 3.2f * unit * hole, RailArt.a(VOID, 1.0f), TicketArt.fade(p.edge(), 1.0f));
         }
-        String upstreamWinnerId = switch (this.winStatusName) {
+        code.end();
+    }
+
+    // ==================== 文案 ====================
+
+    /** 胜方副标题（另一种语言）：已知阵营取语言文件；自定义胜方用其 id 拼出。 */
+    private String winSubtitle() {
+        boolean custom = "CUSTOM".equals(this.winStatusName) || "CUSTOM_COMPONENT".equals(this.winStatusName);
+        String id = custom
+                ? shortOptionId(this.customWinnerId).toLowerCase(Locale.ROOT)
+                : ("TIME".equals(this.winStatusName) ? "time" : this.upstreamWinnerId());
+        Language language = Language.getInstance();
+        String key = "gameend.habitrain_core.tag." + id;
+        if (!id.isBlank() && language.has(key)) {
+            return language.getOrDefault(key);
+        }
+        if (custom && !id.isBlank()) {
+            return Component.translatable("gameend.habitrain_core.tag.custom",
+                    id.replace('_', ' ').toUpperCase(Locale.ROOT)).getString();
+        }
+        return language.getOrDefault("gameend.habitrain_core.tag.unknown");
+    }
+
+    private String upstreamWinnerId() {
+        return switch (this.winStatusName) {
             case "KILLERS" -> "killers";
             case "PASSENGERS", "TIME" -> "passengers";
             case "LOOSE_END" -> "loose_end";
@@ -372,466 +998,103 @@ extends Screen {
             case "LOVERS" -> "lovers";
             default -> "unknown";
         };
-        winKey = "announcement.star.win." + upstreamWinnerId;
-        if (Language.getInstance().has((String)winKey)) {
-            return Component.translatable((String)winKey);
+    }
+
+    private Component winLine() {
+        boolean customComponentWin = "CUSTOM_COMPONENT".equals(this.winStatusName);
+        boolean customWin = "CUSTOM".equals(this.winStatusName) || customComponentWin;
+        if (customComponentWin && !this.customTitleJson.isBlank()) {
+            try {
+                RegistryAccess access = Minecraft.getInstance().level != null
+                        ? Minecraft.getInstance().level.registryAccess()
+                        : RegistryAccess.EMPTY;
+                MutableComponent parsed = Component.Serializer.fromJson(this.customTitleJson, (HolderLookup.Provider) access);
+                if (parsed != null && !parsed.getString().isBlank()) {
+                    return parsed;
+                }
+            } catch (Throwable ignored) {
+                // 自定义标题解析失败时回落到 winnerId / 上游胜方文案
+            }
         }
-        return Component.translatable((String)"gameend.habitrain_core.win.custom", (Object[])new Object[]{Component.literal((String)upstreamWinnerId)});
+        if (customWin && !this.customWinnerId.isBlank()) {
+            String winnerId = shortOptionId(this.customWinnerId).toLowerCase(Locale.ROOT);
+            String winKey = "announcement.star.win." + winnerId;
+            if (Language.getInstance().has(winKey)) {
+                return Component.translatable(winKey);
+            }
+            String roleKey = "announcement.star.role." + winnerId;
+            if (Language.getInstance().has(roleKey)) {
+                return Component.translatable("gameend.habitrain_core.win.custom", Component.translatable(roleKey));
+            }
+            return Component.translatable("gameend.habitrain_core.win.custom", Component.literal(winnerId));
+        }
+        String upstreamWinnerId = this.upstreamWinnerId();
+        String winKey = "announcement.star.win." + upstreamWinnerId;
+        if (Language.getInstance().has(winKey)) {
+            return Component.translatable(winKey);
+        }
+        return Component.translatable("gameend.habitrain_core.win.custom", Component.literal(upstreamWinnerId));
     }
 
     private int winColor() {
         if ("CUSTOM_COMPONENT".equals(this.winStatusName) || "CUSTOM".equals(this.winStatusName)) {
-            return this.customWinnerColor != 0 ? this.customWinnerColor : -7776;
+            return this.customWinnerColor != 0 ? this.customWinnerColor | 0xFF000000 : 0xFFFFE1A0;
         }
         return switch (this.winStatusName) {
-            case "KILLERS" -> -4970456;
-            case "PASSENGERS" -> -7776;
-            case "TIME" -> -2511271;
-            case "LOOSE_END" -> -6356992;
-            case "GAMBLER" -> -8388480;
-            case "RECORDER", "NO_PLAYER", "NONE" -> -4144960;
-            case "NIAN_SHOU" -> -47872;
-            case "LOVERS" -> -816385;
-            default -> -4675179;
+            case "KILLERS" -> 0xFFE0383E;
+            case "PASSENGERS" -> 0xFFFFE1A0;
+            case "TIME" -> 0xFFD9AE59;
+            case "LOOSE_END" -> 0xFFD02A2A;
+            case "GAMBLER" -> 0xFFC266E0;
+            case "RECORDER", "NO_PLAYER", "NONE" -> 0xFFC0C0C0;
+            case "NIAN_SHOU" -> 0xFFFF6A2A;
+            case "LOVERS" -> 0xFFF38AFF;
+            default -> 0xFFB8A995;
         };
     }
 
     private Component modeLine() {
         if (this.modeId.isBlank()) {
-            return Component.literal((String)"");
+            return Component.literal("");
         }
-        String key = OptionVoteTexts.optionLangKey((String)this.modeId);
+        String key = OptionVoteTexts.optionLangKey(this.modeId);
         if (Language.getInstance().has(key)) {
-            return Component.translatable((String)key);
+            return Component.translatable(key);
         }
-        return Component.literal((String)GameEndTransitionScreen.shortOptionId(this.modeId));
+        return Component.literal(shortOptionId(this.modeId));
     }
 
-    private float fittedScale(Component text) {
-        float maxW = Math.min(560, this.width - 120);
-        int textW = this.font.width((FormattedText)text);
-        if (textW <= 0) {
-            return 3.25f;
-        }
-        return Math.max(0.8f, Math.min(3.25f, maxW / (float)textW));
-    }
-
-    private void renderMvpBackdrop(GuiGraphics g, float alphaT, boolean solo) {
-        int i;
-        int alpha = Math.round(255.0f * Mth.clamp((float)alphaT, (float)0.0f, (float)1.0f));
-        int stageTop = Math.max(54, Math.round((float)this.height * 0.2f));
-        int horizon = Math.max(stageTop + 20, Math.round((float)this.height * 0.48f));
-        g.fillGradient(0, stageTop, this.width, horizon, GameEndTransitionScreen.withAlpha(solo ? 2503224 : 3151892, Math.round((float)alpha * 0.82f)), GameEndTransitionScreen.withAlpha(solo ? 7427375 : 5908764, Math.round((float)alpha * 0.92f)));
-        int panelCount = solo ? 3 : 6;
-        int panelGap = Math.max(4, this.width / 90);
-        int panelW = Math.max(18, Math.min(72, (this.width - 48) / panelCount - panelGap));
-        int totalW = panelCount * panelW + (panelCount - 1) * panelGap;
-        int panelX = (this.width - totalW) / 2;
-        for (int i2 = 0; i2 < panelCount; ++i2) {
-            float centerBias = 1.0f - Math.abs((float)i2 - (float)(panelCount - 1) * 0.5f) / Math.max(1.0f, (float)panelCount * 0.5f);
-            int lightAlpha = Math.round((float)alpha * (0.13f + 0.2f * centerBias));
-            int x = panelX + i2 * (panelW + panelGap);
-            g.fillGradient(x, stageTop + 8, x + panelW, horizon - 4, GameEndTransitionScreen.withAlpha(-7776, lightAlpha), GameEndTransitionScreen.withAlpha(-7444434, Math.round((float)lightAlpha * 0.28f)));
-            g.fill(x + panelW / 2, stageTop + 8, x + panelW / 2 + 1, horizon - 4, GameEndTransitionScreen.withAlpha(-15068912, Math.round((float)alpha * 0.28f)));
-        }
-        g.fillGradient(0, horizon, this.width, this.height, GameEndTransitionScreen.withAlpha(solo ? 3814184 : 2562326, Math.round((float)alpha * 0.96f)), GameEndTransitionScreen.withAlpha(-16251126, alpha));
-        g.fill(0, horizon, this.width, horizon + 1, GameEndTransitionScreen.withAlpha(-7776, Math.round((float)alpha * 0.48f)));
-        int vanishX = solo ? Math.round((float)this.width * 0.62f) : this.width / 2;
-        for (i = -4; i <= 4; ++i) {
-            int bottomX = this.width / 2 + i * Math.max(42, this.width / 8);
-            GameEndTransitionScreen.drawLine(g, vanishX, horizon, bottomX, this.height, GameEndTransitionScreen.withAlpha(-7444434, Math.round((float)alpha * 0.24f)));
-        }
-        for (i = 1; i <= 4; ++i) {
-            float t = (float)i / 4.0f;
-            int y = Math.round(Mth.lerp((float)(t * t), (float)horizon, (float)this.height));
-            g.fill(0, y, this.width, y + 1, GameEndTransitionScreen.withAlpha(-7444434, Math.round((float)alpha * (0.1f + t * 0.12f))));
-        }
-        MutableComponent label = Component.translatable((String)(solo ? "gameend.habitrain_core.mvp.solo" : "gameend.habitrain_core.mvp.best_squad")).copy().withStyle(ChatFormatting.BOLD);
-        float labelY = Math.max(52.0f, Math.min(70.0f, (float)this.height * 0.19f));
-        this.drawScaledCentered(g, (Component)label, (float)this.width / 2.0f, labelY, 0.82f, GameEndTransitionScreen.withAlpha(-529457, Math.round((float)alpha * 0.88f)));
-    }
-
-    private void renderSquadMvp(GuiGraphics g, long mvpElapsed, float stageT) {
-        int count = Math.min(4, this.mvpPlayers.size());
-        if (count <= 0) {
-            return;
-        }
-        MvpAnimationSettings animSettings = ConfigManager.getInstance().getMvpAnimationSettings();
-        float stageWidth = Math.min(Math.max(220.0f, (float)this.width - 24.0f), 560.0f);
-        float cellWidth = stageWidth / 4.0f;
-        float left = ((float)this.width - stageWidth) * 0.5f;
-        float finalBottom = (float)this.height - Math.max(8.0f, (float)this.height * 0.035f);
-        this.renderSquadStageLighting(g, count, left, cellWidth, finalBottom, stageT, mvpElapsed);
-        for (int i = 0; i < count; ++i) {
-            GameEndTransitionPayload.MvpPlayer entry = this.mvpPlayers.get(i);
-            int depthFromEdge = Math.min(i, count - 1 - i);
-            long stagger = (long)depthFromEdge * 170L + (i >= (count + 1) / 2 ? 80L : 0L);
-            float walkLinear = Mth.clamp((float)((float)(mvpElapsed - stagger) / 2350.0f), (float)0.0f, (float)1.0f);
-            float walk = GameEndTransitionScreen.easeOutCubic(walkLinear);
-            float finalX = left + cellWidth * ((float)i + 0.5f);
-            boolean entersFromLeft = i < (count + 1) / 2;
-            float slotBottom = finalBottom - (switch (i) {
-                case 0 -> 3.0f;
-                case 1 -> 0.0f;
-                case 2 -> 1.0f;
-                default -> 4.0f;
-            });
-            float finalScale = Mth.clamp((float)(cellWidth * 0.62f), (float)28.0f, (float)Math.min(62.0f, (float)this.height * 0.25f));
-            float startX = entersFromLeft ? -finalScale * 0.95f : (float)this.width + (finalScale *= (switch (i) {
-                case 0 -> 0.96f;
-                case 1 -> 1.04f;
-                case 2 -> 1.0f;
-                default -> 0.94f;
-            })) * 0.95f;
-            float x = Mth.lerp((float)walk, (float)startX, (float)finalX);
-            float scale = finalScale * (0.9f + 0.1f * walk) * (0.72f + 0.28f * stageT);
-            float moving = 1.0f - GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((walkLinear - 0.78f) / 0.22f), (float)0.0f, (float)1.0f));
-            float bob = Mth.sin((float)(walkLinear * (float)Math.PI * 7.0f + (float)i * 0.8f)) * 2.4f * moving;
-            float entranceAlpha = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)(walkLinear / 0.16f), (float)0.0f, (float)1.0f)) * stageT;
-            this.renderStageShadow(g, x, slotBottom, scale, entranceAlpha);
-            this.renderEntranceDust(g, x, slotBottom, scale, moving * entranceAlpha, mvpElapsed, i, entersFromLeft);
-            AbstractClientPlayer player = this.previewPlayer(entry.playerId(), entry.playerName());
-            float lookOffset = (entersFromLeft ? 1.0f : -1.0f) * scale * 0.52f * moving;
-
-            final int rankIndex = i;
-            MvpAnimationDefinition animDef = this.selectedMvpAnimations.computeIfAbsent(entry.playerId(),
-                    uid -> MvpAnimationSelector.select(animSettings, uid, rankIndex, count, this.startedAtMillis, true));
-            if (animDef != null && walkLinear >= 0.88f && !this.mvpAnimationStarted.contains(entry.playerId())) {
-                this.mvpAnimationStarted.add(entry.playerId());
-                this.mvpAnimations.play(player, animDef, animSettings.speed);
-            }
-
-            boolean customAnim = this.mvpAnimations.isPlaying(entry.playerId());
-            MvpAnimationDefinition activeDef = customAnim ? this.mvpAnimations.getPlayingDefinition(entry.playerId()) : null;
-            boolean showWeapon = customAnim ? (animSettings.showRoleItems && (activeDef == null || !activeDef.prefersHiddenItem())) : true;
-            ItemStack heldItem = showWeapon ? this.victoryWeapon(entry.roleType()) : ItemStack.EMPTY;
-            boolean raiseKnife = !customAnim && entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
-            float effectiveMoving = customAnim && walkLinear >= 0.88f ? 0.0f : moving;
-
-            this.renderPlayerModel(g, player, x, slotBottom + bob, Math.round(scale), effectiveMoving, walkLinear * 10.0f + (float)i * 1.3f, false, lookOffset, heldItem, raiseKnife);
-            float nameT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((walkLinear - 0.52f) / 0.28f), (float)0.0f, (float)1.0f)) * stageT;
-            if (!(nameT > 0.01f)) continue;
-            float nameY = slotBottom - scale * 2.42f - 26.0f;
-            this.renderNamePlate(g, entry, x, nameY, Math.max(50, Math.round(cellWidth - 8.0f)), nameT);
-        }
-    }
-
-    private void renderSoloMvp(GuiGraphics g, long mvpElapsed, float stageT) {
-        MvpAnimationSettings animSettings = ConfigManager.getInstance().getMvpAnimationSettings();
-        GameEndTransitionPayload.MvpPlayer entry = this.mvpPlayers.get(0);
-        float walkLinear = Mth.clamp((float)((float)mvpElapsed / 2500.0f), (float)0.0f, (float)1.0f);
-        float walk = GameEndTransitionScreen.easeOutCubic(walkLinear);
-        float sitLinear = Mth.clamp((float)((float)(mvpElapsed - 2500L) / 1150.0f), (float)0.0f, (float)1.0f);
-        float sit = GameEndTransitionScreen.easeInOutCubic(sitLinear);
-        float finalBottom = (float)this.height - Math.max(9.0f, (float)this.height * 0.038f);
-        float finalScale = Mth.clamp((float)Math.min((float)this.width * 0.16f, (float)this.height * 0.34f), (float)38.0f, (float)84.0f);
-        float heroX = Mth.lerp((float)walk, (float)(-finalScale * 0.92f), (float)((float)this.width * 0.62f));
-        float bottom = finalBottom + sit * Math.min(8.0f, (float)this.height * 0.032f);
-        float scale = finalScale * (0.92f + 0.08f * walk) * (0.7f + 0.3f * stageT) * (1.0f + 0.2f * sit);
-        float moving = (1.0f - sit) * (1.0f - GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((walkLinear - 0.84f) / 0.16f), (float)0.0f, (float)1.0f)));
-        float bob = Mth.sin((float)(walkLinear * (float)Math.PI * 8.0f)) * 2.8f * moving;
-        float heroAlpha = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)(walkLinear / 0.14f), (float)0.0f, (float)1.0f)) * stageT;
-        this.renderSoloSpotlight(g, heroX, finalBottom, scale, heroAlpha, mvpElapsed);
-        this.renderStageShadow(g, heroX, finalBottom, scale, heroAlpha);
-        this.renderEntranceDust(g, heroX, finalBottom, scale, moving * heroAlpha, mvpElapsed, 7, true);
-        float pileT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sitLinear + walkLinear - 1.1f) / 0.45f), (float)0.0f, (float)1.0f)) * stageT;
-        if (pileT > 0.01f) {
-            this.renderModelPile(g, entry.playerId(), mvpElapsed, pileT);
-        }
-        AbstractClientPlayer hero = this.previewPlayer(entry.playerId(), entry.playerName());
-        float lookOffset = scale * 0.58f * moving;
-
-        MvpAnimationDefinition animDef = this.selectedMvpAnimations.computeIfAbsent(entry.playerId(),
-                uid -> MvpAnimationSelector.select(animSettings, uid, 0, 1, this.startedAtMillis, false));
-        if (animDef != null && walkLinear >= 0.88f && !this.mvpAnimationStarted.contains(entry.playerId())) {
-            this.mvpAnimationStarted.add(entry.playerId());
-            this.mvpAnimations.play(hero, animDef, animSettings.speed);
-        }
-
-        boolean customAnim = this.mvpAnimations.isPlaying(entry.playerId());
-        MvpAnimationDefinition activeDef = customAnim ? this.mvpAnimations.getPlayingDefinition(entry.playerId()) : null;
-        boolean showWeapon = customAnim ? (animSettings.showRoleItems && (activeDef == null || !activeDef.prefersHiddenItem())) : true;
-        ItemStack heldItem = showWeapon ? this.victoryWeapon(entry.roleType()) : ItemStack.EMPTY;
-        boolean raiseKnife = !customAnim && entry.roleType() == GameEndTransitionPayload.ROLE_TYPE_KILLER && walkLinear >= 0.98f;
-        boolean legacyCrouch = !customAnim && sit > 0.38f;
-        float effectiveMoving = customAnim && walkLinear >= 0.88f ? 0.0f : moving;
-
-        this.renderPlayerModel(g, hero, heroX, bottom + bob, Math.round(scale), effectiveMoving, walkLinear * 11.0f, legacyCrouch, lookOffset, heldItem, raiseKnife);
-        float cardT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((sitLinear - 0.35f) / 0.5f), (float)0.0f, (float)1.0f)) * stageT;
-        if (cardT > 0.01f) {
-            this.renderSoloNameCard(g, entry, cardT);
-        }
-    }
-
-    private void renderNamePlate(GuiGraphics g, GameEndTransitionPayload.MvpPlayer entry, float centerX, float y, int maxWidth, float alphaT) {
-        String name = entry.playerName().isBlank() ? "Player" : entry.playerName();
-        name = this.font.plainSubstrByWidth(name, Math.max(24, maxWidth - 12));
-        String score = Component.translatable((String)"gameend.habitrain_core.mvp.score", (Object[])new Object[]{entry.score()}).getString();
-        int w = Math.min(maxWidth, Math.max(this.font.width(name), this.font.width(score)) + 12);
-        int x = Math.round(centerX - (float)w * 0.5f);
-        int iy = Math.round(y - 3.0f * (1.0f - alphaT));
-        int alpha = Math.round(220.0f * alphaT);
-        g.fill(x, iy, x + w, iy + 22, GameEndTransitionScreen.withAlpha(-16251126, alpha));
-        g.fill(x, iy, x + 2, iy + 22, GameEndTransitionScreen.withAlpha(this.winColor(), Math.round(240.0f * alphaT)));
-        g.drawCenteredString(this.font, name, Math.round(centerX), iy + 3, GameEndTransitionScreen.withAlpha(-725018, Math.round(255.0f * alphaT)));
-        g.drawCenteredString(this.font, score, Math.round(centerX), iy + 12, GameEndTransitionScreen.withAlpha(-2511271, Math.round(220.0f * alphaT)));
-    }
-
-    private void renderSoloNameCard(GuiGraphics g, GameEndTransitionPayload.MvpPlayer entry, float alphaT) {
-        int cardW = Math.min(220, Math.max(145, Math.round((float)this.width * 0.34f)));
-        int x = Math.max(14, Math.round((float)this.width * 0.055f - 18.0f * (1.0f - alphaT)));
-        int cardH = 60;
-        int maxY = Math.max(8, this.height - cardH - 8);
-        int minY = Math.min(62, maxY);
-        int y = Mth.clamp((int)Math.round((float)this.height * 0.7f), (int)minY, (int)maxY);
-        int alpha = Math.round(218.0f * alphaT);
-        g.fill(x, y, x + cardW, y + cardH, GameEndTransitionScreen.withAlpha(-16251126, alpha));
-        g.fill(x, y, x + 3, y + cardH, GameEndTransitionScreen.withAlpha(this.winColor(), Math.round(255.0f * alphaT)));
-        g.drawString(this.font, (Component)Component.translatable((String)"gameend.habitrain_core.mvp.solo").copy().withStyle(ChatFormatting.BOLD), x + 10, y + 6, GameEndTransitionScreen.withAlpha(-7776, Math.round(255.0f * alphaT)), false);
-        String name = this.font.plainSubstrByWidth(entry.playerName(), cardW - 20);
-        g.drawString(this.font, name, x + 10, y + 21, GameEndTransitionScreen.withAlpha(-725018, Math.round(255.0f * alphaT)), false);
-        MutableComponent stats = Component.translatable((String)"gameend.habitrain_core.mvp.stats", (Object[])new Object[]{entry.kills(), entry.survivalSeconds(), entry.itemUses()});
-        g.drawString(this.font, this.font.plainSubstrByWidth(stats.getString(), cardW - 20), x + 10, y + 36, GameEndTransitionScreen.withAlpha(-4675179, Math.round(230.0f * alphaT)), false);
-        g.drawString(this.font, (Component)Component.translatable((String)"gameend.habitrain_core.mvp.score", (Object[])new Object[]{entry.score()}), x + 10, y + 49, GameEndTransitionScreen.withAlpha(-2511271, Math.round(240.0f * alphaT)), false);
-    }
-
-    private void renderModelPile(GuiGraphics g, UUID heroId, long mvpElapsed, float alphaT) {
-        int baseY = this.height - 3;
-        int centerX = Math.round((float)this.width * 0.59f);
-        this.renderBloodPool(g, centerX, baseY, alphaT);
-        this.renderBlockyPile(g, centerX, baseY, alphaT);
-        Minecraft mc = Minecraft.getInstance();
-        ArrayList<AbstractClientPlayer> pile = new ArrayList<AbstractClientPlayer>();
-        if (mc.level != null) {
-            for (AbstractClientPlayer visible : mc.level.players()) {
-                if (visible.getUUID().equals(heroId)) continue;
-                pile.add(this.previewPlayer(visible.getUUID(), visible.getGameProfile().getName()));
-                if (pile.size() < 4) continue;
-                break;
-            }
-        }
-        float[] dx = new float[]{-62.0f, -22.0f, 28.0f, 62.0f};
-        float[] angle = new float[]{-72.0f, 67.0f, -61.0f, 74.0f};
-        for (int i = 0; i < pile.size(); ++i) {
-            float scatterLinear = Mth.clamp((float)((alphaT - (float)i * 0.075f) / 0.7f), (float)0.0f, (float)1.0f);
-            float scatter = GameEndTransitionScreen.easeOutCubic(scatterLinear);
-            float px = Mth.lerp((float)scatter, (float)((float)centerX + ((float)i - 1.5f) * 7.0f), (float)((float)centerX + dx[i]));
-            float finalY = (float)baseY - 3.0f - (float)(i % 2) * 6.0f;
-            float py = Mth.lerp((float)scatter, (float)((float)baseY - 25.0f - (float)i * 4.0f), (float)finalY) - Mth.sin((float)(scatter * (float)Math.PI)) * (16.0f + (float)i * 3.0f);
-            g.pose().pushPose();
-            g.pose().translate(px, py, 120.0f + (float)i);
-            g.pose().mulPose(Axis.ZP.rotationDegrees(angle[i] * scatter));
-            g.pose().translate(-px, -py, 0.0f);
-            int pileScale = Math.round((float)Math.max(22, Math.min(34, this.height / 9)) * (0.72f + 0.28f * scatter));
-            this.renderPlayerModel(g, (AbstractClientPlayer)pile.get(i), px, py, pileScale, 0.0f, i, true, 0.0f, ItemStack.EMPTY, false);
-            g.pose().popPose();
-        }
-        this.renderBloodParticles(g, centerX, baseY, mvpElapsed, alphaT);
-    }
-
-    private void renderBlockyPile(GuiGraphics g, int centerX, int baseY, float alphaT) {
-        int[] xs = new int[]{centerX - 68, centerX - 32, centerX + 7, centerX + 43};
-        int[] ys = new int[]{baseY - 17, baseY - 24, baseY - 15, baseY - 22};
-        for (int i = 0; i < xs.length; ++i) {
-            float localLinear = Mth.clamp((float)((alphaT - (float)i * 0.055f) / 0.72f), (float)0.0f, (float)1.0f);
-            float local = GameEndTransitionScreen.easeOutCubic(localLinear);
-            int x = Math.round(Mth.lerp((float)local, (float)((float)centerX - 8.0f + (float)i * 5.0f), (float)xs[i]));
-            int y = Math.round(Mth.lerp((float)local, (float)((float)baseY - 35.0f - (float)i * 3.0f), (float)ys[i]) - Mth.sin((float)(local * (float)Math.PI)) * (11.0f + (float)i * 2.0f));
-            int colorA = GameEndTransitionScreen.withAlpha(5133145, Math.round(180.0f * local));
-            int colorB = GameEndTransitionScreen.withAlpha(3159098, Math.round(205.0f * local));
-            int outline = GameEndTransitionScreen.withAlpha(-16251126, Math.round(220.0f * local));
-            g.fill(x - 2, y - 2, x + 20, y + 14, outline);
-            g.fill(x, y, x + 18, y + 12, (i & 1) == 0 ? colorA : colorB);
-            g.fill(x + 4, y - 8, x + 13, y + 1, colorA);
-        }
-    }
-
-    private void renderSquadStageLighting(GuiGraphics g, int count, float left, float cellWidth, float floorY, float stageT, long mvpElapsed) {
-        int top = Math.max(56, Math.round((float)this.height * 0.22f));
-        float pulse = 0.88f + 0.12f * Mth.sin((float)((float)mvpElapsed / 430.0f));
-        for (int i = 0; i < count; ++i) {
-            float x = left + cellWidth * ((float)i + 0.5f);
-            float reveal = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((float)(mvpElapsed - (long)i * 90L) / 700.0f), (float)0.0f, (float)1.0f)) * stageT;
-            int beamHalf = Math.max(18, Math.round(cellWidth * 0.46f));
-            int ix = Math.round(x);
-            int alpha = Math.round(34.0f * reveal * pulse);
-            g.fillGradient(ix - beamHalf, top, ix + beamHalf, Math.round(floorY), GameEndTransitionScreen.withAlpha(-7776, Math.round((float)alpha * 0.18f)), GameEndTransitionScreen.withAlpha(-2511271, alpha));
-            g.fill(ix - Math.round(cellWidth * 0.32f), Math.round(floorY - 2.0f), ix + Math.round(cellWidth * 0.32f), Math.round(floorY), GameEndTransitionScreen.withAlpha(-7776, Math.round(52.0f * reveal)));
-        }
-        int lineY = Math.max(73, Math.round((float)this.height * 0.235f));
-        int lineHalf = Math.round(Math.min((float)this.width * 0.31f, 250.0f) * stageT);
-        g.fill(this.width / 2 - lineHalf, lineY, this.width / 2 + lineHalf, lineY + 1, GameEndTransitionScreen.withAlpha(-2511271, Math.round(88.0f * stageT)));
-        GameEndTransitionScreen.drawDiamond(g, this.width / 2, lineY, 2, GameEndTransitionScreen.withAlpha(-7776, Math.round(210.0f * stageT)));
-    }
-
-    private void renderSoloSpotlight(GuiGraphics g, float x, float floorY, float scale, float alphaT, long mvpElapsed) {
-        int top = Math.max(54, Math.round((float)this.height * 0.2f));
-        int half = Math.max(26, Math.round(scale * 0.8f));
-        int ix = Math.round(x);
-        float breathe = 0.86f + 0.14f * Mth.sin((float)((float)mvpElapsed / 360.0f));
-        int alpha = Math.round(46.0f * alphaT * breathe);
-        g.fillGradient(ix - half, top, ix + half, Math.round(floorY), GameEndTransitionScreen.withAlpha(-7776, Math.round((float)alpha * 0.12f)), GameEndTransitionScreen.withAlpha(12093247, alpha));
-        g.fill(ix - Math.round(scale * 0.65f), Math.round(floorY - 2.0f), ix + Math.round(scale * 0.65f), Math.round(floorY), GameEndTransitionScreen.withAlpha(-7776, Math.round(68.0f * alphaT)));
-    }
-
-    private void renderStageShadow(GuiGraphics g, float centerX, float bottom, float scale, float alphaT) {
-        int cx = Math.round(centerX);
-        int y = Math.round(bottom - 2.0f);
-        for (int row = 0; row < 5; ++row) {
-            int half = Math.max(3, Math.round(scale * (0.62f - (float)row * 0.075f)));
-            int alpha = Math.round((float)(34 - row * 5) * alphaT);
-            g.fill(cx - half, y - row, cx + half, y - row + 1, GameEndTransitionScreen.withAlpha(0, alpha));
-        }
-    }
-
-    private void renderEntranceDust(GuiGraphics g, float x, float floorY, float scale, float strength, long elapsed, int seed, boolean movingRight) {
-        if (strength <= 0.01f) {
-            return;
-        }
-        float time = (float)elapsed / 1000.0f;
-        float direction = movingRight ? -1.0f : 1.0f;
-        for (int i = 0; i < 7; ++i) {
-            float phase = GameEndTransitionScreen.fract(time * (0.72f + (float)i * 0.035f) + (float)seed * 0.173f + (float)i * 0.211f);
-            float distance = (7.0f + (float)i * 2.7f) * phase;
-            int px = Math.round(x + direction * distance);
-            int py = Math.round(floorY - 2.0f - Mth.sin((float)(phase * (float)Math.PI)) * (3.0f + (float)(i % 3)));
-            int size = i % 3 == 0 ? 2 : 1;
-            int alpha = Math.round(86.0f * strength * (1.0f - phase));
-            g.fill(px, py, px + size, py + size, GameEndTransitionScreen.withAlpha(i % 2 == 0 ? 13018219 : 7823946, alpha));
-        }
-    }
-
-    private void renderBloodPool(GuiGraphics g, int centerX, int baseY, float alphaT) {
-        float poolT = GameEndTransitionScreen.easeOutCubic(Mth.clamp((float)((alphaT - 0.12f) / 0.78f), (float)0.0f, (float)1.0f));
-        if (poolT <= 0.0f) {
-            return;
-        }
-        int halfWidth = Math.round(18.0f + 82.0f * poolT);
-        int alpha = Math.round(176.0f * poolT);
-        for (int row = 0; row < 7; ++row) {
-            int inset = Math.round((float)(row * row) * 0.72f);
-            g.fill(centerX - halfWidth + inset, baseY - row - 1, centerX + halfWidth - inset, baseY - row, GameEndTransitionScreen.withAlpha(row < 2 ? 3998983 : 7473420, Math.max(0, alpha - row * 13)));
-        }
-        int lobe = Math.round(18.0f * poolT);
-        g.fill(centerX - halfWidth - lobe / 2, baseY - 4, centerX - halfWidth + lobe, baseY - 2, GameEndTransitionScreen.withAlpha(5900041, Math.round(130.0f * poolT)));
-        g.fill(centerX + halfWidth - lobe, baseY - 3, centerX + halfWidth + lobe / 2, baseY - 1, GameEndTransitionScreen.withAlpha(5900041, Math.round(120.0f * poolT)));
-        g.fill(centerX - halfWidth / 2, baseY - 6, centerX + halfWidth / 3, baseY - 5, GameEndTransitionScreen.withAlpha(11868959, Math.round(76.0f * poolT)));
-    }
-
-    private void renderBloodParticles(GuiGraphics g, int centerX, int baseY, long mvpElapsed, float alphaT) {
-        long burstElapsed = mvpElapsed - 2500L - 70L;
-        if (burstElapsed < 0L) {
-            return;
-        }
-        for (int i = 0; i < 22; ++i) {
-            int size;
-            long delayed = burstElapsed - (long)(i % 6) * 38L;
-            if (delayed < 0L) continue;
-            float flight = Mth.clamp((float)((float)delayed / (620.0f + (float)(i % 4) * 85.0f)), (float)0.0f, (float)1.0f);
-            float direction = (i & 1) == 0 ? -1.0f : 1.0f;
-            float reach = 13.0f + (float)(i * 19 % 58);
-            float arc = 10.0f + (float)(i * 13 % 25);
-            int px = Math.round((float)centerX + direction * reach * flight);
-            int py = Math.round(Mth.lerp((float)flight, (float)((float)baseY - 22.0f), (float)((float)baseY - 2.0f)) - Mth.sin((float)(flight * (float)Math.PI)) * arc);
-            size = i % 5 == 0 ? 2 : 1;
-            if (flight < 1.0f) {
-                int particleAlpha = Math.round(230.0f * alphaT * (1.0f - flight * 0.38f));
-                g.fill(px, py, px + size, py + size, GameEndTransitionScreen.withAlpha(i % 3 == 0 ? 13708081 : 9309716, particleAlpha));
-                continue;
-            }
-            int splatWidth = 1 + i % 4;
-            g.fill(px - splatWidth, baseY - 2 - i % 3, px + splatWidth + 1, baseY - 1 - i % 3, GameEndTransitionScreen.withAlpha(6752010, Math.round(132.0f * alphaT)));
-        }
-        float flash = 1.0f - Mth.clamp((float)((float)burstElapsed / 360.0f), (float)0.0f, (float)1.0f);
-        if (flash > 0.0f) {
-            for (int i = 0; i < 9; ++i) {
-                float direction = (float)(i - 4) / 4.0f;
-                int endX = centerX + Math.round(direction * (36.0f + Math.abs(direction) * 18.0f));
-                int endY = baseY - 18 - i * 11 % 17;
-                GameEndTransitionScreen.drawLine(g, centerX, baseY - 8, endX, endY, GameEndTransitionScreen.withAlpha(10555928, Math.round(120.0f * flash * alphaT)));
-            }
-        }
-    }
-
-    private static float fract(float value) {
-        return value - (float)Math.floor(value);
-    }
+    // ==================== 模型 / 物品 ====================
 
     private AbstractClientPlayer previewPlayer(UUID id, String name) {
-        AbstractClientPlayer cached;
         Minecraft mc = Minecraft.getInstance();
         if (id == null || mc.level == null) {
             return null;
         }
         if (this.previewLevel != mc.level) {
-            this.mvpAnimations.clear();
-            this.selectedMvpAnimations.clear();
-            this.mvpAnimationStarted.clear();
             this.previewPlayers.clear();
             this.previewLevel = mc.level;
         }
-        if ((cached = this.previewPlayers.get(id)) != null) {
+        AbstractClientPlayer cached = this.previewPlayers.get(id);
+        if (cached != null) {
             return cached;
         }
         String safeName = name == null || name.isBlank() ? "Player" : name;
         GameProfile profile = new GameProfile(id, safeName);
-        AbstractClientPlayer source = mc.level.players().stream().filter(player -> player.getUUID().equals(id)).findFirst().orElse(null);
+        AbstractClientPlayer source = mc.level.players().stream()
+                .filter(player -> player.getUUID().equals(id)).findFirst().orElse(null);
         if (source != null) {
             profile.getProperties().putAll(source.getGameProfile().getProperties());
         }
         RemotePlayer created = new RemotePlayer(mc.level, profile) {
-
+            @Override
             public boolean isModelPartShown(PlayerModelPart part) {
                 return true;
             }
         };
-        this.mvpAnimations.attach(created);
-        this.previewPlayers.put(id, (AbstractClientPlayer)created);
+        MvpStillPose.apply(created);
+        this.previewPlayers.put(id, created);
         return created;
-    }
-
-    /*
-     * WARNING - Removed try catching itself - possible behaviour change.
-     */
-    private void renderPlayerModel(GuiGraphics g, AbstractClientPlayer player, float centerX, float bottom, int scale, float walkAmount, float walkPhase, boolean crouching, float lookOffset, ItemStack heldItem, boolean usingHeldItem) {
-        if (player == null || scale <= 0) {
-            return;
-        }
-        ItemStack oldMain = player.getMainHandItem().copy();
-        Pose oldPose = player.getPose();
-        boolean oldInvisible = player.isInvisible();
-        boolean posePushed = false;
-        try {
-            player.setInvisible(false);
-            player.setPose(crouching ? Pose.CROUCHING : Pose.STANDING);
-            player.stopUsingItem();
-            player.setItemSlot(EquipmentSlot.MAINHAND, heldItem == null ? ItemStack.EMPTY : heldItem.copy());
-            if (usingHeldItem && !player.getMainHandItem().isEmpty()) {
-                player.startUsingItem(InteractionHand.MAIN_HAND);
-            }
-            float phaseDelta = walkPhase - player.walkAnimation.position();
-            player.walkAnimation.update(phaseDelta, 1.0f);
-            player.walkAnimation.setSpeed(Mth.clamp((float)walkAmount, (float)0.0f, (float)1.0f));
-            int halfW = Math.max(22, Math.round((float)scale * 0.86f));
-            int top = Math.round(bottom - (float)scale * 2.42f);
-            int bottomI = Math.round(bottom + 4.0f);
-            int x = Math.round(centerX);
-            g.pose().pushPose();
-            posePushed = true;
-            g.pose().translate(0.0f, 0.0f, 260.0f);
-            InventoryScreen.renderEntityInInventoryFollowsMouse((GuiGraphics)g, (int)(x - halfW), (int)top, (int)(x + halfW), (int)bottomI, (int)scale, (float)0.0625f, (float)(centerX + Mth.clamp((float)lookOffset, (float)((float)(-scale) * 0.72f), (float)((float)scale * 0.72f))), (float)((float)(top + bottomI) * 0.5f), (LivingEntity)player);
-        }
-        catch (Throwable throwable) {
-        }
-        finally {
-            if (posePushed) {
-                g.pose().popPose();
-            }
-            player.stopUsingItem();
-            player.setItemSlot(EquipmentSlot.MAINHAND, oldMain);
-            player.setPose(oldPose);
-            player.setInvisible(oldInvisible);
-        }
     }
 
     private ItemStack victoryWeapon(int roleType) {
@@ -850,13 +1113,15 @@ extends Screen {
         };
         for (ResourceLocation id : itemIds) {
             try {
-                Item item = (Item)BuiltInRegistries.ITEM.get(id);
-                if (item == null || item == Items.AIR) continue;
-                ItemStack result = new ItemStack((ItemLike)item);
+                Item item = BuiltInRegistries.ITEM.get(id);
+                if (item == null || item == Items.AIR) {
+                    continue;
+                }
+                ItemStack result = new ItemStack(item);
                 this.victoryWeaponTemplates.put(roleType, result);
                 return result;
-            }
-            catch (Throwable throwable) {
+            } catch (Throwable ignored) {
+                // 注册表缺失该物品时尝试下一个候选
             }
         }
         this.victoryWeaponTemplates.put(roleType, ItemStack.EMPTY);
@@ -864,179 +1129,44 @@ extends Screen {
     }
 
     private long mvpStageStartMillis() {
-        long planned = this.startedAtMillis + 1150L + 650L + 1200L + 650L + 120L + 620L;
+        long planned = this.startedAtMillis + MVP_DATA_AT;
         return this.mvpAvailableAtMillis > 0L ? Math.max(planned, this.mvpAvailableAtMillis) : planned;
     }
 
-    private static void drawLine(GuiGraphics g, int x0, int y0, int x1, int y1, int color) {
-        int dx = Math.abs(x1 - x0);
-        int sx = x0 < x1 ? 1 : -1;
-        int dy = -Math.abs(y1 - y0);
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx + dy;
-        while (true) {
-            g.fill(x0, y0, x0 + 1, y0 + 1, color);
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 >= dy) {
-                err += dy;
-                x0 += sx;
-            }
-            if (e2 > dx) continue;
-            err += dx;
-            y0 += sy;
-        }
-    }
-
-    private void renderExit(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        float exit = this.exitProgress();
-        float local = TransitionFx.easeInOutQuart(exit);
-        float edgeX = (float)this.width * (1.0f - local);
-        g.pose().pushPose();
-        g.pose().translate((float)(-this.width) * local, 0.0f, 0.0f);
-        this.renderComposition(g, 1.0f);
-        g.pose().popPose();
-        // 滑出期间整体压暗，面板离场更有"落幕"感
-        if (edgeX > 0.5f) {
-            g.fill(0, 0, Math.round(edgeX), this.height, GameEndTransitionScreen.withAlpha(0, Math.round(110.0f * TransitionFx.easeInCubic(exit))));
-        }
-        if (exit < 1.0f) {
-            this.renderSlideEdge(g, edgeX, local, -1);
-        }
-    }
-
-    private void renderFlowingLines(GuiGraphics g, float strength) {
-        float time = (float)Util.getMillis() / 1000.0f;
-        int cy = this.height / 2 - 18;
-        int[] rows = new int[]{cy - 166, cy - 136, cy - 106, cy + 98, cy + 132, cy + 166};
-        int[] speeds = new int[]{96, 152, 112, 176, 130, 92};
-        for (int r = 0; r < rows.length; ++r) {
-            int y = rows[r];
-            float breathe = (0.75f + 0.25f * Mth.sin((float)(time * 0.7f + (float)r * 2.1f))) * strength;
-            g.fill(0, y, this.width, y + 1, GameEndTransitionScreen.withAlpha(-7444434, Math.round(26.0f * breathe)));
-            int streakW = 220 + r * 34;
-            for (int s = 0; s < 3; ++s) {
-                float phase = time * (float)speeds[r] + (float)(s * (streakW + 320)) + (float)r * 97.0f;
-                int span = this.width + streakW;
-                float center = this.width - Math.floorMod(Math.round(phase), span);
-                this.renderStreak(g, center, y, streakW, breathe, (r + s) % 2 == 0);
-            }
-        }
-        int bandHalf = 190;
-        int span = this.width + bandHalf * 2 + 60;
-        float bandPhase = time * (float)span / 9.0f;
-        float bandCenter = this.width + bandHalf + 30 - Math.floorMod(Math.round(bandPhase), span);
-        this.renderLightBand(g, bandCenter, strength);
-    }
-
-    private void renderStreak(GuiGraphics g, float center, int y, int streakW, float rowBreathe, boolean bright) {
-        int x0;
-        int alpha;
-        float frac;
-        int i;
-        int half = streakW / 2;
-        int steps = 12;
-        int stepW = Math.max(1, half / steps);
-        for (i = 1; i <= steps; ++i) {
-            frac = (float)i / (float)steps;
-            alpha = Math.round((4.0f + 44.0f * frac * frac) * rowBreathe);
-            x0 = (int)center - half + (steps - i) * stepW;
-            g.fill(x0, y, x0 + stepW, y + 1, GameEndTransitionScreen.withAlpha(bright ? -7776 : -2511271, alpha));
-        }
-        g.fill((int)center - 1, y, (int)center + 2, y + 1, GameEndTransitionScreen.withAlpha(-7776, Math.round(175.0f * rowBreathe)));
-        for (i = 0; i < steps; ++i) {
-            frac = 1.0f - (float)i / (float)steps;
-            alpha = Math.round((4.0f + 30.0f * frac * frac) * rowBreathe);
-            x0 = (int)center + 1 + i * stepW;
-            g.fill(x0, y, x0 + stepW, y + 1, GameEndTransitionScreen.withAlpha(-2511271, alpha));
-        }
-    }
-
-    private void renderLightBand(GuiGraphics g, float centerX, float strength) {
-        int core = Mth.clamp((int)Math.round(centerX), (int)0, (int)Math.max(0, this.width - 1));
-        g.fill(core, 0, core + 1, this.height, GameEndTransitionScreen.withAlpha(-7776, Math.round(34.0f * strength)));
-        for (int i = 1; i <= 16; ++i) {
-            float frac = 1.0f - (float)i / 16.0f;
-            int alpha = Math.round(26.0f * frac * frac * strength);
-            int xr = Math.min(this.width - 1, core + i);
-            int xl = Math.max(0, core - i);
-            g.fill(xl, 0, xl + 1, this.height, GameEndTransitionScreen.withAlpha(-2511271, alpha));
-            g.fill(xr, 0, xr + 1, this.height, GameEndTransitionScreen.withAlpha(-2511271, alpha));
-        }
-    }
-
-    private void renderParticles(GuiGraphics g, float strength) {
-        float time = (float)Util.getMillis() / 1000.0f;
-        int span = this.width + 60;
-        for (int i = 0; i < 12; ++i) {
-            float speed = 30 + i % 5 * 9;
-            float x = this.width - Math.floorMod(Math.round(time * speed + (float)i * 149.0f), span);
-            int y = 24 + Math.floorMod(i * 83 + 37, Math.max(1, this.height - 48));
-            float pulse = 0.5f + 0.5f * Mth.sin((float)(time * 2.3f + (float)i * 1.9f));
-            int size = 1 + (i % 3 == 0 ? 1 : 0);
-            g.fill((int)x, y, (int)x + size, y + size, GameEndTransitionScreen.withAlpha(i % 4 == 0 ? -7776 : -2511271, Math.round(70.0f * pulse * strength)));
-        }
-    }
-
-    private void renderSlideEdge(GuiGraphics g, float edgeX, float localProgress, int featherDir) {
-        if (edgeX < 0.0f || edgeX > (float)this.width) {
-            return;
-        }
-        float velocity = Mth.sin((float)(Mth.clamp((float)localProgress, (float)0.0f, (float)1.0f) * (float)Math.PI));
-        for (int i = 1; i <= 26; ++i) {
-            int x = Mth.clamp((int)(Math.round(edgeX) + featherDir * i), (int)0, (int)(this.width - 1));
-            float strength = 1.0f - (float)i / 26.0f;
-            g.fill(x, 0, x + 1, this.height, GameEndTransitionScreen.withAlpha(-15068912, Math.round(150.0f * strength * (0.25f + 0.75f * velocity))));
-        }
-        int coreX = Mth.clamp((int)Math.round(edgeX), (int)0, (int)Math.max(0, this.width - 1));
-        g.fill(coreX - 1, 0, Math.min(this.width, coreX + 1), this.height, GameEndTransitionScreen.withAlpha(-7776, Math.round(150.0f + 100.0f * velocity)));
-        if (featherDir > 0) {
-            g.fill(coreX - 3, 0, coreX - 1, this.height, GameEndTransitionScreen.withAlpha(-2511271, Math.round(70.0f * velocity)));
-        } else {
-            g.fill(coreX + 1, 0, Math.min(this.width, coreX + 3), this.height, GameEndTransitionScreen.withAlpha(-2511271, Math.round(70.0f * velocity)));
-        }
-    }
-
-    private void drawEmblem(GuiGraphics g, int cx, int cy, int alpha, float breathe, float spin) {
-        if (alpha <= 0) {
-            return;
-        }
-        TransitionFx.drawOrbit(g, cx, cy, 24, spin, -7444434, -7776, alpha);
-        GameEndTransitionScreen.drawDiamond(g, cx, cy, 15, GameEndTransitionScreen.withAlpha(-7444434, alpha));
-        GameEndTransitionScreen.drawDiamond(g, cx, cy, 11, GameEndTransitionScreen.withAlpha(-2511271, alpha));
-        GameEndTransitionScreen.drawDiamond(g, cx, cy, 6, GameEndTransitionScreen.withAlpha(-7776, alpha));
-        GameEndTransitionScreen.drawDiamond(g, cx, cy, 2, GameEndTransitionScreen.withAlpha(-529457, Math.round((float)alpha * (0.6f + 0.4f * breathe))));
-    }
+    // ==================== 生命周期 / 输入 ====================
 
     private void completeTransition() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen == this && !this.completed) {
             this.completed = true;
-            GameEndOverlayState.scheduleGrace((long)4000L);
+            GameEndOverlayState.scheduleGrace(4000L);
             mc.setScreen(null);
         }
     }
 
+    @Override
     public void removed() {
         super.removed();
         if (!this.completed && GameEndOverlayState.isActive()) {
-            GameEndOverlayState.scheduleGrace((long)0L);
+            GameEndOverlayState.scheduleGrace(0L);
         }
-        this.mvpAnimations.clear();
-        this.selectedMvpAnimations.clear();
-        this.mvpAnimationStarted.clear();
         this.previewPlayers.clear();
         this.previewLevel = null;
+        this.ticketCanvas.close();
+        this.ghostCanvas.close();
     }
 
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         return true;
     }
 
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         return true;
     }
 
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             if (this.exitStarted) {
@@ -1052,59 +1182,28 @@ extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    @Override
     public boolean shouldCloseOnEsc() {
         return false;
     }
 
+    @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    private float sweepProgress() {
-        return Mth.clamp((float)((float)(Util.getMillis() - this.startedAtMillis) / 1150.0f), (float)0.0f, (float)1.0f);
     }
 
     private float exitProgress() {
         if (!this.exitStarted) {
             return 0.0f;
         }
-        return Mth.clamp((float)((float)(Util.getMillis() - this.exitStartAtMillis) / 900.0f), (float)0.0f, (float)1.0f);
-    }
-
-    private void drawScaledCentered(GuiGraphics g, Component text, float x, float y, float scale, int color) {
-        g.pose().pushPose();
-        g.pose().translate(x, y, 0.0f);
-        g.pose().scale(scale, scale, 1.0f);
-        g.drawCenteredString(this.font, text, 0, 0, color);
-        g.pose().popPose();
-    }
-
-    private static void drawDiamond(GuiGraphics g, int centerX, int centerY, int radius, int color) {
-        for (int dy = -radius; dy <= radius; ++dy) {
-            int halfWidth = radius - Math.abs(dy);
-            g.fill(centerX - halfWidth, centerY + dy, centerX + halfWidth + 1, centerY + dy + 1, color);
-        }
-    }
-
-    private static float easeInOutCubic(float value) {
-        float t = Mth.clamp((float)value, (float)0.0f, (float)1.0f);
-        return t < 0.5f ? 4.0f * t * t * t : 1.0f - (float)Math.pow(-2.0f * t + 2.0f, 3.0) / 2.0f;
-    }
-
-    private static float easeOutCubic(float value) {
-        float inverse = 1.0f - value;
-        return 1.0f - inverse * inverse * inverse;
-    }
-
-    private static int withAlpha(int color, int alpha) {
-        return Mth.clamp((int)alpha, (int)0, (int)255) << 24 | color & 0xFFFFFF;
+        return Mth.clamp((Util.getMillis() - this.exitStartAtMillis) / (float) EXIT_MILLIS, 0.0f, 1.0f);
     }
 
     private static String shortOptionId(String optionId) {
         if (optionId == null) {
             return "";
         }
-        int split = optionId.lastIndexOf(58);
+        int split = optionId.lastIndexOf(':');
         return split >= 0 && split + 1 < optionId.length() ? optionId.substring(split + 1) : optionId;
     }
 }

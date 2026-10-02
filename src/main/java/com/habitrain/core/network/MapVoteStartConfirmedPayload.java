@@ -12,11 +12,7 @@ import net.minecraft.server.level.ServerPlayer;
 /**
  * 判定点 A：地图重置完成、{@code trueStartGame} 已成功进入 STARTING。
  *
- * <p>客户端据此：</p>
- * <ul>
- *   <li>加载页仍可见 → 锁定 hide，继续现有加载动画；</li>
- *   <li>加载页已被玩家隐藏 → 强制左→右补盖并显示「对局开始」，遮住随后的传送。</li>
- * </ul>
+ * <p>客户端据此收起顶部「重置地图中」进度牌，打开全屏开局转场，赶在随后的传送前盖住画面。</p>
  *
  * <p>与 {@link MapVoteLaunchTransitionPayload}（环境就绪 / 判定点 B）分离，
  * 因为真正的玩家传送发生在 STARTING 末的 {@code initializeGame}，必须在此前盖住画面。</p>

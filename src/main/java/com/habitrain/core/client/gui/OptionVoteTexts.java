@@ -31,6 +31,11 @@ public final class OptionVoteTexts {
         return Component.translatable("vote.habitrain_core.ui.time_left", seconds);
     }
 
+    /** 翻牌倒计时右侧的单位说明（数字由翻牌器单独绘制）。 */
+    public static Component countdownUnit() {
+        return Component.translatable("vote.habitrain_core.ui.countdown_unit");
+    }
+
     public static Component ended() {
         return Component.translatable("vote.habitrain_core.ui.ended");
     }
@@ -73,18 +78,10 @@ public final class OptionVoteTexts {
         return Component.translatable("vote.habitrain_core.ui.random_selecting");
     }
 
-    /** 加载页等仅支持 ESC 隐藏时的提示。 */
-    public static Component hideHint() {
-        return Component.translatable("vote.habitrain_core.ui.hide_hint");
-    }
-
-    /**
-     * 投票倒计时页提示：ESC + 已注册的 open_vote 键均可隐藏。
-     * 键名来自 {@link com.habitrain.core.client.VoteKeyHandler}，随玩家改键变化。
-     */
-    public static Component hideHintWithBoundKey() {
+    /** 顶部投票面板的操作提示（含当前绑定的隐藏键）。 */
+    public static Component panelHint() {
         return Component.translatable(
-                "vote.habitrain_core.ui.hide_hint_key",
+                "vote.habitrain_core.ui.panel_hint",
                 com.habitrain.core.client.VoteKeyHandler.getBoundKeyDisplay());
     }
 
@@ -122,6 +119,31 @@ public final class OptionVoteTexts {
 
     public static Component transitionDestination(Component destination) {
         return Component.translatable("vote.habitrain_core.transition.destination", destination);
+    }
+
+    /**
+     * 双语副标题：读取 {@code key + ".sub"}。中文语言文件里写英文、英文语言文件里写中文，
+     * 因此任何语言下都呈现「主标题 + 另一种语言副标题」。缺失时返回空串。
+     */
+    public static String subtitle(String key) {
+        String subKey = key + ".sub";
+        Language language = Language.getInstance();
+        return language.has(subKey) ? language.getOrDefault(subKey) : "";
+    }
+
+    /** 投票标题对应的双语副标题；通用投票没有固定译文，返回空串。 */
+    public static String titleSubtitleFor(String voteId) {
+        if ("mode".equals(voteId)) {
+            return subtitle("vote.habitrain_core.title.mode");
+        }
+        if ("map".equals(voteId)) {
+            return subtitle("vote.habitrain_core.title.map");
+        }
+        return "";
+    }
+
+    public static Component transitionSummary(int players, int killers) {
+        return Component.translatable("vote.habitrain_core.transition.summary", players, killers);
     }
 
     public static Component titleFor(String voteId) {

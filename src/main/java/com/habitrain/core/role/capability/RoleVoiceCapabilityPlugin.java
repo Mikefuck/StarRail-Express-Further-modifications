@@ -4,7 +4,6 @@ import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.capability.RoleCapabilityApi;
 import com.habitrain.core.api.role.v2.capability.RoleCapabilityContext;
 import com.habitrain.core.api.role.v2.capability.RoleCapabilityKey;
-import com.habitrain.core.api.role.v2.capability.RoleCapabilityStatus;
 import com.habitrain.core.api.role.v2.capability.VoiceDecision;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
@@ -17,8 +16,6 @@ import de.maxhenkel.voicechat.api.events.StaticSoundPacketEvent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.server.level.ServerPlayer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Optional Simple Voice Chat adapter for v2 {@link RoleCapabilityApi}.
@@ -31,7 +28,6 @@ import org.slf4j.LoggerFactory;
 public final class RoleVoiceCapabilityPlugin implements VoicechatPlugin {
 
     public static final String PLUGIN_ID = "habitrain_core_role_voice";
-    private static final Logger LOGGER = LoggerFactory.getLogger("RoleVoiceCapability");
 
     @Override
     public String getPluginId() {
@@ -40,9 +36,8 @@ public final class RoleVoiceCapabilityPlugin implements VoicechatPlugin {
 
     @Override
     public void initialize(VoicechatApi api) {
-        RoleCapabilityApi.instance().bindAdapter(
-                RoleCapabilityKey.VOICE, RoleCapabilityStatus.AVAILABLE);
-        LOGGER.info("Simple Voice Chat adapter bound");
+        // voicechat 可能先于 core 初始化：此时 RoleSpi 尚未装配，不能触碰 RoleCapabilityApi。
+        RoleVoiceAdapterBinding.requestFromVoicechat();
     }
 
     @Override

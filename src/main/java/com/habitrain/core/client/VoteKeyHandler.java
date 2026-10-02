@@ -3,7 +3,6 @@ package com.habitrain.core.client;
 import com.habitrain.core.client.gui.OptionVoteScreen;
 import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.gui.VoteLaunchSession;
-import com.habitrain.core.client.gui.VoteLaunchTransitionScreen;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -28,12 +27,11 @@ public class VoteKeyHandler {
     }
 
     /**
-     * 供投票/加载 Screen 在 GUI 自己的按键回调里匹配「打开/隐藏投票」键。
+     * 供投票 Screen 在 GUI 自己的按键回调里匹配「打开/隐藏投票」键。
      *
      * <p>不能只依赖 END_CLIENT_TICK 的 {@link KeyMapping#consumeClick()}：Screen 打开时，
-     * 键盘事件会先交给 Screen，而开局加载 Screen 还会主动吞掉输入。若 Screen 不直接
-     * 用 {@link KeyMapping#matches(int, int)} 匹配，界面提示的默认 V 键就可能完全不触发
-     * hide，继而让判定点 A 误走「未隐藏」加载分支。</p>
+     * 键盘事件会先交给 Screen，若 Screen 不直接用 {@link KeyMapping#matches(int, int)} 匹配，
+     * 界面提示的默认 V 键就可能完全不触发隐藏。</p>
      */
     public static boolean matchesOpenVoteKey(int keyCode, int scanCode) {
         KeyMapping key = openVoteKey;
@@ -73,21 +71,8 @@ public class VoteKeyHandler {
             return;
         }
 
-        // 开局加载期：投票已结束，但 Session 仍 active。V 键 hide / 重开加载页。
-        // 重开只改变可见性，不得 clear sticky 隐藏意图——否则判定点 A 会误走可见路径
-        // 继续显示「开局加载中」，而不是左→右「对局开始」补盖。
+        // 投票已结束、正在开局（顶部进度牌或全屏转场）：没有可打开的投票，也不弹「没有投票」提示。
         if (VoteLaunchSession.isActive()) {
-            if (client.screen instanceof VoteLaunchTransitionScreen open) {
-                if (VoteLaunchSession.canHide()) {
-                    open.hideByUser();
-                }
-                return;
-            }
-            if (VoteLaunchSession.canReopenLoading()) {
-                client.setScreen(VoteLaunchTransitionScreen.reopenLoading(client.screen));
-                return;
-            }
-            // 已锁定 hide（判定点 A 后）且屏未开：不操作，等待服务端强制补盖/交还
             return;
         }
 

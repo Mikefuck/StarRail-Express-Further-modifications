@@ -15,9 +15,12 @@ public class HudRegistrar {
     public HudRegistrar() {
         // 投票快捷键
         VoteKeyHandler.register();
+        // 上游「重置地图中」actionbar 改由顶部进度牌显示
+        com.habitrain.core.client.gui.MapResetProgressHud.register();
 
         // HUD 渲染
         HudRenderCallback.EVENT.register((g, tickDelta) -> {
+            com.habitrain.core.client.gui.MapResetProgressHud.render(g);
             com.habitrain.core.scene.client.SceneViewDistanceWarningHud.render(g);
         });
     }

@@ -67,6 +67,8 @@ public class HabiTrainCore implements ModInitializer {
         //     审核 B14：装配只在 core 生命周期作用域内生效，第三方无法在运行期替换这些桥接。
         com.habitrain.core.internal.CoreLifecycleScope.run(
                 com.habitrain.core.internal.CoreSpiRegistrar::register);
+        // 角色 SPI 已装配：若 voicechat 插件先初始化过，在此补做语音能力绑定。
+        com.habitrain.core.role.capability.RoleVoiceAdapterBinding.markCoreReady();
         // Mod 菜单访问门控（独立文件 config/habitrain_menu_gate.json，服务端权威）
         com.habitrain.core.config.MenuGateService.load();
         // 角色扩展 v2 配置（独立版本化文件 config/habitrain_role_v2.json，服务端权威）

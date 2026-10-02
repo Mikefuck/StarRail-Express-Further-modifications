@@ -37,6 +37,7 @@
         "VoteLaunchFadeBlockMixin",
         "VoteLaunchCameraBlockMixin",
         "VoteLaunchAmbientSoundBlockMixin",
+        "LobbyPlayersHudYieldMixin",
         "RepairAmbientLoopMixin",
         "MapIntroSyncPayloadMixin",
         "MapIntroduceScreenMixin",

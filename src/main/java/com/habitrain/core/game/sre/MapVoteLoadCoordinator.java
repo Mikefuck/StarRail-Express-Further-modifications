@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.OptionalInt;
 
 /**
  * 地图投票后「开局加载」的服务端权威协调器。
@@ -31,7 +30,7 @@ import java.util.OptionalInt;
  * （重置完成→真正开局）之间的窗口内：</p>
  * <ul>
  *   <li>1Hz 向该维度广播 {@link MapVoteProgressPayload}：进度优先采用 SRE 当前地图重置
- *       任务的真实百分比，重置完成后采用 STARTING fade 百分比；游玩人数、按模式配置
+ *       任务的真实计数，按完整复制、任务方块重置、STARTING fade 合成连续总进度；游玩人数、按模式配置
  *       估算的杀手人数、
  *       选中地图与模式 id。客户端据此绘制加载面板与进度条。</li>
  *   <li>当 {@code trueStartGame} 真正执行（地图重置 + 5 tick 调度完成）时，由服务端 mixin
@@ -57,7 +56,7 @@ public final class MapVoteLoadCoordinator {
         String mapId = "";
         String modeId = "";
         int lastProgress = -1;
-        long startedMs = System.currentTimeMillis();
+        final MapVoteLoadProgress progress = new MapVoteLoadProgress();
         /** trueStartGame 已成功进入 STARTING，正在等待 OnGameStarted 完成环境应用。 */
         boolean startConfirmed = false;
         /** 环境已应用后再等待两个世界 tick，确保原版天气同步包先于动画包发出。 */
@@ -97,10 +96,7 @@ public final class MapVoteLoadCoordinator {
                 }
                 continue;
             }
-            int progress = computeProgress(level);
-            if (progress == st.lastProgress) continue;
-            st.lastProgress = progress;
-            broadcastProgress(level, st, progress);
+            broadcastProgressIfChanged(level, st, computeProgress(level, st));
         }
     }
 
@@ -127,6 +123,7 @@ public final class MapVoteLoadCoordinator {
             ScenePreloadCoordinator.getInstance().enterMatch(level);
             LOGGER.info("[MapVoteLoad] launch gate released dim={} map={} sceneReady={} timedOut={} → sending transition",
                     level.dimension().location(), st.mapId, sceneReady, timedOut);
+            broadcastProgressIfChanged(level, st, st.progress.complete());
             MapVoteLaunchTransitionPayload.broadcastToLevel(level, st.mapId);
             LOADS.remove(level.dimension(), st);
         }
@@ -149,9 +146,10 @@ public final class MapVoteLoadCoordinator {
         if (st.settled) return;
         if (started) {
             st.startConfirmed = true;
+            st.progress.startingFade(0, 1);
             st.sceneReadyDeadlineTick = level.getGameTime()
                     + ScenePreloadReleasePolicy.RESET_COMPLETE_TIMEOUT_TICKS;
-            // 判定点 A：通知客户端锁定 hide / 对已隐藏玩家左→右补盖（遮住随后 initializeGame 的 TP）
+            // 判定点 A：通知客户端打开全屏开局转场（遮住随后 initializeGame 的 TP）
             MapVoteStartConfirmedPayload.broadcastToLevel(level, st.mapId);
             LOGGER.info("[MapVoteLoad] game start confirmed dim={} map={} → waiting for environment",
                     level.dimension().location(), st.mapId);
@@ -253,11 +251,10 @@ public final class MapVoteLoadCoordinator {
         return true;
     }
 
-    /** 开局加载进度：优先跟随 SRE 地图重置任务，之后才进入 STARTING fade。 */
-    private static int computeProgress(ServerLevel level) {
-        OptionalInt resetProgress = findUpstreamResetProgress(level);
-        if (resetProgress.isPresent()) {
-            return resetProgress.getAsInt();
+    /** 各上游任务的局部百分比必须映射到总进度，不能在换任务时重新从 0 开始。 */
+    private static int computeProgress(ServerLevel level, LoadState st) {
+        if (!st.startConfirmed) {
+            updateUpstreamResetProgress(level, st.progress);
         }
         try {
             var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
@@ -266,35 +263,39 @@ public final class MapVoteLoadCoordinator {
                 int fade = gw.getFade();
                 int total = io.wifi.starrailexpress.game.GameConstants.FADE_TIME
                         + io.wifi.starrailexpress.game.GameConstants.FADE_PAUSE;
-                int pct = (int) Math.round(fade * 100.0 / Math.max(1, total));
-                return Math.max(0, Math.min(100, pct));
+                return st.progress.startingFade(fade, total);
             }
         } catch (Throwable t) {
             // ignore
         }
-        // 未到 STARTING（仍在 reset task 队列）→ 低位进度，用时间推进避免卡 0。
-        LoadState st = LOADS.get(level.dimension());
-        long sinceStart = System.currentTimeMillis() - (st != null ? st.startedMs : 0L);
-        return (int) Math.min(90, 10 + sinceStart / 300L);
+        // 调度间隙和环境/场景准备期保持进度；只有开局门控真正放行才到 100%。
+        return st.progress.current();
     }
 
     /** Reads the same counters used by SRE's {@code message.sre.reseting} action-bar percentage. */
-    private static OptionalInt findUpstreamResetProgress(ServerLevel level) {
+    private static void updateUpstreamResetProgress(ServerLevel level, MapVoteLoadProgress progress) {
         for (ServerTaskInfoClasses.ServerTaskInfo task : GameUtils.serverTaskQueue) {
             if (task instanceof ServerTaskInfoClasses.FullTrainResetTask
                     && task instanceof FullTrainResetTaskAccessor accessor
                     && accessor.habitrain$getServerWorld() == level) {
-                return MapResetProgressPercent.from(
-                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress());
+                progress.fullReset(MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress()).orElse(0));
+                return;
             }
             if (task instanceof ServerTaskInfoClasses.OnlySomeBlockResetTask
                     && task instanceof OnlySomeBlockResetTaskAccessor accessor
                     && accessor.habitrain$getWorld() == level) {
-                return MapResetProgressPercent.from(
-                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress());
+                progress.blockReset(MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress()).orElse(0));
+                return;
             }
         }
-        return OptionalInt.empty();
+    }
+
+    private static void broadcastProgressIfChanged(ServerLevel level, LoadState st, int progress) {
+        if (progress == st.lastProgress) return;
+        st.lastProgress = progress;
+        broadcastProgress(level, st, progress);
     }
 
     private static void broadcastProgress(ServerLevel level, LoadState st, int progress) {

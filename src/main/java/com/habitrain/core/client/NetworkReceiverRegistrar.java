@@ -146,15 +146,12 @@ public class NetworkReceiverRegistrar {
                 // Auto-open once per phase (inactive→active or voteId change).
                 // 1Hz rebroadcasts must not re-force the screen if the player closed it.
                 if (result.shouldStartMapTransition()) {
+                    // 地图投票结算：上游开始重置地图。这段时间只在屏幕顶部挂「重置地图中」进度牌
+                    // （MapResetProgressHud，不阻挡操作）；全屏开局转场等判定点 A（即将传送）再打开。
                     VoteLaunchSession.begin(result.resolvedOptionId());
-                    // 容器屏（箱子/背包等）不能作为交还目标：转场几十秒后服务端早已
-                    // 关闭该容器，重新打开只会得到点击无响应的幽灵界面（review M10）。
-                    Screen destination = ctx.client().screen;
-                    if (destination instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) {
-                        destination = null;
+                    if (ctx.client().screen instanceof OptionVoteScreen voteScreen) {
+                        voteScreen.retractForLaunch();
                     }
-                    ctx.client().setScreen(new VoteLaunchTransitionScreen(
-                            destination, result.resolvedOptionId()));
                 } else if (result.shouldClose()) {
                     if (ctx.client().screen instanceof OptionVoteScreen) {
                         ctx.client().setScreen(null);
@@ -191,9 +188,8 @@ public class NetworkReceiverRegistrar {
                     }
                 }));
 
-        // 15b) 判定点 A：地图重置完成 / trueStartGame 进入 STARTING。
-        //      sticky 隐藏意图 → 左→右补盖 + 「对局开始」；可见 → 锁定 hide，必要时保险开屏。
-        //      recover 路径禁止走 openSafetyCover（那是加载模式，会错误显示「开局加载中」）。
+        // 15b) 判定点 A：地图重置完成 / trueStartGame 进入 STARTING，约 3 秒后服务端把玩家传送进对局。
+        //      重置期间只有顶部进度牌，这里才打开全屏开局转场（车票飘落铺满，赶在传送前盖住画面）。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteStartConfirmedPayload.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     if (RepairModeClientState.isLocalRepairer()) {
@@ -203,59 +199,34 @@ public class NetworkReceiverRegistrar {
                         // 中途加入等未 begin 的客户端：不强制转场（与现产品一致）
                         return;
                     }
-                    VoteLaunchSession.StartConfirmedResult result =
-                            VoteLaunchSession.onStartConfirmed(payload.mapId());
-                    boolean onTransition = ctx.client().screen instanceof VoteLaunchTransitionScreen;
-                    if (result.recover()) {
-                        // 始终重建补盖屏，保证左→右入场从零开始；内容直接是「对局开始」
-                        Screen parent = ctx.client().screen;
-                        if (parent instanceof VoteLaunchTransitionScreen open) {
-                            parent = open.getDestinationOrNull();
-                        }
-                        ctx.client().setScreen(VoteLaunchTransitionScreen.openRecover(parent));
+                    VoteLaunchSession.onStartConfirmed(payload.mapId());
+                    if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
+                        transition.pullFromSession(); // 重复的 A 包
                         return;
                     }
-                    // 可见路径：锁定 hide；若屏意外不在转场上，保险全屏盖住防 TP 露馅（仍是加载内容）
-                    if (!onTransition) {
-                        ctx.client().setScreen(VoteLaunchTransitionScreen.openSafetyCover(
-                                ctx.client().screen));
-                    } else {
-                        ((VoteLaunchTransitionScreen) ctx.client().screen).pullFromSession();
+                    // 正常路径：完整播放飘落入场（约 1.3 秒铺满，早于传送）
+                    // 容器屏（箱子/背包等）不能作为交还目标：转场几十秒后服务端早已
+                    // 关闭该容器，重新打开只会得到点击无响应的幽灵界面（review M10）。
+                    Screen destination = ctx.client().screen;
+                    if (destination instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) {
+                        destination = null;
                     }
+                    ctx.client().setScreen(new VoteLaunchTransitionScreen(
+                            destination, VoteLaunchSession.getWinningMapId()));
                 }));
 
-        // 16) 判定点 B：开局环境就绪 — 可见路径原地切「对局开始」；补盖路径仅同步 mapId。
-        //     若 A 漏处理但玩家曾 sticky 隐藏，先 promote 再开 recover，避免静默丢包。
+        // 16) 判定点 B：开局环境就绪 — 转场原地盖「对局开始」章；若转场屏丢了则保险重开。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchTransitionPayload.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员不看开局转场
                     }
-                    // A 漏了但仍有 sticky hide：迟到 promote 为 recover，遮住后续 TP/世界
-                    VoteLaunchSession.promoteStickyHideToRecoverIfNeeded();
                     VoteLaunchSession.onLaunchConfirmed(payload.winningMapId());
                     if (ctx.client().screen instanceof VoteLaunchTransitionScreen transition) {
-                        // 若 sticky 已 promote 但当前仍是加载屏：重建 recover，避免继续显示加载中
-                        if (VoteLaunchSession.isRecoverPath() && !transition.isRecoverPresentation()) {
-                            Screen parent = transition.getDestinationOrNull();
-                            VoteLaunchTransitionScreen recover =
-                                    VoteLaunchTransitionScreen.openRecover(parent);
-                            recover.confirmLaunch(payload.winningMapId());
-                            ctx.client().setScreen(recover);
-                            return;
-                        }
                         transition.confirmLaunch(payload.winningMapId());
                         return;
                     }
-                    // 补盖路径：强制开「对局开始」（世界 HUD / null 屏均可）
-                    if (VoteLaunchSession.isActive() && VoteLaunchSession.isRecoverPath()) {
-                        VoteLaunchTransitionScreen transition =
-                                VoteLaunchTransitionScreen.openRecover(ctx.client().screen);
-                        transition.confirmLaunch(payload.winningMapId());
-                        ctx.client().setScreen(transition);
-                        return;
-                    }
-                    // 可见路径：session 仍 active 但屏丢了 → 保险开屏并切标题
+                    // session 仍 active 但屏丢了（A 包丢失等）→ 保险开屏并盖章
                     if (VoteLaunchSession.isActive()) {
                         VoteLaunchTransitionScreen transition =
                                 VoteLaunchTransitionScreen.openSafetyCover(ctx.client().screen);

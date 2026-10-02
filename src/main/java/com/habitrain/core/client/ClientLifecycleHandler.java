@@ -138,6 +138,7 @@ public class ClientLifecycleHandler {
         MenuAccessGuard.reset();
         OptionVoteState.clear();
         VoteLaunchSession.clear();
+        com.habitrain.core.client.gui.MapResetProgressHud.reset();
         MapVotePreviewCache.clearAll();
         ClientMapIntroCache.clear();
         if (clearEspCaches) {

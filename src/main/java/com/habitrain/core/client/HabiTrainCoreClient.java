@@ -37,6 +37,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                     () -> com.habitrain.core.client.role.RoleActionClientSession.INSTANCE);
         });
         com.habitrain.core.client.config.ClientVisualPreferences.load();
+        // 结算纪念车票的做旧/燃烧与 MVP 人像着色器
+        com.habitrain.core.client.gui.TicketShaders.register();
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.START.register(
                 com.habitrain.core.scene.client.SceneCameraShakeRenderer::apply);
         HabiTrainCore.LOGGER.info("哈比列车任务API 客户端初始化完成");
