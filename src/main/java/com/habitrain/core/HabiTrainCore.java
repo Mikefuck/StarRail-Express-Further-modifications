@@ -221,6 +221,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.game.sre.MatchEventBridge.register();
         // 5b. 环境控制器（对局开始/结束应用 lobby/match/post-match 天气与时间）
         EnvironmentController.registerEvents();
+        com.habitrain.core.game.sre.RepairModeManager.registerEvents();
         MvpScoreTracker.init();
         // 6. C2S 接收器注册
         C2SReceiverRegistrar.init();

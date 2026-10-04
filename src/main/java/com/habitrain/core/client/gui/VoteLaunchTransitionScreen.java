@@ -108,6 +108,11 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private long exitStartAtMillis;
     private boolean completed;
     private boolean gameActive; // OnGameStartedClient 已触发
+    /**
+     * 转场期间服务端要求关闭界面（SRE trueStartGame 的 CloseUiPayload，被 SlothScreenLockMixin 暂扣）。
+     * 此时原界面（如每日终端的商店页）已被服务端判定作废：不再作为背景绘制，结束时交还空界面。
+     */
+    private boolean closeRequested;
 
     /** 保险开屏：车票已铺满，跳过飘落。 */
     private final boolean skipEnterAnimation;
@@ -203,6 +208,11 @@ public final class VoteLaunchTransitionScreen extends Screen {
             launchConfirmed = true;
             launchConfirmedAtMillis = Util.getMillis();
         }
+    }
+
+    /** 服务端要求关闭界面时由 SlothScreenLockMixin 调用：转场照常播完，但不再交还原界面。 */
+    public void markCloseRequested() {
+        closeRequested = true;
     }
 
     /** 服务端对局进入 ACTIVE（OnGameStartedClient）后由接收器调用，交还画面。 */
@@ -416,7 +426,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
             cover *= 1.0f - TransitionFx.easeInOutCubic((exitClock - 60.0f) / 760.0f);
         }
 
-        if (coveredScreen != null && !exitStarted && cover < 0.999f) {
+        if (coveredScreen != null && !closeRequested && !exitStarted && cover < 0.999f) {
             coveredScreen.render(g, mouseX, mouseY, partialTick);
         }
         g.flush();
@@ -982,7 +992,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
             VoteLaunchOverlayState.scheduleGrace(CAMERA_BLOCK_GRACE_MILLIS);
             // 相机需要覆盖完整 intro；场景音只需等待客户端传送位置/区块判定稳定。
             VoteLaunchOverlayState.scheduleAmbientSoundGrace(AMBIENT_SOUND_GRACE_MILLIS);
-            mc.setScreen(destination);
+            mc.setScreen(closeRequested ? null : destination);
         }
     }
 

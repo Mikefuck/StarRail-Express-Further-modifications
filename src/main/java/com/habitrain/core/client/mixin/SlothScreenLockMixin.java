@@ -33,6 +33,10 @@ public abstract class SlothScreenLockMixin {
         if (screen == null
                 && ((client.screen instanceof VoteLaunchTransitionScreen && VoteLaunchOverlayState.isActive())
                 || (client.screen instanceof GameEndTransitionScreen && GameEndOverlayState.isActive()))) {
+            // 关闭请求只是延后：开局转场结束时不能再把被要求关闭的界面（如商店页）交还回来。
+            if (client.screen instanceof VoteLaunchTransitionScreen transition) {
+                transition.markCloseRequested();
+            }
             ci.cancel();
             return;
         }

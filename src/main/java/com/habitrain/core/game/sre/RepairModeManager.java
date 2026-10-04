@@ -34,7 +34,63 @@ public final class RepairModeManager {
     /** 玩家 UUID → 维修记录。 */
     private static final ConcurrentMap<UUID, RepairEntry> REPAIRS = new ConcurrentHashMap<>();
 
+    /**
+     * 对局开始/结束后待做「冒险 → 创造」切换的维修员：值为剩余步数
+     * （{@link #REFRESH_TO_ADVENTURE}=下一 tick 切冒险，{@link #REFRESH_TO_CREATIVE}=再下一 tick 切回创造）。
+     */
+    private static final ConcurrentMap<UUID, Integer> GAME_MODE_REFRESH = new ConcurrentHashMap<>();
+    private static final int REFRESH_TO_ADVENTURE = 2;
+    private static final int REFRESH_TO_CREATIVE = 1;
+
     private RepairModeManager() {}
+
+    /** 注册 SRE 对局开始/结束事件：维修员各切一次冒险再切回创造。 */
+    public static void registerEvents() {
+        try {
+            io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(level -> scheduleGameModeRefresh());
+            io.wifi.starrailexpress.event.OnGameEnd.EVENT.register((level, game) -> scheduleGameModeRefresh());
+        } catch (Throwable t) {
+            LOGGER.error("[RepairMode] failed to register game start/end events", t);
+        }
+    }
+
+    /** 给当前所有维修员排一次「冒险 → 创造」切换；在之后两个服务端 tick 内完成，避开 SRE 同 tick 的重置。 */
+    public static void scheduleGameModeRefresh() {
+        for (UUID uuid : REPAIRS.keySet()) {
+            GAME_MODE_REFRESH.put(uuid, REFRESH_TO_ADVENTURE);
+        }
+    }
+
+    /** 每个服务端 tick 推进一步待处理的切换（由 ModTickHandler 调用）。 */
+    public static void tickGameModeRefresh(MinecraftServer server) {
+        if (server == null || GAME_MODE_REFRESH.isEmpty()) return;
+        for (UUID uuid : new ArrayList<>(GAME_MODE_REFRESH.keySet())) {
+            Integer step = GAME_MODE_REFRESH.get(uuid);
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            // 期间已退出维修模式或离线：exit 已恢复原模式，不再干预
+            if (step == null || player == null || !isRepairer(uuid)) {
+                GAME_MODE_REFRESH.remove(uuid);
+                continue;
+            }
+            try {
+                if (step == REFRESH_TO_ADVENTURE) {
+                    player.setGameMode(GameType.ADVENTURE);
+                    GAME_MODE_REFRESH.put(uuid, REFRESH_TO_CREATIVE);
+                } else {
+                    GAME_MODE_REFRESH.remove(uuid);
+                    player.setGameMode(GameType.CREATIVE);
+                }
+            } catch (Throwable t) {
+                GAME_MODE_REFRESH.remove(uuid);
+                LOGGER.warn("[RepairMode] game mode refresh failed for {}", uuid, t);
+                try {
+                    player.setGameMode(GameType.CREATIVE);
+                } catch (Throwable ignored) {
+                    // 已记录上面的失败
+                }
+            }
+        }
+    }
 
     /** 单个维修记录：玩家名、锁定地图、进入前的参与状态与游戏模式。 */
     private static final class RepairEntry {
@@ -184,6 +240,7 @@ public final class RepairModeManager {
             exit(uuid, level);
         }
         REPAIRS.clear();
+        GAME_MODE_REFRESH.clear();
     }
 
     public static boolean isRepairer(UUID uuid) {

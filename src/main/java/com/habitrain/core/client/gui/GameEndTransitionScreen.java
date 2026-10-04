@@ -41,8 +41,9 @@ import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * 对局结束转场：一张纪念车票像纸片一样从屏幕上方左右摇摆着飘落，越飘越近，最后底边先贴上屏幕、
- * 上半张随之铺平。
+ * 对局结束转场：几张泛黄、撕缺、被火燎过的残票和一张纪念车票一起从屏幕上方左右摇摆着飘落；
+ * 残票各自掉出屏幕底边（其中一张从镜头前擦过，见 {@link TicketScraps}），只有纪念车票越飘越近，
+ * 最后底边先贴上屏幕、上半张随之铺平。
  *
  * <p>节奏刻意压得很慢、很静：落定后先是一阵寂静；随后胜方印章伴着一声心跳重重盖下，
  * 印泥顺着章框往下淌。若有 MVP，数据像打字机一样一行行敲出来；停顿片刻后，票面左下角的黑暗慢慢漫开，
@@ -131,6 +132,7 @@ public final class GameEndTransitionScreen extends Screen {
     private final PaperCanvas ghostCanvas = new PaperCanvas();
     private final PaperSheet sheet = new PaperSheet();
     private final TicketFire fire = new TicketFire(this.fireSeed);
+    private final TicketScraps scraps = new TicketScraps(this.fireSeed, this.serial);
     /** 车票在画布上的左上角（静止贴屏时即屏幕位置）。 */
     private float ticketX;
     private float ticketY;
@@ -281,28 +283,36 @@ public final class GameEndTransitionScreen extends Screen {
             glow.end();
         }
 
-        // 3) 纸面：飘落时摇摆、弯折、起波纹；做旧时起皱；燃烧处卷起
+        // 3) 纸面：飘落时摇摆、弯折、起波纹；做旧时起皱；燃烧处卷起。残票按远近夹在纪念车票前后
         float aspect = tw / th;
         PaperSheet.Pose pose = this.sheetPose(elapsed, mvpElapsed, age, this.ticketX + tw / 2.0f, this.ticketY + th / 2.0f);
         PaperSheet.Lift curl = burn > 0.0f ? (u, v) -> this.curl(u, v, aspect, burn) : null;
         this.sheet.layout(this.width, this.height, this.ticketX, this.ticketY, tw, th, pose, curl, this.serial);
+        ShaderInstance shader = TicketShaders.paper();
+        float seconds = (now % 600_000L) / 1000.0f;
+        if (shader != null) {
+            shader.safeGetUniform("TicketRect").set(PaperCanvas.u(this.ticketX), PaperCanvas.v(this.ticketY),
+                    PaperCanvas.u(this.ticketX + tw), PaperCanvas.v(this.ticketY + th));
+            shader.safeGetUniform("TicketSize").set(tw, th);
+            shader.safeGetUniform("Time").set(seconds);
+        }
+        this.scraps.update(elapsed, this.width, this.height, th);
+        this.scraps.draw(g, this.ticketCanvas.textureId(), shader, true, pose.depth(), cover,
+                this.width, this.height, this.ticketX, this.ticketY, tw, th);
         float lift = (float) Math.pow(1.0f - flight, 0.8f);
         float shadowOffset = 4.0f + 30.0f * lift;
         // 投影只在背景压暗后才明显，免得在明亮的天空上拖出一块灰影
         float shadowAlpha = (0.55f * lift + 0.3f * (1.0f - lift)) * (0.2f + 0.8f * cover) * (1.0f - age);
         this.sheet.shadow(g, shadowOffset * 0.7f, shadowOffset, 0.01f + 0.05f * lift, shadowAlpha);
-        ShaderInstance shader = TicketShaders.paper();
         if (shader != null) {
-            float seconds = (now % 600_000L) / 1000.0f;
             float lampIn = TransitionFx.clamp01((elapsed - FLIGHT_MILLIS) / 700.0f) * (1.0f - 0.5f * age);
-            shader.safeGetUniform("TicketRect").set(PaperCanvas.u(this.ticketX), PaperCanvas.v(this.ticketY),
-                    PaperCanvas.u(this.ticketX + tw), PaperCanvas.v(this.ticketY + th));
-            shader.safeGetUniform("TicketSize").set(tw, th);
             shader.safeGetUniform("Age").set(age);
             shader.safeGetUniform("Burn").set(burn);
             shader.safeGetUniform("Front").set(TicketFire.front(burn));
-            shader.safeGetUniform("Time").set(seconds);
             shader.safeGetUniform("Seed").set(this.fireSeed);
+            // 纪念车票不撕角、火势全亮（残票会改这两项，这里每帧复位）
+            shader.safeGetUniform("Tear").set(1.0f, 0.0f, 0.0f, 0.0f);
+            shader.safeGetUniform("Smolder").set(1.0f);
             // 一盏吊灯挂在票面上方，随车厢缓缓晃动
             shader.safeGetUniform("Lamp").set(0.42f + 0.05f * Mth.sin(seconds * 0.8f), -0.15f, 1.1f, 0.6f * lampIn);
             shader.safeGetUniform("Exposure").set(exposure);
@@ -310,6 +320,8 @@ public final class GameEndTransitionScreen extends Screen {
         // 着色器不可用时退化为整体淡出
         float sheetAlpha = shader != null ? 1.0f : 1.0f - TransitionFx.easeInCubic(burn);
         this.sheet.draw(g, this.ticketCanvas.textureId(), shader, sheetAlpha);
+        this.scraps.draw(g, this.ticketCanvas.textureId(), shader, false, pose.depth(), cover,
+                this.width, this.height, this.ticketX, this.ticketY, tw, th);
 
         // 4) 心跳时屏幕四周泛起暗红
         this.renderPulse(g, this.pulse(elapsed, mvpElapsed) * (1.0f - age));
@@ -465,7 +477,7 @@ public final class GameEndTransitionScreen extends Screen {
     }
 
     /**
-     * 飘落时几声纸响、落定；盖章的心跳、滴墨；人影浮现时的钟声与低语、显形的心跳；
+     * 飘落时几声纸响（残票擦过镜头时一声更低的）、落定；盖章的心跳、滴墨；人影浮现时的钟声与低语、显形的心跳；
      * 退场时揉皱、点燃、燃烧与熄灭。打字声见 {@link #playTyping}。
      */
     private void playSounds(long elapsed, long mvpElapsed, long exitElapsed) {
@@ -475,6 +487,9 @@ public final class GameEndTransitionScreen extends Screen {
                 if (this.cue("flutter" + i, elapsed >= FLIGHT_MILLIS * flutterAt[i])) {
                     TicketSounds.flutter(0.78f + 0.06f * i);
                 }
+            }
+            if (this.cue("scrap", elapsed >= 650L)) {
+                TicketSounds.flutter(0.62f);
             }
             if (this.cue("land", elapsed >= FLIGHT_MILLIS - 40L)) {
                 TicketSounds.land(0.85f);

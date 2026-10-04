@@ -24,6 +24,8 @@ public class ModTickHandler {
             // 天气状态需先经过世界 tick 同步到客户端，再发送开局/结算动画的环境就绪阶段。
             com.habitrain.core.game.sre.MapVoteLoadCoordinator.tick(server);
             com.habitrain.core.game.sre.GameEndTransitionCoordinator.tick(server);
+            // 维修员在对局开始/结束后切一次冒险再切回创造
+            com.habitrain.core.game.sre.RepairModeManager.tickGameModeRefresh(server);
 
             // 1Hz option-vote tick (mode/map lobby vote countdown)
             voteTickCounter++;

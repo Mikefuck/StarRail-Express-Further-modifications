@@ -1,6 +1,7 @@
 #version 150
 
-// 结算纪念车票的贴屏着色器：离屏画布上的车票 → 做旧（泛黄、焦边、水渍、折痕、霉斑）→ 燃烧（焦黄、焦黑、火线、烧穿）。
+// 结算纪念车票的贴屏着色器：离屏画布上的车票 → 做旧（泛黄、焦边、水渍、折痕、霉斑）→ 撕缺一角 → 燃烧（焦黄、焦黑、火线、烧穿）。
+// 纪念车票不撕（Tear.w = 0）、火星全亮（Smolder = 1）；陪它飘落的残票（TicketScraps）用固定的 Front 烧缺、Tear 撕角、Smolder 压暗余火。
 // 画布内容为预乘 alpha；输出同样是预乘 alpha（混合 ONE, ONE_MINUS_SRC_ALPHA），alpha 为 0 而颜色非 0 的像素即纯加光。
 // 顶点色 r = 漫反射 / 2（平放为 0.5），g = 高光，a = 不透明度。
 // 车厢灯光：Lamp 是票面上方一盏吊灯（票面局部坐标的位置、衰减、强度），Exposure 是整体亮度（闪烁）。
@@ -17,6 +18,8 @@ uniform float Time;        // 秒，火苗闪烁
 uniform float Seed;
 uniform vec4 Lamp;         // (x, y, falloff, strength)，x/y 为票面局部坐标
 uniform float Exposure;    // 灯光整体亮度，1 为正常
+uniform vec4 Tear;         // (方向 x, 方向 y, 撕口离票面中心的距离（相对票高）, 启用 0/1)，方向 y 向下
+uniform float Smolder;     // 火线、余晖与火星的亮度，1 为正常燃烧，0 为早已熄灭的焦边
 
 in vec2 texCoord0;
 in vec4 vertexColor;
@@ -98,13 +101,23 @@ void main() {
         col = mix(col, vec3(0.32, 0.20, 0.10), fox * 0.35 * a);
     }
 
+    if (Tear.w > 0.0) {
+        // 撕掉一角：撕口沿给定方向参差不齐，边上露出浅色毛糙的纸芯
+        float s = dot(q - vec2(aspect * 0.5, 0.5), normalize(Tear.xy)) - Tear.z
+                - (fbm(q * 5.0 + vec2(Seed * 2.7, 3.0)) - 0.5) * 0.12
+                - (noise(q * 48.0 + vec2(Seed, 1.0)) - 0.5) * 0.025;
+        float fiber = 1.0 - smoothstep(0.0, 0.012 + 0.010 * noise(q * 90.0 + vec2(Seed, 7.0)), -s);
+        col = mix(col, vec3(0.80, 0.75, 0.66), fiber * 0.85 * Tear.w);
+        paper *= 1.0 - smoothstep(-0.003, 0.003, s);
+    }
+
     vec3 glow = vec3(0.0);
     if (Burn > 0.0) {
         float d = burnField(q, aspect) - Front;
         float flick = 0.7 + 0.3 * noise(q * 22.0 + vec2(Time * 1.3, -Time * 4.0));
         if (d < 0.0) {
             // 已烧穿：只留一圈向内衰减的余晖（预乘 alpha 为 0，纯加光）
-            glow = vec3(1.0, 0.42, 0.10) * exp(d * 45.0) * 0.55 * flick * paper;
+            glow = vec3(1.0, 0.42, 0.10) * exp(d * 45.0) * 0.55 * flick * paper * Smolder;
             paper = 0.0;
         } else {
             float ember = 1.0 - smoothstep(0.0, 0.016, d);
@@ -112,9 +125,9 @@ void main() {
             float scorch = 1.0 - smoothstep(0.02, 0.22, d);
             col = mix(col, col * vec3(0.66, 0.46, 0.28), scorch * 0.75);
             col = mix(col, vec3(0.055, 0.035, 0.022), charred * 0.93);
-            col += vec3(1.0, 0.32, 0.06) * (charred - ember) * 0.35 * flick;
+            col += vec3(1.0, 0.32, 0.06) * (charred - ember) * 0.35 * flick * Smolder;
             vec3 fire = mix(vec3(1.0, 0.36, 0.06), vec3(1.0, 0.88, 0.55), ember * ember);
-            col = mix(col, fire * (0.85 + 0.3 * flick), ember);
+            col = mix(col, fire * (0.85 + 0.3 * flick), ember * Smolder);
         }
     }
 
