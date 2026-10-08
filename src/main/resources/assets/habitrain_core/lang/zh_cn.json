@@ -63,7 +63,7 @@
     "vote.habitrain_core.ui.hint": "滚轮 / ↑ ↓ 上下浏览 · 点击 / Enter 投票 · ESC 隐藏",
     "vote.habitrain_core.ui.map_hint": "滚轮 / ↑ ↓ 上下浏览 · 点击打开详情并投票 · 右侧滚轮阅读 · 左侧操作返回列表",
     "vote.habitrain_core.ui.random_selecting": "未选择地图 · 正在随机抽取…",
-    "vote.habitrain_core.ui.panel_hint": "滚轮 / ← → 浏览 · 点击 / Enter 投票 · ESC / %s 隐藏",
+    "vote.habitrain_core.ui.panel_hint": "滚轮 / ← → 浏览 · 点击 / Enter 投票 · ESC / %s 隐藏（未投票时随机投票）",
     "vote.habitrain_core.ui.no_candidates": "本阶段暂无可用候选项",
     "vote.habitrain_core.ui.winner": "最终选中",
     "vote.habitrain_core.ui.recommended_players": "推荐人数",

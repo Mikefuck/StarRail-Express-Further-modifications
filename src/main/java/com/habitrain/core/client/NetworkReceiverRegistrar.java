@@ -138,10 +138,11 @@ public class NetworkReceiverRegistrar {
                     }
                     return;
                 }
-                String autoPickedMap = OptionVoteState.autoPickRandomMapIfNeeded(
+                // 隐藏偏好跨 mode→map 保留，新阶段未投票时也立即随机补票。
+                String autoPickedOption = OptionVoteState.autoPickRandomOptionIfNeeded(
                         bound -> ThreadLocalRandom.current().nextInt(bound));
-                if (autoPickedMap != null) {
-                    PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), autoPickedMap);
+                if (autoPickedOption != null) {
+                    PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), autoPickedOption);
                 }
                 // Auto-open once per phase (inactive→active or voteId change).
                 // 1Hz rebroadcasts must not re-force the screen if the player closed it.

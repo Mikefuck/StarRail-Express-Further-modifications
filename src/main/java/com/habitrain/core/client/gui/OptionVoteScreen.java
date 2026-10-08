@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 通用选项投票界面（模式/地图等字符串选项）。
@@ -850,10 +851,16 @@ public class OptionVoteScreen extends Screen {
 
     /**
      * 玩家主动隐藏：本轮 mode/map 投票页都不再自动弹出，直到手动重开或本轮结束。
+     * 尚未投票时立即随机投一项；已投票时保留玩家的选择。
      * 与 {@link #onClose()} 区分——阶段切换强制关屏不得写入隐藏偏好。面板先向上收回再关屏。
      */
     public void hideByUser() {
         OptionVoteState.markUiHiddenByUser();
+        String autoPickedOption = OptionVoteState.autoPickRandomOptionIfNeeded(
+                bound -> ThreadLocalRandom.current().nextInt(bound));
+        if (autoPickedOption != null) {
+            PayloadSenders.sendOptionVoteCast(OptionVoteState.getVoteId(), autoPickedOption);
+        }
         if (closingAtMillis == 0L) {
             closingAtMillis = Util.getMillis();
         }

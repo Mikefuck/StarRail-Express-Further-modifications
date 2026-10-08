@@ -200,12 +200,14 @@ public final class OptionVoteState {
     }
 
     /**
-     * At one second remaining, choose exactly once and return the option id that must be sent C2S.
+     * Choose once when the player hides an unselected vote, or at one second remaining for maps.
      * Returning the id (rather than sending here) keeps this state class network-independent.
      */
-    public static String autoPickRandomMapIfNeeded(IntUnaryOperator randomIndex) {
-        if (!active || !"map".equals(voteId) || remainingSeconds > 1
-                || selectedOptionId != null || candidates.isEmpty()) {
+    public static String autoPickRandomOptionIfNeeded(IntUnaryOperator randomIndex) {
+        if (!active || selectedOptionId != null || candidates.isEmpty()) {
+            return null;
+        }
+        if (!uiHiddenByUser && (!"map".equals(voteId) || remainingSeconds > 1)) {
             return null;
         }
         int rawIndex = randomIndex == null ? 0 : randomIndex.applyAsInt(candidates.size());

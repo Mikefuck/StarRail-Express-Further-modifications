@@ -62,7 +62,7 @@
     "vote.habitrain_core.ui.hint": "Wheel / ↑ ↓ browse vertically · Click / Enter vote · ESC hide",
     "vote.habitrain_core.ui.map_hint": "Wheel / ↑ ↓ browse vertically · click for details and vote · wheel right to read · use the left side to return",
     "vote.habitrain_core.ui.random_selecting": "No map selected · choosing at random…",
-    "vote.habitrain_core.ui.panel_hint": "Wheel / ← → browse · Click / Enter vote · ESC / %s hide",
+    "vote.habitrain_core.ui.panel_hint": "Wheel / ← → browse · Click / Enter vote · ESC / %s hide (random vote if unvoted)",
     "vote.habitrain_core.ui.no_candidates": "No candidates are available for this phase",
     "vote.habitrain_core.ui.winner": "Final selection",
     "vote.habitrain_core.ui.recommended_players": "Recommended players",
