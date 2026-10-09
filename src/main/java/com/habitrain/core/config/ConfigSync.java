@@ -116,11 +116,6 @@ public class ConfigSync {
                 newRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
             }
 
-            MvpAnimationSettings newMvpAnimations = MvpAnimationSettings.createDefault();
-            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
-                newMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
-            }
-
             SceneMotionSettings newSceneMotion = SceneMotionSettings.createDefault();
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 newSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
@@ -146,7 +141,6 @@ public class ConfigSync {
             if (newRoleOverrides != null) {
                 repo.setRoleOverrides(newRoleOverrides);
             }
-            repo.setMvpAnimations(newMvpAnimations);
             repo.setSceneMotion(newSceneMotion);
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
@@ -315,11 +309,6 @@ public class ConfigSync {
                 incomingRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
             }
 
-            MvpAnimationSettings incomingMvpAnimations = null;
-            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
-                incomingMvpAnimations = MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations"));
-            }
-
             SceneMotionSettings incomingSceneMotion = null;
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 incomingSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
@@ -360,15 +349,6 @@ public class ConfigSync {
                 existing.setGlobalEnabled(incomingRoleOverrides.isGlobalEnabled());
                 existing.getEntries().putAll(incomingRoleOverrides.getEntries());
                 existing.getConflictResolution().putAll(incomingRoleOverrides.getConflictResolution());
-            }
-            if (incomingMvpAnimations != null) {
-                MvpAnimationSettings existing = repo.getMvpAnimations();
-                existing.enabled = incomingMvpAnimations.enabled;
-                existing.randomSelection = incomingMvpAnimations.randomSelection;
-                existing.avoidDuplicates = incomingMvpAnimations.avoidDuplicates;
-                existing.showRoleItems = incomingMvpAnimations.showRoleItems;
-                existing.speed = incomingMvpAnimations.speed;
-                existing.animations.putAll(incomingMvpAnimations.animations);
             }
             if (incomingSceneMotion != null) {
                 SceneMotionSettings existing = repo.getSceneMotion();

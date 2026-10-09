@@ -17,7 +17,7 @@
 **哈比列车核心（HabiTrain Core）** 是专为 Minecraft 1.21.1 / Fabric 开发的《星穹列车》（StarRailExpress，简称 SRE）大型扩展核心模组，模组 ID 为 `habitrain_core`。
 
 它拥有**双重核心定位**：
-1. **开箱即用的大型游戏机制增强模组**：管理专用「维修人员模式」、5 大特色投稿职业、完整的「七宗罪」角色体系与「七美德」词条修饰符体系、淘汰玩家休息区、全功能 ModMenu 中文可视化配置中心（四分类十三页面）、全服 3D MVP 结算大屏（集成 30 种动作姿势与规则定制）、智能模式与地图双阶段投票、大厅与局内环境控制、Simple Voice Chat 语音联动以及 Iris 光影白名单检测防护等。
+1. **开箱即用的大型游戏机制增强模组**：管理专用「维修人员模式」、5 大特色投稿职业、完整的「七宗罪」角色体系与「七美德」词条修饰符体系、淘汰玩家休息区、全功能 ModMenu 中文可视化配置中心（四分类十三页面）、全服 3D MVP 结算大屏（固定人像姿势）、智能模式与地图双阶段投票、大厅与局内环境控制、Simple Voice Chat 语音联动以及 Iris 光影白名单检测防护等。
 2. **面向下游生态的标准化扩展 API 框架**：为所有 SRE 扩展/DLC 模组提供角色扩展 API v2/v1（支持新增、可撤销修改、完全替换与别名迁移）、自定义任务系统 API、游戏模式注册与生命周期拦截 API、双阶段投票系统 API、任务道具安全回收体系及完整的诊断与快照体系。
 
 ---
@@ -29,7 +29,7 @@
   - [1. 特色游戏模式](#1-特色游戏模式)
   - [2. 角色与修饰符体系](#2-角色与修饰符体系)
   - [3. 对局与体验增强](#3-对局与体验增强)
-  - [4. 全服 3D MVP 结算大屏与动画系统](#4-全服-3d-mvp-结算大屏与动画系统)
+  - [4. 全服 3D MVP 结算大屏与固定姿势](#4-全服-3d-mvp-结算大屏与固定姿势)
   - [5. 安全与运维防御](#5-安全与运维防御)
 - [ModMenu 可视化配置中心（四大分类）](#modmenu-可视化配置中心四大分类)
 - [开发者 API 体系总览](#开发者-api-体系总览)
@@ -52,7 +52,7 @@
 | **Fabric Loader** | 0.18.2 或更高 | 模组加载器 |
 | **Fabric API** | 0.116.13+1.21.1 | 核心运行库 |
 | **StarRailExpress (SRE)** | 4.3.0 | 上游本体模组 |
-| **playerAnimator** | 2.0.4+ | 运行前置依赖，用于驱动 MVP 结算画面 3D 玩家角色庆祝动作 |
+| **playerAnimator** | 2.0.4+ | 由 Core 嵌套提供，用于 MVP 结算画面 3D 玩家固定骨骼姿势 |
 | **Simple Voice Chat** | 1.21.1-2.6.18 | 可选，用于语音群组划分与静音集成 |
 
 ---
@@ -106,21 +106,11 @@
 
 ---
 
-### 4. 全服 3D MVP 结算大屏与动画系统
+### 4. 全服 3D MVP 结算大屏与固定姿势
 
-对局结束时全服平滑进入结算大屏（`GameEndTransitionScreen`），全景展示胜利阵营、MVP 玩家及击杀、存活时长、道具使用等维度表现数据，并基于 **playerAnimator** 引擎为获胜玩家播放沉浸式 3D 动作姿势：
+对局结束时全服平滑进入结算大屏（`GameEndTransitionScreen`），展示胜利阵营、MVP 玩家及击杀、存活时长、道具使用等表现数据。MVP 预览人像通过 `MvpStillPose` 保持身体略侧、双臂垂落、头部转向镜头的固定姿势。
 
-- **30 种动作姿势库**：
-  - **经典动作（CC0 协议，10 种）**：致敬鞠躬（`victory_bow`）、企鹅欢庆舞（`penguin_dance`）、从容静坐（`cool_sit`，单人优先）、胜利 Dab（`victory_dab`）、胜利甩手舞（`victory_floss`）、优雅展示（`grace_pose`）、比心互动（`heart_pose`）、欢呼跳跃（`victory_jump`）、悬浮冥想（`meditation_fly`，单人优先）、冠军 T-Pose（`champion_tpose`）。
-  - **Emotecraft 内置动作（GPL-3.0 协议，8 种）**：胜利后空翻（`victory_backflip`）、冠军鼓掌（`champion_clap`）、放马过来（`come_here`）、Kazotsky 胜利舞（`kazotsky_victory`）、掌心致意（`victory_palm`）、胜利指向（`victory_point`）、药水欢庆舞（`potion_dance`）、冠军挥手（`champion_wave`）。
-  - **HabiTrain 原创动作（GPL-3.0 协议，12 种）**：皇家敬礼（`royal_salute`）、振臂欢呼（`fist_pump`）、强者姿态（`power_pose`）、闪耀星姿（`star_pose`）、抱臂赢家（`cross_arms`）、双臂欢呼（`double_cheer`）、迪斯科指舞（`disco_point`）、胜利旋身（`victory_spin`）、谦逊致谢（`humble_thanks`）、肩部律动（`shoulder_dance`）、冲天挥拳（`sky_punch`）、英雄落地（`hero_landing`）。
-- **细粒度动画规则配置**：
-  - **随机选择与去重**：支持多位获胜者同时登台时自动互斥去重，避免相同动作穿帮。
-  - **单人优先动作适配**：如「从容静坐」、「悬浮冥想」在单人 MVP 时优先触发，团队获胜时自动回退为站立姿势。
-  - **角色道具手持展示**：支持结算画面中展示获胜职业专属手持道具。
-  - **播放速率调节**：支持 0.5x ~ 1.5x 自定义播放速率。
-  - **独立动作开关**：可在 ModMenu 中逐一启用或禁用任意动作。
-- 资产授权详情见 [THIRD_PARTY_LICENSES/MVP_ANIMATIONS.md](THIRD_PARTY_LICENSES/MVP_ANIMATIONS.md)。
+**playerAnimator** 随 Core 嵌套打包，负责覆盖原版骨骼站姿与手臂摆动。结算固定姿势由代码定义，不需要外部动作资源或动作选择配置。
 
 ---
 
@@ -150,7 +140,6 @@
 │ 2. 游戏外    │ · 投票           │ 模式/地图双阶段投票倒计时、按人数动态抽图池、投票预设│
 │   (大厅投票) │ · 大厅环境       │ 等待大厅天气、时间锁定、大厅雾效与自动语音组开关     │
 │              │ · 光影白名单     │ Iris 光影检测总开关、允许使用的光影包文件名列表维护  │
-│              │ · MVP 动画       │ 30 种结算 3D 庆祝动作开关、随机/去重规则与播放速度   │
 │              │ · 主菜单         │ 本机启用六面 3D 旋转全景，替换 DLC 视频或默认背景    │
 ├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
 │ 3. 游戏模式  │ · 任务配置       │ 各模式任务池管理、DLC 任务生成权重加成与地图绑定     │
@@ -314,9 +303,9 @@ src/main/java/com/habitrain/core/
 ├── role/                  # 角色扩展平台 v2 内部实现与引擎
 ├── network/               # S2C / C2S 自定义网络 Payload 与编解码
 ├── config/                # JSON 配置文件读写、同步与 ModMenu 门控
-└── client/                # ModMenu 四大分类 13 个配置页、MVP 动画、HUD、GUI、渲染与客户端 Mixin
+└── client/                # ModMenu 四大分类 13 个配置页、MVP 固定姿势、HUD、GUI、渲染与客户端 Mixin
     ├── gui/menu/          # 统一配置中心根屏与各分类页面
-    └── mvp/               # playerAnimator MVP 3D 动作加载、绑定与播放控制器
+    └── mvp/               # playerAnimator MVP 3D 固定骨骼姿势
 ```
 
 ---
@@ -326,18 +315,18 @@ src/main/java/com/habitrain/core/
 使用标准 Gradle 命令构建项目：
 
 ```powershell
-./gradlew build
+.\gradlew.bat build --no-daemon
 ```
 
 构建完成后，生成的标准交付 JAR 产物位于：
 ```text
-build/libs/habitrain_core-<mod_version>.jar     # 例如 2.0.19
+build/libs/habitrain_core-<mod_version>.jar     # 例如 2.0.23
 build/release/habitrain_core-<mod_version>-restored.jar
 ```
 
 > **版本号说明（审核 D-01）**：`mod_version`（`gradle.properties`）是**产物版本**，每次修复递增；
 > `api_version`（`CoreApi.API_VERSION` / `fabric.mod.json` 的 `custom` 段）是**公开 API 语义版本**，
-> 只在契约变化时递增。当前 `mod_version = 2.0.19`、`api_version = 2.2`，两者**不同步**是正常的。
+> 只在契约变化时递增。当前 `mod_version = 2.0.23`、`api_version = 2.2`，两者**不同步**是正常的。
 > 下游判断能力请用 `CoreApi.apiVersion()` / `CoreApi.supports(key)`，不要比对 mod 版本号。
 > 二者的格式与一致性有单测守卫（`VersionConstantsConsistencyTest`）。
 
@@ -347,11 +336,10 @@ build/release/habitrain_core-<mod_version>-restored.jar
 
 ## 文档索引
 
-- 📘 **[使用教程](docs/使用教程.md)**：面向玩家、服主与模组开发者的全方位实战指南（涵盖玩法机制、MVP 动画配置、配置中心四分类运维、任务/模式开发与角色扩展实战）。
+- 📘 **[使用教程](docs/使用教程.md)**：面向玩家、服主与模组开发者的全方位实战指南（涵盖玩法机制、MVP 固定姿势结算、配置中心四分类运维、任务/模式开发与角色扩展实战）。
 - 📑 **[API 参考手册](docs/API参考手册.md)**：公开 API 接口契约、方法签名与类族索引速查。
 - 📕 **[角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md)**：角色扩展平台 v2 深度开发指南（ADD/MODIFY/REPLACE、Hooks、State、Action、Client HUD 与诊断）。
 - 🚄 **[移动场景 API 使用教程](docs/移动场景API使用教程.md)**：`SceneApi` v2 全量教程（无上限实例、全参数表、锚点、资产发布、事件、性能模型与实战配方）。
-- 📜 **[MVP 动画开源授权告示](THIRD_PARTY_LICENSES/MVP_ANIMATIONS.md)**：MVP 结算 3D 动作姿势开源协议说明与作者归属。
 
 ---
 

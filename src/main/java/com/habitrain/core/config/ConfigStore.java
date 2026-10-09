@@ -80,6 +80,8 @@ public class ConfigStore {
         try {
             JsonObject root = loaded.value();
             dirty |= RemovedModeConfigMigration.prune(root);
+            // 固定姿势不再使用旧动作配置；下次保存时清除历史字段。
+            dirty |= root.remove("mvpAnimations") != null;
 
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
@@ -199,12 +201,6 @@ public class ConfigStore {
                 repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
             }
 
-            if (root.has("mvpAnimations") && root.get("mvpAnimations").isJsonObject()) {
-                repo.setMvpAnimations(MvpAnimationSettings.fromJson(root.getAsJsonObject("mvpAnimations")));
-            } else {
-                repo.setMvpAnimations(MvpAnimationSettings.createDefault());
-            }
-
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 repo.setSceneMotion(SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion")));
             } else {
@@ -251,7 +247,6 @@ public class ConfigStore {
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
         repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
-        repo.setMvpAnimations(MvpAnimationSettings.createDefault());
         repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 
@@ -349,8 +344,6 @@ public class ConfigStore {
 
         root.add("roleOverrides", repo.getRoleOverrides().toJson());
 
-        root.add("mvpAnimations", repo.getMvpAnimations().toJson());
-
         root.add("sceneMotion", repo.getSceneMotion().toJson());
 
         RemovedModeConfigMigration.prune(root);
@@ -376,7 +369,6 @@ public class ConfigStore {
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
         repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
-        repo.setMvpAnimations(MvpAnimationSettings.createDefault());
         repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 

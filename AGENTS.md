@@ -9,21 +9,21 @@ Fabric 1.21.1 模组，为星穹列车 (SRE) 提供可扩展的任务系统 API�
 Windows / PowerShell（当前工作区；用仓库自带的 wrapper）：
 
 ```powershell
-.\gradlew.bat build          # 完整构建（assemble 会触发 copyReleaseJar）
+.\gradlew.bat build --no-daemon          # 完整构建（assemble 会触发 copyReleaseJar）
 .\gradlew.bat runClient      # 启动开发客户端
 ```
 
 交付构建（上级 AGENTS 要求）：
 
 ```powershell
-.\gradlew.bat clean build
+.\gradlew.bat clean build --no-daemon
 # 将 build/libs/habitrain_core-<version>.jar 复制到 D:\Backup\mc mod\临时\
 ```
 
 - Java 21（`options.release = 21`），Fabric Loom 1.17.13；字节码目标为 21
 - `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
 - `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
-- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证以 `.\gradlew.bat build` 和必要的游戏内运行共同完成
+- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证以 `.\gradlew.bat build --no-daemon` 和必要的游戏内运行共同完成
 - README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口；移动场景相关另有 `docs/移动场景API使用教程.md` 与 `docs/大厅移动背景.md`
 
 ## 重要架构
