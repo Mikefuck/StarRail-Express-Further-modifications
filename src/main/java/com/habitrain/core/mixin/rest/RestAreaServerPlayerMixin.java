@@ -1,6 +1,6 @@
 package com.habitrain.core.mixin.rest;
 
-import com.habitrain.core.game.sre.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.GameType;
 import org.spongepowered.asm.mixin.Mixin;

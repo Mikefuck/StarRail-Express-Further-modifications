@@ -1,5 +1,6 @@
 package com.habitrain.core.api;
 
+
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
@@ -69,7 +70,7 @@ public class TaskDefinition {
     private final BiFunction<Player, TaskInstance, Boolean> completionChecker;
     private final BiConsumer<Player, TaskInstance> tickHandler;
     private final BiPredicate<Player, TaskInstance> canAssignPredicate;
-    /** 审核 B5：无 TaskInstance 场景的专用谓词；为 null 时回退 canAssignPredicate。 */
+    /** Candidate prefilter; instance predicates are evaluated before onAssign. */
     private final java.util.function.Predicate<Player> canAssignWithoutInstancePredicate;
     private final ProgressUpdateHandler onProgressUpdateHandler;
 
@@ -83,8 +84,7 @@ public class TaskDefinition {
      *  axis: 影响哪个时间轴
      *  deltaSeconds: 增减秒数（正=增加停电时间，负=减少）
      *
-     * 用于自适应刷新概率：computeUrgencyMultiplier 从 delta 派生阈值，
-     * 未来改 delta 自动调整概率曲线，无需改概率逻辑代码。
+     * 当前 Core 不消费此声明，不改变权重或计时。
      */
     public record TimeImpact(TimeAxis axis, int deltaSeconds) {
         public enum TimeAxis {
@@ -165,7 +165,9 @@ public class TaskDefinition {
     public Set<Block> getScanBlocks() { return Collections.unmodifiableSet(scanBlocks); }
     public Set<String> getScanBlockIds() { return Collections.unmodifiableSet(scanBlockIds); }
     public int getTimeLimit() { return timeLimit; }
+    /** Reserved metadata; Core does not enforce repeat restrictions. */
     public boolean canRepeat() { return canRepeat; }
+    /** Reserved metadata; Core does not propagate progress to other players. */
     public boolean isShareProgress() { return shareProgress; }
     /** @see #poolEligible 字段说明；false = 只登记、不派发。 */
     public boolean isPoolEligible() { return poolEligible; }
@@ -173,7 +175,7 @@ public class TaskDefinition {
     /**
      * 旧扩展元数据（可能为 {@code null}），不再影响 Core 任务权重或计时。
      *
-     * @deprecated 审核 B12：该值不产生任何运行时效果，会在 2.0.12 移除。
+     * @deprecated 仅为源码兼容保留，该值不产生运行时效果。
      */
     @Deprecated(forRemoval = true, since = "2.0.11")
     public @org.jetbrains.annotations.Nullable TimeImpact getTimeImpact() { return timeImpact; }
@@ -206,7 +208,10 @@ public class TaskDefinition {
         return result != null && result;
     }
     public void onTick(Player player, TaskInstance instance) { if (tickHandler != null) tickHandler.accept(player, instance); }
-    public boolean canAssign(Player player, TaskInstance instance) { if (canAssignPredicate != null) return canAssignPredicate.test(player, instance); return true; }
+    /** Both registered predicates must accept the unassigned instance, before onAssign. */
+    public boolean canAssign(Player player, TaskInstance instance) {
+        return canAssign(player) && (canAssignPredicate == null || canAssignPredicate.test(player, instance));
+    }
 
     /**
      * 无 {@link TaskInstance} 时的判定重载。
@@ -219,10 +224,6 @@ public class TaskDefinition {
      */
     public boolean canAssign(Player player) {
         if (canAssignWithoutInstancePredicate != null) return canAssignWithoutInstancePredicate.test(player);
-        if (canAssignPredicate != null) {
-            LOGGER.warn("TaskDefinition.canAssign(player) called without an instance for {}; the BiPredicate is skipped. "
-                    + "Register canAssignWithoutInstance(Predicate<Player>) instead.", getFullId());
-        }
         return true;
     }
     public void onProgressUpdate(Player player, TaskInstance instance, int oldProgress) { if (onProgressUpdateHandler != null) onProgressUpdateHandler.onProgressUpdate(player, instance, oldProgress); }
@@ -307,7 +308,7 @@ public class TaskDefinition {
          *
          * <p><b>本方法不产生任何运行时效果</b>（审核 B12）：Core 已不再消费该值。
          *
-         * @deprecated 会在 2.0.12 移除；保留仅为已有扩展源码可编译。
+         * @deprecated 仅为已有扩展源码兼容保留，不产生运行时效果。
          */
         @Deprecated(forRemoval = true, since = "2.0.11")
         public Builder timeImpact(TimeImpact.TimeAxis axis, int deltaSeconds) {

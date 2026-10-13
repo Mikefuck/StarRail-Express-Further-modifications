@@ -11,6 +11,7 @@ public class TaskSaveController {
     private final TaskDefinition def;
     private final TaskConfigEntry cfg;
     private final boolean remoteEditable;
+    private String validationError;
 
     public TaskSaveController(TaskDefinition def, TaskConfigEntry cfg, boolean remoteEditable) {
         this.def = def;
@@ -19,31 +20,16 @@ public class TaskSaveController {
     }
 
     public void syncFields(EditBox goldField, EditBox emotionField, EditBox weightField, EditBox mapField) {
-        String raw = mapField != null ? mapField.getValue() : "";
-        cfg.enabledMaps = TaskMapFilterEditor.parseMapList(raw);
-        parseNumFields(goldField, emotionField, weightField);
-    }
-
-    private void parseNumFields(EditBox goldField, EditBox emotionField, EditBox weightField) {
         try {
-            String v = goldField.getValue().trim();
-            cfg.hasGoldReward = !v.isEmpty();
-            cfg.goldReward = v.isEmpty() ? 0 : Integer.parseInt(v);
-        } catch (NumberFormatException ignored) {}
-        try {
-            String v = emotionField.getValue().trim();
-            cfg.hasEmotionReward = !v.isEmpty();
-            cfg.emotionReward = v.isEmpty() ? 0f : Float.parseFloat(v);
-        } catch (NumberFormatException ignored) {}
-        try {
-            String v = weightField.getValue().trim();
-            cfg.hasRefreshWeight = !v.isEmpty();
-            cfg.refreshWeight = v.isEmpty() ? 0f : Float.parseFloat(v);
-        } catch (NumberFormatException ignored) {}
+            var candidate = com.habitrain.core.config.TaskNumericDraft.parse(goldField.getValue(), emotionField.getValue(), weightField.getValue());
+            var maps = TaskMapFilterEditor.parseMapList(mapField != null ? mapField.getValue() : "");
+            candidate.apply(cfg); cfg.enabledMaps = maps; validationError = null;
+        } catch (IllegalArgumentException error) { validationError = error.getMessage(); }
     }
 
     public void resetDefault() {
         if (!canEditNow()) return;
+        validationError = null;
         cfg.enabled = true;
         cfg.enabledMaps.clear();
         cfg.mapFilterMode = 0;
@@ -62,9 +48,10 @@ public class TaskSaveController {
 
     public void saveCurrent() {
         if (!canEditNow()) return;
+        if (validationError != null) { showMessage("§c" + validationError + "，未保存"); return; }
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), cfg);
         com.habitrain.core.client.InstinctColorHelper.markDirty();
-        ConfigManager.getInstance().save();
+        com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
     }
 
     private boolean canEditNow() {

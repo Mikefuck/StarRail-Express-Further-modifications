@@ -2,8 +2,8 @@ package com.habitrain.core.game;
 
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
-import com.habitrain.core.game.sre.EliminatedRestAreaService;
-import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.map.MapVoteLoadCoordinator;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;

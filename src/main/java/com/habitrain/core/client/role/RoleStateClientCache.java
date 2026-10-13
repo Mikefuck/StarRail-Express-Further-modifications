@@ -44,6 +44,13 @@ public final class RoleStateClientCache {
         if (payload == null) {
             return;
         }
+        if (payload.snapshotBegin() && payload.snapshotEnd()) {
+            if (snapshotInProgress && payload.snapshotId() == snapshotId) {
+                staging.clear();
+                snapshotInProgress = false;
+            }
+            return;
+        }
         if (payload.snapshotBegin()) {
             if (payload.snapshotId() <= lastCompletedSnapshotId) {
                 return;

@@ -1,13 +1,13 @@
 package com.habitrain.core.api.role.v2.definition;
 
-import com.habitrain.core.api.role.patch.DefaultItemsPatch;
-import com.habitrain.core.api.role.patch.FlagsPatch;
-import com.habitrain.core.api.role.patch.NamePatch;
-import com.habitrain.core.api.role.patch.RoleTextPatch;
-import com.habitrain.core.api.role.patch.ShopPatch;
-import com.habitrain.core.api.role.patch.ShopTransform;
-import com.habitrain.core.api.role.patch.SpawnInfoPatch;
-import com.habitrain.core.api.role.patch.WinConditionHook;
+import com.habitrain.core.api.role.v2.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.v2.patch.FlagsPatch;
+import com.habitrain.core.api.role.v2.patch.NamePatch;
+import com.habitrain.core.api.role.v2.patch.RoleTextPatch;
+import com.habitrain.core.api.role.v2.patch.ShopPatch;
+import com.habitrain.core.api.role.v2.patch.ShopTransform;
+import com.habitrain.core.api.role.v2.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.v2.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.book.RoleBookPatch;
 import com.habitrain.core.api.role.v2.skill.RoleSkillPatch;
@@ -87,7 +87,7 @@ public final class RolePatch {
     private final PatchPriority priority;
     private final String entryKey;
     private final @Nullable ColorPatch color;
-    private final @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+    private final @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider;
     private final @Nullable FlagsPatch flagsPatch;
     private final @Nullable SpawnInfoPatch spawnInfoPatch;
     private final @Nullable MoodPatch mood;
@@ -191,7 +191,7 @@ public final class RolePatch {
     public PatchPriority priority() { return priority; }
     public @Nullable String entryKey() { return entryKey; }
     public @Nullable ColorPatch color() { return color; }
-    public @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider() { return colorProvider; }
+    public @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider() { return colorProvider; }
     public @Nullable FlagsPatch flagsPatch() { return flagsPatch; }
     public @Nullable SpawnInfoPatch spawnInfoPatch() { return spawnInfoPatch; }
     public @Nullable MoodPatch mood() { return mood; }
@@ -254,7 +254,7 @@ public final class RolePatch {
         private PatchPriority priority = PatchPriority.NORMAL;
         private String entryKey;
         private ColorPatch color;
-        private com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+        private com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider;
         private FlagsPatch flagsPatch;
         private SpawnInfoPatch spawnInfoPatch;
         private MoodPatch mood;
@@ -298,7 +298,7 @@ public final class RolePatch {
         public Builder priority(PatchPriority priority) { this.priority = Objects.requireNonNull(priority, "priority"); return this; }
         public Builder entryKey(String entryKey) { this.entryKey = entryKey; return this; }
         public Builder color(int color) { this.color = new ColorPatch(color); return this; }
-        public Builder colorProvider(com.habitrain.core.api.role.patch.ColorPatch p) {
+        public Builder colorProvider(com.habitrain.core.api.role.v2.patch.ColorPatch p) {
             this.colorProvider = Objects.requireNonNull(p, "colorProvider");
             return this;
         }

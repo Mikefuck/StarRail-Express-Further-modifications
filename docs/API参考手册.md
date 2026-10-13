@@ -1,7 +1,7 @@
 # 哈比列车核心 API 参考手册
 
-> HabiTrain Core 2.0.11 · Role Extension API 2.0 · Minecraft 1.21.1 · Fabric · Java 21
-> 公开 API 语义版本：`2.1`（`CoreApi.apiVersion()`）· 角色扩展 API 语义版本：`2.0`（`CoreApi.roleApiVersion()`）
+> HabiTrain Core 当前工作树 · Minecraft 1.21.1 · Fabric · Java 21
+> 当前版本统一见 [版本来源与安装依赖](版本与安装依赖.md)；公开 API `2.2`，角色扩展 API `2.0`。标注 2.0.11 的变更章节与旧示例是历史说明。
 > 公开根包：`com.habitrain.core.api`
 > 文档日期：2026-09-20
 
@@ -16,7 +16,6 @@
 | `com.habitrain.core.api` | 顶层入口：`CoreApi`、任务、游戏模式、投票、`ItemReclaimHelper` 等 |
 | `com.habitrain.core.api.spi` | 实现层桥接接口（`CoreSpi`、`CoreLifecycle`、各 `*Bridge`、`RoleSpi`） |
 | `com.habitrain.core.api.scene` | 移动场景 v2 门面与公开值对象 |
-| `com.habitrain.core.api.role` | 兼容稳定的角色覆盖 v1 |
 | `com.habitrain.core.api.role.v2` | 完整角色扩展 v2（preview / experimental） |
 | `com.habitrain.core.api.match` | 对局阶段、结算与事件 |
 | `com.habitrain.core.api.menu` | 服务端 ModMenu 门控查询 |
@@ -24,9 +23,9 @@
 
 **其余一切都是内部实现，不要在编译期引用**：`com.habitrain.core.task`、`game`、`role`、`scene`、`config`、`client`、`vote`、`network`、`internal`、`misc`、`persist`、`util`、`betel`。这些包既不保证兼容，也可能在任意小版本重命名或删除；升级时若发现它们变动，属于内部重构而不是 API 破坏性变更。
 
-> **文档历史遗留**：本文档与其他文档过去把若干实现类当作可编程 API 引用，例如 `CcaRoleStateStore`（§8.3）、`RoleOverrideTickApplier`（§10、使用教程 §2.7）、`ForcedRandomRoleChangePolicy`（§8.2、使用教程 §2.8、README 安全与运维防御）、`MenuGateService` / `MenuAccessGuard`（§3.4）、`TMMRoles` / `SRERole`（§8.1、§12）。**它们全部是内部实现（含上游 SRE 类型），只是说明其行为，任何下游代码都不得直接调用。**
+> **文档历史遗留**：本文档与其他文档过去把若干实现类当作可编程 API 引用，例如 `CcaRoleStateStore`（§8.3）、`ForcedRandomRoleChangePolicy`（§8.2、使用教程 §2.8、README 安全与运维防御）、`MenuGateService` / `MenuAccessGuard`（§3.4）、`TMMRoles` / `SRERole`（§8.1、§12）。**它们全部是内部实现（含上游 SRE 类型），只是说明其行为，任何下游代码都不得直接调用。**
 
-任务、模式和 v1 覆盖在初始化期注册，并在服务端启动阶段冻结。v2 通用与客户端声明分别通过 Fabric entrypoint 注册：
+任务和模式在初始化期注册，并在服务端启动阶段冻结。v2 通用与客户端声明分别通过 Fabric entrypoint 注册：
 
 ```text
 habitrain:role_extensions
@@ -77,7 +76,9 @@ new TaskCategory(String id, String displayName, String gameModeId)
 
 ### 2.4 `TaskInstance`
 
-常用方法：`get/setProgress`、`get/setMaxProgress`、`isFulfilled`、`isFailed`、`markFailed`、`tick`、`toNbt`、`fromNbt`。`setMaxProgress` 会钳制到至少 1。
+常用方法：`get/setProgress`、`get/setMaxProgress`、`isFulfilled`、`isFailed`、`markFailed`、`tick`、`toNbt`、`fromNbt`。`setMaxProgress` 会钳制到至少 1。`setProgress` 在进度回调重入时仍写入新进度，只抑制再次通知；它不是阻止写入的锁。
+
+`canRepeat` 与 `shareProgress` 是保留元数据，当前 Core 不消费它们来防止重复派发或共享进度。`TimeImpact` 也只保留源码兼容，当前任务池运行时不使用它计算紧急度，不承诺某个未来版本自动启用或删除。
 
 ## 3. 游戏模式 API
 
@@ -134,7 +135,7 @@ boolean isActive(ServerLevel level);
 
 客户端（`api.client.menu`，客户端专用）：`MenuGateClientApi.isScreenAllowed()`，并可查 `MenuGateClientApi.isServerDedicated()`（服务端自报的专用服状态，与 `isScreenAllowed()` 同一份状态；客户端不再自行推断）。
 
-顶层 `com.habitrain.core.api.MenuGateApi` 是**同名转发壳**，已标记 `@Deprecated(forRemoval = true, since = "2.0.11")`，请在新代码中直接使用 `com.habitrain.core.api.menu.MenuGateApi`（它将在 2.0.12 移除）。附属 mod 不要反射内部实现 `MenuGateService` / `MenuAccessGuard`。
+顶层 `com.habitrain.core.api.MenuGateApi` 已移除。请使用 `import com.habitrain.core.api.menu.MenuGateApi;`；客户端查询使用 `com.habitrain.core.api.client.menu.MenuGateClientApi`。附属 mod 不要反射内部实现 `MenuGateService` / `MenuAccessGuard`。
 
 ## 4. 投票与道具
 
@@ -158,7 +159,7 @@ void cancel(ServerLevel level);
 
 - 保留 voteId `"mode"` / `"map"` 由模式→地图编排器占用，公开入口会**直接拒绝**（返回 `false`），第三方用它们会意外继承维修锁图过滤并抢占唯一投票位。
 - `options` 的 `id` 必须非空、长度 ≤ 64、互不重复；`durationSeconds >= 1`。任一项不满足时在改动任何状态**之前**就返回 `false`。
-- **线程契约**：所有方法必须在服务端主线程调用；实现内部用非并发容器保存会话状态。C2S `option_vote_cast` 已加速率限制（此前是全仓唯一无限速的 C2S 处理器）。
+- **线程契约**：所有方法必须在服务端主线程调用；实现内部用非并发容器保存会话状态。C2S `option_vote_cast` 当前没有按请求时间限速；同票去重和广播合并不等于入口限速。
 
 `VoteResult` 是 5 元 record：`voteId`、`winnerId`、`tallies`、`randomPick`、`cancelled`。四参构造重载仍在（等价于 `cancelled = false`）。取消 / 重置路径会以 `VoteResult.cancelled(voteId)` 回调 `onResolved`（`winnerId == null`、票数为空、`cancelled == true`），不再丢弃回调；`isActive(...) == false` 无法区分「已结算」与「已取消」，判据请用 `cancelled`。
 
@@ -178,7 +179,7 @@ void cancel(ServerLevel level);
 ### 4.4 `CoreApi`
 
 ```java
-CoreApi.apiVersion();        // "2.1"
+CoreApi.apiVersion();        // "2.2"
 CoreApi.roleApiVersion();    // "2.0"
 CoreApi.supports("scene.instances");   // 未知能力键 fail-closed 返回 false
 CoreApi.capabilities();                // 全部已知能力键（只读 Set）
@@ -190,27 +191,21 @@ CoreApi.capabilities();                // 全部已知能力键（只读 Set）
 
 ```json
 "custom": {
-  "habitrain_core:api_version": "2.1",
+  "habitrain_core:api_version": "2.2",
   "habitrain_core:role_api": "2.0"
 }
 ```
 
 
-## 5. 角色覆盖 v1
+## 5. 角色 API 包与升级边界
 
-包：`com.habitrain.core.api.role`。v1 仍是正式兼容 API，不弃用。
+角色扩展仅提供 `com.habitrain.core.api.role.v2`。角色覆盖 API v1、注册与运行引擎、v1/v2 翻译和冲突桥、`RoleSpi` 的 v1 装配槽及 Mod Menu 的“角色覆盖”页均已移除。
 
-| 入口 | 用途 |
-|---|---|
-| `RoleOverrideApi.registerReplace` | 完全替换目标角色 |
-| `RoleOverrideApi.registerModify` | 保留目标 ID/对象并打可撤销补丁 |
-| `isReplaced` / `getReplacement` | 查询活动替换 |
-| `isModified` / `getActiveModify` | 查询活动修改 |
-| `getEffectiveEntries` | 查询所有条目及状态 |
+- 职业书：`api.role.v2.book.RoleBookContent` / `RoleBookPage`。
+- 动态属性回调：`api.role.v2.patch`。
+- 声明式胜利回调上下文：`api.role.v2.behavior.RoleWinCheckContext`。
 
-MODIFY builder 支持 `namePatch`、`colorPatch`、`descriptionPatch`、`simpleDescriptionPatch`、`shopPatch`、`shopTransform`、`defaultItemsPatch`、`flagsPatch`、`spawnInfoPatch`、`managedSkillPatch`、`winConditionHook`、`roleBookAppendix/Appendices`。
-
-`skillRegistrar` 仅保留兼容，使用它的条目会被判为 INVALID；新代码必须使用 `managedSkillPatch`。
+旧包名不保留转发类或二进制兼容桥。使用旧类型的附属模组（包括早期 v2 提供者）必须更新 import 并重新编译。旧主配置中的 `roleOverrides` 段被忽略，之后保存不会再输出；v2 继续使用独立的 `config/habitrain_role_v2.json`。
 
 ## 6. 角色扩展 v2 注册端口
 
@@ -308,6 +303,8 @@ default boolean requiresClient(); // 默认 false
 
 `HOLDER`、`KILLER`、`VICTIM`、`TARGET`、`ANY_ACTIVE_HOLDER`、`ROUND_PRESENT`、`GLOBAL_WHILE_ENABLED`。
 
+逐参与者事件按已注册声明的 scope 解析持有者，`context.holder` 始终对应该订阅角色的实际持有者。交互的 HOLDER 是发起者，TARGET 是明确的玩家目标；非玩家目标不匹配 TARGET。死亡/击杀的 KILLER、VICTIM 分别匹配相应参与者，没有 killer 时不匹配 KILLER。尸体事件保留 HOLDER 双参与者合同：每名相关持有者一次，同角色双方也各收到一次。ANY_ACTIVE_HOLDER 每条声明触发一次，holder 是代表持有者；ROUND_PRESENT/GLOBAL 沿用冻结快照门控。对某 HookType 无意义的参与者 scope 会明确诊断并省略该事件，不能默认为 HOLDER。
+
 广播类事件需要按语义选择作用域。`GLOBAL_WHILE_ENABLED` 注册时不会被拒绝，但运行时仍要求 `presentInRound && allowGlobalHooks`（round snapshot 的门控；无 snapshot 时读 live 配置）。不要把它当成「条目启用即无条件开火」。
 
 ### 7.3 `WinPatch`
@@ -346,6 +343,10 @@ default boolean requiresClient(); // 默认 false
 生产存储：`Persistence.WORLD` / `PERMANENT` 经内部实现类 `CcaRoleStateStore` 写入 CCA（PLAYER → 玩家组件，WORLD → 世界组件）；`ROUND` / `NONE` 走内存。`StateScope.ROUND` 一律进局内内存袋，**ROUND+PERMANENT 也不会写入世界 NBT**。
 
 WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `dataVersion > 1` 时迁移链必须从 v1 连续覆盖到当前版本。
+
+同步或持久槽先编码和校验尺寸，再提交，失败不改变旧值或 revision。同步的临时槽存编码快照，每次读取独立解码；修改必须通过 set，不能原地修改外部对象来改变已提交值。纯服务端未同步的内存槽保留引用语义及无 codec 支持。全量同步与 get 共用迁移读取：成功后发送匹配格式与版本；解码、迁移或存储失败保留原始数据并诊断，不用默认值伪装迁移成功。正常权威快照省略不可用槽并回收旧镜像；中途传输失败显式取消批次，客户端保留上一批已提交镜像。
+
+局末只清理局内动作和 UI；跨局保留且未配置 ROUND_START/ROUND_END 重置的状态镜像不会因连接重置而丢失。角色或接收权限变化后由服务端权限过滤快照回收槽，断线或换服务器才清空全部连接镜像。
 
 > ⚠️ **缺 codec 不是诊断行，是整批回滚**：`RoleStateSpec` / `RoleActionSpec` / `RolePatch` / `RoleDefinition` / `RoleReplacement` 等 spec 缺必填项时，`build()` 直接抛 `IllegalStateException`。异常会冒泡到 provider 的注册事务，**该 provider 本次声明的整批回滚**，`RoleDiagnostics` 里连一行 `INVALID` 都不会出现（诊断只读已提交条目）。旧文档写的「注册失败并报 INVALID」是错的。
 
@@ -408,9 +409,7 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 - 大厅修改：立即成为 lobby snapshot。
 - 对局中 v2 配置修改：编译为 pending；下一局边界提升为 lobby 并激活。本局 gameplay（hooks、受管 action、HUD/直觉/皮肤）继续使用 round snapshot，不跟 pending。
 - Mod Menu 与 `/habitrain roleapi snapshot` 诊断可以同时显示 pending 与 live。
-- v1 flags/spawn/shop 的 live 写入由内部实现类 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND）；局中 rebuild 不会立刻改当前对局的 flags/spawn/shop。
 - 不要把「对局中修改绝不破坏当前对局」写成覆盖全部 API 的保证。
-- 同一 `RoleKey` 双注册 v1+v2 MODIFY/REPLACE → Engine 标 v1 CONFLICT 并跳过（v1 胜负 hook / 商店 overlay 丢弃）。v1 不弃用。
 
 常用命令：
 
@@ -514,7 +513,7 @@ v1 的 `SceneMotionApi` 保留且行为不变。
 8. 不把 `muteReceive`、非 NAMEPLATE 名称渲染或完整视觉 HUD 当成稳定消费能力。
 9. 不在服务端主线程之外调用 `SceneApi` 的写操作（注册表突变与发包都是同步的）。
 10. 不把 API 实例当持久数据用；重启即清空，请在启动/开局时重新注册。
-11. 只把 `com.habitrain.core.api.**` 当 API；`TMMRoles`、`SRERole`、`CcaRoleStateStore`、`RoleOverrideTickApplier`、`ForcedRandomRoleChangePolicy`、`MenuGateService`、`MenuAccessGuard` 等都是内部/上游实现，不要 import。
+11. 只把 `com.habitrain.core.api.**` 当 API；`TMMRoles`、`SRERole`、`CcaRoleStateStore`、`ForcedRandomRoleChangePolicy`、`MenuGateService`、`MenuAccessGuard` 等都是内部/上游实现，不要 import。
 12. 不用 `MatchStateApi.modeId()` 判大厅/锁定（大厅是空串）；用 `MatchStateApi.phase(...)`。
 13. 不用 `MenuGateApi.isAllowed(player)` 做门禁判断（它是名单查询，不是 `isBlocked` 的取反）。
 14. `MatchEvents` 监听器只在 `onInitialize()` 注册一次（Fabric `Event` 无注销）。
@@ -549,7 +548,7 @@ v1 的 `SceneMotionApi` 保留且行为不变。
 | `OptionVoteApi.start` 新增标题/描述重载 | 旧重载仍在，标题默认「投票」；保留 voteId `"mode"` / `"map"` 被公开入口拒绝 |
 | `VoteResult` 新增第 5 个分量 `cancelled` | 四参构造保留；取消 / 重置会以 `VoteResult.cancelled(voteId)` 回调 `onResolved` |
 | `ModeMapVoteApi.lastFailure(level)` | 返回最近一次失败的可读原因 |
-| 投票 API 线程契约 + C2S 限速 | 必须在服务端主线程调用；`option_vote_cast` 已限速 |
+| 投票 API 线程契约 | 必须在服务端主线程调用；当前 `option_vote_cast` 只有同票去重与广播合并，没有按请求时间限速 |
 | `MatchEvents` 覆盖 `GameModeRegistry.start/stop` | 这类结算的 `winners()` / `participants()` 为空，只能用于逐局重置；监听器只注册一次 |
 | `MatchStateApi.modeId()` 大厅返回空串 | 不再是锁定判据，用 `phase(...)` |
 | `MatchSettlement.factionOfOrEmpty(UUID)` | 可区分「查不到」与「真的是乘客」；`factionOf` 仍兜底 `PASSENGER` |

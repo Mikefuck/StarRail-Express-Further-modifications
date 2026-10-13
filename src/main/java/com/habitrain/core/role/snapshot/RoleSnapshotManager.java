@@ -2,7 +2,6 @@ package com.habitrain.core.role.snapshot;
 
 import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
-import com.habitrain.core.role.override.RoleOverrideTickApplier;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,7 +45,6 @@ public final class RoleSnapshotManager {
         this.settlement = null;
         this.round = lobby;
         RoleRuntimeOverlayApplier.activate(round);
-        RoleOverrideTickApplier.captureRound();
         LOGGER.info("Round snapshot fixed: {}", round == null ? "none" : round.id());
     }
 
@@ -68,7 +66,6 @@ public final class RoleSnapshotManager {
             LOGGER.info("Pending snapshot activated as lobby: {}", lobby.id());
         }
         this.settlement = null;
-        RoleOverrideTickApplier.releaseRound();
     }
 
     /**
@@ -133,6 +130,5 @@ public final class RoleSnapshotManager {
         this.pending = null;
         this.settlement = null;
         this.activatePendingScheduled = false;
-        RoleOverrideTickApplier.discardRoundFreeze();
     }
 }

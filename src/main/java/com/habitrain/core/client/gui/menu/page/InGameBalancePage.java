@@ -183,7 +183,6 @@ public class InGameBalancePage implements ConfigPage {
                 if (hit.action() == 1) {
                     mgGlobal = !mgGlobal;
                     ConfigManager.getInstance().setMinigameGlobalEnabled(mgGlobal);
-                    ConfigManager.getInstance().applyMinigameEnforcement(Minecraft.getInstance().getSingleplayerServer());
                 }
                 MenuSounds.playClick();
                 return true;

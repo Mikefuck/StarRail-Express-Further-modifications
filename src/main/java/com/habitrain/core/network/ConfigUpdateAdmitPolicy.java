@@ -3,12 +3,8 @@ package com.habitrain.core.network;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Dedicated-server gate for {@link ConfigUpdatePayload}.
- *
- * <p>Save-bar then ESC used to send the same JSON twice inside the old 2s
- * {@link C2SRateLimiter} window; the second packet was rejected after the
- * client had already committed, desyncing client and server. Duplicate JSON
- * is now a no-op success. A changed JSON always applies.
+ * Legacy source-compatible policy. Historical JSON content is always reevaluated;
+ * request identity, revision conflicts and rate limits live in ConfigSubmissionService.
  */
 public final class ConfigUpdateAdmitPolicy {
 
@@ -25,9 +21,8 @@ public final class ConfigUpdateAdmitPolicy {
             long nowMs,
             long lastApplyMs,
             long cooldownMs) {
-        if (filteredJson != null && filteredJson.equals(lastAppliedJson)) {
-            return Result.SKIP_DUPLICATE;
-        }
+        // Historical content is not request identity: A/X, B/Y, A/X is a valid restore.
+        // ConfigSubmissionService handles duplicate request IDs within each connection.
         return Result.APPLY;
     }
 }

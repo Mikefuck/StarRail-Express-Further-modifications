@@ -3,7 +3,7 @@ package com.habitrain.core.task;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.DlcTaskTracker;
+import com.habitrain.core.game.sre.task.DlcTaskTracker;
 import com.habitrain.core.network.ActiveTaskPayload;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
@@ -84,6 +84,15 @@ public class TaskManager {
     public TaskInstance getActiveTask(UUID playerUuid) { return activeCustomTasks.get(playerUuid); }
     public void setActiveTask(UUID playerUuid, TaskInstance task) { activeCustomTasks.put(playerUuid, task); }
     public void removeActiveTask(UUID playerUuid) { activeCustomTasks.remove(playerUuid); }
+    public boolean removeActiveTask(UUID playerUuid, TaskInstance expected) {
+        return activeCustomTasks.remove(playerUuid, expected);
+    }
+
+    public void syncActiveTask(ServerPlayer player) {
+        TaskInstance current = getActiveTask(player.getUUID());
+        if (current == null) ActiveTaskPayload.clearForPlayer(player);
+        else ActiveTaskPayload.sendToPlayer(player, current.getFullId());
+    }
 
     /**
      * DISCONNECT only: drop {@code Player} entity refs so the instance can outlive
@@ -167,6 +176,8 @@ public class TaskManager {
     public void cancelTrackedTask(Player player, TaskInstance instance) {
         if (player == null || instance == null) return;
         UUID id = player.getUUID();
+        instance.cancel();
+        removeActiveTask(id, instance);
         try {
             instance.getDefinition().onRemove(player, instance);
         } catch (Throwable t) {
@@ -179,10 +190,7 @@ public class TaskManager {
         }
         if (player instanceof ServerPlayer sp) {
             DlcTaskTracker.stripSreWrapper(sp, instance);
-            ActiveTaskPayload.clearForPlayer(sp);
-        }
-        if (getActiveTask(id) == instance) {
-            removeActiveTask(id);
+            syncActiveTask(sp);
         }
     }
 
@@ -241,20 +249,30 @@ public class TaskManager {
     // ==================== 任务完成处理 ====================
 
     public void handleTaskCompletion(ServerPlayer player, TaskInstance instance) {
+        settleTask(player.getUUID(), instance, () -> completeTask(player, instance));
+    }
+
+    /** Definition callbacks may already have replaced the slot before settlement. */
+    void settleTask(UUID playerId, TaskInstance instance, Runnable completion) {
+        if (!instance.claimCompletion()) return;
+        removeActiveTask(playerId, instance);
+        completion.run();
+    }
+
+    private void completeTask(ServerPlayer player, TaskInstance instance) {
         TaskDefinition def = instance.getDefinition();
 
         // 先移除活跃任务，避免 DLC 在 onTaskComplete 回调内连发新任务被随后清除。
         // 用 == instance 守卫，避免删掉回调里新分配的任务。
-        if (getActiveTask(player.getUUID()) == instance) {
-            removeActiveTask(player.getUUID());
-        }
-
         // 统一桥接 SRE 角色任务结算与奖励（警卫获取左轮、其他角色道具/技能触发、金币、心情、连击等）
         bridgeSreTaskCompletion(player, instance);
 
         if (player.level() instanceof ServerLevel sl) {
-            GameModeRegistry.getActiveForLevel(sl).ifPresent(gm ->
-                gm.onTaskComplete(player, instance));
+            try {
+                GameModeRegistry.getActiveForLevel(sl).ifPresent(gm -> gm.onTaskComplete(player, instance));
+            } catch (Throwable t) {
+                LOGGER.error("Mode task completion callback failed: {}", instance.getFullId(), t);
+            }
         }
 
         // 默剧杀手：habitrain TaskManager 完成的任务也累计狂暴折扣

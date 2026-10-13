@@ -1,6 +1,6 @@
 package com.habitrain.core.client;
 
-import com.habitrain.core.game.sre.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.ChatFormatting;

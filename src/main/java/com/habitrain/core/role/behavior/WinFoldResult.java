@@ -14,12 +14,12 @@ import org.jetbrains.annotations.Nullable;
  * <ol>
  *   <li>v2 {@code RoleWinHooks.allowGameEnd} — {@link Decision#DENY} blocks the proposed end</li>
  *   <li>v2 {@code RoleWinHooks.evaluateWin}</li>
- *   <li>v1 {@code ModifyRoleDefinition.winConditionHook} / RolePatch win hook,
+ *   <li>v2 {@code RolePatch.winConditionHook},
  *       as overlay input only — never a second Fabric listener. Skipped on
  *       DENY, and never overwrites a v2 patch that already declares winners.</li>
  * </ol>
  *
- * <p>Both chains call {@link RoleEventDispatcher#foldWin}; the v1 overlay is
+ * <p>Both chains call {@link RoleEventDispatcher#foldWin}; the declarative patch is
  * folded here rather than racing {@code first non-NOT_MODIFY wins}.
  */
 public record WinFoldResult(Decision gate, WinPatch patch) {
@@ -46,14 +46,14 @@ public record WinFoldResult(Decision gate, WinPatch patch) {
     }
 
     /**
-     * Merges a v1 / RolePatch overlay onto the v2 {@code evaluateWin} accumulator.
+     * Merges a declarative RolePatch overlay onto the v2 {@code evaluateWin} accumulator.
      * DENY skips the overlay. A v2 patch that already declares winners is kept.
      */
-    public static WinPatch overlayV1(Decision gate, @Nullable WinPatch v2, @Nullable WinPatch v1) {
-        WinPatch acc = v2 == null ? WinPatch.noChange() : v2;
+    public static WinPatch overlayPatch(Decision gate, @Nullable WinPatch hooks, @Nullable WinPatch declarative) {
+        WinPatch acc = hooks == null ? WinPatch.noChange() : hooks;
         if (gate == Decision.DENY || acc.op() != WinPatchOp.NO_CHANGE) {
             return acc;
         }
-        return WinPatch.merge(acc, v1);
+        return WinPatch.merge(acc, declarative);
     }
 }

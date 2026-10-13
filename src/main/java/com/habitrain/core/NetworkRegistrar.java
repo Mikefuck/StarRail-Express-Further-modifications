@@ -15,6 +15,8 @@ public final class NetworkRegistrar {
         TaskConfigPayload.register(); count++;
         ActiveTaskPayload.register(); count++;
         ConfigUpdatePayload.register(); count++;
+        ConfigResultPayload.register(); count++;
+        ShaderReportRequestPayload.register(); count++;
         ShaderConfigPayload.register(); count++;
         ShaderInfoPayload.register(); count++;
         CustomTaskBlockPayload.register(); count++;

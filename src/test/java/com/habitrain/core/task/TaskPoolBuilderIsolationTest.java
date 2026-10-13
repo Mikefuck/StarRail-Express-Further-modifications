@@ -1,5 +1,7 @@
 package com.habitrain.core.task;
 
+
+import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import org.junit.jupiter.api.Test;
@@ -92,7 +94,7 @@ class TaskPoolBuilderIsolationTest {
      */
     @Test
     void everyUpstreamMirrorStaysOutOfTheDlcPool() {
-        var mirrors = com.habitrain.core.game.sre.SreTaskMirrors.all();
+        var mirrors = com.habitrain.core.game.sre.task.SreTaskMirrors.all();
         assertTrue(mirrors.size() >= 22, "mirror table shrank unexpectedly");
 
         List<TaskDefinition> flagged = mirrors.stream()
@@ -103,7 +105,7 @@ class TaskPoolBuilderIsolationTest {
                 .toList();
         assertTrue(TaskPoolBuilder.selectCandidates(
                         flagged, id -> true, TaskCategory.ALL, null,
-                        com.habitrain.core.game.sre.SreTaskMirrors.ids()).isEmpty(),
+                        com.habitrain.core.game.sre.task.SreTaskMirrors.ids()).isEmpty(),
                 "flagged mirrors must be excluded by poolEligible(false)");
 
         List<TaskDefinition> unflagged = mirrors.stream()
@@ -113,7 +115,7 @@ class TaskPoolBuilderIsolationTest {
                 .toList();
         assertTrue(TaskPoolBuilder.selectCandidates(
                         unflagged, id -> true, TaskCategory.ALL, null,
-                        com.habitrain.core.game.sre.SreTaskMirrors.ids()).isEmpty(),
+                        com.habitrain.core.game.sre.task.SreTaskMirrors.ids()).isEmpty(),
                 "the legacy fallback list must cover every mirror id");
     }
 }

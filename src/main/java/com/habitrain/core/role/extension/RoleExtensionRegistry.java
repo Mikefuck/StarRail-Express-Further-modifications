@@ -50,7 +50,6 @@ public final class RoleExtensionRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("RoleExtensionRegistry");
 
     // Not final so unit tests can seed the managed/compiled sets via reflection
-    // (mirroring how tests seed RoleOverrideEngine.snapshot).
     private Map<ResourceLocation, SRERole> managedRoles = new LinkedHashMap<>();
     // Factory-created roles need their declarations too: they are not ManagedSRERole instances.
     private final Map<ResourceLocation, RoleDefinition> addedDefinitions = new LinkedHashMap<>();
@@ -380,7 +379,7 @@ public final class RoleExtensionRegistry {
         // all relation writes so ADD/REPLACE/MODIFY relations follow the current
         // effective snapshot and are restored/reapplied in a fixed order.
         registerDeclaredSkills();
-        // Unified v1+v2 diagnostic view; failures here must not break server start.
+        // Compiled v2 diagnostic view; failures here must not break server start.
         recomputeCompiledEntries();
         // Report (never throw on) MODIFY/REPLACE targets that resolve to no role.
         warnDanglingTargets();
@@ -390,7 +389,7 @@ public final class RoleExtensionRegistry {
     }
 
     /**
-     * Recomputes the unified v1+v2 entry view and the compiled replacement
+     * Recomputes the compiled v2 entry view and the compiled replacement
      * surfaces. Called at freeze and again after any {@code roleExtensionsV2}
      * config change so DISABLED/CONFLICT statuses and the REPLACE winner
      * (audit P2-1) reflect the live toggles without a server restart.
@@ -413,10 +412,9 @@ public final class RoleExtensionRegistry {
     }
 
     /**
-     * The unified v1+v2 entry view. Frozen: the cached compile (refreshed by
+     * The compiled v2 entry view. Frozen: the cached compile (refreshed by
      * {@link #recomputeCompiledEntries()} after a config change). Pre-freeze:
      * the live v2-only view so diagnostics always reflect current registrations
-     * (no v1 registry exists until server start).
      */
     public List<ManagedRoleEntry<?>> getCompiledEntries() {
         if (!frozen) {
@@ -864,7 +862,7 @@ public final class RoleExtensionRegistry {
     /** Whether any config-enabled {@code MODIFY} patch targets the id. */
     public boolean isActiveModified(ResourceLocation id) {
         // Keep this aligned with the compiler: an unresolved v2-v2 conflict
-        // does not own a target and therefore must not suppress a legacy entry.
+        // is excluded from the effective target overlay.
         return !configuredPatchesFor(id).isEmpty();
     }
 
@@ -1202,11 +1200,11 @@ public final class RoleExtensionRegistry {
                 RoleExtensionConfigService.INSTANCE.gateFor(providerId, entryId);
         if (gate == RoleExtensionConfigService.EntryGate.ENABLED) {
             return new ManagedRoleEntry<>(entryId, providerId, entryKey, op, target, priority,
-                    declaration, EntryStatus.ACTIVE, baseMessage, false);
+                    declaration, EntryStatus.ACTIVE, baseMessage);
         }
         return new ManagedRoleEntry<>(entryId, providerId, entryKey, op, target, priority,
                 declaration, EntryStatus.DISABLED,
-                baseMessage + " (disabled by " + gate.name().toLowerCase(Locale.ROOT) + ")", false);
+                baseMessage + " (disabled by " + gate.name().toLowerCase(Locale.ROOT) + ")");
     }
 
     // ------------------------------------------------------------------

@@ -34,6 +34,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -78,12 +80,61 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     private final Map<UUID, Long> lastResyncRequest = new ConcurrentHashMap<>();
     /** 最近一次已同步给玩家的维度，用于兜底发现漏掉的换维度事件。 */
     private final Map<UUID, String> lastDimensionByPlayer = new ConcurrentHashMap<>();
+    /** 已成功发送的镜像受众；受众缩小时必须显式撤销这些玩家的旧镜像。 */
+    private final Map<String, Set<UUID>> sentRecipients = new ConcurrentHashMap<>();
+    private final RuntimeAccess runtime;
 
     private volatile MinecraftServer server;
     private volatile boolean lastGlobalEnabled = true;
     private boolean registered;
 
-    private SceneInstanceService() {}
+    private SceneInstanceService() {
+        this.runtime = new ServerRuntimeAccess();
+    }
+
+    /** 服务级测试使用同一写入/同步流程，无需启动 Minecraft 世界。 */
+    SceneInstanceService(RuntimeAccess runtime) {
+        this.runtime = Objects.requireNonNull(runtime);
+    }
+
+    record Recipient(UUID id, String dimension) {}
+
+    interface RuntimeAccess {
+        boolean globalEnabled();
+        Long gameTime(String dimension);
+        List<Recipient> recipients();
+        String assetHash(String assetKey);
+        boolean send(UUID player, SceneInstancesS2C payload);
+        void manifest(UUID player, SceneInstance instance);
+    }
+
+    private final class ServerRuntimeAccess implements RuntimeAccess {
+        public boolean globalEnabled() {
+            return ConfigManager.getInstance().getSceneMotionSettings().enabled;
+        }
+        public Long gameTime(String dimension) {
+            ServerLevel level = levelOf(dimension);
+            return level == null ? null : level.getGameTime();
+        }
+        public List<Recipient> recipients() {
+            MinecraftServer current = server;
+            if (current == null) return List.of();
+            return current.getPlayerList().getPlayers().stream().map(player -> new Recipient(
+                    player.getUUID(), player.serverLevel().dimension().location().toString())).toList();
+        }
+        public String assetHash(String assetKey) {
+            SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
+            return descriptor != null && descriptor.isValid() ? descriptor.sha256() : "";
+        }
+        public boolean send(UUID id, SceneInstancesS2C payload) {
+            ServerPlayer player = server == null ? null : server.getPlayerList().getPlayer(id);
+            return SceneInstanceService.send(player, payload);
+        }
+        public void manifest(UUID id, SceneInstance instance) {
+            ServerPlayer player = server == null ? null : server.getPlayerList().getPlayer(id);
+            if (player != null) sendManifest(player, instance);
+        }
+    }
 
     // ------------------------------------------------------------------
     // 生命周期
@@ -107,6 +158,8 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         int count = instances.size();
         instances.clear();
         lastResyncRequest.clear();
+        lastDimensionByPlayer.clear();
+        sentRecipients.clear();
         this.server = null;
         if (count > 0) {
             LOGGER.info("已清空 {} 个 API 移动场景实例（服务器停止）", count);
@@ -129,6 +182,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
                 for (ServerPlayer player : tickingServer.getPlayerList().getPlayers()) {
                     send(player, SceneInstancesS2C.clearAll());
                 }
+                sentRecipients.clear();
             }
             fire(listener -> listener.onInstancesResynced());
         }
@@ -168,7 +222,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     // ------------------------------------------------------------------
 
     public boolean isGlobalEnabled() {
-        return ConfigManager.getInstance().getSceneMotionSettings().enabled;
+        return runtime.globalEnabled();
     }
 
     public Optional<SceneInstance> get(String instanceId) {
@@ -227,11 +281,11 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         if (spec == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, "", "spec 为 null");
         }
-        ServerLevel level = resolveLevelForSpec(spec);
-        if (level == null) {
+        Long now = runtime.gameTime(spec.dimensionKey());
+        if (now == null) {
             return levelFailure(spec);
         }
-        return spawn(level, spec, false);
+        return spawn(spec.dimensionKey(), now, spec, false);
     }
 
     /** 注册实例；维度取自传入的 {@code level}。ID 已存在时返回 ALREADY_EXISTS。 */
@@ -249,16 +303,11 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         if (spec == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, "", "spec 为 null");
         }
-        ServerLevel level = resolveLevelForSpec(spec);
-        if (level == null) {
+        Long now = runtime.gameTime(spec.dimensionKey());
+        if (now == null) {
             return levelFailure(spec);
         }
-        return spawn(level, spec, true);
-    }
-
-    private ServerLevel resolveLevelForSpec(SceneInstanceSpec spec) {
-        String dimensionKey = spec.dimensionKey();
-        return dimensionKey == null || dimensionKey.isBlank() ? null : levelOf(dimensionKey);
+        return spawn(spec.dimensionKey(), now, spec, true);
     }
 
     /**
@@ -285,6 +334,10 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         if (level == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.SERVER_UNAVAILABLE, "", "level 为 null");
         }
+        return spawn(level.dimension().location().toString(), level.getGameTime(), spec, allowReplace);
+    }
+
+    private SceneSpawnResult spawn(String dimension, long now, SceneInstanceSpec spec, boolean allowReplace) {
         if (spec == null) {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, "", "spec 为 null");
         }
@@ -305,7 +358,14 @@ public final class SceneInstanceService implements SceneInstanceBridge {
                     "sceneMotion.enabled=false，移动场景全局关闭");
         }
 
-        SceneInstance instance = materialize(level, spec, previous, level.dimension().location().toString());
+        SceneInstance instance;
+        try {
+            instance = materialize(now, spec, previous, dimension);
+        } catch (RuntimeException errorDuringPreparation) {
+            LOGGER.warn("场景实例构造失败，保留旧实例: id={}", spec.id(), errorDuringPreparation);
+            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC,
+                    spec.id(), "实例构造失败: " + errorDuringPreparation.getMessage());
+        }
         instances.put(instance.id(), instance);
         broadcastUpsert(instance);
 
@@ -354,26 +414,41 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     public boolean restart(String instanceId) {
         SceneInstance current = instances.get(instanceId);
         if (current == null) return false;
-        ServerLevel level = levelOf(current.dimensionKey());
-        if (level == null) return false;
-        long now = level.getGameTime();
+        Long now = runtime.gameTime(current.dimensionKey());
+        if (now == null) return false;
         return mutate(instanceId, builder -> builder.startGameTime(now));
     }
 
-    /** 把实例迁移到另一个维度。 */
+    /** 事务式迁移；保留运动相位、暂停状态和剩余存活时长。失败不改变实例或发送通知。 */
     public boolean moveToDimension(String instanceId, String dimensionKey) {
         SceneInstance current = instances.get(instanceId);
         if (current == null || dimensionKey == null || dimensionKey.isBlank()) return false;
         if (Objects.equals(current.dimensionKey(), dimensionKey)) return true;
-        ServerLevel target = levelOf(dimensionKey);
-        if (target == null) return false;
-        // 先从旧维度清掉，再在新维度注册：否则客户端会同时保留两份。
-        broadcastRemoval(instanceId);
-        instances.remove(instanceId);
-        // 审核 S-01：迁移实例过去只 broadcastRemoval 就直接 remove，不触发 onInstanceRemoved，
-        // 第三方监听器的旧维度缓存/音源/计时器会泄漏。
+        Long targetNow = runtime.gameTime(dimensionKey);
+        Long sourceNow = runtime.gameTime(current.dimensionKey());
+        if (targetNow == null || sourceNow == null) return false;
+        SceneInstance replacement;
+        try {
+            long phaseNow = current.paused() && current.pausedAtGameTime() >= 0L
+                    ? current.pausedAtGameTime() : sourceNow;
+            SceneInstanceSpec spec = current.spec().toBuilder().dimension(dimensionKey)
+                    .startGameTime(targetNow - (phaseNow - current.startGameTime())).build();
+            if (spec.validationError().isPresent()) return false;
+            replacement = new SceneInstance(spec, runtime.assetHash(spec.assetKey()),
+                    current.revision() + 1,
+                    current.expireAtGameTime() >= 0L
+                            ? targetNow + Math.max(0L, current.expireAtGameTime() - sourceNow) : -1L,
+                    current.paused() ? targetNow : -1L, current.createdAtMillis());
+        } catch (RuntimeException preparationFailure) {
+            LOGGER.warn("场景实例迁移构造失败，保留旧实例: id={}", instanceId, preparationFailure);
+            return false;
+        }
+        instances.put(instanceId, replacement);
+        broadcastUpsert(replacement);
+        // 保留公开的 dimension_changed 回调契约；只有提交成功后通知旧维度释放与新视图更新。
         fire(listener -> listener.onInstanceRemoved(current, "dimension_changed"));
-        return spawn(target, current.spec(), true).isSuccess();
+        fire(listener -> listener.onInstanceUpdated(replacement));
+        return true;
     }
 
     /** 回收某归属方的全部实例，返回回收数量。 */
@@ -435,15 +510,19 @@ public final class SceneInstanceService implements SceneInstanceBridge {
             LOGGER.warn("场景实例修改回调抛异常: id={}", instanceId, e);
             return false;
         }
-        SceneInstanceSpec updated = builder.build();
-        ServerLevel level = levelOf(current.dimensionKey());
-        if (level == null) return false;
-        return spawn(level, updated, true).isSuccess();
+        try {
+            SceneInstanceSpec updated = builder.build();
+            Long now = runtime.gameTime(current.dimensionKey());
+            if (now == null) return false;
+            return spawn(current.dimensionKey(), now, updated, true).isSuccess();
+        } catch (RuntimeException preparationFailure) {
+            LOGGER.warn("场景实例修改构造失败，保留旧实例: id={}", instanceId, preparationFailure);
+            return false;
+        }
     }
 
-    private SceneInstance materialize(ServerLevel level, SceneInstanceSpec spec,
+    private SceneInstance materialize(long now, SceneInstanceSpec spec,
                                       SceneInstance previous, String fallbackDimension) {
-        long now = level.getGameTime();
         // 显式传入 level 的调用以 level 的维度为准；只有 spawn(spec) / upsert(spec) 才会走到
         // "由 spec.dimensionKey() 解析出 level"，此时 fallbackDimension 就是那个维度。
         String dimensionKey = fallbackDimension;
@@ -467,8 +546,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
                 .startGameTime(resolvedStart)
                 .build();
 
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(normalized.assetKey());
-        String hash = descriptor != null && descriptor.isValid() ? descriptor.sha256() : "";
+        String hash = runtime.assetHash(normalized.assetKey());
 
         long expireAt = normalized.durationTicks() > 0L ? now + normalized.durationTicks() : -1L;
         int revision = previous != null ? previous.revision() + 1 : 1;
@@ -495,6 +573,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         if (player == null) return;
         lastDimensionByPlayer.put(player.getUUID(),
                 player.serverLevel().dimension().location().toString());
+        forgetRecipient(player.getUUID());
         send(player, SceneInstancesS2C.clearAll());
         sendFullState(player);
     }
@@ -507,6 +586,8 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     public void onPlayerDisconnect(UUID playerId) {
         if (playerId == null) return;
         lastResyncRequest.remove(playerId);
+        lastDimensionByPlayer.remove(playerId);
+        forgetRecipient(playerId);
     }
 
     /** 处理客户端的重同步请求（带冷却）。 */
@@ -519,6 +600,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
             return;
         }
         lastResyncRequest.put(player.getUUID(), now);
+        forgetRecipient(player.getUUID());
         send(player, SceneInstancesS2C.clearAll());
         sendFullState(player);
         LOGGER.debug("已按客户端请求重同步 API 移动场景实例: player={}", player.getName().getString());
@@ -528,6 +610,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     public void resyncLevel(ServerLevel level) {
         if (level == null) return;
         for (ServerPlayer player : level.players()) {
+            forgetRecipient(player.getUUID());
             send(player, SceneInstancesS2C.clearAll());
             sendFullState(player);
         }
@@ -538,6 +621,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         MinecraftServer current = server;
         if (current == null) return;
         for (ServerPlayer player : current.getPlayerList().getPlayers()) {
+            forgetRecipient(player.getUUID());
             send(player, SceneInstancesS2C.clearAll());
             sendFullState(player);
         }
@@ -551,32 +635,46 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         for (SceneInstance instance : byDimension(dimensionKey)) {
             if (!instance.isVisibleTo(player.getUUID())) continue;
             sendManifest(player, instance);
-            send(player, SceneInstancesS2C.upsert(instance));
+            if (send(player, SceneInstancesS2C.upsert(instance))) {
+                sentRecipients.computeIfAbsent(instance.id(), ignored -> ConcurrentHashMap.newKeySet())
+                        .add(player.getUUID());
+            }
         }
     }
 
     private void broadcastUpsert(SceneInstance instance) {
-        MinecraftServer current = server;
-        if (current == null) return;
-        if (!isGlobalEnabled()) return;
-        ServerLevel level = levelOf(instance.dimensionKey());
-        if (level == null) return;
-        for (ServerPlayer player : level.players()) {
-            if (!instance.isVisibleTo(player.getUUID())) continue;
-            sendManifest(player, instance);
-            send(player, SceneInstancesS2C.upsert(instance));
+        Set<UUID> previous = sentRecipients.getOrDefault(instance.id(), Set.of());
+        Set<UUID> next = new HashSet<>();
+        List<Recipient> online = runtime.recipients();
+        if (isGlobalEnabled()) {
+            for (Recipient player : online) {
+                if (instance.belongsTo(player.dimension()) && instance.isVisibleTo(player.id())) {
+                    next.add(player.id());
+                }
+            }
         }
+        SceneInstancesS2C removal = new SceneInstancesS2C(List.of(), List.of(instance.id()), false);
+        for (UUID player : previous) {
+            if (!next.contains(player)) runtime.send(player, removal);
+        }
+        Set<UUID> delivered = ConcurrentHashMap.newKeySet();
+        for (UUID player : next) {
+            runtime.manifest(player, instance);
+            if (runtime.send(player, SceneInstancesS2C.upsert(instance))) delivered.add(player);
+        }
+        sentRecipients.put(instance.id(), delivered);
     }
 
     private void broadcastRemoval(String instanceId) {
-        MinecraftServer current = server;
-        if (current == null) return;
         List<String> batch = new ArrayList<>(1);
         batch.add(instanceId);
         SceneInstancesS2C payload = new SceneInstancesS2C(List.of(), batch, false);
-        for (ServerPlayer player : current.getPlayerList().getPlayers()) {
-            send(player, payload);
-        }
+        for (UUID player : sentRecipients.getOrDefault(instanceId, Set.of())) runtime.send(player, payload);
+        sentRecipients.remove(instanceId);
+    }
+
+    private void forgetRecipient(UUID player) {
+        sentRecipients.values().forEach(recipients -> recipients.remove(player));
     }
 
     private void sendManifest(ServerPlayer player, SceneInstance instance) {
@@ -588,10 +686,11 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         ServerPlayNetworking.send(player, new SceneAssetManifestS2C(instance.assetKey(), descriptor));
     }
 
-    private static void send(ServerPlayer player, SceneInstancesS2C payload) {
-        if (player == null || payload == null || payload.isEmpty()) return;
-        if (!ServerPlayNetworking.canSend(player, SceneInstancesS2C.TYPE)) return;
+    private static boolean send(ServerPlayer player, SceneInstancesS2C payload) {
+        if (player == null || payload == null || payload.isEmpty()) return false;
+        if (!ServerPlayNetworking.canSend(player, SceneInstancesS2C.TYPE)) return false;
         ServerPlayNetworking.send(player, payload);
+        return true;
     }
 
     private void checkDimensionDrift(ServerPlayer player) {
@@ -600,6 +699,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         String lastDimension = lastDimensionByPlayer.get(player.getUUID());
         if (!Objects.equals(dimensionKey, lastDimension)) {
             lastDimensionByPlayer.put(player.getUUID(), dimensionKey);
+            forgetRecipient(player.getUUID());
             send(player, SceneInstancesS2C.clearAll());
             sendFullState(player);
         }

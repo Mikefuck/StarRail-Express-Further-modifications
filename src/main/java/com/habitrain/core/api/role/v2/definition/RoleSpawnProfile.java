@@ -3,8 +3,7 @@ package com.habitrain.core.api.role.v2.definition;
 /**
  * Immutable spawn / assignment profile of a role.
  *
- * <p>These map onto the upstream spawn fields that {@code RoleOverrideTickApplier}
- * also manages for {@code MODIFY} entries: default max count, enable chance and
+ * <p>These map onto the upstream spawn fields for v2 ADD and MODIFY: default max count, enable chance and
  * the enabled-player-count window.
  */
 public record RoleSpawnProfile(int defaultMaxCount, int defaultEnableChance,

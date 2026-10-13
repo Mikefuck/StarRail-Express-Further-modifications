@@ -5,8 +5,7 @@ import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Monotonic catalog generations independent of the v1 override-engine
- * {@code snapshotVersion}.
+ * Monotonic generations for published v2 role snapshots.
  *
  * <p>Every published compile ({@code publishSnapshotAfterRebuild}) consumes a
  * unique id so mid-round hot-reloads cannot overwrite an archived round in

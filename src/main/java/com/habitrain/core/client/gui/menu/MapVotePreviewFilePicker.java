@@ -6,6 +6,9 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.ImageReadParam;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -15,11 +18,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Iterator;
 
 /** Native PNG chooser plus bounded client-side resizing for network upload. */
 final class MapVotePreviewFilePicker {
     private static final long MAX_SOURCE_FILE_BYTES = 16L * 1024L * 1024L;
     private static final int MAX_SOURCE_DIMENSION = 8192;
+    /** 最多 16M 原始像素（ARGB 约 64 MiB），解码前校验并降采样到预览规模。 */
+    private static final long MAX_SOURCE_PIXELS = 16L * 1024L * 1024L;
     private static final int INITIAL_MAX_WIDTH = 640;
     private static final int INITIAL_MAX_HEIGHT = 360;
     private static final int MIN_WIDTH = 128;
@@ -28,7 +34,7 @@ final class MapVotePreviewFilePicker {
     private MapVotePreviewFilePicker() {
     }
 
-    static PreparedPreview chooseAndPrepare(String title) throws IOException {
+    static Path choose(String title) {
         String selected;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             PointerBuffer filters = stack.mallocPointer(1);
@@ -38,7 +44,11 @@ final class MapVotePreviewFilePicker {
         }
         if (selected == null || selected.isBlank()) return null;
 
-        Path path = Path.of(selected).toAbsolutePath().normalize();
+        return Path.of(selected).toAbsolutePath().normalize();
+    }
+
+    /** 在后台执行：先检查 PNG 头的尺寸与像素预算，通过后才允许读取像素。 */
+    static PreparedPreview readAndPrepare(Path path) throws IOException {
         String fileName = path.getFileName() == null ? "preview.png" : path.getFileName().toString();
         if (!fileName.toLowerCase(Locale.ROOT).endsWith(".png")) {
             throw new IOException("请选择 PNG 图片");
@@ -49,13 +59,39 @@ final class MapVotePreviewFilePicker {
             throw new IOException("原图必须小于 16 MiB");
         }
 
-        BufferedImage source = ImageIO.read(path.toFile());
-        if (source == null || source.getWidth() <= 0 || source.getHeight() <= 0) {
-            throw new IOException("无法读取该 PNG 图片");
+        try (ImageInputStream stream = ImageIO.createImageInputStream(path.toFile())) {
+            if (stream == null) throw new IOException("无法读取该 PNG 图片");
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(stream);
+            if (!readers.hasNext()) throw new IOException("无法读取该 PNG 图片");
+            ImageReader reader = readers.next();
+            try {
+                if (!"png".equalsIgnoreCase(reader.getFormatName())) {
+                    throw new IOException("请选择真正的 PNG 图片");
+                }
+                reader.setInput(stream, true, true);
+                return readAndPrepare(reader, fileName);
+            } finally {
+                reader.dispose();
+            }
         }
-        if (source.getWidth() > MAX_SOURCE_DIMENSION || source.getHeight() > MAX_SOURCE_DIMENSION) {
+    }
+
+    static PreparedPreview readAndPrepare(ImageReader reader, String fileName) throws IOException {
+        int width = reader.getWidth(0);
+        int height = reader.getHeight(0);
+        if (width <= 0 || height <= 0) throw new IOException("图片尺寸无效");
+        if (width > MAX_SOURCE_DIMENSION || height > MAX_SOURCE_DIMENSION) {
             throw new IOException("图片宽高不能超过 8192 像素");
         }
+        if ((long) width * height > MAX_SOURCE_PIXELS) {
+            throw new IOException("图片总像素不能超过 16M");
+        }
+        ImageReadParam parameter = reader.getDefaultReadParam();
+        // 解码仍保留至少目标尺寸，避免为一张 640×360 预览分配整张大截图。
+        int subsampling = Math.max(1, Math.min(width / INITIAL_MAX_WIDTH, height / INITIAL_MAX_HEIGHT));
+        parameter.setSourceSubsampling(subsampling, subsampling, 0, 0);
+        BufferedImage source = reader.read(0, parameter);
+        if (source == null) throw new IOException("无法读取该 PNG 图片");
         return prepare(source, fileName);
     }
 

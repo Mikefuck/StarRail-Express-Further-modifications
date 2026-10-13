@@ -1,11 +1,21 @@
 package com.habitrain.core;
 
+
+import com.habitrain.core.game.sre.environment.SREWeatherController;
+import com.habitrain.core.game.sre.map.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.match.GameEndTransitionCoordinator;
+import com.habitrain.core.game.sre.match.MvpScoreTracker;
+import com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.task.DlcTaskTracker;
+import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.internal.CoreLifecycleScope;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.EnvironmentController;
-import com.habitrain.core.game.sre.SREGameModeBase;
+import com.habitrain.core.game.sre.environment.EnvironmentController;
+import com.habitrain.core.game.sre.mode.SREGameModeBase;
 import com.habitrain.core.misc.EffectOwnershipTracker;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.FullConfigSyncPayload;
@@ -66,8 +76,8 @@ public final class LifecycleEventsRegistrar {
                 TaskRegistry.freeze();
                 GameModeRegistry.freeze();
             });
-            // 角色覆盖引擎在配置加载后重建，确保读取真实配置而非默认值。
-            com.habitrain.core.role.override.RoleOverrideLifecycleHandler.rebuildAfterConfigLoad();
+            // 角色扩展在配置加载后编译，确保读取真实配置而非默认值。
+            com.habitrain.core.role.extension.RoleExtensionLifecycleHandler.rebuildAfterConfigLoad();
             LOGGER.info("配置已加载，共 {} 个已注册任务（注册表已冻结）", TaskRegistry.size());
 
             // Seed modeMapVote defaults so ModMenu maps list is usable before first vote.
@@ -76,7 +86,7 @@ public final class LifecycleEventsRegistrar {
             try {
                 ServerLevel overworld = server.getLevel(Level.OVERWORLD);
                 if (overworld != null) {
-                    var discoveredMaps = com.habitrain.core.config.SREIntegration.discoverServerMaps(overworld);
+                    var discoveredMaps = SREIntegration.discoverServerMaps(overworld);
                     boolean updated = ConfigManager.getInstance().syncAndPruneMaps(
                             GameModeRegistry.getAllIds(),
                             discoveredMaps);
@@ -131,78 +141,56 @@ public final class LifecycleEventsRegistrar {
 
     /** 审核 S-02：{@code SERVER_STOPPING} 的实际清理逻辑（注册处已包 try/catch）。 */
     private static void onServerStopping(net.minecraft.server.MinecraftServer server) {
-        // G5-F012/F016：先把脏主配置和上次失败的角色 v2 配置落盘，再清 server 引用。
-        try {
-            ConfigManager.getInstance().save();
-        } catch (Exception e) {
-            LOGGER.error("停服保存主配置失败", e);
-        }
-        try {
+        LifecycleCleanup cleanup = new LifecycleCleanup("server stopping");
+        cleanup.run("save main config", () -> ConfigManager.getInstance().save());
+        cleanup.run("save role config", () -> {
             var roleCfg = com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE;
-            if (roleCfg.lastSaveError() != null) {
-                roleCfg.save();
-            }
-        } catch (Exception e) {
-            LOGGER.error("停服重试角色扩展配置失败", e);
-        }
-        ConfigManager.getInstance().setServer(null);
-        try {
-            io.wifi.starrailexpress.game.GameUtils.isStartingGame = false;
-        } catch (Throwable t) {
-            LOGGER.debug("clear GameUtils.isStartingGame skipped", t);
-        }
-        for (ServerLevel level : server.getAllLevels()) {
-            if (GameModeRegistry.isActiveInLevel(level)) {
-                GameModeRegistry.stop(level);
-            }
-            OptionVoteManager.reset(level);
-            ModeMapVoteOrchestrator.reset(level);
-            com.habitrain.core.game.sre.MapVoteLoadCoordinator.reset(level);
-        }
-        com.habitrain.core.game.sre.MapVoteLoadCoordinator.resetAll();
-        OptionVoteManager.resetAll();
-        ModeMapVoteOrchestrator.resetAll();
-        com.habitrain.core.vote.MapFileMonitor.reset();
-        // 清理所有跨局残留状态
-        com.habitrain.core.game.sre.GameEndTransitionCoordinator.resetAll();
-        com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
-        // 维修人员模式：停服前恢复所有维修员参与状态与游戏模式，避免 NBT 残留「不参与」
-        com.habitrain.core.game.sre.RepairModeManager.resetAll(server);
-        SlownessReapplyManager.clearAll();
-        BackpackSearchHandler.clearAllSearches();
-        com.habitrain.core.misc.EffectOwnershipTracker.clearAll();
-        BackpackQuestState.getInstance().resetAll();
-        // C11: 集成服务器同 JVM 重启时，静态环境/天气标志必须清掉
-        EnvironmentController.clearRuntimeState();
-        com.habitrain.core.game.sre.SREWeatherController.resetAll();
-        // 角色扩展 v2：恢复所有 MODIFY overlay 到基线，清空快照会话状态
-        //（定义只加载一次；会话状态在 SERVER_STOPPED 清除）。
-        GameModeRegistry.clearActiveModes();
-        // 审核 A5：集成服务器同 JVM 重启时，注册表的 frozen 标志必须复位，
-        // 否则「第二次进世界」时任何注册动作都会抛 frozen 异常（报错与真实原因相距很远）。
-        CoreLifecycleScope.run(() -> {
-            TaskRegistry.resetLifecycle();
-            GameModeRegistry.resetLifecycle();
+            if (roleCfg.lastSaveError() != null) roleCfg.save();
         });
-        com.habitrain.core.role.override.RoleOverrideTickApplier.serverStop();
-        com.habitrain.core.role.extension.RoleRuntimeOverlayApplier.serverStop();
-        // 角色状态 v2：清空 transient + round 会话状态，保留 WORLD/PERMANENT 持久槽
-        //（真实世界组件随 world NBT 在下次启动恢复，fix-doc §20.2）。
-        ((com.habitrain.core.role.state.RoleStateServiceImpl)
-                com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).serverStop();
-        // 角色状态 v2：解绑 server 引用，避免集成服务器同 JVM 重启后残留陈旧引用。
-        com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.unbind();
-        // UUID 任务表跨集成服存档会串局：停服时清空活跃任务与离线回收队列。
-        com.habitrain.core.task.TaskManager.getInstance().clearAll();
-
-        com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll();
-        com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll();
-        com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown();
-        com.habitrain.core.scene.server.SceneStagingService.getInstance().shutdown();
-        com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown();
-        com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null);
+        cleanup.run("config server reference", () -> ConfigManager.getInstance().setServer(null));
+        cleanup.run("starting game flag", () -> io.wifi.starrailexpress.game.GameUtils.isStartingGame = false);
+        cleanup.run("world cleanup enumeration", () -> {
+            for (ServerLevel level : server.getAllLevels()) {
+                cleanup.run("mode " + level.dimension().location(), () -> {
+                    if (GameModeRegistry.isActiveInLevel(level)) GameModeRegistry.stop(level);
+                });
+                cleanup.run("vote " + level.dimension().location(), () -> OptionVoteManager.reset(level));
+                cleanup.run("mode vote " + level.dimension().location(), () -> ModeMapVoteOrchestrator.reset(level));
+                cleanup.run("map load " + level.dimension().location(), () -> MapVoteLoadCoordinator.reset(level));
+            }
+        });
+        cleanup.run("map loads", MapVoteLoadCoordinator::resetAll);
+        cleanup.run("option votes", OptionVoteManager::resetAll);
+        cleanup.run("mode votes", ModeMapVoteOrchestrator::resetAll);
+        cleanup.run("map file monitor", com.habitrain.core.vote.MapFileMonitor::reset);
+        cleanup.run("end transitions", GameEndTransitionCoordinator::resetAll);
+        cleanup.run("MVP", MvpScoreTracker::resetAll);
+        cleanup.run("repair mode", () -> RepairModeManager.resetAll(server));
+        cleanup.run("slowness", SlownessReapplyManager::clearAll);
+        cleanup.run("backpack searches", BackpackSearchHandler::clearAllSearches);
+        cleanup.run("effect ownership", EffectOwnershipTracker::clearAll);
+        cleanup.run("backpack quests", () -> BackpackQuestState.getInstance().resetAll());
+        cleanup.run("environment", EnvironmentController::clearRuntimeState);
+        cleanup.run("weather", SREWeatherController::resetAll);
+        cleanup.run("active modes", GameModeRegistry::clearActiveModes);
+        cleanup.run("task registry lifecycle", () -> CoreLifecycleScope.run(TaskRegistry::resetLifecycle));
+        cleanup.run("mode registry lifecycle", () -> CoreLifecycleScope.run(GameModeRegistry::resetLifecycle));
+        cleanup.run("role runtime overlays", com.habitrain.core.role.extension.RoleRuntimeOverlayApplier::serverStop);
+        cleanup.run("role state", () -> ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).serverStop());
+        cleanup.run("role server reference", com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE::unbind);
+        cleanup.run("task owners", () -> com.habitrain.core.task.TaskManager.getInstance().clearAll());
+        cleanup.run("role views", () -> { LAST_VIEW.clear(); PENDING_ROLE_STATE.clear(); });
+        cleanup.run("config requests", com.habitrain.core.network.ConfigSubmissionService::clear);
+        cleanup.run("shader reports", com.habitrain.core.config.ShaderRuleRevalidation::clear);
+        cleanup.run("scene runtime", () -> com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().resetAll());
+        cleanup.run("scene selection", () -> com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().clearAll());
+        cleanup.run("scene capture", () -> com.habitrain.core.scene.server.SceneCaptureService.getInstance().shutdown());
+        cleanup.run("scene staging", () -> com.habitrain.core.scene.server.SceneStagingService.getInstance().shutdown());
+        cleanup.run("scene transfer", () -> com.habitrain.core.scene.server.SceneTransferService.getInstance().shutdown());
+        cleanup.run("scene world reference", () -> com.habitrain.core.scene.server.SceneAssetStore.getInstance().bindWorld(null));
+        cleanup.report(LOGGER);
     }
-
     private static void registerJoinHandler() {
         // 玩家加入
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -232,7 +220,7 @@ public final class LifecycleEventsRegistrar {
             // 中途重连：仅在本维 SRE 对局 running 且任务维度匹配时重发 HUD，避免跨存档僵尸任务框
             try {
                 var tm = com.habitrain.core.task.TaskManager.getInstance();
-                com.habitrain.core.game.sre.DlcTaskTracker.onPlayerJoin(player);
+                com.habitrain.core.game.sre.task.DlcTaskTracker.onPlayerJoin(player);
                 tm.flushPendingReclaim(player);
                 ServerLevel taskLevel = player.serverLevel();
                 boolean sreRunning = false;
@@ -270,7 +258,7 @@ public final class LifecycleEventsRegistrar {
             // Mod 菜单访问门控同步：让客户端立即按授权状态决定是否锁定受门控页面
             MenuGatePayload.sendToPlayer(player);
             // 处理离线背包里遗留的刀耐久组件，确保全局开关对刚上线玩家同样生效。
-            com.habitrain.core.game.sre.KnifeDurabilityToggleService.applyToPlayer(player);
+            com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToPlayer(player);
             // 休息区/重连可能在主世界，对局在另一维度：按 UUID 解析 MATCH 模式。
             GameModeRegistry.resolveActiveForPlayer(player)
                     .ifPresent(mode -> mode.onPlayerJoin(player));
@@ -309,7 +297,7 @@ public final class LifecycleEventsRegistrar {
 
             // 同步进行中的 mode→map 投票 UI 给晚加入的玩家
             ModeMapVoteOrchestrator.onPlayerJoin(player);
-            com.habitrain.core.game.sre.MapVoteLoadCoordinator.onPlayerJoin(player);
+            com.habitrain.core.game.sre.map.MapVoteLoadCoordinator.onPlayerJoin(player);
             // 移动场景：在全部既有 JOIN 同步之后追加当前地图资产与运行状态。
             com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().onPlayerJoin(player);
         });
@@ -400,54 +388,37 @@ public final class LifecycleEventsRegistrar {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayer player = handler.getPlayer();
             if (player == null) return;
-            try {
-                // 立刻从语音 pending 队列移除（不必等下一 tick）
-                SREGameModeBase.removePendingVoiceJoin(player.getUUID());
-                // 清除效果归属追踪数据
-                EffectOwnershipTracker.clearPlayer(player.getUUID());
-                SlownessReapplyManager.unregisterAllLevels(player.getUUID());
-                // 维修人员模式：断线自动解锁其锁定的地图并恢复参与状态/游戏模式
-                com.habitrain.core.game.sre.RepairModeManager.onPlayerDisconnect(player.getUUID(), server);
-                GameModeRegistry.resolveActiveForPlayer(player)
-                        .ifPresent(mode -> mode.onPlayerLeave(player));
-                // 断线保留本轮选票；当前维度无投票时改找 MATCH/其它维度。
+            LifecycleCleanup cleanup = new LifecycleCleanup("player disconnect " + player.getUUID());
+            cleanup.run("mode callback", () -> GameModeRegistry.resolveActiveForPlayer(player)
+                    .ifPresent(mode -> mode.onPlayerLeave(player)));
+            cleanup.run("voice pending", () -> SREGameModeBase.removePendingVoiceJoin(player.getUUID()));
+            cleanup.run("effects", () -> EffectOwnershipTracker.clearPlayer(player.getUUID()));
+            cleanup.run("slowness", () -> SlownessReapplyManager.unregisterAllLevels(player.getUUID()));
+            cleanup.run("repair mode", () -> RepairModeManager.onPlayerDisconnect(player.getUUID(), server));
+            cleanup.run("vote", () -> {
                 ServerLevel voteLevel = OptionVoteManager.resolveActiveVoteLevel(player);
-                if (voteLevel != null) {
-                    OptionVoteManager.onVoterDisconnected(voteLevel, player.getUUID());
-                }
-                // 角色动作 v2：断线清理该玩家的 sequence/rate/cooldown 窗口（fix-doc §12.2）
-                ((com.habitrain.core.role.action.RoleActionServiceImpl)
-                        com.habitrain.core.api.role.v2.action.RoleActionApi.instance())
-                        .onPlayerDisconnect(player.getUUID());
-                // 角色能力 v2（审核 R-04）：清除该玩家的隔离组，避免重连后仍带旧组。
+                if (voteLevel != null) OptionVoteManager.onVoterDisconnected(voteLevel, player.getUUID());
+            });
+            cleanup.run("role actions", () -> ((com.habitrain.core.role.action.RoleActionServiceImpl)
+                    com.habitrain.core.api.role.v2.action.RoleActionApi.instance()).onPlayerDisconnect(player.getUUID()));
+            cleanup.run("role capabilities", () -> {
                 if (com.habitrain.core.api.role.v2.capability.RoleCapabilityApi.instance()
                         instanceof com.habitrain.core.role.capability.RoleCapabilityServiceImpl caps) {
                     caps.onPlayerDisconnect(player.getUUID());
                 }
-                // 角色扩展握手（audit P1-4）：断线清除该玩家的上报，避免把上一连接的
-                // manifest 带入下一次连接。
-                com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
-                        .clear(player.getUUID());
-                // 角色状态 v2（复审 P2）：断线清除观战/维度基线，避免下次上线用旧基线
-                // 误触发重同步。
-                LAST_VIEW.remove(player.getUUID());
-                PENDING_ROLE_STATE.remove(player.getUUID());
-                com.habitrain.core.network.C2SRateLimiter.clear(player.getUUID());
-                com.habitrain.core.C2SReceiverRegistrar.clearConfigUpdateHistory(player.getUUID());
-                com.habitrain.core.task.TaskManager.getInstance().unbindOwner(player.getUUID());
-                com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance()
-                        .onPlayerDisconnect(player.getUUID());
-                com.habitrain.core.scene.server.SceneCaptureService.getInstance()
-                        .onPlayerDisconnect(player.getUUID());
-                com.habitrain.core.scene.server.SceneStagingService.getInstance()
-                        .onPlayerDisconnect(player.getUUID());
-                com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance()
-                        .onPlayerDisconnect(player.getUUID());
-                com.habitrain.core.scene.server.SceneTransferService.getInstance()
-                        .onPlayerDisconnect(player.getUUID());
-            } catch (Exception e) {
-                LOGGER.error("[GameMode] 处理玩家断线失败", e);
-            }
+            });
+            cleanup.run("handshake", () -> com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE.clear(player.getUUID()));
+            cleanup.run("role view", () -> { LAST_VIEW.remove(player.getUUID()); PENDING_ROLE_STATE.remove(player.getUUID()); });
+            cleanup.run("rate windows", () -> com.habitrain.core.network.C2SRateLimiter.clear(player.getUUID()));
+            cleanup.run("config requests", () -> com.habitrain.core.C2SReceiverRegistrar.clearConfigUpdateHistory(player.getUUID()));
+            cleanup.run("shader report", () -> com.habitrain.core.config.ShaderRuleRevalidation.clearPlayer(player.getUUID()));
+            cleanup.run("task owner", () -> com.habitrain.core.task.TaskManager.getInstance().unbindOwner(player.getUUID()));
+            cleanup.run("scene selection", () -> com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance().onPlayerDisconnect(player.getUUID()));
+            cleanup.run("scene capture", () -> com.habitrain.core.scene.server.SceneCaptureService.getInstance().onPlayerDisconnect(player.getUUID()));
+            cleanup.run("scene staging", () -> com.habitrain.core.scene.server.SceneStagingService.getInstance().onPlayerDisconnect(player.getUUID()));
+            cleanup.run("scene preload", () -> com.habitrain.core.scene.server.ScenePreloadCoordinator.getInstance().onPlayerDisconnect(player.getUUID()));
+            cleanup.run("scene transfer", () -> com.habitrain.core.scene.server.SceneTransferService.getInstance().onPlayerDisconnect(player.getUUID()));
+            cleanup.report(LOGGER);
         });
     }
 
@@ -508,7 +479,7 @@ public final class LifecycleEventsRegistrar {
         } catch (Throwable ignored) {
         }
         try {
-            return com.habitrain.core.game.sre.EliminatedRestAreaService.isResting(player);
+            return com.habitrain.core.game.sre.rest.EliminatedRestAreaService.isResting(player);
         } catch (Throwable ignored) {
             return false;
         }

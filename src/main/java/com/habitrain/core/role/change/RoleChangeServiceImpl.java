@@ -1,5 +1,7 @@
 package com.habitrain.core.role.change;
 
+
+import com.habitrain.core.game.sre.role.SreRoleAssignmentEffects;
 import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleChangeApi;
@@ -395,7 +397,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             if (effects == null) {
                 return;
             }
-            com.habitrain.core.game.sre.SreRoleAssignmentEffects.finishReassignRole(level, player.getUUID(), effects.oldRole(),
+            com.habitrain.core.game.sre.role.SreRoleAssignmentEffects.finishReassignRole(level, player.getUUID(), effects.oldRole(),
                     effects.newRole(), effects.recordTimeline(), effects.addStats());
         }
 

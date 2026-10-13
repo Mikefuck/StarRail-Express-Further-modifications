@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.Mixin;

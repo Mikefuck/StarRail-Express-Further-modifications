@@ -1,5 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
+
+import com.habitrain.core.game.sre.task.ExerciseTaskBlocks;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -22,6 +24,6 @@ public abstract class ExerciseDeadCoralMixin {
             require = 0
     )
     private Block habitrain$replaceWithDeadCoral(BlockState state) {
-        return com.habitrain.core.game.sre.ExerciseTaskBlocks.remapForVanillaTick(state.getBlock());
+        return com.habitrain.core.game.sre.task.ExerciseTaskBlocks.remapForVanillaTick(state.getBlock());
     }
 }

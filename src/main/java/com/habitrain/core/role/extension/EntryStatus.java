@@ -14,7 +14,5 @@ public enum EntryStatus {
     /** The entry conflicts with another declaration on the same target. */
     CONFLICT,
     /** The entry is disabled by global/provider/entry configuration. */
-    DISABLED,
-    /** A legacy (v1) declaration that core observes but does not manage yet. */
-    LEGACY_UNMANAGED
+    DISABLED
 }

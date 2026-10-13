@@ -4,7 +4,7 @@ import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
 import org.slf4j.Logger;
@@ -15,16 +15,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Migration helper for legacy role consumers (audit P2-1).
- *
- * <p>Consumers that enumerate candidate pools or resolve baseline roles used to
- * read the v1 paths ({@code TMMRoles.ROLES} + the v1 override resolver), which
- * never surface v2 {@code ADD} roles or active {@code REPLACE} results. These
- * helpers resolve through the v2 {@link RoleCatalogApi} first so v2 roles enter
- * the same consumer paths (sin fallback, killer pool,
- * hire/police selection), falling back to the v1 path only when the catalog has no
- * compiled snapshot yet (pre-freeze). A live snapshot that throws or is empty
- * returns empty / the baseline, not {@code TMMRoles.ROLES}.
+ * Resolves upstream candidate pools and role handles through the v2 catalog.
+ * Before a snapshot is published, the v2 resolver compiles the upstream registry.
  */
 public final class RoleCatalogConsumer {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|RoleCatalogConsumer");
@@ -33,7 +25,7 @@ public final class RoleCatalogConsumer {
 
     /**
      * The visible role pool: the catalog's effective roles when a snapshot is
-     * live, otherwise the v1 visible registry (pre-freeze fallback).
+     * live, otherwise the v2 view of the raw registry (pre-freeze fallback).
      */
     public static List<SRERole> visiblePool() {
         Optional<RoleSnapshot> snapshot;
@@ -45,7 +37,7 @@ public final class RoleCatalogConsumer {
         }
         if (snapshot.isEmpty()) {
             // Explicit pre-freeze fallback only.
-            return SreRoleOverrideResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
+            return SreRoleResolver.visibleRegistryRoles(TMMRoles.ROLES.values());
         }
         try {
             java.util.Collection<EffectiveRole> effective =
@@ -71,7 +63,7 @@ public final class RoleCatalogConsumer {
 
     /**
      * Resolves an upstream baseline role to its effective view through the
-     * catalog (v2 REPLACE / ALIAS aware), with the v1 override resolver as the
+     * catalog (v2 REPLACE / ALIAS aware), with the v2 role resolver as the
      * pre-freeze fallback.
      */
     public static SRERole resolveOrOriginal(SRERole baseline) {
@@ -86,7 +78,7 @@ public final class RoleCatalogConsumer {
             return baseline;
         }
         if (snapshot.isEmpty()) {
-            return SreRoleOverrideResolver.resolveOrOriginal(baseline);
+            return SreRoleResolver.resolveOrOriginal(baseline);
         }
         try {
             var effective = RoleCatalogApi.instance().find(

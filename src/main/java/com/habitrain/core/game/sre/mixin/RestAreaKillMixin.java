@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;

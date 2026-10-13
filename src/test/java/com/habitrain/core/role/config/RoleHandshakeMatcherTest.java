@@ -150,7 +150,7 @@ class RoleHandshakeMatcherTest {
         return new ManagedRoleEntry<>(entryId, "example", "buff",
                 RoleOperation.MODIFY, RoleKey.of("sre", "vigilante"), PatchPriority.NORMAL,
                 RolePatch.builder(RoleKey.of("sre", "vigilante")).defaultMax(RolePatch.IntPatch.set(2)).build(),
-                status, "test", false);
+                status, "test");
     }
 
     @Test

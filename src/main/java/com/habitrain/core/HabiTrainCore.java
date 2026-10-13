@@ -1,15 +1,21 @@
 package com.habitrain.core;
 
+
+import com.habitrain.core.game.sre.match.MatchEventBridge;
+import com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.game.sre.mode.SREGameModeBase;
+import com.habitrain.core.game.sre.voice.VoiceGroupService;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.TaskRegistry;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.EnvironmentController;
-import com.habitrain.core.game.sre.EliminatedRestAreaService;
-import com.habitrain.core.game.sre.MvpScoreTracker;
-import com.habitrain.core.game.sre.SREGameStateProvider;
-import com.habitrain.core.game.sre.SREMurderMode;
-import com.habitrain.core.game.sre.SREOriginalModeBridge;
-import com.habitrain.core.game.sre.SRERepairMode;
+import com.habitrain.core.game.sre.environment.EnvironmentController;
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.match.MvpScoreTracker;
+import com.habitrain.core.game.sre.mode.SREGameStateProvider;
+import com.habitrain.core.game.sre.mode.SREMurderMode;
+import com.habitrain.core.game.sre.mode.SREOriginalModeBridge;
+import com.habitrain.core.game.sre.mode.SRERepairMode;
 import com.habitrain.core.task.BackpackQuestState;
 import com.habitrain.core.task.BackpackSearchHandler;
 import com.habitrain.core.task.SlownessReapplyManager;
@@ -73,7 +79,7 @@ public class HabiTrainCore implements ModInitializer {
         com.habitrain.core.config.MenuGateService.load();
         // 角色扩展 v2 配置（独立版本化文件 config/habitrain_role_v2.json，服务端权威）
         com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.load();
-        com.habitrain.core.game.sre.KnifeDurabilityToggleService.register();
+        com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.register();
         // 2. 注册内置 GameMode（SRE 模式）
         //    构造 SRE 模式时会通过 SREGameModeBase 的静态初始化注册原版任务
         GameModeRegistry.register(MOD_ID, "sre:murder", new SREMurderMode());
@@ -204,9 +210,6 @@ public class HabiTrainCore implements ModInitializer {
                         : com.habitrain.core.role.config.RoleHandshakeGate.INSTANCE
                                 .blockReason(player.getUUID()));
         com.habitrain.core.game.sre.role.HabiRoles.init();
-        // 角色覆盖注册系统初始化
-        com.habitrain.core.role.override.RoleOverrideRegistry.init();
-        com.habitrain.core.role.override.RoleOverrideLifecycleHandler.init();
         // 七美德修饰符（须在 HabiRoles 之后；慷慨只关联上游，不重复注册）
         com.habitrain.core.game.sre.modifier.HabiModifiers.init();
         // 装配 SRE 游戏状态提供者到 TaskManager（解除对 SRE 具体类的编译依赖）
@@ -218,10 +221,10 @@ public class HabiTrainCore implements ModInitializer {
         CommandRegistrar.init();
         // 5. 生命周期事件注册（SERVER_STARTED/STOPPING/JOIN/DISCONNECT）
         LifecycleEventsRegistrar.init();
-        com.habitrain.core.game.sre.MatchEventBridge.register();
+        com.habitrain.core.game.sre.match.MatchEventBridge.register();
         // 5b. 环境控制器（对局开始/结束应用 lobby/match/post-match 天气与时间）
         EnvironmentController.registerEvents();
-        com.habitrain.core.game.sre.RepairModeManager.registerEvents();
+        com.habitrain.core.game.sre.mode.RepairModeManager.registerEvents();
         MvpScoreTracker.init();
         // 6. C2S 接收器注册
         C2SReceiverRegistrar.init();

@@ -8,6 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClientSessionResetPolicyTest {
 
     @Test
+    void roundEndKeepsConnectionPermissionsAndPersistentMirrors() {
+        assertFalse(ClientSessionResetPolicy.clearConnectionState(true));
+        assertTrue(ClientSessionResetPolicy.clearConnectionState(false));
+    }
+
+    @Test
     void joinMustNotClearEspCachesOnDedicatedClient() {
         assertFalse(ClientSessionResetPolicy.clearEspCachesOnJoin(false));
     }

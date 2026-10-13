@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.gamemode.CustomRoleGameModeWorldComponent;
 import net.minecraft.resources.ResourceLocation;
@@ -31,6 +31,6 @@ public abstract class CustomRoleGameModeWorldComponentIdMixin {
     @Inject(method = "getRoleFromPath", at = @At("HEAD"), cancellable = true)
     private void habitrain$readFullOrLegacyRoleId(
             String stored, CallbackInfoReturnable<SRERole> cir) {
-        cir.setReturnValue(SreRoleOverrideResolver.resolveStoredId(stored));
+        cir.setReturnValue(SreRoleResolver.resolveStoredId(stored));
     }
 }

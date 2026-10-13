@@ -1,0 +1,325 @@
+package com.habitrain.core.game.sre.map;
+
+
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.api.GameModeRegistry;
+import com.habitrain.core.api.WinResult;
+import com.habitrain.core.game.sre.mixin.FullTrainResetTaskAccessor;
+import com.habitrain.core.game.sre.mixin.OnlySomeBlockResetTaskAccessor;
+import com.habitrain.core.network.MapVoteLaunchAbortPayload;
+import com.habitrain.core.network.MapVoteLaunchTransitionPayload;
+import com.habitrain.core.network.MapVoteProgressPayload;
+import com.habitrain.core.network.MapVoteStartConfirmedPayload;
+import com.habitrain.core.scene.server.ScenePreloadCoordinator;
+import io.wifi.starrailexpress.game.GameUtils;
+import io.wifi.starrailexpress.game.ServerTaskInfoClasses;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+/**
+ * 地图投票后「开局加载」的服务端权威协调器。
+ *
+ * <p>在 {@code GameUtils.startGame}（投完票→地图重置开始）到 {@code GameUtils.trueStartGame}
+ * （重置完成→真正开局）之间的窗口内：</p>
+ * <ul>
+ *   <li>1Hz 向该维度广播 {@link MapVoteProgressPayload}：进度优先采用 SRE 当前地图重置
+ *       任务的真实计数，按完整复制、任务方块重置、STARTING fade 合成连续总进度；游玩人数、按模式配置
+ *       估算的杀手人数、
+ *       选中地图与模式 id。客户端据此绘制加载面板与进度条。</li>
+ *   <li>当 {@code trueStartGame} 真正执行（地图重置 + 5 tick 调度完成）时，由服务端 mixin
+ *       {@code SRETrueStartGameMixin} 调用 {@link #onGameStartConfirmed} 记录开局成功；待 SRE
+ *       地图天气与 API 对局环境都在 {@code OnGameStarted} 中应用完毕后，再由
+ *       {@link #onMatchEnvironmentReady} 广播 {@link MapVoteLaunchTransitionPayload}。这样客户端
+ *       的「对局开始」动画不会先于天气切换播放。若获胜地图配置了场景资产，还会等待全部
+ *       玩家完成文件校验、解码与 GPU 网格预编译；上游重置完成 5 秒后仍未完成则超时放行，
+ *       未完成玩家转入对局期 1 MiB/s 后台续传。</li>
+ * </ul>
+ *
+ * <p>加载与扫场期间对局时间不计入（SRE 只在 ACTIVE 后开始倒数游戏时间），符合"加载不算在
+ * 对局时间内"的要求。</p>
+ */
+public final class MapVoteLoadCoordinator {
+    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|MapVoteLoadCoordinator");
+
+    private static final ConcurrentMap<ResourceKey<Level>, LoadState> LOADS = new ConcurrentHashMap<>();
+
+    private MapVoteLoadCoordinator() {}
+
+    private static final class LoadState {
+        String mapId = "";
+        String modeId = "";
+        int lastProgress = -1;
+        final MapVoteLoadProgress progress = new MapVoteLoadProgress();
+        /** trueStartGame 已成功进入 STARTING，正在等待 OnGameStarted 完成环境应用。 */
+        boolean startConfirmed = false;
+        /** 环境已应用后再等待两个世界 tick，确保原版天气同步包先于动画包发出。 */
+        long environmentReadyAtTick = -1L;
+        /** 上游地图重置完成（trueStartGame）后最多再等待场景准备 5 秒。 */
+        long sceneReadyDeadlineTick = -1L;
+        /** 是否已向客户端广播过开局确认（环境就绪）或开局中止。避免重复广播。 */
+        boolean settled = false;
+    }
+
+    /** 地图投票选定后、SRE startGame 开始地图重置前调用。 */
+    public static void beginLoad(ServerLevel level, String mapId, String modeId) {
+        if (level == null) return;
+        LoadState st = new LoadState();
+        st.mapId = mapId == null ? "" : mapId;
+        st.modeId = modeId == null ? "" : modeId;
+        LOADS.put(level.dimension(), st);
+        com.habitrain.core.scene.server.SceneRuntimeCoordinator.getInstance().onMatchPreparing(level);
+        ScenePreloadCoordinator.getInstance().begin(level, st.mapId);
+        LOGGER.info("[MapVoteLoad] load begin dim={} map={} mode={}",
+                level.dimension().location(), st.mapId, st.modeId);
+    }
+
+    /** 1Hz：若该维度正在开局加载，广播进度。由 ModTickHandler 调用。 */
+    public static void tickSecond(MinecraftServer server) {
+        if (server == null || LOADS.isEmpty()) return;
+        for (ServerLevel level : server.getAllLevels()) {
+            LoadState st = LOADS.get(level.dimension());
+            if (st == null) continue;
+            if (!isSreLoading(level)) {
+                // 不再处于加载中。若尚未广播确认/中止（例如 trueStartGame 因人数不足未进
+                // STARTING，而 mixin 又未触发），兜底广播中止，避免客户端无限等待。
+                if (!st.settled && !st.startConfirmed) {
+                    onGameStartConfirmed(level, false);
+                } else if (st.settled) {
+                    LOADS.remove(level.dimension());
+                }
+                continue;
+            }
+            broadcastProgressIfChanged(level, st, computeProgress(level, st));
+        }
+    }
+
+    /**
+     * 每个服务端 tick 检查环境就绪延迟。天气状态是在世界 tick 中同步给客户端的，
+     * 因此不能在 {@code setWeatherParameters} 同一个 tick 立即发送动画包。
+     */
+    public static void tick(MinecraftServer server) {
+        if (server == null || LOADS.isEmpty()) return;
+        for (ServerLevel level : server.getAllLevels()) {
+            LoadState st = LOADS.get(level.dimension());
+            if (st == null || st.settled || !st.startConfirmed
+                    || st.environmentReadyAtTick < 0L) {
+                continue;
+            }
+            long gameTime = level.getGameTime();
+            boolean environmentReady = gameTime >= st.environmentReadyAtTick;
+            boolean sceneReady = ScenePreloadCoordinator.getInstance().allReady(level);
+            if (!ScenePreloadReleasePolicy.shouldRelease(environmentReady, sceneReady,
+                    gameTime, st.sceneReadyDeadlineTick)) continue;
+
+            st.settled = true;
+            boolean timedOut = !sceneReady;
+            ScenePreloadCoordinator.getInstance().enterMatch(level);
+            LOGGER.info("[MapVoteLoad] launch gate released dim={} map={} sceneReady={} timedOut={} → sending transition",
+                    level.dimension().location(), st.mapId, sceneReady, timedOut);
+            broadcastProgressIfChanged(level, st, st.progress.complete());
+            MapVoteLaunchTransitionPayload.broadcastToLevel(level, st.mapId);
+            LOADS.remove(level.dimension(), st);
+        }
+    }
+
+    /**
+     * SRE {@code trueStartGame} 已结束（成功或人数不足中止）。仅当该维度有进行中的开局加载时，
+     * 依据 SRE 是否真正进入 STARTING（成功）决定等待环境就绪或广播「开局中止」。
+     *
+     * @param started true=游戏已进入 STARTING，保留加载遮挡并等待环境就绪；
+     *                false=人数不足等原因中止，广播开局中止让客户端立即交还。
+     */
+    public static void onGameStartConfirmed(ServerLevel level, boolean started) {
+        if (level == null) return;
+        LoadState st = LOADS.get(level.dimension());
+        if (st == null) {
+            // 非投票触发的开局（普通 SRE 轮次）：不广播，避免误播"进入游戏"转场。
+            return;
+        }
+        if (st.settled) return;
+        if (started) {
+            st.startConfirmed = true;
+            st.progress.startingFade(0, 1);
+            st.sceneReadyDeadlineTick = level.getGameTime()
+                    + ScenePreloadReleasePolicy.RESET_COMPLETE_TIMEOUT_TICKS;
+            // 判定点 A：通知客户端打开全屏开局转场（遮住随后 initializeGame 的 TP）
+            MapVoteStartConfirmedPayload.broadcastToLevel(level, st.mapId);
+            LOGGER.info("[MapVoteLoad] game start confirmed dim={} map={} → waiting for environment",
+                    level.dimension().location(), st.mapId);
+        } else {
+            st.settled = true;
+            ScenePreloadCoordinator.getInstance().reset(level);
+            LOGGER.info("[MapVoteLoad] game start ABORTED dim={} (not enough players?) → sending launch abort",
+                    level.dimension().location());
+            MapVoteLaunchAbortPayload.broadcastToLevel(level);
+            LOADS.remove(level.dimension());
+            if (GameModeRegistry.isActiveInLevel(level)) {
+                GameModeRegistry.stop(level, WinResult.forceEnd("开局中止"));
+            }
+        }
+    }
+
+    /**
+     * SRE 自带地图天气和 habitrain API 对局环境均已应用。仅在投票开局且
+     * {@link #onGameStartConfirmed} 已确认成功时广播真正的开局标题动画。
+     */
+    public static void onMatchEnvironmentReady(ServerLevel level) {
+        if (level == null) return;
+        LoadState st = LOADS.get(level.dimension());
+        if (st == null || st.settled || !st.startConfirmed) return;
+        if (st.environmentReadyAtTick < 0L) {
+            st.environmentReadyAtTick = level.getGameTime() + 2L;
+            LOGGER.info("[MapVoteLoad] environment applied dim={} map={} → waiting for weather sync",
+                    level.dimension().location(), st.mapId);
+        }
+    }
+
+    /** 维度清理 / 停服时释放。 */
+    public static void reset(ServerLevel level) {
+        if (level == null) return;
+        LOADS.remove(level.dimension());
+        ScenePreloadCoordinator.getInstance().reset(level);
+    }
+
+    /** 清空所有维度的加载态（集成服同 JVM 重启残留）。 */
+    public static void resetAll() {
+        LOADS.clear();
+        ScenePreloadCoordinator.getInstance().resetAll();
+    }
+
+    /** Late joiners during the loading page join the same prefetch gate and bandwidth phase. */
+    public static void onPlayerJoin(ServerPlayer player) {
+        ScenePreloadCoordinator.getInstance().onPlayerJoin(player);
+    }
+
+    public static boolean isLoading(ServerLevel level) {
+        return level != null && LOADS.containsKey(level.dimension());
+    }
+
+    /**
+     * Returns the map selected by the active mode/map launch flow.
+     *
+     * <p>This remains available through {@code OnGameStarted}, when SRE's map component may
+     * still expose the previous/default map name. Runtime systems which must select a
+     * per-map configuration at that exact lifecycle boundary should prefer this value and
+     * fall back to the map component for non-vote launches.</p>
+     */
+    public static @Nullable String selectedMapId(ServerLevel level) {
+        if (level == null) return null;
+        LoadState state = LOADS.get(level.dimension());
+        if (state == null || state.mapId == null || state.mapId.isBlank()) return null;
+        return state.mapId;
+    }
+
+    private static boolean isSreLoading(ServerLevel level) {
+        // Per-dimension only — never use global GameUtils.isStartingGame
+        // (that flag would make dim B look "loading" while dim A starts).
+        LoadState st = level == null ? null : LOADS.get(level.dimension());
+        if (st == null || st.settled) return false;
+
+        // Waiting for weather sync after trueStartGame → still "loading" for UI.
+        if (st.startConfirmed) return true;
+
+        try {
+            var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
+            if (gw != null) {
+                var status = gw.getGameStatus();
+                // Already ACTIVE/STOPPING without our startConfirmed → load finished
+                // or aborted; let tickSecond take the !loading branch (abort/remove).
+                if (status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.ACTIVE
+                        || status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STOPPING) {
+                    return false;
+                }
+                if (status == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STARTING) {
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            // Lookup failure: treat as not loading so tickSecond can abort hung UI.
+            LOGGER.debug("[MapVoteLoad] isSreLoading CCA lookup failed; treating as not loading", t);
+            return false;
+        }
+        // LOADS present, not settled, not confirmed, not ACTIVE:
+        // map-reset queue phase before STARTING — still loading for this dim.
+        return true;
+    }
+
+    /** 各上游任务的局部百分比必须映射到总进度，不能在换任务时重新从 0 开始。 */
+    private static int computeProgress(ServerLevel level, LoadState st) {
+        if (!st.startConfirmed) {
+            updateUpstreamResetProgress(level, st.progress);
+        }
+        try {
+            var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
+            if (gw != null && gw.getGameStatus()
+                    == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.STARTING) {
+                int fade = gw.getFade();
+                int total = io.wifi.starrailexpress.game.GameConstants.FADE_TIME
+                        + io.wifi.starrailexpress.game.GameConstants.FADE_PAUSE;
+                return st.progress.startingFade(fade, total);
+            }
+        } catch (Throwable t) {
+            // ignore
+        }
+        // 调度间隙和环境/场景准备期保持进度；只有开局门控真正放行才到 100%。
+        return st.progress.current();
+    }
+
+    /** Reads the same counters used by SRE's {@code message.sre.reseting} action-bar percentage. */
+    private static void updateUpstreamResetProgress(ServerLevel level, MapVoteLoadProgress progress) {
+        for (ServerTaskInfoClasses.ServerTaskInfo task : GameUtils.serverTaskQueue) {
+            if (task instanceof ServerTaskInfoClasses.FullTrainResetTask
+                    && task instanceof FullTrainResetTaskAccessor accessor
+                    && accessor.habitrain$getServerWorld() == level) {
+                progress.fullReset(MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress()).orElse(0));
+                return;
+            }
+            if (task instanceof ServerTaskInfoClasses.OnlySomeBlockResetTask
+                    && task instanceof OnlySomeBlockResetTaskAccessor accessor
+                    && accessor.habitrain$getWorld() == level) {
+                progress.blockReset(MapResetProgressPercent.from(
+                        accessor.habitrain$getProgress(), accessor.habitrain$getTotalProgress()).orElse(0));
+                return;
+            }
+        }
+    }
+
+    private static void broadcastProgressIfChanged(ServerLevel level, LoadState st, int progress) {
+        if (progress == st.lastProgress) return;
+        st.lastProgress = progress;
+        broadcastProgress(level, st, progress);
+    }
+
+    private static void broadcastProgress(ServerLevel level, LoadState st, int progress) {
+        int players = GameUtils.getParticipatingPlayerCount(level);
+        int killers = KillerCountResolver.killerCount(players);
+        for (ServerPlayer player : level.players()) {
+            if (RepairModeManager.isRepairer(player)) {
+                continue; // 维修员不看开局加载转场
+            }
+            MapVoteProgressPayload.sendTo(player, progress, players, killers,
+                    st.mapId, st.modeId);
+        }
+    }
+
+    /** 静态占位：见 {@link KillerCountResolver}。 */
+    private static final class KillerCountResolver {
+        static int killerCount(int playerCount) {
+            try {
+                return org.agmas.harpymodloader.commands.RoleCountManager.getKillerCount(playerCount);
+            } catch (Throwable t) {
+                return Math.max(1, playerCount / 6);
+            }
+        }
+    }
+}

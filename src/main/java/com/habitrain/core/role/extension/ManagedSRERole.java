@@ -1,6 +1,6 @@
 package com.habitrain.core.role.extension;
 
-import com.habitrain.core.api.role.book.RoleBookContent;
+import com.habitrain.core.api.role.v2.book.RoleBookContent;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile;
 import com.habitrain.core.api.role.v2.definition.RoleDefinition;

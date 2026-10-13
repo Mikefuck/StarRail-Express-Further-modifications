@@ -1,0 +1,1025 @@
+{
+  "checkedDate": "2026-10-13",
+  "scope": "Fixed jar metadata only; no game launch performed; ID closure does not validate version constraints or mixins",
+  "entries": [
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar",
+      "id": "fabric-api",
+      "version": "0.116.13+1.21.1",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "java": ">=21",
+        "minecraft": ">=1.21- <1.21.2-"
+      },
+      "provides": [
+        "fabric"
+      ]
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-api-base-0.116.13.jar",
+      "id": "fabric-api-base",
+      "version": "0.4.42+6573ed8c19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-api-lookup-api-v1-0.116.13.jar",
+      "id": "fabric-api-lookup-api-v1",
+      "version": "1.6.72+7b3d111d19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-lifecycle-events-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-biome-api-v1-0.116.13.jar",
+      "id": "fabric-biome-api-v1",
+      "version": "13.0.31+d527f9fd19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.16.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-block-api-v1-0.116.13.jar",
+      "id": "fabric-block-api-v1",
+      "version": "1.1.0+0bc3503219",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-block-view-api-v2-0.116.13.jar",
+      "id": "fabric-block-view-api-v2",
+      "version": "1.0.11+ebb2264e19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-blockrenderlayer-v1-0.116.13.jar",
+      "id": "fabric-blockrenderlayer-v1",
+      "version": "1.1.52+0af3f5a719",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.15-alpha.19.38.b",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-client-tags-api-v1-0.116.13.jar",
+      "id": "fabric-client-tags-api-v1",
+      "version": "1.1.15+6573ed8c19",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-command-api-v2-0.116.13.jar",
+      "id": "fabric-command-api-v2",
+      "version": "2.2.28+6ced4dd919",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "minecraft": ">1.19-alpha.22.11.a"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-content-registries-v0-0.116.13.jar",
+      "id": "fabric-content-registries-v0",
+      "version": "8.0.19+b559734419",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-lifecycle-events-v1": "*",
+        "fabric-resource-loader-v0": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-convention-tags-v2-0.116.13.jar",
+      "id": "fabric-convention-tags-v2",
+      "version": "2.12.0+c3656daa19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.20.5-beta.1",
+        "fabric-lifecycle-events-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-crash-report-info-v1-0.116.13.jar",
+      "id": "fabric-crash-report-info-v1",
+      "version": "0.2.29+0af3f5a719",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-data-attachment-api-v1-0.116.13.jar",
+      "id": "fabric-data-attachment-api-v1",
+      "version": "1.4.7+5b36e0f719",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-entity-events-v1": "*",
+        "fabric-object-builder-api-v1": "*",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-data-generation-api-v1-0.116.13.jar",
+      "id": "fabric-data-generation-api-v1",
+      "version": "20.2.38+60a6976219",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-dimensions-v1-0.116.13.jar",
+      "id": "fabric-dimensions-v1",
+      "version": "4.0.1+65213ef819",
+      "environment": null,
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.16-rc.3",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-entity-events-v1-0.116.13.jar",
+      "id": "fabric-entity-events-v1",
+      "version": "1.8.0+2b27e0a419",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-events-interaction-v0-0.116.13.jar",
+      "id": "fabric-events-interaction-v0",
+      "version": "0.7.14+ba9dae0619",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-networking-api-v1": "*",
+        "minecraft": ">=1.15-alpha.19.37.a"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-game-rule-api-v1-0.116.13.jar",
+      "id": "fabric-game-rule-api-v1",
+      "version": "1.0.53+6ced4dd919",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-item-api-v1-0.116.13.jar",
+      "id": "fabric-item-api-v1",
+      "version": "11.2.0+3b3cb2e819",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-item-group-api-v1-0.116.13.jar",
+      "id": "fabric-item-group-api-v1",
+      "version": "4.1.7+def88e3a19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-resource-loader-v0": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-key-binding-api-v1-0.116.13.jar",
+      "id": "fabric-key-binding-api-v1",
+      "version": "1.0.47+0af3f5a719",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-lifecycle-events-v1-0.116.13.jar",
+      "id": "fabric-lifecycle-events-v1",
+      "version": "2.6.0+0865547519",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-loot-api-v3-0.116.13.jar",
+      "id": "fabric-loot-api-v3",
+      "version": "1.0.3+3f89f5a519",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-resource-loader-v0": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-message-api-v1-0.116.13.jar",
+      "id": "fabric-message-api-v1",
+      "version": "6.0.14+8aaf3aca19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-model-loading-api-v1-0.116.13.jar",
+      "id": "fabric-model-loading-api-v1",
+      "version": "2.1.0+b4d813fc19",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-networking-api-v1-0.116.13.jar",
+      "id": "fabric-networking-api-v1",
+      "version": "4.3.1+d30f6a7919",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-object-builder-api-v1-0.116.13.jar",
+      "id": "fabric-object-builder-api-v1",
+      "version": "15.2.1+40875a9319",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-particles-v1-0.116.13.jar",
+      "id": "fabric-particles-v1",
+      "version": "4.0.2+6573ed8c19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-recipe-api-v1-0.116.13.jar",
+      "id": "fabric-recipe-api-v1",
+      "version": "5.0.16+2475392c19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-registry-sync-v0-0.116.13.jar",
+      "id": "fabric-registry-sync-v0",
+      "version": "5.3.2+e3eddc2119",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-renderer-api-v1-0.116.13.jar",
+      "id": "fabric-renderer-api-v1",
+      "version": "3.4.1+b4d813fc19",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.15-alpha.19.39.a",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-renderer-indigo-0.116.13.jar",
+      "id": "fabric-renderer-indigo",
+      "version": "1.7.1+c705a49c19",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.15-alpha.19.39.a",
+        "fabric-api-base": "*",
+        "fabric-renderer-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-rendering-fluids-v1-0.116.13.jar",
+      "id": "fabric-rendering-fluids-v1",
+      "version": "3.1.6+1daea21519",
+      "environment": null,
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-rendering-v1-0.116.13.jar",
+      "id": "fabric-rendering-v1",
+      "version": "5.1.0+ab4c25a019",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-resource-conditions-api-v1-0.116.13.jar",
+      "id": "fabric-resource-conditions-api-v1",
+      "version": "4.3.0+8dc279b119",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-resource-loader-v0-0.116.13.jar",
+      "id": "fabric-resource-loader-v0",
+      "version": "1.3.1+5b5275af19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-screen-api-v1-0.116.13.jar",
+      "id": "fabric-screen-api-v1",
+      "version": "2.0.26+639b4c0719",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-screen-handler-api-v1-0.116.13.jar",
+      "id": "fabric-screen-handler-api-v1",
+      "version": "1.3.91+b559734419",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-sound-api-v1-0.116.13.jar",
+      "id": "fabric-sound-api-v1",
+      "version": "1.0.23+6573ed8c19",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.19.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-transfer-api-v1-0.116.13.jar",
+      "id": "fabric-transfer-api-v1",
+      "version": "5.4.4+7b3d111d19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-lookup-api-v1": "*",
+        "fabric-rendering-fluids-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-transitive-access-wideners-v1-0.116.13.jar",
+      "id": "fabric-transitive-access-wideners-v1",
+      "version": "6.2.0+45b9699719",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-command-api-v1-0.116.13.jar",
+      "id": "fabric-command-api-v1",
+      "version": "1.2.49+f71b366f19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-command-api-v2": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-commands-v0-0.116.13.jar",
+      "id": "fabric-commands-v0",
+      "version": "0.2.66+df3654b319",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-command-api-v2": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-convention-tags-v1-0.116.13.jar",
+      "id": "fabric-convention-tags-v1",
+      "version": "2.1.7+7f945d5b19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.18.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-keybindings-v0-0.116.13.jar",
+      "id": "fabric-keybindings-v0",
+      "version": "0.2.45+df3654b319",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-key-binding-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-loot-api-v2-0.116.13.jar",
+      "id": "fabric-loot-api-v2",
+      "version": "3.0.15+3f89f5a519",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "fabric-resource-loader-v0": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-renderer-registries-v1-0.116.13.jar",
+      "id": "fabric-renderer-registries-v1",
+      "version": "3.2.69+df3654b319",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.15-alpha.19.39.a",
+        "fabric-api-base": "*",
+        "fabric-rendering-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-rendering-data-attachment-v1-0.116.13.jar",
+      "id": "fabric-rendering-data-attachment-v1",
+      "version": "0.3.49+73761d2e19",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-block-view-api-v2": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "fabric-api-0.116.13+1.21.1.jar!META-INF/jars/fabric-rendering-v0-0.116.13.jar",
+      "id": "fabric-rendering-v0",
+      "version": "1.1.72+df3654b319",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": ">=1.15-alpha.19.39.a",
+        "fabric-api-base": "*",
+        "fabric-rendering-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar",
+      "id": "modmenu",
+      "version": "11.0.3",
+      "environment": "client",
+      "depends": {
+        "fabric-resource-loader-v0": "*",
+        "fabric-screen-api-v1": ">=1.0.4",
+        "fabric-key-binding-api-v1": "*",
+        "fabric-lifecycle-events-v1": "*",
+        "fabricloader": ">=0.15.10",
+        "minecraft": ">=1.21-beta.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/fabric-api-base-0.4.42+6573ed8c90.jar",
+      "id": "fabric-api-base",
+      "version": "0.4.42+6573ed8c90",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/fabric-resource-loader-v0-1.1.3+b559734490.jar",
+      "id": "fabric-resource-loader-v0",
+      "version": "1.1.3+b559734490",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/fabric-screen-api-v1-2.0.24+b559734490.jar",
+      "id": "fabric-screen-api-v1",
+      "version": "2.0.24+b559734490",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/fabric-key-binding-api-v1-1.0.47+0af3f5a790.jar",
+      "id": "fabric-key-binding-api-v1",
+      "version": "1.0.47+0af3f5a790",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/fabric-lifecycle-events-v1-2.3.9+98a7dbbb90.jar",
+      "id": "fabric-lifecycle-events-v1",
+      "version": "2.3.9+98a7dbbb90",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "modmenu-11.0.3.jar!META-INF/jars/placeholder-api-2.4.0-pre.2+1.21.jar",
+      "id": "placeholder-api",
+      "version": "2.4.0-pre.2+1.21",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.13.4",
+        "minecraft": ">=1.19-beta.1"
+      },
+      "provides": null
+    },
+    {
+      "source": "cloth-config-fabric-15.0.140-fabric.jar",
+      "id": "cloth-config",
+      "version": "15.0.140",
+      "environment": null,
+      "depends": {
+        "fabricloader": ">=0.14.0",
+        "minecraft": ">=1.21-"
+      },
+      "provides": [
+        "cloth-config2"
+      ]
+    },
+    {
+      "source": "cloth-config-fabric-15.0.140-fabric.jar!META-INF/jars/basic-math-0.6.1.jar",
+      "id": "cloth-basic-math",
+      "version": "0.6.1",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "cardinal-components-base-6.1.3.jar",
+      "id": "cardinal-components-base",
+      "version": "6.1.3",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": ">=0.1.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "cardinal-components-entity-6.1.3.jar",
+      "id": "cardinal-components-entity",
+      "version": "6.1.3",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "cardinal-components-world-6.1.3.jar",
+      "id": "cardinal-components-world",
+      "version": "6.1.3",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "cardinal-components-scoreboard-6.1.3.jar",
+      "id": "cardinal-components-scoreboard",
+      "version": "6.1.3",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "datasync-minecraft-1.21.1-fabric-0.10.2.jar",
+      "id": "datasync_minecraft",
+      "version": "0.10.2",
+      "environment": "*",
+      "depends": {
+        "fabricloader": "*",
+        "minecraft": ">=1.21 <=1.21.8",
+        "java": ">=21",
+        "fabric-api": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "player-animation-lib-fabric-2.0.4+1.21.1.jar",
+      "id": "playeranimator",
+      "version": "2.0.4+1.21.1",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.21 <1.21.2",
+        "fabric-resource-loader-v0": "*"
+      },
+      "provides": [
+        "player-animator"
+      ]
+    },
+    {
+      "source": "star_rail_express-4.3.0.jar",
+      "id": "starrailexpress",
+      "version": "4.3.0",
+      "environment": "*",
+      "depends": {
+        "minecraft": "1.21.1",
+        "wathe": "*",
+        "cloth-config": "*",
+        "modmenu": "*",
+        "voicechat": "*",
+        "architectury": "*",
+        "exposure": "*",
+        "sre_resource": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "star_rail_express-4.3.0.jar!META-INF/jars/HikariCP-5.1.0.jar",
+      "id": "com_zaxxer_hikaricp",
+      "version": "5.1.0",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "star_rail_express-4.3.0.jar!META-INF/jars/mixinsquared-fabric-0.3.7-beta.1.jar",
+      "id": "mixinsquared",
+      "version": "0.3.7-beta.1",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.14.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "star_rail_express-4.3.0.jar!META-INF/jars/mysql-connector-j-8.4.0.jar",
+      "id": "com_mysql_mysql-connector-j",
+      "version": "8.4.0",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "star_rail_express-4.3.0.jar!META-INF/jars/tinypinyin-2.0.3.jar",
+      "id": "com_github_promeg_tinypinyin",
+      "version": "2.0.3",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar",
+      "id": "wathe",
+      "version": "1.3.2-1.21.1",
+      "environment": "*",
+      "depends": {
+        "fabricloader": "*",
+        "minecraft": "~1.21.1",
+        "java": ">=21",
+        "fabric-api": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/cardinal-components-base-6.1.1.jar",
+      "id": "cardinal-components-base",
+      "version": "6.1.1",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": ">=0.1.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/cardinal-components-entity-6.1.1.jar",
+      "id": "cardinal-components-entity",
+      "version": "6.1.1",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/cardinal-components-scoreboard-6.1.1.jar",
+      "id": "cardinal-components-scoreboard",
+      "version": "6.1.1",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/cardinal-components-world-6.1.1.jar",
+      "id": "cardinal-components-world",
+      "version": "6.1.1",
+      "environment": "*",
+      "depends": {
+        "minecraft": ">=1.17-",
+        "fabric-api-base": "*",
+        "cardinal-components-base": ">=6.0.0-beta.2",
+        "fabric-networking-api-v1": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/datasync-minecraft-1.21.1-fabric-0.9.0.jar",
+      "id": "datasync_minecraft",
+      "version": "0.9.0",
+      "environment": "*",
+      "depends": {
+        "fabricloader": "*",
+        "minecraft": "=1.21.1",
+        "java": ">=21",
+        "fabric-api": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "wathe-1.3.2.jar!META-INF/jars/midnightlib-1.5.7-fabric.jar",
+      "id": "midnightlib",
+      "version": "1.5.7",
+      "environment": "*",
+      "depends": {
+        "fabric-resource-loader-v0": "*",
+        "minecraft": ">=1.20.4"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar",
+      "id": "voicechat",
+      "version": "1.21.1-2.6.18",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "minecraft": [
+          "1.21",
+          "1.21.1"
+        ],
+        "java": ">=21"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-api-base-0.4.42+6573ed8c6a.jar",
+      "id": "fabric-api-base",
+      "version": "0.4.42+6573ed8c6a",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-command-api-v2-2.2.28+6ced4dd96a.jar",
+      "id": "fabric-command-api-v2",
+      "version": "2.2.28+6ced4dd96a",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*",
+        "minecraft": ">1.19-alpha.22.11.a"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-key-binding-api-v1-1.0.47+0af3f5a76a.jar",
+      "id": "fabric-key-binding-api-v1",
+      "version": "1.0.47+0af3f5a76a",
+      "environment": "client",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-lifecycle-events-v1-2.3.12+6c1df3606a.jar",
+      "id": "fabric-lifecycle-events-v1",
+      "version": "2.3.12+6c1df3606a",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-networking-api-v1-4.2.2+60c3209b6a.jar",
+      "id": "fabric-networking-api-v1",
+      "version": "4.2.2+60c3209b6a",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11",
+        "fabric-api-base": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/fabric-resource-loader-v0-1.3.0+565991296a.jar",
+      "id": "fabric-resource-loader-v0",
+      "version": "1.3.0+565991296a",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.15.11"
+      },
+      "provides": null
+    },
+    {
+      "source": "voicechat-fabric-1.21.1-2.6.18.jar!META-INF/jars/voicechat-api-2.6.13.jar",
+      "id": "voicechat_api",
+      "version": "2.6.13",
+      "environment": "*",
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "architectury-13.0.11-fabric.jar",
+      "id": "architectury",
+      "version": "13.0.11",
+      "environment": "*",
+      "depends": {
+        "minecraft": "~1.21-",
+        "fabricloader": ">=0.15.11",
+        "fabric-api": ">=0.100.0"
+      },
+      "provides": null
+    },
+    {
+      "source": "exposure-fabric-1.21.1-1.9.11.jar",
+      "id": "exposure",
+      "version": "1.9.11",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.16.0",
+        "minecraft": "~1.21",
+        "java": ">=21",
+        "fabric-api": "*",
+        "forgeconfigapiport": ">=21.0.0"
+      },
+      "provides": null
+    },
+    {
+      "source": "sre-lib-1.0.3.jar",
+      "id": "sre_resource",
+      "version": "1.0.3",
+      "environment": "*",
+      "depends": {
+        "fabricloader": "*",
+        "minecraft": "1.21.1",
+        "java": ">=21",
+        "fabric-api": "*"
+      },
+      "provides": null
+    },
+    {
+      "source": "ForgeConfigAPIPort-v21.1.6-1.21.1-Fabric.jar",
+      "id": "forgeconfigapiport",
+      "version": "21.1.6",
+      "environment": "*",
+      "depends": {
+        "fabricloader": ">=0.16.1",
+        "fabric-api": ">=0.102.0",
+        "minecraft": "1.21.1",
+        "java": ">=17"
+      },
+      "provides": null
+    },
+    {
+      "source": "ForgeConfigAPIPort-v21.1.6-1.21.1-Fabric.jar!META-INF/jars/core-3.8.0.jar",
+      "id": "com_electronwill_night-config_core",
+      "version": "3.8.0",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    },
+    {
+      "source": "ForgeConfigAPIPort-v21.1.6-1.21.1-Fabric.jar!META-INF/jars/toml-3.8.0.jar",
+      "id": "com_electronwill_night-config_toml",
+      "version": "3.8.0",
+      "environment": null,
+      "depends": null,
+      "provides": null
+    }
+  ]
+}

@@ -3,8 +3,6 @@ package com.habitrain.core.api.role.v2;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleRuntimeOverlayApplier;
-import com.habitrain.core.role.override.EffectiveSnapshot;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotArchive;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import com.habitrain.core.role.snapshot.RoleSnapshotVersions;
@@ -53,7 +51,6 @@ class G10SnapshotContractTest {
         RoleSnapshotArchive.INSTANCE.clear();
         RoleSnapshotVersions.resetForTests();
         RoleRuntimeOverlayApplier.clear();
-        setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
     }
 
     @Test
@@ -130,14 +127,12 @@ class G10SnapshotContractTest {
     }
 
     @Test
-    void publishedGenerationsDoNotBindToV1EngineVersion() {
-        long v1 = RoleOverrideEngine.getInstance().getSnapshotVersion();
+    void publishedGenerationsAreUniqueAndNeverUseTempId() {
         RoleSnapshotId a = RoleSnapshotVersions.nextPublished();
         RoleSnapshotId b = RoleSnapshotVersions.nextPublished();
         assertNotEquals(a, b);
         assertNotEquals(RoleSnapshotVersions.TEMP, a);
-        assertEquals(v1, RoleOverrideEngine.getInstance().getSnapshotVersion(),
-                "catalog generations must not increment v1 snapshotVersion");
+        assertNotEquals(RoleSnapshotVersions.TEMP, b);
     }
 
     @Test
@@ -171,12 +166,6 @@ class G10SnapshotContractTest {
 
     private static SRERole role(ResourceLocation id) {
         return new NormalRole(id, COLOR, true, false, SRERole.MoodType.REAL, 20, false);
-    }
-
-    private static void setSnapshot(EffectiveSnapshot snap) throws Exception {
-        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
-        field.setAccessible(true);
-        field.set(RoleOverrideEngine.getInstance(), snap);
     }
 
     private static void setField(Class<?> clazz, Object target, String name, Object value)

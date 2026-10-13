@@ -1,8 +1,8 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.sre.CustomTaskBlockCache;
-import com.habitrain.core.game.sre.CustomTaskBlockIndexLimits;
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -71,7 +71,7 @@ public final class ViewModeDispatcher {
         int best = Integer.MAX_VALUE;
         for (int typeId : typeIds) {
 
-            if (typeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+            if (typeId < com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
                 continue;
             }
             Color mapped = colors.get(typeId);

@@ -8,7 +8,7 @@ import com.habitrain.core.api.role.v2.RoleChangeResult;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.NecromancerReviveSupport;
-import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
+import com.habitrain.core.game.sre.role.SreRolePoolFilter;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.role.change.ForcedRandomRoleChangePolicy;
 import io.wifi.starrailexpress.SRE;

@@ -1,9 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.util.ShopEntry;
@@ -29,11 +27,6 @@ public class SRERoleShopMixin {
             MinecraftServer server = getServer();
             cir.setReturnValue(overlay.shopPatch().getShopEntries(self, server));
             return;
-        }
-        ModifyRoleDefinition def = RoleOverrideEngine.getInstance().getGameplayModify(self.identifier());
-        if (def != null && def.shopPatch().isPresent()) {
-            MinecraftServer server = getServer();
-            cir.setReturnValue(def.shopPatch().get().getShopEntries(self, server));
         }
     }
 

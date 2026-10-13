@@ -1,6 +1,6 @@
 package com.habitrain.core.client.util;
 
-import com.habitrain.core.game.sre.SRETrainTaskWrapper;
+import com.habitrain.core.game.sre.task.SRETrainTaskWrapper;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;

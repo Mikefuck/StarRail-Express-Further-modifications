@@ -215,6 +215,9 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         StateSlotKey slot = StateSlotKey.of(spec, playerId, worldKey);
         if (isTransient(spec)) {
             Object stored = transientValues.get(slot);
+            if (stored instanceof StoredState encoded) {
+                return encoded.isNull() ? null : decode(spec, encoded.encoded());
+            }
             if (stored == NULL) {
                 return null;
             }
@@ -227,10 +230,10 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (stored == null) {
             return spec.produceDefault();
         }
-        if (stored.isNull()) {
-            return null;
-        }
-        return tryDecode(spec, slot, stored);
+        ReadResult<T> result = readCurrent(spec, slot, stored);
+        if (!result.available()) return spec.produceDefault();
+        if (result.migrated()) notifySync(spec, slot, result.state().encoded());
+        return result.value();
     }
 
     @Override
@@ -263,16 +266,21 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             throw new IllegalArgumentException("PLAYER scope requires a player id: " + spec.id());
         }
         StateSlotKey slot = StateSlotKey.of(spec, playerId, worldKey);
+        // Prepare exactly once before committing. Synced transient values keep an
+        // encoded snapshot, so caller-owned mutable objects cannot bypass set().
+        boolean needsEncoding = !isTransient(spec) || sendsValues(spec);
+        byte[] encoded = value == null || !needsEncoding ? null : encode(spec, value);
         if (isTransient(spec)) {
-            transientValues.put(slot, value == null ? NULL : value);
+            transientValues.put(slot, needsEncoding ? new StoredState(spec.dataVersion(), encoded)
+                    : value == null ? NULL : value);
         } else {
-            byte[] encoded = value == null ? null : encode(spec, value);
             if (!store.write(slot, new StoredState(spec.dataVersion(), encoded))) {
                 LOGGER.error("role state persist failed for {} (offline player or unloaded world)", slot);
                 return;
             }
         }
-        notifySync(spec, slot, value);
+        migrationRequired.remove(slot);
+        notifySync(spec, slot, encoded);
     }
 
     @Override
@@ -358,17 +366,23 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         if (playerId == null) {
             return;
         }
-        long snapshotId = syncService.nextRevision();
-        syncService.beginSnapshot(playerId, snapshotId);
+        List<PreparedState> prepared = new ArrayList<>();
         // Transient (ROUND/NONE persistence) slots.
         for (StateSlotKey slot : java.util.Set.copyOf(transientValues.keySet())) {
             RoleStateSpec<?> spec = specForSlot(slot);
             if (spec == null || !gateEnabled(spec) || !syncService.isRecipient(spec, slot, playerId)) {
                 continue;
             }
-            Object v = transientValues.get(slot);
-            byte[] enc = (v == null || v == NULL) ? null : encodeRaw(spec, v);
-            syncService.sendTo(playerId, spec, slot, enc, true, snapshotId);
+            try {
+                Object v = transientValues.get(slot);
+                byte[] enc = v instanceof StoredState st ? st.encoded()
+                        : (v == null || v == NULL) ? null : encodeRaw(spec, v);
+                prepared.add(new PreparedState(spec, slot, enc));
+            } catch (Throwable failure) {
+                // Unavailable slots are omitted from this authoritative snapshot;
+                // a completed batch removes their old client mirrors.
+                LOGGER.warn("Skipping unavailable transient state {} in full snapshot", slot, failure);
+            }
         }
         // Persistent (WORLD/PERMANENT) slots materialized in the store.
         for (StateSlotKey slot : store.keys()) {
@@ -376,13 +390,27 @@ public final class RoleStateServiceImpl implements RoleStateApi {
             if (spec == null || !gateEnabled(spec) || !syncService.isRecipient(spec, slot, playerId)) {
                 continue;
             }
-            StoredState st = store.read(slot);
-            if (st == null) {
-                continue;
+            try {
+                StoredState st = store.read(slot);
+                if (st == null) continue;
+                ReadResult<?> result = readCurrent(spec, slot, st);
+                if (result.available()) prepared.add(new PreparedState(spec, slot, result.state().encoded()));
+            } catch (Throwable failure) {
+                LOGGER.warn("Skipping unavailable persistent state {} in full snapshot", slot, failure);
             }
-            syncService.sendTo(playerId, spec, slot, st.encoded(), true, snapshotId);
         }
-        syncService.endSnapshot(playerId, snapshotId);
+        long snapshotId = syncService.nextRevision();
+        if (!syncService.beginSnapshot(playerId, snapshotId)) {
+            syncService.cancelSnapshot(playerId, snapshotId);
+            return;
+        }
+        for (PreparedState value : prepared) {
+            if (!syncService.sendTo(playerId, value.spec(), value.slot(), value.encoded(), true, snapshotId)) {
+                syncService.cancelSnapshot(playerId, snapshotId);
+                return;
+            }
+        }
+        if (!syncService.endSnapshot(playerId, snapshotId)) syncService.cancelSnapshot(playerId, snapshotId);
     }
 
     /** Snapshot of every persistent slot — used to simulate a restart round-trip. */
@@ -554,31 +582,40 @@ public final class RoleStateServiceImpl implements RoleStateApi {
         return encode(spec, value);
     }
 
-    private <T> T tryDecode(RoleStateSpec<T> spec, StateSlotKey slot, StoredState stored) {
+    private <T> ReadResult<T> readCurrent(RoleStateSpec<T> spec, StateSlotKey slot, StoredState stored) {
         try {
-            T value = decode(spec, stored.encoded());
+            if (stored.dataVersion() > spec.dataVersion()) {
+                throw new IllegalArgumentException("stored version is newer than registered schema");
+            }
+            T value = stored.isNull() ? null : decode(spec, stored.encoded());
             if (stored.dataVersion() < spec.dataVersion()) {
-                T migrated = spec.migrateValue(stored.dataVersion(), value);
-                if (migrated == null) {
+                T migrated = stored.isNull() ? null : spec.migrateValue(stored.dataVersion(), value);
+                if (!stored.isNull() && migrated == null) {
                     migrationRequired.add(slot);
                     LOGGER.warn("role state {} stored at v{} needs a migration chain beyond the registered one; "
                             + "keeping original bytes and returning default", slot, stored.dataVersion());
-                    return spec.produceDefault();
+                    return ReadResult.unavailable();
+                }
+                StoredState current = new StoredState(spec.dataVersion(), migrated == null ? null : encode(spec, migrated));
+                if (!store.write(slot, current)) {
+                    throw new IllegalStateException("migration persistence failed (offline player or unloaded world)");
                 }
                 migrationRequired.remove(slot);
-                if (!store.write(slot, new StoredState(spec.dataVersion(), encode(spec, migrated)))) {
-                    LOGGER.error("role state migration persist failed for {} (offline player or unloaded world)", slot);
-                }
-                return migrated;
+                return new ReadResult<>(true, migrated, current, true);
             }
             migrationRequired.remove(slot);
-            return value;
+            return new ReadResult<>(true, value, stored, false);
         } catch (Throwable t) {
             migrationRequired.add(slot);
             LOGGER.warn("role state {} failed to decode v{} (opaque bytes preserved)", slot, stored.dataVersion(), t);
-            return spec.produceDefault();
+            return ReadResult.unavailable();
         }
     }
+
+    private record ReadResult<T>(boolean available, @Nullable T value, @Nullable StoredState state, boolean migrated) {
+        static <T> ReadResult<T> unavailable() { return new ReadResult<>(false, null, null, false); }
+    }
+    private record PreparedState(RoleStateSpec<?> spec, StateSlotKey slot, @Nullable byte[] encoded) {}
 
     private static <T> byte[] encode(RoleStateSpec<T> spec, T value) {
         com.mojang.serialization.Codec<T> codec = spec.codec();
@@ -616,19 +653,23 @@ public final class RoleStateServiceImpl implements RoleStateApi {
                 .getOrThrow(err -> new IllegalArgumentException("decode failed: " + err));
     }
 
-    private <T> void notifySync(RoleStateSpec<T> spec, StateSlotKey slot, @Nullable T value) {
-        var sync = spec.sync();
-        if (sync == com.habitrain.core.api.role.v2.state.SyncPolicy.NONE
-                || sync == com.habitrain.core.api.role.v2.state.SyncPolicy.SERVER_ONLY) {
-            return;
-        }
-        byte[] encoded = value == null ? null : encode(spec, value);
-        syncService.onChanged(spec, slot, encoded);
+    private static boolean sendsValues(RoleStateSpec<?> spec) {
+        return spec.sync() != com.habitrain.core.api.role.v2.state.SyncPolicy.NONE
+                && spec.sync() != com.habitrain.core.api.role.v2.state.SyncPolicy.SERVER_ONLY;
+    }
+
+    private void notifySync(RoleStateSpec<?> spec, StateSlotKey slot, @Nullable byte[] encoded) {
+        if (sendsValues(spec)) syncService.onChanged(spec, slot, encoded);
     }
 
     private Object readForDescribe(RoleStateSpec<?> spec, StateSlotKey slot) {
         if (isTransient(spec)) {
             Object v = transientValues.get(slot);
+            if (v instanceof StoredState encoded) {
+                if (encoded.isNull()) return NULL;
+                try { return decode(spec, encoded.encoded()); }
+                catch (Throwable failure) { return encoded.encoded(); }
+            }
             return v == null ? MISSING : v;
         }
         StoredState stored = store.read(slot);

@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,6 +23,6 @@ public abstract class RoleArgumentTypeMixin {
     )
     private Collection<SRERole> habitrain$visibleCommandRoles(
             Map<ResourceLocation, SRERole> registry) {
-        return SreRoleOverrideResolver.visibleRegistryRoles(registry.values());
+        return SreRoleResolver.visibleRegistryRoles(registry.values());
     }
 }

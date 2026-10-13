@@ -1,13 +1,13 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.patch.DefaultItemsPatch;
-import com.habitrain.core.api.role.patch.FlagsPatch;
-import com.habitrain.core.api.role.patch.NamePatch;
-import com.habitrain.core.api.role.patch.RoleTextPatch;
-import com.habitrain.core.api.role.patch.ShopPatch;
-import com.habitrain.core.api.role.patch.ShopTransform;
-import com.habitrain.core.api.role.patch.SpawnInfoPatch;
-import com.habitrain.core.api.role.patch.WinConditionHook;
+import com.habitrain.core.api.role.v2.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.v2.patch.FlagsPatch;
+import com.habitrain.core.api.role.v2.patch.NamePatch;
+import com.habitrain.core.api.role.v2.patch.RoleTextPatch;
+import com.habitrain.core.api.role.v2.patch.ShopPatch;
+import com.habitrain.core.api.role.v2.patch.ShopTransform;
+import com.habitrain.core.api.role.v2.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.v2.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
 import io.wifi.starrailexpress.api.SRERole.SpecialMapRoleMap;
@@ -31,7 +31,7 @@ import java.util.Objects;
 public final class CompiledModifyOverlay {
 
     private final int color;
-    private final @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider;
+    private final @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider;
     private final @Nullable FlagsPatch flagsPatch;
     private final @Nullable SpawnInfoPatch spawnInfoPatch;
     private final MoodType mood;
@@ -105,7 +105,7 @@ public final class CompiledModifyOverlay {
 
     public CompiledModifyOverlay(
             int color, MoodType mood,
-            @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+            @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider,
             @Nullable FlagsPatch flagsPatch, @Nullable SpawnInfoPatch spawnInfoPatch,
             @Nullable NamePatch namePatch, @Nullable RoleTextPatch descriptionPatch,
             @Nullable RoleTextPatch simpleDescriptionPatch, @Nullable DefaultItemsPatch defaultItemsPatch,
@@ -164,7 +164,7 @@ public final class CompiledModifyOverlay {
     }
 
     public int color() { return color; }
-    public @Nullable com.habitrain.core.api.role.patch.ColorPatch colorProvider() { return colorProvider; }
+    public @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider() { return colorProvider; }
     public @Nullable FlagsPatch flagsPatch() { return flagsPatch; }
     public @Nullable SpawnInfoPatch spawnInfoPatch() { return spawnInfoPatch; }
     public MoodType mood() { return mood; }

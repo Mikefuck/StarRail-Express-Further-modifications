@@ -10,9 +10,8 @@ import com.habitrain.core.api.role.v2.RoleSnapshot;
 import com.habitrain.core.api.role.v2.RoleSnapshotId;
 import com.habitrain.core.api.role.v2.definition.ReplacementIdentity;
 import com.habitrain.core.api.role.v2.definition.RoleReplacement;
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotArchive;
 import com.habitrain.core.role.snapshot.RoleSnapshotCompiler;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
@@ -33,8 +32,7 @@ import java.util.Set;
 
 /**
  * Internal read-only implementation of {@link RoleCatalogApi}, backed by the
- * override engine's compiled snapshot, the override resolver and the v2 role
- * extension registry ({@code MODIFY}/{@code REPLACE}/{@code ALIAS}).
+ * v2 compiled snapshots, the role resolver and the role extension registry ({@code MODIFY}/{@code REPLACE}/{@code ALIAS}).
  *
  * <p>Not part of the public API; obtain the facade through
  * {@link RoleCatalogApi#instance()}. The raw role source is injected through a
@@ -63,10 +61,6 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
     /** @param lookup the raw role source this directory reads */
     public RoleCatalogImpl(RawRoleLookup lookup) {
         this.lookup = Objects.requireNonNull(lookup, "lookup");
-    }
-
-    private static RoleOverrideEngine engine() {
-        return RoleOverrideEngine.getInstance();
     }
 
     @Override
@@ -116,7 +110,7 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
      * <p><b>审核 R-22</b>：旧实现每次读都全量重编译 TEMP——而客户端
      * {@code lobby} 快照永不被设置（只有服务端 {@code setLobby}），教程又鼓励把所有查询
      * 都走目录，于是 HUD / 每帧查询变成一个性能陷阱。现在按「原始角色来源指纹 +
-     * 覆盖引擎快照版本 + 角色扩展配置修订号」缓存 TEMP，三者任一变化才重编译。
+     * 角色扩展声明 + 配置修订号」缓存 TEMP，三者任一变化才重编译。
      * 该指纹是廉价 O(n) 扫描（不构建 EffectiveRole），因此每帧查询仍有成本，
      * 但不再触发完整编译。</p>
      */
@@ -147,7 +141,9 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         }
         h = h * 31L + count;
         // MODIFY / ALIAS / 配置门控变化分别经这两条路径体现。
-        h = h * 31L + engine().getSnapshotVersion();
+        h = h * 31L + RoleExtensionRegistry.INSTANCE.getPatches().hashCode();
+        h = h * 31L + RoleExtensionRegistry.INSTANCE.getReplacements().hashCode();
+        h = h * 31L + RoleExtensionRegistry.INSTANCE.getAliases().hashCode();
         h = h * 31L + RoleExtensionConfigService.INSTANCE.revision();
         return h;
     }
@@ -218,25 +214,6 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
             }
             return RoleKey.of(repl.replacement().key().location());
         }
-        // Legacy (v1) replacement redirect. Pure lookups only: canonicalize()
-        // must never materialize a MODIFY overlay onto a live role — that is the
-        // runtime applier's job at snapshot activation. Resolving through
-        // SreRoleOverrideResolver.resolve() here would mutate the raw role as a
-        // side effect (applyModifies), making canonicalization impure and
-        // inconsistent with the snapshot compiler.
-        RoleOverrideEngine engine = engine();
-        SRERole directReplacement = engine.getReplacement(id);
-        if (directReplacement != null && directReplacement.identifier() != null) {
-            return RoleKey.of(directReplacement.identifier());
-        }
-        ResourceLocation targetId = engine.getManagedTargetId(id);
-        if (targetId != null) {
-            SRERole activeForTarget = engine.getReplacement(targetId);
-            if (activeForTarget != null && activeForTarget.identifier() != null) {
-                return RoleKey.of(activeForTarget.identifier());
-            }
-            return RoleKey.of(targetId);
-        }
         return RoleKey.of(id);
     }
 
@@ -269,7 +246,7 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
                 return viaCanonical;
             }
         }
-        SRERole resolved = SreRoleOverrideResolver.resolveStoredId(storedValue);
+        SRERole resolved = SreRoleResolver.resolveStoredId(storedValue, lookup);
         if (resolved == null || resolved.identifier() == null) {
             return Optional.empty();
         }
@@ -287,8 +264,7 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         if (frozen != null) {
             return frozen.isReplaced(key.location());
         }
-        return RoleExtensionRegistry.INSTANCE.isActiveReplaced(key.location())
-                || engine().isReplaced(key.location());
+        return RoleExtensionRegistry.INSTANCE.isActiveReplaced(key.location());
     }
 
     @Override
@@ -297,8 +273,7 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         if (frozen != null) {
             return frozen.find(key).map(er -> er.source() == EffectiveRole.Source.MODIFIED).orElse(false);
         }
-        return RoleExtensionRegistry.INSTANCE.isModified(key.location())
-                || engine().isModified(key.location());
+        return RoleExtensionRegistry.INSTANCE.isActiveModified(key.location());
     }
 
     @Override

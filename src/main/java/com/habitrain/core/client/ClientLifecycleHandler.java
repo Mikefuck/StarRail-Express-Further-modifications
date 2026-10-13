@@ -5,14 +5,11 @@ import com.habitrain.core.client.cache.ClientMapIntroCache;
 import com.habitrain.core.client.gui.MapVotePreviewCache;
 import com.habitrain.core.client.gui.OptionVoteState;
 import com.habitrain.core.client.gui.VoteLaunchSession;
-import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.ConfigUpdateContext;
 import com.habitrain.core.client.menu.MenuAccessGuard;
-import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.ConfigSaveSideEffects;
-import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 import io.wifi.starrailexpress.event.client.OnGameFinishedClient;
 import io.wifi.starrailexpress.event.client.OnGameStartedClient;
 import net.fabricmc.api.EnvType;
@@ -36,6 +33,7 @@ public class ClientLifecycleHandler {
         // 玩家加入服务器 → 清除上一局残留的 HUD 状态 + 报告当前光影包 + 启动监测
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             client.execute(() -> {
+                ConfigManager.getInstance().markClientConnected();
                 boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
                 // JOIN 不清 ESP 扫描表 / ActiveTask：服务端会发 snapshot，clear 会与其竞态，
                 // 并且单机上会把集成服刚扫好的共享 CustomTaskBlockCache 一并清掉。
@@ -50,6 +48,7 @@ public class ClientLifecycleHandler {
         // 玩家断开连接 → 停止光影监测 + 重置 HUD
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             shaderMonitor.stop();
+            ConfigManager.getInstance().clearClientSession();
             boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
             resetState(ClientSessionResetPolicy.clearEspCachesOnDisconnect(integratedHost),
                     ClientSessionResetPolicy.reloadLocalConfigOnDisconnect(integratedHost));
@@ -62,42 +61,9 @@ public class ClientLifecycleHandler {
             com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().tick(client);
         });
 
-        // 配置保存回调：修改后自动同步到服务端（仅 OP 会生效）
-        ConfigManager.setOnSaveCallback(() -> {
-            var mc = Minecraft.getInstance();
-            boolean hasConnection = mc.getConnection() != null;
-            boolean integratedHost = mc.getSingleplayerServer() != null;
-            var scope = ConfigUpdateContext.currentScope();
-            var effects = ConfigSaveSideEffects.afterLocalSave(
-                    hasConnection, integratedHost, MenuPermissions.canEditRemoteConfigs(scope));
-
-            if (effects.markColorDirty()) {
-                InstinctColorHelper.markDirty();
-            }
-            if (!hasConnection) return;
-
-            // Refresh local registry views, live role cards, and an open role book.
-            com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
-
-            if (effects.refreshIntegratedRoles() || effects.broadcastLan()) {
-                var server = mc.getSingleplayerServer();
-                if (server != null) {
-                    server.execute(() -> {
-                        com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
-                                .refreshServer(server);
-                        if (effects.broadcastLan()) {
-                            com.habitrain.core.network.FullConfigSyncPayload.broadcastToAll(server);
-                        }
-                    });
-                }
-            }
-            if (effects.sendC2S()) {
-                String configJson = ConfigManager.getInstance().toJsonString();
-                PayloadSenders.sendConfigUpdate(configJson, scope);
-            }
-        });
-
-                // 监听 SRE 游戏结束事件 → 交还结束转场（滑出）+ 立即隐藏 HUD + 刷新游戏运行缓存
+        // All connected saves use the server-authoritative submission service.
+        ConfigManager.setClientSaveHandler(com.habitrain.core.client.config.ClientConfigSubmission::submit);
+        // 监听 SRE 游戏结束事件 → 交还结束转场（滑出）+ 立即隐藏 HUD + 刷新游戏运行缓存
         // 必须先 markGameFinished() 再 resetState()：resetState() 只清开局转场覆盖层，
         // 结束转场的覆盖层必须保留到滑出完成（fade-block 持续屏蔽 SRE 黑场淡出）。
         OnGameFinishedClient.EVENT.register(() -> {
@@ -135,7 +101,9 @@ public class ClientLifecycleHandler {
         GameRunningCache.invalidate();
         ConfigUpdateContext.reset();
         RepairModeClientState.reset();
-        MenuAccessGuard.reset();
+        if (ClientSessionResetPolicy.clearConnectionState(matchFinished)) {
+            MenuAccessGuard.reset();
+        }
         OptionVoteState.clear();
         VoteLaunchSession.clear();
         com.habitrain.core.client.gui.MapResetProgressHud.reset();
@@ -153,12 +121,14 @@ public class ClientLifecycleHandler {
         com.habitrain.core.client.gui.VoteLaunchOverlayState.setActive(false);
         com.habitrain.core.client.gui.VoteLaunchOverlayState.scheduleGrace(0L);
         // 角色状态同步镜像与角色动作回调在断线/换世界时清空，防止陈旧数据泄漏到下一服务器。
-        com.habitrain.core.client.role.RoleStateClientCache.clear();
+        if (ClientSessionResetPolicy.clearConnectionState(matchFinished)) {
+            com.habitrain.core.client.role.RoleStateClientCache.clear();
+            com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
+            com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
+        }
         com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.clear();
         com.habitrain.core.client.role.RoleActionClientState.clear();
         // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。
-        com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
-        com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
         com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().reset();
         if (matchFinished) {
             com.habitrain.core.scene.client.SceneClientRuntime.onMatchFinished();

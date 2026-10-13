@@ -16,9 +16,10 @@ public class ConfigSync {
     public ConfigSync(ConfigStore store) {
     }
 
-    public void loadFromJsonString(ConfigRepository repo, String json) {
+    public boolean loadFromJsonString(ConfigRepository repo, String json) {
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            ConfigValidation.validate(root);
             RemovedModeConfigMigration.prune(root);
 
             Map<String, TaskConfigEntry> newTasks = new HashMap<>();
@@ -111,11 +112,6 @@ public class ConfigSync {
                 newEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
             }
 
-            RoleOverrideConfigSection newRoleOverrides = null;
-            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
-                newRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
-            }
-
             SceneMotionSettings newSceneMotion = SceneMotionSettings.createDefault();
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 newSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
@@ -138,12 +134,11 @@ public class ConfigSync {
             repo.setMinigameGlobalEnabled(newMgGlobal);
             repo.setModeMapVote(newModeMapVote);
             repo.setEnvironment(newEnv);
-            if (newRoleOverrides != null) {
-                repo.setRoleOverrides(newRoleOverrides);
-            }
             repo.setSceneMotion(newSceneMotion);
+            return true;
         } catch (Exception e) {
             LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
+            return false;
         }
     }
 
@@ -161,6 +156,7 @@ public class ConfigSync {
     public boolean mergeFromJsonString(ConfigRepository repo, String json) {
         try {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            ConfigValidation.validate(root);
             RemovedModeConfigMigration.prune(root);
 
             // ---- stage 1: parse into temps (no repo writes) ----
@@ -304,11 +300,6 @@ public class ConfigSync {
                 nextEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
             }
 
-            RoleOverrideConfigSection incomingRoleOverrides = null;
-            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
-                incomingRoleOverrides = RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides"));
-            }
-
             SceneMotionSettings incomingSceneMotion = null;
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 incomingSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
@@ -343,12 +334,6 @@ public class ConfigSync {
             }
             if (nextEnv != null) {
                 repo.setEnvironment(nextEnv);
-            }
-            if (incomingRoleOverrides != null) {
-                RoleOverrideConfigSection existing = repo.getRoleOverrides();
-                existing.setGlobalEnabled(incomingRoleOverrides.isGlobalEnabled());
-                existing.getEntries().putAll(incomingRoleOverrides.getEntries());
-                existing.getConflictResolution().putAll(incomingRoleOverrides.getConflictResolution());
             }
             if (incomingSceneMotion != null) {
                 SceneMotionSettings existing = repo.getSceneMotion();

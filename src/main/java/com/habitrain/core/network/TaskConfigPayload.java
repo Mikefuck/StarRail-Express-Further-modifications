@@ -21,6 +21,9 @@ import java.util.Map;
 /**
  * 任务配置同步网络包 - 用于服务端向客户端同步任务配置
  * 客户端需要知道哪些任务启用以正确渲染透视颜色等信息
+ * 旧协议继续支持读取，但不是当前主广播链；完整字段使用 FullConfigSyncPayload。
+ * 创建与编码必须在同一服务器线程，期间源 Map 与条目不得被修改。
+ * 浅拷贝只隔离 Map 容器，不保证并发安全，也不冻结 TaskConfigEntry。
  */
 public class TaskConfigPayload implements CustomPacketPayload {
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "task_config_sync");

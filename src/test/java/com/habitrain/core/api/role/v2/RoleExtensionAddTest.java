@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * here — the runtime {@code add()} path touches {@code TMMRoles} and
  * {@code FabricLoader}, which need a launched game. The added-id set is seeded
  * into {@link RoleExtensionRegistry} via reflection, mirroring how the other
- * catalog tests seed {@code RoleOverrideEngine.snapshot}.
+ * catalog tests use bootstrap-free v2 declaration fixtures.
  */
 class RoleExtensionAddTest {
 

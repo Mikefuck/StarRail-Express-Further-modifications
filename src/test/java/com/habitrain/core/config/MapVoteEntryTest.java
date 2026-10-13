@@ -1,5 +1,6 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.game.sre.config.SREIntegration;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

@@ -1,6 +1,6 @@
 package com.habitrain.core.api.role.v2.definition;
 
-import com.habitrain.core.api.role.book.RoleBookContent;
+import com.habitrain.core.api.role.v2.book.RoleBookContent;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.SRERole;

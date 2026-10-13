@@ -59,10 +59,9 @@ class ApiLayerDependencyGuardTest {
             "com.habitrain.core.CommandRegistrar",
             "com.habitrain.core.HabiTrainCore",
             "com.habitrain.core.LifecycleEventsRegistrar",
-            "com.habitrain.core.LootHelper",
+            "com.habitrain.core.LifecycleCleanup",
             "com.habitrain.core.ModTickHandler",
-            "com.habitrain.core.NetworkRegistrar",
-            "com.habitrain.core.VoiceGroupService"
+            "com.habitrain.core.NetworkRegistrar"
     );
 
     @Test

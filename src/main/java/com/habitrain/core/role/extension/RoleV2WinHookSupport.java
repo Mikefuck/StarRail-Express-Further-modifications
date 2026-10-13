@@ -1,7 +1,8 @@
 package com.habitrain.core.role.extension;
 
 import com.habitrain.core.api.WinResult;
-import com.habitrain.core.api.role.BlackoutWinCheckContext;
+import com.habitrain.core.api.role.v2.behavior.WinPatch;
+import com.habitrain.core.api.role.v2.behavior.RoleWinCheckContext;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.HabiTrainCore;
 import io.wifi.starrailexpress.api.SRERole;
@@ -31,6 +32,14 @@ public final class RoleV2WinHookSupport {
         return found == null ? null : found.result();
     }
 
+    /** Converts an active declarative v2 hook result into the shared victory fold input. */
+    public static WinPatch evaluateAsPatch(@Nullable ServerLevel level) {
+        V2WinCheck hit = checkWithRole(level);
+        if (hit == null) return WinPatch.noChange();
+        return WinPatch.declareCustom(hit.role().identifier().toString(),
+                hit.result().getWinners(), hit.result().getReason());
+    }
+
     /** Like {@link #check}, but also returns the role that produced the result. */
     public static @Nullable V2WinCheck checkWithRole(ServerLevel level) {
         if (level == null) {
@@ -48,7 +57,7 @@ public final class RoleV2WinHookSupport {
                 if (!hasAssignedRole(level, role.identifier())) {
                     continue;
                 }
-                BlackoutWinCheckContext ctx = new BlackoutWinCheckContext(
+                RoleWinCheckContext ctx = new RoleWinCheckContext(
                         level, role, true, false);
                 WinResult result = overlay.winConditionHook().check(ctx);
                 if (result != null) {

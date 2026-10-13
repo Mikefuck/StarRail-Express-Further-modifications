@@ -8,8 +8,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Maps a registered {@link RoleScope} to a concrete gate for broadcast events.
  *
- * <p>Per-player dispatches already resolved the relevant player's current role,
- * so they never consult this evaluator. Broadcasts (any-death, any-buy, meeting,
+ * <p>Per-player dispatches match named participants for HOLDER/KILLER/VICTIM/TARGET
+ * and use this evaluator for the other scopes. Broadcasts (any-death, any-buy, meeting,
  * game start/end, tick, win) iterate every registered role and skip entries whose
  * scope does not hold for the current round.
  *

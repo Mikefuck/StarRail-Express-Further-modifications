@@ -25,6 +25,12 @@ import java.util.Optional;
 public class ShaderMonitor {
 
     public ShaderMonitor() {
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(
+                com.habitrain.core.network.ShaderReportRequestPayload.TYPE, (payload, context) -> context.client().execute(() -> {
+                    String current = detectCurrentShaderPack();
+                    ClientStateHolder.lastSentShaderPack = current;
+                    PayloadSenders.sendShaderInfo(current, payload.ruleRevision());
+                }));
         // 客户端 tick 轮询：检测光影包切换（~30秒检查一次，反射检测昂贵）
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!ClientStateHolder.monitoringShaderPack) return;

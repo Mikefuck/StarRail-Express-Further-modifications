@@ -2,7 +2,7 @@
 
 > 面向对象：要给自己的 Mod 加"窗外会动的场景"的开发者、需要脚本化控制列车外景的服主。
 > 相关代码：公开层 `com.habitrain.core.api.scene`（值对象在 `api.scene.model` / `api.scene.asset` / `api.scene.compat` / `api.client.scene.compat`）；实现层 `com.habitrain.core.scene` 属于内部实现，**不要在编译期引用**。
-> 适用版本：`habitrain_core` 2.0.11 起（含 `SceneApi` v2 门面）。公开 API 语义版本 `2.1`（`CoreApi.apiVersion()`），可用 `CoreApi.supports("scene.instances")` 做能力判定。
+> 适用版本：`habitrain_core` 当前工作树（`SceneApi` v2 门面自 2.0.11 提供）。当前版本统一见 [版本来源与安装依赖](版本与安装依赖.md)，公开 API 语义版本 `2.2`（`CoreApi.apiVersion()`），可用 `CoreApi.supports("scene.instances")` 做能力判定。
 
 ---
 
@@ -504,6 +504,8 @@ api.addListener(new SceneListener() {
 ```
 
 - 回调都在**服务端主线程**（tick / 玩家事件）里同步触发，可以直接操作世界。
+- 维度迁移先完成目标维度解析与构造，再提交替换。失败保持旧实例、revision 与通知不变；成功保留已运动相位、暂停状态和剩余存活时长，再依次通知旧视图 `onInstanceRemoved(..., "dimension_changed")` 与新视图 `onInstanceUpdated(...)`。全局关闭期间也允许迁移已有实例，重新启用时可重新下发。
+- 受众或维度改变时，服务端向已收到旧镜像但不再可见的玩家发送 remove，再向新有效受众发送 manifest/upsert；声音、抖动与几何随客户端镜像撤销。
 - `onInstanceRemoved` 的 `reason` 取值只有四个：`despawn`（显式回收）、`expired`（存活期到）、`dimension_changed`（`setDimension` 迁到另一维度）、`reset`（全局清空 / 停服清理）。
   **没有 `replaced`**：同 ID 的 `spawn` / `upsert` 覆盖走 `onInstanceUpdated`，不会先触发移除（审核 S-01 / S-08 已更正）。
 - 单个监听器抛异常会被隔离（记日志），不会影响其它监听器与场景系统。

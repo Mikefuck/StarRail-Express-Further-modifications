@@ -1,5 +1,7 @@
 package com.habitrain.core.network;
 
+
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.HabiTrainCore;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -48,7 +50,7 @@ public record MapVoteStartConfirmedPayload(String mapId) implements CustomPacket
         if (level == null) return;
         MapVoteStartConfirmedPayload payload = new MapVoteStartConfirmedPayload(mapId);
         for (ServerPlayer player : level.players()) {
-            if (com.habitrain.core.game.sre.RepairModeManager.isRepairer(player)) {
+            if (com.habitrain.core.game.sre.mode.RepairModeManager.isRepairer(player)) {
                 continue;
             }
             ServerPlayNetworking.send(player, payload);

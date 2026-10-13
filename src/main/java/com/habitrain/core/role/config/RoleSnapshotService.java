@@ -124,9 +124,6 @@ public final class RoleSnapshotService {
     }
 
     private static String enabledSource(ManagedRoleEntry<?> entry) {
-        if (entry.legacy()) {
-            return "legacy";
-        }
         return switch (RoleExtensionConfigService.INSTANCE.gateFor(entry.providerId(), entry.entryId())) {
             case ENABLED -> "active";
             case GLOBAL_DISABLED -> "global";

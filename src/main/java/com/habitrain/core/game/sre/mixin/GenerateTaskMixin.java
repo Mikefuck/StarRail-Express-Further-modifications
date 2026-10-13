@@ -1,7 +1,13 @@
 package com.habitrain.core.game.sre.mixin;
 
+
+import com.habitrain.core.game.sre.mode.SREGameModeBase;
+import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
+import com.habitrain.core.game.sre.task.DlcTaskTracker;
+import com.habitrain.core.game.sre.task.SreTaskMirrors;
+import com.habitrain.core.game.sre.task.TaskSelector;
+import com.habitrain.core.game.sre.task.TaskWeightCalculator;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
-import com.habitrain.core.game.sre.*;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREPlayerMoodComponent;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
@@ -23,7 +29,7 @@ public abstract class GenerateTaskMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GenerateTaskMixin");
     /**
-     * 原版 SRE 任务 ID 清单 —— 直接派生自 {@link com.habitrain.core.game.sre.SreTaskMirrors}
+     * 原版 SRE 任务 ID 清单 —— 直接派生自 {@link com.habitrain.core.game.sre.task.SreTaskMirrors}
      * （单一真相表），不再手工维护。
      *
      * <p>它是<b>第二道防线</b>：主判据仍是
@@ -34,7 +40,7 @@ public abstract class GenerateTaskMixin {
      * （{@code outside} 曾漏列，出过这个事故）。
      */
     private static final Set<String> BUILTIN_SRE_TASK_IDS =
-            com.habitrain.core.game.sre.SreTaskMirrors.ids();
+            com.habitrain.core.game.sre.task.SreTaskMirrors.ids();
 
     @Shadow(remap = false) private Player player;
     @Shadow(remap = false) public Map<SREPlayerTaskComponent.Task, SREPlayerTaskComponent.TrainTask> tasks;

@@ -1,15 +1,15 @@
 # 哈比列车完整角色扩展 API v2 使用教程
 
-> 适用：HabiTrain Core 2.0.11、Role Extension API `2.0`、StarRailExpress 4.3.0、Minecraft 1.21.1、Fabric、Java 21
-> 公开 API 语义版本 `2.1`（`CoreApi.apiVersion()`），角色扩展 API 语义版本 `2.0`（`CoreApi.roleApiVersion()` / `RoleExtensionApi.apiVersion()`）
-> 状态：v2 为 preview / experimental；v1 `RoleOverrideApi` 仍是正式兼容 API
-> 最后更新：2026-09-20
+> 适用：HabiTrain Core 当前工作树、Role Extension API `2.0`、固定 StarRailExpress 4.3.0、Minecraft 1.21.1、Fabric、Java 21；[版本来源与安装依赖](版本与安装依赖.md)
+> 公开 API 语义版本 `2.2`（`CoreApi.apiVersion()`），角色扩展 API 语义版本 `2.0`（`CoreApi.roleApiVersion()` / `RoleExtensionApi.apiVersion()`）。2.0.11 依赖示例说明该门面的历史最低版本。
+> 状态：角色扩展统一使用 v2（preview / experimental）；旧角色覆盖接口和兼容桥已移除
+> 最后更新：2026-10-13
 
 本教程说明附属模组如何通过 HabiTrain Core 的完整角色扩展端口新增、修改、替换和迁移 SRE 角色，以及如何接入受管 hooks、状态、动作、客户端展示、语音/聊天、目录、转职、快照和诊断。
 
 ## 目录
 
-1. [选择 v1 或 v2](#1-选择-v1-或-v2)
+1. [选择角色操作](#1-选择角色操作)
 2. [依赖和两个 Fabric 入口](#2-依赖和两个-fabric-入口)
 3. [注册规则与 ID](#3-注册规则与-id)
 4. [ADD：新增角色](#4-add新增角色)
@@ -22,17 +22,16 @@
 11. [客户端扩展](#11-客户端扩展)
 12. [语音与聊天策略](#12-语音与聊天策略)
 13. [配置、快照、握手与诊断](#13-配置快照握手与诊断)
-14. [v1 迁移](#14-v1-迁移)
+14. [升级与包路径](#14-升级与包路径)
 15. [完整骨架](#15-完整骨架)
 16. [能力边界和验收](#16-能力边界和验收)
 
-## 1. 选择 v1 或 v2
+## 1. 选择角色操作
 
 | 需求 | 选择 |
 |---|---|
-| 稳定的单角色 REPLACE / MODIFY（兼容层，不弃用） | v1 `RoleOverrideApi` |
-| 新活体工作：名称、描述、商店、初始物品、胜负钩子、职业书 | 优先 v2 `RolePatch` / `RoleDefinition`（与 v1 字段等价） |
-| 保留原 ID、对象、CCA、上游事件与私有兼容路径 | MODIFY（v1 或 v2） |
+| 新活体工作：名称、描述、商店、初始物品、胜负钩子、职业书 | v2 `RolePatch` / `RoleDefinition` |
+| 保留原 ID、对象、CCA、上游事件与私有兼容路径 | v2 MODIFY |
 | 新增全新角色 | v2 ADD |
 | 多 provider 对同一字段有确定合并顺序 | v2 MODIFY |
 | 新 ID 完整重建角色，并隐藏旧角色 | v2 REPLACE |
@@ -41,7 +40,7 @@
 
 REPLACE 不保留原 Java 对象。只要上游代码依赖 `role == SOME_CONSTANT`、原 CCA component key、原类方法、原 HUD/职业书或现有事件处理器，就优先 MODIFY。
 
-不要让 v1 与 v2 同时修改同一角色的同一职责。迁移应按一个完整条目完成并双端验证。
+旧角色覆盖 API 已删除，不再提供注册、翻译、回退或二进制兼容桥。升级附属模组时按完整条目改写为 v2，并重新编译与双端验证。
 
 ## 2. 依赖和两个 Fabric 入口
 
@@ -298,7 +297,7 @@ registrar.modify(RolePatch.builder(civilian)
 
 ### 5.2 动态补丁
 
-v2 复用 v1 的动态 patch 接口：
+动态 patch 接口位于 `com.habitrain.core.api.role.v2.patch`：
 
 ```java
 .colorProvider((original, server) -> 0xFFFFAA00)
@@ -745,12 +744,10 @@ registrar.chat(RoleChatPolicy.of("example_mod", "plague_chat")
 对局中 v2 修改 → 新 pending snapshot
 本局 gameplay（hooks、受管 action、HUD/直觉/皮肤）继续使用 round snapshot
 下一局边界 → pending 提升为 lobby 并激活
-v1 flags/spawn/shop live 写入 → RoleOverrideTickApplier 在 round start 冻结（NEXT_ROUND）
 ```
 
 Mod Menu 与 `/habitrain roleapi snapshot` 诊断可以同时显示 pending 与 live。禁用 provider 后，本局玩家不会被 v2 目录/hooks 中途替换；这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
 
-v1 flags/spawn/shop 的 live 写入由内部实现类 `RoleOverrideTickApplier` 在 round start 冻结（NEXT_ROUND），局中 rebuild 不会立刻改当前对局。同一 `RoleKey` 同时挂 v1 与 v2 MODIFY/REPLACE 时，Engine 将 v1 标 CONFLICT 并跳过。v1 API 本身不弃用。
 
 ### 13.2 握手
 
@@ -789,23 +786,24 @@ v1 flags/spawn/shop 的 live 写入由内部实现类 `RoleOverrideTickApplier` 
 /habitrain roleapi config winner <target#field> <entryId>
 ```
 
-## 14. v1 迁移
+## 14. 升级与包路径
 
-| v1 `ModifyRoleDefinition` | v2 `RolePatch` |
+角色覆盖 API v1 已完整移除：旧注册接口、定义、运行引擎、动态技能注册器、v1/v2 翻译与冲突桥、配置段和 Mod Menu “角色覆盖”页面均不再存在，也没有转发壳。
+
+角色声明通过 `habitrain:role_extensions` 的 provider registrar 注册。修改使用 `RolePatch`，替换使用 `RoleReplacement`；技能使用 `RoleSkillPatch` 或受管 hooks。职业书页面、名称、物品、商店和胜利回调仍由 v2 支持。
+
+以下类型现归属 v2：
+
+| 类型 | 当前包 |
 |---|---|
-| `namePatch` | `namePatch` |
-| `colorPatch` | `colorProvider` 或静态 `color` |
-| `descriptionPatch` / `simpleDescriptionPatch` | 同名方法 |
-| `defaultItemsPatch` | 同名方法 |
-| `shopPatch` / `shopTransform` | 同名方法 |
-| `flagsPatch` / `spawnInfoPatch` | 同名动态方法，或字段级 Boolean/Int patch |
-| `managedSkillPatch` | `RoleSkillPatch` |
-| `roleBookAppendix/Appendices` | `RoleBookPatch.append` |
-| `winConditionHook` | 同名方法，或 `RoleWinHooks` |
+| `RoleBookContent` / `RoleBookPage` | `com.habitrain.core.api.role.v2.book` |
+| `NamePatch` / `ColorPatch` / `RoleTextPatch` / `DefaultItemsPatch` | `com.habitrain.core.api.role.v2.patch` |
+| `ShopPatch` / `ShopTransform` / `FlagsPatch` / `SpawnInfoPatch` / `WinConditionHook` | `com.habitrain.core.api.role.v2.patch` |
+| `RoleWinCheckContext` | `com.habitrain.core.api.role.v2.behavior` |
 
-v1 REPLACE 的新 ID 语义接近 v2 `NEW_ID_WITH_ALIAS`，但迁移时仍要重新审查 exact-ID / exact-object / CCA / HUD / 书页 / 命令依赖。
+使用旧类型包的 v2 附属模组也需要更新 import 并重新编译；旧胜利上下文改名为 `RoleWinCheckContext`。客户端和服务端应一起更新 Core 和附属模组。
 
-不要把弃用的 v1 `skillRegistrar` 翻译成永久事件注册；应改成 v2 skill patch 或受管 hooks。
+主配置里的 `roleOverrides` 段被忽略，保存和网络同步不再输出此段。v2 继续使用 `config/habitrain_role_v2.json`，不会从旧段自动迁移开关或冲突裁决。
 
 ## 15. 完整骨架
 
@@ -885,7 +883,6 @@ public final class ExampleRoleProvider implements RoleExtensionEntrypoint {
 
 | 能力 | 状态 |
 |---|---|
-| v1 REPLACE/MODIFY | 正式兼容 |
 | v2 ADD/MODIFY/REPLACE/ALIAS、catalog/change、hooks/state/action | preview / experimental，代码已接入 |
 | HUD TEXT/BADGE | stock client 可消费 |
 | HUD ICON/PROGRESS/COOLDOWN/CHARGE | 文本 fallback；完整视觉需自绘 widget |
@@ -910,7 +907,7 @@ public final class ExampleRoleProvider implements RoleExtensionEntrypoint {
 8. 每种 hook 在正确 scope 触发，disabled/pending 时不越界。
 9. 状态 reset、重连全量同步、删除同步、换维度/观战跟踪符合策略。
 10. Action 测试 wrong role、dead、rate、cooldown、oversize、replay、target、range、LOS、timeout、disconnect 和 handshake。
-11. 对局中改 v2 配置只生成 pending，本局 hooks/action/HUD 仍用 round snapshot；v1 flags/spawn/shop 由 TickApplier 冻结。不要写成覆盖全部 API 的「绝不破坏当前对局」。
+11. 对局中改 v2 配置只生成 pending，本局 hooks/action/HUD 仍用 round snapshot。不要写成覆盖全部 API 的「绝不破坏当前对局」。
 12. 客户端缺资源/扩展时按 `requiresClient()` 设计 fail-closed 或降级。
 
 遇到问题先看 `list invalid/conflict`，再用 `inspect` 和 `trace`，最后核对真实目标 ID、provider namespace、entryKey、快照状态和客户端握手。

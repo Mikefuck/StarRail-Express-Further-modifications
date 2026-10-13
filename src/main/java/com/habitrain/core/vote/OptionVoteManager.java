@@ -2,7 +2,7 @@ package com.habitrain.core.vote;
 
 import com.habitrain.core.api.VoteOption;
 import com.habitrain.core.api.VoteResult;
-import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.network.MapVoteProfilePayload;
 import com.habitrain.core.network.OptionVotePayload;
 import io.wifi.starrailexpress.cca.ParticipationComponent;

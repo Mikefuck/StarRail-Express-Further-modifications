@@ -1,9 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,13 +25,6 @@ public class SRERoleDescriptionMixin {
                     "v2 descriptionPatch returned null"));
             return;
         }
-        ModifyRoleDefinition definition = active(role);
-        if (definition == null || definition.descriptionPatch().isEmpty()) {
-            return;
-        }
-        cir.setReturnValue(Objects.requireNonNull(
-                definition.descriptionPatch().get().apply(role, cir.getReturnValue()),
-                "descriptionPatch returned null"));
     }
 
     @Inject(method = "getSimpleDescription", at = @At("RETURN"), cancellable = true)
@@ -46,13 +37,6 @@ public class SRERoleDescriptionMixin {
                     "v2 simpleDescriptionPatch returned null"));
             return;
         }
-        ModifyRoleDefinition definition = active(role);
-        if (definition == null || definition.simpleDescriptionPatch().isEmpty()) {
-            return;
-        }
-        cir.setReturnValue(Objects.requireNonNull(
-                definition.simpleDescriptionPatch().get().apply(role, cir.getReturnValue()),
-                "simpleDescriptionPatch returned null"));
     }
 
     @Inject(method = "hasSimpleDescription", at = @At("RETURN"), cancellable = true)
@@ -63,15 +47,6 @@ public class SRERoleDescriptionMixin {
             cir.setReturnValue(true);
             return;
         }
-        ModifyRoleDefinition definition = active(role);
-        if (definition != null && definition.simpleDescriptionPatch().isPresent()) {
-            cir.setReturnValue(true);
-        }
     }
 
-    private static ModifyRoleDefinition active(SRERole role) {
-        return role.identifier() == null
-                ? null
-                : RoleOverrideEngine.getInstance().getGameplayModify(role.identifier());
-    }
 }

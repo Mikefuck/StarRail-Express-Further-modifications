@@ -16,14 +16,15 @@ import net.minecraft.resources.ResourceLocation;
  * 发送到服务端，由服务端（在 OP 校验通过后）应用并广播。
  *
  * 包体格式：
- * - configJson (String): ConfigManager 的完整 JSON 配置
- *   包含 "global" 和 "tasks" 两个部分，与配置文件格式相同。
+ * - configJson (String): protocol=1、requestId、baseRevision、patch(set/remove)
+ * - scope: FULL_MOD_MENU / BACKPACK_TASKS / BACKPACK_MAP_VOTE / ADMIN_SCENE_TOOL
+ * UTF-8 字节预算为 30000，含 JSON 元数据，给底层 C2S 包头留余量。
  *
- * 背包入口范围作为 JSON 元数据携带，保持本包的二进制格式与旧版兼容；服务端仍会
+ * 背包入口范围作为 JSON 元数据携带；旧版完整配置提交会被明确拒绝。服务端仍会
  * 独立校验 OP2 和 Mod Menu 授权名单，客户端声明不能扩大权限。
  */
 public class ConfigUpdatePayload implements CustomPacketPayload {
-    private static final int MAX_JSON_LENGTH = 262144;
+    public static final int MAX_JSON_LENGTH = com.habitrain.core.config.ConfigPatch.MAX_BYTES;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "config_update");
     public static final CustomPacketPayload.Type<ConfigUpdatePayload> TYPE =

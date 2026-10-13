@@ -146,7 +146,6 @@ public class InGameMinigamesPage implements ConfigPage {
                 if (cfg == null) cfg = MinigameConfigEntry.createDefault();
                 cfg.enabled = !cfg.enabled;
                 ConfigManager.getInstance().setMinigameConfig(hit.mg().id(), cfg);
-                ConfigManager.getInstance().applyMinigameEnforcement(Minecraft.getInstance().getSingleplayerServer());
                 return true;
             }
             if (PillToggle.hit(mx, my, hit.editX(), hit.editY(), hit.editW(), hit.editH())) {

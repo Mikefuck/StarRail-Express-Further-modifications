@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import net.exmo.sre.repair.logic.RepairRoleSelection;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;

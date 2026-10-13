@@ -1,9 +1,11 @@
 package com.habitrain.core.client;
 
+
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 /**
  * Decides which client session caches may be wiped at JOIN / DISCONNECT / game end.
  *
- * <p>{@link com.habitrain.core.game.sre.CustomTaskBlockCache} is a static table shared
+ * <p>{@link com.habitrain.core.game.sre.task.CustomTaskBlockCache} is a static table shared
  * with the integrated server. Clearing it on JOIN races the scan snapshot and deletes
  * ESP indexes for the host.
  */
@@ -21,6 +23,11 @@ public final class ClientSessionResetPolicy {
 
     public static boolean clearEspCachesOnGameFinished() {
         return true;
+    }
+
+    /** Menu permissions, role mirrors and handshake belong to the connection, not a round. */
+    public static boolean clearConnectionState(boolean matchFinished) {
+        return !matchFinished;
     }
 
     /** Dedicated clients must restore {@code habitrain_core.json} after a server sync. */

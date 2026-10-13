@@ -18,8 +18,6 @@ import com.habitrain.core.role.extension.RoleConflictAnalyzer;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.role.extension.RoleOperation;
-import com.habitrain.core.role.override.EffectiveSnapshot;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotCompiler;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.NormalRole;
@@ -59,7 +57,6 @@ class RoleConfigFilteringTest {
     void reset() throws Exception {
         RoleExtensionConfigService.INSTANCE.resetForTests();
         RoleSnapshotManager.INSTANCE.clear();
-        setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "compiledReplacements", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "patches", new ArrayList<>());
@@ -165,7 +162,7 @@ class RoleConfigFilteringTest {
         assertTrue(RoleExtensionRegistry.INSTANCE.configuredPatchesFor(TARGET).isEmpty(),
                 "an unresolved v2-v2 scalar SET conflict must not be silently ordered");
 
-        List<ManagedRoleEntry<?>> entries = RoleConflictAnalyzer.analyze(List.of(), List.of());
+        List<ManagedRoleEntry<?>> entries = RoleConflictAnalyzer.analyze();
         assertEquals(2, entries.stream()
                 .filter(e -> e.operation() == RoleOperation.MODIFY
                         && e.status() == EntryStatus.CONFLICT)
@@ -185,7 +182,7 @@ class RoleConfigFilteringTest {
                 "sre:vigilante#spawn.defaultMax", ENTRY_BUFF);
 
         assertEquals(2, RoleExtensionRegistry.INSTANCE.configuredPatchesFor(TARGET).size());
-        assertTrue(RoleConflictAnalyzer.analyze(List.of(), List.of()).stream()
+        assertTrue(RoleConflictAnalyzer.analyze().stream()
                 .filter(e -> e.operation() == RoleOperation.MODIFY)
                 .allMatch(e -> e.status() == EntryStatus.ACTIVE));
     }
@@ -347,12 +344,6 @@ class RoleConfigFilteringTest {
                 .compatibility(RoleCompatibilityProfile.builder().build())
                 .maxSprintTime(20)
                 .build();
-    }
-
-    private static void setSnapshot(EffectiveSnapshot snap) throws Exception {
-        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
-        field.setAccessible(true);
-        field.set(RoleOverrideEngine.getInstance(), snap);
     }
 
     private static void setField(Class<?> clazz, Object target, String name, Object value) throws Exception {

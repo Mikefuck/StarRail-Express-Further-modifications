@@ -52,6 +52,7 @@ public class MinigameConfigEntry {
     }
 
     public static MinigameConfigEntry fromJson(JsonObject json) {
+        ConfigValidation.validateTask(json);
         MinigameConfigEntry entry = new MinigameConfigEntry();
         if (json.has("enabled")) entry.enabled = json.get("enabled").getAsBoolean();
         if (json.has("enabledMaps")) {

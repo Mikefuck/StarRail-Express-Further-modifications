@@ -77,6 +77,11 @@ public final class RoleHookRegistry {
                 this.hooks.computeIfAbsent(role, k -> new LinkedHashMap<>());
         for (DecomposedHook d : decompose(hooks)) {
             for (HookType type : d.types) {
+                if (!type.supportsScope(scope == null ? RoleScope.HOLDER : scope)) {
+                    LOGGER.warn("Unsupported role hook scope: provider={} entry={} role={} hook={} scope={}; omitted",
+                            providerId, entryId, role, type, scope);
+                    continue;
+                }
                 List<ManagedHookEntry> list = byType.computeIfAbsent(type, k -> new ArrayList<>());
                 ManagedHookEntry entry = new ManagedHookEntry(
                         providerId, entryId, role, scope, priority, type, d.callback);

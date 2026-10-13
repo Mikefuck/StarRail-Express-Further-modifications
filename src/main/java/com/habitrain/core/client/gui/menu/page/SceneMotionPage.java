@@ -32,6 +32,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+import static com.habitrain.core.client.gui.menu.page.SceneMotionPageLayout.*;
+
 /**
  * 移动场景配置页面（位于游戏内二级导航），支持多地图场景参数、循环参数、音效、微震与实时预览/资产构建。
  */
@@ -43,29 +45,6 @@ public class SceneMotionPage implements ConfigPage {
     private static final int PAGE_PADDING = 8;
     private static final int NARROW_WIDTH = 430;
 
-    private static final DirectionPreset[] DIRECTION_PRESETS = {
-            new DirectionPreset("+X", 1.0, 0.0, 0.0),
-            new DirectionPreset("-X", -1.0, 0.0, 0.0),
-            new DirectionPreset("+Y", 0.0, 1.0, 0.0),
-            new DirectionPreset("-Y", 0.0, -1.0, 0.0),
-            new DirectionPreset("+Z", 0.0, 0.0, 1.0),
-            new DirectionPreset("-Z", 0.0, 0.0, -1.0)
-    };
-
-    private record OrbitDirPreset(String labelKey, double angle) {}
-    private static final OrbitDirPreset[] ORBIT_DIR_PRESETS = {
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_n", 0.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_ne", 45.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_e", 90.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_se", 135.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_s", 180.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_sw", 225.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_w", 270.0),
-            new OrbitDirPreset("screen.habitrain_core.scene_motion.orbit_dir_nw", 315.0),
-    };
-
-    private static final double[] ORBIT_SWEEP_PRESETS = {0.0, 90.0, 180.0, 270.0, 360.0};
-
     private static final Map<String, String> LAST_SELECTED_BACKGROUND_PER_MAP = new java.util.concurrent.ConcurrentHashMap<>();
     private static volatile String lastSelectedMapKey = null;
 
@@ -74,14 +53,11 @@ public class SceneMotionPage implements ConfigPage {
     private final boolean editable;
     private final SceneMapDropdown mapDropdown;
     private final SceneMapDropdown backgroundDropdown;
+    private final SceneMotionEditorState editorState = new SceneMotionEditorState();
 
     private String selectedMapKey = "__default__";
     private String runtimeMapKey = "";
     private String selectionMapKey = "";
-    private final Map<String, SceneProfileDraft> drafts = new LinkedHashMap<>();
-    private final Map<String, LinkedHashMap<String, SceneProfileDraft>> backgroundDrafts = new LinkedHashMap<>();
-    private final Map<String, LinkedHashMap<String, String>> backgroundNames = new LinkedHashMap<>();
-    private final Set<String> pendingDeletedAssetKeys = new LinkedHashSet<>();
     private String selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
 
     private final ScrollArea scroll = new ScrollArea(0, 0, 100, 100);
@@ -179,26 +155,14 @@ public class SceneMotionPage implements ConfigPage {
     /** -1 none, 0 interval source, 1 slider, 2 copy-recommendation action. */
     private int loopKeyboardFocus = -1;
 
-    private record DirectionPreset(String label, double x, double y, double z) {}
-
-    private record TooltipTarget(HitBox bounds, Component text) {}
-
-    private record HitBox(int x, int y, int width, int height) {
-        private static final HitBox EMPTY = new HitBox(0, 0, 0, 0);
-
-        boolean contains(double mx, double my) {
-            return width > 0 && height > 0 && MenuTheme.inBounds(mx, my, x, y, width, height);
-        }
-    }
-
     public SceneMotionPage(ConfigMenuScreen root, Font font, boolean editable) {
         this.root = root;
         this.font = font;
         this.editable = editable;
         this.mapDropdown = new SceneMapDropdown(font, this::selectMap);
         this.backgroundDropdown = new SceneMapDropdown(font, this::selectBackground, "background");
-        loadDraftsFromConfig();
-        if (lastSelectedMapKey != null && drafts.containsKey(lastSelectedMapKey)) {
+        editorState.loadFromConfig();
+        if (lastSelectedMapKey != null && editorState.drafts().containsKey(lastSelectedMapKey)) {
             this.selectedMapKey = lastSelectedMapKey;
         }
         String rememberedBg = LAST_SELECTED_BACKGROUND_PER_MAP.get(this.selectedMapKey);
@@ -223,9 +187,9 @@ public class SceneMotionPage implements ConfigPage {
         this.selectionMapKey = selectionMapKey == null ? "" : selectionMapKey.trim();
         if (profile != null) {
             if (SceneBackgroundKey.isDefault(sessionBackgroundId)) {
-                drafts.put(selectedMapKey, new SceneProfileDraft(profile));
+                editorState.drafts().put(selectedMapKey, new SceneProfileDraft(profile));
             } else {
-                backgroundDrafts.computeIfAbsent(selectedMapKey, k -> new LinkedHashMap<>())
+                editorState.backgroundDrafts().computeIfAbsent(selectedMapKey, k -> new LinkedHashMap<>())
                         .put(sessionBackgroundId, new SceneProfileDraft(profile));
             }
         }
@@ -267,51 +231,16 @@ public class SceneMotionPage implements ConfigPage {
         lastSelectedMapKey = normalizedMap;
     }
 
-    private void loadDraftsFromConfig() {
-        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        drafts.clear();
-        backgroundDrafts.clear();
-        backgroundNames.clear();
-        for (Map.Entry<String, SceneProfile> entry : settings.profiles.entrySet()) {
-            drafts.put(entry.getKey(), new SceneProfileDraft(entry.getValue()));
-        }
-        for (Map.Entry<String, LinkedHashMap<String, SceneBackgroundConfig>> mapEntry
-                : settings.backgrounds.entrySet()) {
-            LinkedHashMap<String, SceneProfileDraft> mapDrafts = new LinkedHashMap<>();
-            LinkedHashMap<String, String> mapNames = new LinkedHashMap<>();
-            mapEntry.getValue().forEach((id, config) -> {
-                mapDrafts.put(id, new SceneProfileDraft(config.getProfile()));
-                mapNames.put(id, config.getName());
-            });
-            backgroundDrafts.put(mapEntry.getKey(), mapDrafts);
-            backgroundNames.put(mapEntry.getKey(), mapNames);
-        }
-        if (!drafts.containsKey("__default__")) {
-            drafts.put("__default__", new SceneProfileDraft(settings.getProfile("__default__")));
-        }
-        drafts.putIfAbsent(SceneMotionSettings.LOBBY_MAP_KEY,
-                new SceneProfileDraft(settings.getProfile(SceneMotionSettings.LOBBY_MAP_KEY)));
-        // The vote configuration is the authoritative list of selectable SRE maps in Mod Menu.
-        // Seed a draft for every voted map so admins can configure it before any scene asset exists.
-        SceneProfile defaultProfile = settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
-        for (String mapId : ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet()) {
-            if (mapId != null && !mapId.isBlank()) {
-                drafts.computeIfAbsent(mapId,
-                        key -> new SceneProfileDraft(defaultProfile.copyForNewProfile()));
-            }
-        }
-    }
-
     private SceneProfileDraft getCurrentDraft() {
         if (SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)) {
-            return drafts.computeIfAbsent(selectedMapKey, k -> new SceneProfileDraft());
+            return editorState.drafts().computeIfAbsent(selectedMapKey, k -> new SceneProfileDraft());
         }
-        return backgroundDrafts.computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
+        return editorState.backgroundDrafts().computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
                 .computeIfAbsent(selectedBackgroundId, ignored -> new SceneProfileDraft());
     }
 
     private SceneProfileDraft getSharedDraft() {
-        return drafts.computeIfAbsent(selectedMapKey, ignored -> new SceneProfileDraft());
+        return editorState.drafts().computeIfAbsent(selectedMapKey, ignored -> new SceneProfileDraft());
     }
 
     private String currentAssetKey() {
@@ -323,7 +252,7 @@ public class SceneMotionPage implements ConfigPage {
         keys.add(SceneMotionSettings.DEFAULT_MAP_KEY);
         keys.add(SceneMotionSettings.LOBBY_MAP_KEY);
         keys.addAll(ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
-        keys.addAll(drafts.keySet());
+        keys.addAll(editorState.drafts().keySet());
         keys.removeIf(key -> key == null || key.isBlank());
         return new ArrayList<>(keys);
     }
@@ -351,7 +280,7 @@ public class SceneMotionPage implements ConfigPage {
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        drafts.computeIfAbsent(selectedMapKey,
+        editorState.drafts().computeIfAbsent(selectedMapKey,
                 key -> new SceneProfileDraft(settings.getProfile(
                         SceneMotionSettings.DEFAULT_MAP_KEY).copyForNewProfile()));
         populateFieldsFromDraft();
@@ -379,7 +308,7 @@ public class SceneMotionPage implements ConfigPage {
     private List<String> availableBackgroundIds() {
         List<String> ids = new ArrayList<>();
         ids.add(SceneBackgroundKey.DEFAULT_ID);
-        ids.addAll(backgroundDrafts.getOrDefault(selectedMapKey, new LinkedHashMap<>()).keySet());
+        ids.addAll(editorState.backgroundDrafts().getOrDefault(selectedMapKey, new LinkedHashMap<>()).keySet());
         return ids;
     }
 
@@ -387,11 +316,11 @@ public class SceneMotionPage implements ConfigPage {
         List<SceneMapDropdownModel.Entry> entries = new ArrayList<>();
         for (String id : availableBackgroundIds()) {
             SceneProfileDraft draft = SceneBackgroundKey.DEFAULT_ID.equals(id)
-                    ? drafts.get(selectedMapKey)
-                    : backgroundDrafts.getOrDefault(selectedMapKey, new LinkedHashMap<>()).get(id);
+                    ? editorState.drafts().get(selectedMapKey)
+                    : editorState.backgroundDrafts().getOrDefault(selectedMapKey, new LinkedHashMap<>()).get(id);
             String name = SceneBackgroundKey.DEFAULT_ID.equals(id)
                     ? tr("screen.habitrain_core.scene_motion.background_default")
-                    : backgroundNames.getOrDefault(selectedMapKey, new LinkedHashMap<>()).getOrDefault(id, id);
+                    : editorState.backgroundNames().getOrDefault(selectedMapKey, new LinkedHashMap<>()).getOrDefault(id, id);
             entries.add(new SceneMapDropdownModel.Entry(id, name,
                     draft != null && draft.isEnabled(), false, id.equals(selectedBackgroundId)));
         }
@@ -402,7 +331,7 @@ public class SceneMotionPage implements ConfigPage {
         if (!editable || availableBackgroundIds().size() >= SceneMotionSettings.MAX_BACKGROUNDS_PER_MAP) return;
         flushPending();
         LinkedHashMap<String, SceneProfileDraft> mapDrafts =
-                backgroundDrafts.computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>());
+                editorState.backgroundDrafts().computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>());
         int suffix = 1;
         String id;
         do id = "background_" + suffix++; while (mapDrafts.containsKey(id));
@@ -410,7 +339,7 @@ public class SceneMotionPage implements ConfigPage {
         template.setEnabled(false);
         template.setSourceBounds(SceneBounds.EMPTY);
         mapDrafts.put(id, new SceneProfileDraft(template));
-        backgroundNames.computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
+        editorState.backgroundNames().computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
                 .put(id, tr("screen.habitrain_core.scene_motion.background_new", availableBackgroundIds().size() + 1));
         selectedBackgroundId = id;
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
@@ -424,11 +353,11 @@ public class SceneMotionPage implements ConfigPage {
         if (SceneRenderRuntime.getInstance().isPreviewActiveFor(currentAssetKey())) {
             com.habitrain.core.scene.client.SceneClientRuntime.stopPreview();
         }
-        LinkedHashMap<String, SceneProfileDraft> mapDrafts = backgroundDrafts.get(selectedMapKey);
-        LinkedHashMap<String, String> mapNames = backgroundNames.get(selectedMapKey);
+        LinkedHashMap<String, SceneProfileDraft> mapDrafts = editorState.backgroundDrafts().get(selectedMapKey);
+        LinkedHashMap<String, String> mapNames = editorState.backgroundNames().get(selectedMapKey);
         if (mapDrafts != null) mapDrafts.remove(selectedBackgroundId);
         if (mapNames != null) mapNames.remove(selectedBackgroundId);
-        pendingDeletedAssetKeys.add(deletedAssetKey);
+        editorState.pendingDeletedAssetKeys().add(deletedAssetKey);
         selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
@@ -439,7 +368,7 @@ public class SceneMotionPage implements ConfigPage {
         com.habitrain.core.client.gui.menu.ConfigUpdateContext.setCurrentSceneMapKey(mapKey);
         String bgName = SceneBackgroundKey.DEFAULT_ID.equals(backgroundId)
                 ? tr("screen.habitrain_core.scene_motion.background_default")
-                : backgroundNames.getOrDefault(mapKey, new LinkedHashMap<>()).getOrDefault(backgroundId, backgroundId);
+                : editorState.backgroundNames().getOrDefault(mapKey, new LinkedHashMap<>()).getOrDefault(backgroundId, backgroundId);
         com.habitrain.core.scene.client.SceneToolHud.getInstance().updateSelectionTarget(mapKey, backgroundId, bgName);
         if (ClientPlayNetworking.canSend(com.habitrain.core.scene.network.SceneToolMapSelectC2S.TYPE)) {
             ClientPlayNetworking.send(new com.habitrain.core.scene.network.SceneToolMapSelectC2S(mapKey, backgroundId));
@@ -464,7 +393,7 @@ public class SceneMotionPage implements ConfigPage {
     private List<SceneMapDropdownModel.Entry> mapDropdownEntries() {
         List<SceneMapDropdownModel.Entry> entries = new ArrayList<>();
         for (String key : availableMapKeys()) {
-            SceneProfileDraft draft = drafts.get(key);
+            SceneProfileDraft draft = editorState.drafts().get(key);
             entries.add(new SceneMapDropdownModel.Entry(
                     key,
                     mapLabel(key),
@@ -539,10 +468,10 @@ public class SceneMotionPage implements ConfigPage {
             field.setEditable(editable);
             if (field != soundIdField) {
                 field.setMaxLength(32);
-                field.setFilter(SceneMotionPage::isPotentialDecimal);
+                field.setFilter(SceneMotionFieldParser::isPotentialDecimal);
             }
         }
-        orbitInstanceCountField.setFilter(SceneMotionPage::isPotentialInteger);
+        orbitInstanceCountField.setFilter(SceneMotionFieldParser::isPotentialInteger);
 
         populateFieldsFromDraft();
         widgetsInitialized = true;
@@ -553,20 +482,12 @@ public class SceneMotionPage implements ConfigPage {
                 Component.translatable("screen.habitrain_core.scene_motion." + suffix));
     }
 
-    private static boolean isPotentialDecimal(String value) {
-        return value == null || value.isEmpty() || value.matches("[-+]?((\\d+(\\.\\d*)?)|(\\.\\d*))?");
-    }
-
-    private static boolean isPotentialInteger(String value) {
-        return value == null || value.isEmpty() || value.matches("[+]?\\d*");
-    }
-
     private void populateFieldsFromDraft() {
         SceneProfileDraft d = getCurrentDraft();
         if (backgroundNameField != null) {
             String name = SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)
                     ? tr("screen.habitrain_core.scene_motion.background_default")
-                    : backgroundNames.getOrDefault(selectedMapKey, new LinkedHashMap<>())
+                    : editorState.backgroundNames().getOrDefault(selectedMapKey, new LinkedHashMap<>())
                     .getOrDefault(selectedBackgroundId, selectedBackgroundId);
             backgroundNameField.setValue(name);
             backgroundNameField.setEditable(editable && !SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId));
@@ -641,38 +562,38 @@ public class SceneMotionPage implements ConfigPage {
         if (!widgetsInitialized) return;
         SceneProfileDraft d = getCurrentDraft();
         if (!SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)) {
-            backgroundNames.computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
+            editorState.backgroundNames().computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
                     .put(selectedBackgroundId, backgroundNameField.getValue());
         }
         d.setEnabled(enabledState);
-        d.setSpeedBlocksPerSecond(parseDouble(speedField.getValue(), d.getSpeedBlocksPerSecond()));
+        d.setSpeedBlocksPerSecond(SceneMotionFieldParser.parseDouble(speedField.getValue(), d.getSpeedBlocksPerSecond()));
 
         double[] previousDirection = d.getDirection();
         d.setDirection(
-                parseDouble(dirXField.getValue(), previousDirection[0]),
-                parseDouble(dirYField.getValue(), previousDirection[1]),
-                parseDouble(dirZField.getValue(), previousDirection[2])
+                SceneMotionFieldParser.parseDouble(dirXField.getValue(), previousDirection[0]),
+                SceneMotionFieldParser.parseDouble(dirYField.getValue(), previousDirection[1]),
+                SceneMotionFieldParser.parseDouble(dirZField.getValue(), previousDirection[2])
         );
 
         d.setDisplayOrigin(
-                parseDouble(originXField.getValue(), 0.0),
-                parseDouble(originYField.getValue(), 64.0),
-                parseDouble(originZField.getValue(), 0.0)
+                SceneMotionFieldParser.parseDouble(originXField.getValue(), 0.0),
+                SceneMotionFieldParser.parseDouble(originYField.getValue(), 64.0),
+                SceneMotionFieldParser.parseDouble(originZField.getValue(), 0.0)
         );
 
         d.setPivotLocal(
-                parseDouble(pivotXField.getValue(), 0.0),
-                parseDouble(pivotYField.getValue(), 0.0),
-                parseDouble(pivotZField.getValue(), 0.0)
+                SceneMotionFieldParser.parseDouble(pivotXField.getValue(), 0.0),
+                SceneMotionFieldParser.parseDouble(pivotYField.getValue(), 0.0),
+                SceneMotionFieldParser.parseDouble(pivotZField.getValue(), 0.0)
         );
 
         d.setRotationDegrees(new SceneRotation(
-                (float) parseDouble(rotYawField.getValue(), 0.0),
-                (float) parseDouble(rotPitchField.getValue(), 0.0),
-                (float) parseDouble(rotRollField.getValue(), 0.0)
+                (float) SceneMotionFieldParser.parseDouble(rotYawField.getValue(), 0.0),
+                (float) SceneMotionFieldParser.parseDouble(rotPitchField.getValue(), 0.0),
+                (float) SceneMotionFieldParser.parseDouble(rotRollField.getValue(), 0.0)
         ));
 
-        d.setPhaseOffsetBlocks(parseDouble(phaseOffsetField.getValue(), 0.0));
+        d.setPhaseOffsetBlocks(SceneMotionFieldParser.parseDouble(phaseOffsetField.getValue(), 0.0));
 
         SceneProfileValidator.LoopDistanceValidation loopValidation = loopDistanceValidation();
         if (loopValidation.isValid()) {
@@ -687,25 +608,25 @@ public class SceneMotionPage implements ConfigPage {
         orbit.setClockwise(orbitClockwise);
         if (orbitCenterMode == SceneOrbitCenterMode.WORLD_BLOCK) {
             if (SceneProfileValidator.validateStartAngle(orbitStartAngleField.getValue()).isValid()) {
-                orbit.setStartAngleDegrees(parseDouble(orbitStartAngleField.getValue(), orbit.getStartAngleDegrees()));
+                orbit.setStartAngleDegrees(SceneMotionFieldParser.parseDouble(orbitStartAngleField.getValue(), orbit.getStartAngleDegrees()));
             }
         }
         if (SceneProfileValidator.validateSweep(orbitSweepField.getValue()).isValid()) {
-            orbit.setSweepDegrees(parseDouble(orbitSweepField.getValue(), orbit.getSweepDegrees()));
+            orbit.setSweepDegrees(SceneMotionFieldParser.parseDouble(orbitSweepField.getValue(), orbit.getSweepDegrees()));
         }
         if (SceneProfileValidator.validateAngularSpeed(orbitSpeedField.getValue()).isValid()) {
-            orbit.setAngularSpeedDegreesPerSecond(parseDouble(orbitSpeedField.getValue(), orbit.getAngularSpeedDegreesPerSecond()));
+            orbit.setAngularSpeedDegreesPerSecond(SceneMotionFieldParser.parseDouble(orbitSpeedField.getValue(), orbit.getAngularSpeedDegreesPerSecond()));
         }
         if (SceneProfileValidator.validateVerticalBob(orbitVerticalBobField.getValue()).isValid()) {
-            orbit.setVerticalBobAmplitudeBlocks(parseDouble(
+            orbit.setVerticalBobAmplitudeBlocks(SceneMotionFieldParser.parseDouble(
                     orbitVerticalBobField.getValue(), orbit.getVerticalBobAmplitudeBlocks()));
         }
         if (SceneProfileValidator.validateRadialBob(orbitRadialBobField.getValue()).isValid()) {
-            orbit.setRadialBobAmplitudeBlocks(parseDouble(
+            orbit.setRadialBobAmplitudeBlocks(SceneMotionFieldParser.parseDouble(
                     orbitRadialBobField.getValue(), orbit.getRadialBobAmplitudeBlocks()));
         }
         if (SceneProfileValidator.validateBobCycles(orbitBobCyclesField.getValue()).isValid()) {
-            orbit.setBobCyclesPerSecond(parseDouble(
+            orbit.setBobCyclesPerSecond(SceneMotionFieldParser.parseDouble(
                     orbitBobCyclesField.getValue(), orbit.getBobCyclesPerSecond()));
         }
         SceneProfileValidator.IntValidation instanceCountValidation = orbitInstanceCountValidation();
@@ -713,13 +634,13 @@ public class SceneMotionPage implements ConfigPage {
             orbit.setInstanceCount(instanceCountValidation.value());
         }
         if (SceneProfileValidator.validateInstanceSpread(orbitInstanceSpreadField.getValue()).isValid()) {
-            orbit.setInstanceSpreadDegrees(parseDouble(
+            orbit.setInstanceSpreadDegrees(SceneMotionFieldParser.parseDouble(
                     orbitInstanceSpreadField.getValue(), orbit.getInstanceSpreadDegrees()));
         }
         orbit.setRotateModelWithOrbit(orbitCenterMode == SceneOrbitCenterMode.MODEL_CENTER || orbitRotateModel);
 
         d.setRender(new SceneRenderSettings(
-                parseDouble(renderMaxDistField.getValue(), 160.0),
+                SceneMotionFieldParser.parseDouble(renderMaxDistField.getValue(), 160.0),
                 translucentState
         ));
 
@@ -727,16 +648,16 @@ public class SceneMotionPage implements ConfigPage {
         shared.setOutsideSound(new SceneSoundSettings(
                 soundState,
                 soundIdField.getValue().trim(),
-                (float) parseDouble(soundVolField.getValue(), 1.0),
-                (float) parseDouble(soundPitchField.getValue(), 1.0),
+                (float) SceneMotionFieldParser.parseDouble(soundVolField.getValue(), 1.0),
+                (float) SceneMotionFieldParser.parseDouble(soundPitchField.getValue(), 1.0),
                 20
         ));
 
         shared.setShake(new SceneShakeSettings(
                 shakeState,
-                parseDouble(shakeAmpField.getValue(), 0.03),
-                parseDouble(shakeRotAmpField.getValue(), 0.15),
-                parseDouble(shakeFreqField.getValue(), 4.0)
+                SceneMotionFieldParser.parseDouble(shakeAmpField.getValue(), 0.03),
+                SceneMotionFieldParser.parseDouble(shakeRotAmpField.getValue(), 0.15),
+                SceneMotionFieldParser.parseDouble(shakeFreqField.getValue(), 4.0)
         ));
     }
 
@@ -854,14 +775,8 @@ public class SceneMotionPage implements ConfigPage {
     }
 
     private double[] directionFromFields(double[] fallback) {
-        double x = parseDouble(dirXField.getValue(), fallback[0]);
-        double y = parseDouble(dirYField.getValue(), fallback[1]);
-        double z = parseDouble(dirZField.getValue(), fallback[2]);
-        double length = Math.sqrt(x * x + y * y + z * z);
-        if (!Double.isFinite(length) || length < 1.0e-4) {
-            return new double[]{-1.0, 0.0, 0.0};
-        }
-        return new double[]{x / length, y / length, z / length};
+        return SceneMotionFieldParser.direction(
+                dirXField.getValue(), dirYField.getValue(), dirZField.getValue(), fallback);
     }
 
     private void refreshFieldAvailability() {
@@ -891,10 +806,6 @@ public class SceneMotionPage implements ConfigPage {
         shakeRotAmpField.setEditable(sharedEditable && shakeState);
     }
 
-    private static double parseDouble(String s, double def) {
-        try { return Double.parseDouble(s.trim()); } catch (Exception e) { return def; }
-    }
-
     @Override
     public void save() {
         if (!isSaveAllowed()) {
@@ -907,13 +818,13 @@ public class SceneMotionPage implements ConfigPage {
         }
         flushPending();
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        for (Map.Entry<String, SceneProfileDraft> e : drafts.entrySet()) {
+        for (Map.Entry<String, SceneProfileDraft> e : editorState.drafts().entrySet()) {
             settings.profiles.put(e.getKey(), e.getValue().toProfile());
         }
         settings.backgrounds.clear();
-        for (Map.Entry<String, LinkedHashMap<String, SceneProfileDraft>> mapEntry : backgroundDrafts.entrySet()) {
+        for (Map.Entry<String, LinkedHashMap<String, SceneProfileDraft>> mapEntry : editorState.backgroundDrafts().entrySet()) {
             for (Map.Entry<String, SceneProfileDraft> entry : mapEntry.getValue().entrySet()) {
-                String name = backgroundNames.getOrDefault(mapEntry.getKey(), new LinkedHashMap<>())
+                String name = editorState.backgroundNames().getOrDefault(mapEntry.getKey(), new LinkedHashMap<>())
                         .getOrDefault(entry.getKey(), entry.getKey());
                 settings.putBackground(mapEntry.getKey(), entry.getKey(),
                         new SceneBackgroundConfig(name, entry.getValue().toProfile()));
@@ -921,15 +832,10 @@ public class SceneMotionPage implements ConfigPage {
         }
         SceneRenderRuntime.getInstance().updatePreviewProfile(currentAssetKey(), getCurrentDraft().toProfile());
         ConfigManager.getInstance().markSceneMotionDirty();
-        var integratedServer = Minecraft.getInstance().getSingleplayerServer();
-        if (integratedServer != null && !pendingDeletedAssetKeys.isEmpty()) {
-            Set<String> deleted = Set.copyOf(pendingDeletedAssetKeys);
-            integratedServer.execute(() -> deleted.forEach(assetKey ->
-                    com.habitrain.core.scene.server.SceneAssetStore.getInstance().deleteAsset(assetKey)));
-        }
-        pendingDeletedAssetKeys.clear();
-        int backgroundCount = backgroundDrafts.values().stream().mapToInt(Map::size).sum();
-        LOGGER.info("已保存移动场景配置: {} 个地图，{} 个附加动态背景", drafts.size(), backgroundCount);
+        // Asset deletion belongs to the server's successful configuration commit.
+        editorState.pendingDeletedAssetKeys().clear();
+        int backgroundCount = editorState.backgroundDrafts().values().stream().mapToInt(Map::size).sum();
+        LOGGER.info("已更新移动场景草稿: {} 个地图，{} 个附加动态背景", editorState.drafts().size(), backgroundCount);
     }
 
     @Override
@@ -1336,7 +1242,7 @@ public class SceneMotionPage implements ConfigPage {
             }
             sy += ROW_HEIGHT;
             String normalizedText = tr("screen.habitrain_core.scene_motion.direction_effective",
-                    format(normalizedDirection[0]), format(normalizedDirection[1]), format(normalizedDirection[2]));
+                    SceneMotionFieldParser.format(normalizedDirection[0]), SceneMotionFieldParser.format(normalizedDirection[1]), SceneMotionFieldParser.format(normalizedDirection[2]));
             g.drawString(font, fit(normalizedText, innerWidth - 8), innerX + 4, sy + 3,
                     MenuTheme.ACCENT_BLUE, false);
             sy += ROW_HEIGHT + 6;
@@ -1392,16 +1298,16 @@ public class SceneMotionPage implements ConfigPage {
             SceneMotionMath.LoopDistances loopDistances = loopDistancesFromFields();
             rangePreviewHit = new HitBox(innerX + 4, sy, innerWidth - 8, SceneRangePreview.HEIGHT);
             SceneMotionMath.SeamRelation seam = SceneMotionMath.seamRelation(bounds, normalizedDirection, loopSettingsFromFields());
-            double phase = parseDouble(phaseOffsetField.getValue(), 0.0);
+            double phase = SceneMotionFieldParser.parseDouble(phaseOffsetField.getValue(), 0.0);
             SceneRangePreview.render(g, font, rangePreviewHit.x(), rangePreviewHit.y(), rangePreviewHit.width(),
                     loopDistanceMode, loopDistances, seam, phase, loopState);
             double speedForPreview = Math.abs(getCurrentDraft().getSpeedBlocksPerSecond());
             double cycleSeconds = speedForPreview > 1.0e-4 ? loopDistances.effectiveDistance() / speedForPreview : Double.NaN;
             addTooltip(rangePreviewHit, Component.translatable(
                     "screen.habitrain_core.scene_motion.range_tooltip",
-                    format(speedForPreview), Double.isFinite(cycleSeconds)
-                            ? format(cycleSeconds) : tr("screen.habitrain_core.scene_motion.range_stopped"),
-                    format(loopDistances.effectiveDistance())));
+                    SceneMotionFieldParser.format(speedForPreview), Double.isFinite(cycleSeconds)
+                            ? SceneMotionFieldParser.format(cycleSeconds) : tr("screen.habitrain_core.scene_motion.range_stopped"),
+                    SceneMotionFieldParser.format(loopDistances.effectiveDistance())));
             sy += SceneRangePreview.HEIGHT + 4;
 
             rangeSliderHit = new HitBox(innerX + 4, sy, innerWidth - 8, 12);
@@ -1415,8 +1321,8 @@ public class SceneMotionPage implements ConfigPage {
 
             String distanceSummary = hasBounds
                     ? tr("screen.habitrain_core.scene_motion.loop_summary",
-                    format(loopDistances.configuredDistance()), format(loopDistances.recommendedDistance()),
-                    format(loopDistances.effectiveDistance()))
+                    SceneMotionFieldParser.format(loopDistances.configuredDistance()), SceneMotionFieldParser.format(loopDistances.recommendedDistance()),
+                    SceneMotionFieldParser.format(loopDistances.effectiveDistance()))
                     : tr("screen.habitrain_core.scene_motion.loop_summary_no_bounds");
             int recommendedButtonWidth = Math.min(Math.max(1, innerWidth - 8),
                     Math.min(132, Math.max(68, innerWidth / 3)));
@@ -1434,8 +1340,8 @@ public class SceneMotionPage implements ConfigPage {
             sy += ROW_HEIGHT;
             SceneProfileValidator.LoopDistanceValidation loopValidation = loopDistanceValidation();
             if (!loopValidation.isValid()) {
-                sy += drawWrapped(g, Component.translatable(loopDistanceErrorKey(loopValidation.error()),
-                                format(SceneLoopSettings.MIN_DISTANCE), format(SceneLoopSettings.MAX_DISTANCE)),
+                sy += drawWrapped(g, Component.translatable(SceneMotionFieldParser.loopDistanceErrorKey(loopValidation.error()),
+                                SceneMotionFieldParser.format(SceneLoopSettings.MIN_DISTANCE), SceneMotionFieldParser.format(SceneLoopSettings.MAX_DISTANCE)),
                         innerX + 4, sy, innerWidth - 8, MenuTheme.DANGER) + 2;
             } else if (!loopState) {
                 sy += drawWrapped(g, Component.translatable(
@@ -1505,8 +1411,8 @@ public class SceneMotionPage implements ConfigPage {
 
             // 3. 方向盘 UI
             orbitDialHit = new HitBox(innerX + 4, sy, innerWidth - 8, SceneAngleDial.HEIGHT);
-            double startAngleVal = parseDouble(orbitStartAngleField.getValue(), orbitSettings.getStartAngleDegrees());
-            double sweepVal = parseDouble(orbitSweepField.getValue(), orbitSettings.getSweepDegrees());
+            double startAngleVal = SceneMotionFieldParser.parseDouble(orbitStartAngleField.getValue(), orbitSettings.getStartAngleDegrees());
+            double sweepVal = SceneMotionFieldParser.parseDouble(orbitSweepField.getValue(), orbitSettings.getSweepDegrees());
             int instanceCountVal = orbitInstanceCountValidation().isValid()
                     ? orbitInstanceCountValidation().value() : orbitSettings.getInstanceCount();
             double instanceSpreadVal = orbitInstanceSpreadValidation().isValid()
@@ -1588,8 +1494,8 @@ public class SceneMotionPage implements ConfigPage {
                     || !orbitBobCyclesValidation().isValid()) {
                 sy += drawWrapped(g, Component.translatable(
                                 "screen.habitrain_core.scene_motion.orbit_bob_invalid",
-                                format(SceneOrbitSettings.MAX_BOB_AMPLITUDE),
-                                format(SceneOrbitSettings.MAX_BOB_CYCLES)),
+                                SceneMotionFieldParser.format(SceneOrbitSettings.MAX_BOB_AMPLITUDE),
+                                SceneMotionFieldParser.format(SceneOrbitSettings.MAX_BOB_CYCLES)),
                         innerX + 4, sy, innerWidth - 8, MenuTheme.DANGER) + 2;
             }
 
@@ -1605,7 +1511,7 @@ public class SceneMotionPage implements ConfigPage {
                 sy += drawWrapped(g, Component.translatable(
                                 "screen.habitrain_core.scene_motion.orbit_instances_invalid",
                                 SceneOrbitSettings.MIN_INSTANCES, SceneOrbitSettings.MAX_INSTANCES,
-                                format(SceneOrbitSettings.MIN_SPREAD), format(SceneOrbitSettings.MAX_SPREAD)),
+                                SceneMotionFieldParser.format(SceneOrbitSettings.MIN_SPREAD), SceneMotionFieldParser.format(SceneOrbitSettings.MAX_SPREAD)),
                         innerX + 4, sy, innerWidth - 8, MenuTheme.DANGER) + 2;
             } else {
                 if (instanceCountVal > 1 && (radius < 1.0e-4
@@ -1850,7 +1756,7 @@ public class SceneMotionPage implements ConfigPage {
         SceneVisibilityAdvisor.AnimationBounds bounds = advice.animationBounds();
         y += drawWrapped(graphics, Component.translatable(
                         "screen.habitrain_core.scene_motion.visibility_bounds",
-                        format(bounds.sizeX()), format(bounds.sizeY()), format(bounds.sizeZ()),
+                        SceneMotionFieldParser.format(bounds.sizeX()), SceneMotionFieldParser.format(bounds.sizeY()), SceneMotionFieldParser.format(bounds.sizeZ()),
                         bounds.finiteEnvelope()
                                 ? Component.translatable("screen.habitrain_core.scene_motion.visibility_finite")
                                 : Component.translatable("screen.habitrain_core.scene_motion.visibility_single_pass")),
@@ -1875,13 +1781,13 @@ public class SceneMotionPage implements ConfigPage {
         if (advice.sceneDistanceSufficient()) {
             y += drawWrapped(graphics, Component.translatable(
                             "screen.habitrain_core.scene_motion.visibility_scene_limit_ok",
-                            format(advice.configuredSceneDistanceBlocks())),
+                            SceneMotionFieldParser.format(advice.configuredSceneDistanceBlocks())),
                     textX, y, textWidth, MenuTheme.TEXT_DIM) + 2;
         } else {
             y += drawWrapped(graphics, Component.translatable(
                             "screen.habitrain_core.scene_motion.visibility_scene_limit_low",
-                            format(advice.configuredSceneDistanceBlocks()),
-                            format(advice.requiredSceneDistanceBlocks())),
+                            SceneMotionFieldParser.format(advice.configuredSceneDistanceBlocks()),
+                            SceneMotionFieldParser.format(advice.requiredSceneDistanceBlocks())),
                     textX, y, textWidth, MenuTheme.DANGER) + 2;
         }
 
@@ -1892,7 +1798,7 @@ public class SceneMotionPage implements ConfigPage {
                 ? "screen.habitrain_core.scene_motion.visibility_projection_measured"
                 : "screen.habitrain_core.scene_motion.visibility_projection_approximate";
         y += drawWrapped(graphics, Component.translatable(projectionKey,
-                        renderer, format(projection.farPlaneBlocks())),
+                        renderer, SceneMotionFieldParser.format(projection.farPlaneBlocks())),
                 textX, y, textWidth, MenuTheme.TEXT_DIM) + 2;
         return y + drawWrapped(graphics, Component.translatable(
                         "screen.habitrain_core.scene_motion.visibility_advisory_only"),
@@ -1905,25 +1811,25 @@ public class SceneMotionPage implements ConfigPage {
         SceneProfile profile = draft.toProfile();
         profile.setOrbit(profile.getOrbit().copy());
         profile.setMotionMode(motionMode);
-        profile.setSpeedBlocksPerSecond(parseDouble(speedField.getValue(), profile.getSpeedBlocksPerSecond()));
+        profile.setSpeedBlocksPerSecond(SceneMotionFieldParser.parseDouble(speedField.getValue(), profile.getSpeedBlocksPerSecond()));
         double[] direction = directionFromFields(profile.getDirection());
         profile.setDirection(direction[0], direction[1], direction[2]);
         profile.setDisplayOrigin(
-                parseDouble(originXField.getValue(), profile.getDisplayOrigin()[0]),
-                parseDouble(originYField.getValue(), profile.getDisplayOrigin()[1]),
-                parseDouble(originZField.getValue(), profile.getDisplayOrigin()[2]));
+                SceneMotionFieldParser.parseDouble(originXField.getValue(), profile.getDisplayOrigin()[0]),
+                SceneMotionFieldParser.parseDouble(originYField.getValue(), profile.getDisplayOrigin()[1]),
+                SceneMotionFieldParser.parseDouble(originZField.getValue(), profile.getDisplayOrigin()[2]));
         profile.setPivotLocal(
-                parseDouble(pivotXField.getValue(), profile.getPivotLocal()[0]),
-                parseDouble(pivotYField.getValue(), profile.getPivotLocal()[1]),
-                parseDouble(pivotZField.getValue(), profile.getPivotLocal()[2]));
+                SceneMotionFieldParser.parseDouble(pivotXField.getValue(), profile.getPivotLocal()[0]),
+                SceneMotionFieldParser.parseDouble(pivotYField.getValue(), profile.getPivotLocal()[1]),
+                SceneMotionFieldParser.parseDouble(pivotZField.getValue(), profile.getPivotLocal()[2]));
         profile.setRotationDegrees(new SceneRotation(
-                (float) parseDouble(rotYawField.getValue(), profile.getRotationDegrees().yawDegrees()),
-                (float) parseDouble(rotPitchField.getValue(), profile.getRotationDegrees().pitchDegrees()),
-                (float) parseDouble(rotRollField.getValue(), profile.getRotationDegrees().rollDegrees())));
-        profile.setPhaseOffsetBlocks(parseDouble(phaseOffsetField.getValue(), profile.getPhaseOffsetBlocks()));
+                (float) SceneMotionFieldParser.parseDouble(rotYawField.getValue(), profile.getRotationDegrees().yawDegrees()),
+                (float) SceneMotionFieldParser.parseDouble(rotPitchField.getValue(), profile.getRotationDegrees().pitchDegrees()),
+                (float) SceneMotionFieldParser.parseDouble(rotRollField.getValue(), profile.getRotationDegrees().rollDegrees())));
+        profile.setPhaseOffsetBlocks(SceneMotionFieldParser.parseDouble(phaseOffsetField.getValue(), profile.getPhaseOffsetBlocks()));
         profile.setLoop(loopSettingsFromFields());
         profile.setRender(new SceneRenderSettings(
-                parseDouble(renderMaxDistField.getValue(), profile.getRender().getMaxDistanceBlocks()),
+                SceneMotionFieldParser.parseDouble(renderMaxDistField.getValue(), profile.getRender().getMaxDistanceBlocks()),
                 translucentState));
 
         SceneOrbitSettings orbit = profile.getOrbit();
@@ -1982,16 +1888,6 @@ public class SceneMotionPage implements ConfigPage {
         loopDistField.setValue(String.format(Locale.ROOT, "%.0f", value));
     }
 
-    private static String loopDistanceErrorKey(SceneProfileValidator.LoopDistanceError error) {
-        return switch (error) {
-            case REQUIRED -> "screen.habitrain_core.scene_motion.loop_error_required";
-            case NOT_A_NUMBER -> "screen.habitrain_core.scene_motion.loop_error_number";
-            case NOT_FINITE -> "screen.habitrain_core.scene_motion.loop_error_finite";
-            case OUT_OF_RANGE -> "screen.habitrain_core.scene_motion.loop_error_range";
-            case NONE -> "screen.habitrain_core.scene_motion.loop_error_number";
-        };
-    }
-
     private boolean sameDirection(double[] direction, DirectionPreset preset) {
         return Math.abs(direction[0] - preset.x()) < 1.0e-4
                 && Math.abs(direction[1] - preset.y()) < 1.0e-4
@@ -2007,17 +1903,6 @@ public class SceneMotionPage implements ConfigPage {
 
     private static String tr(String key, Object... args) {
         return Component.translatable(key, args).getString();
-    }
-
-    private static String format(double value) {
-        return String.format(Locale.ROOT, "%.2f", value);
-    }
-
-    private static String formatDirectionInput(double value) {
-        if (Math.abs(value - Math.rint(value)) < 1.0e-8) {
-            return String.format(Locale.ROOT, "%.0f", value);
-        }
-        return format(value);
     }
 
     @Override
@@ -2210,7 +2095,7 @@ public class SceneMotionPage implements ConfigPage {
             }
             if (orbitCenterPickHit.contains(mx, my) && editable) {
                 flushPending();
-                com.habitrain.core.scene.client.SceneOriginPlacementController.getInstance()
+                com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance()
                         .startOrbitCenter(root, this, getCurrentDraft().getDisplayOrigin(), orbitAxis);
                 var player = Minecraft.getInstance().player;
                 if (player != null) {
@@ -2264,9 +2149,9 @@ public class SceneMotionPage implements ConfigPage {
         for (int i = 0; i < directionPresetHits.length; i++) {
             if (directionPresetHits[i] != null && directionPresetHits[i].contains(mx, my) && editable) {
                 DirectionPreset preset = DIRECTION_PRESETS[i];
-                dirXField.setValue(formatDirectionInput(preset.x()));
-                dirYField.setValue(formatDirectionInput(preset.y()));
-                dirZField.setValue(formatDirectionInput(preset.z()));
+                dirXField.setValue(SceneMotionFieldParser.formatDirectionInput(preset.x()));
+                dirYField.setValue(SceneMotionFieldParser.formatDirectionInput(preset.y()));
+                dirZField.setValue(SceneMotionFieldParser.formatDirectionInput(preset.z()));
                 return true;
             }
         }
@@ -2294,7 +2179,7 @@ public class SceneMotionPage implements ConfigPage {
 
         if (applyRecommendedHit.contains(mx, my) && editable && loopState
                 && !getCurrentDraft().getSourceBounds().isEmpty()) {
-            loopDistField.setValue(format(loopDistancesFromFields().recommendedDistance()));
+            loopDistField.setValue(SceneMotionFieldParser.format(loopDistancesFromFields().recommendedDistance()));
             loopDistanceMode = SceneLoopDistanceMode.CUSTOM;
             loopKeyboardFocus = 2;
             refreshFieldAvailability();
@@ -2339,7 +2224,7 @@ public class SceneMotionPage implements ConfigPage {
                     "screen.habitrain_core.scene_motion.message_origin_needs_bounds"), true);
             return;
         }
-        com.habitrain.core.scene.client.SceneOriginPlacementController.getInstance()
+        com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance()
                 .start(root, this, sourceBounds);
         if (player != null) {
             player.displayClientMessage(Component.translatable(
@@ -2508,20 +2393,20 @@ public class SceneMotionPage implements ConfigPage {
         if (orbitDialFocused && motionMode == SceneMotionMode.ORBIT
                 && orbitCenterMode == SceneOrbitCenterMode.WORLD_BLOCK) {
             if (key == 262 || key == 263 || key == 264 || key == 265) {
-                double cur = parseDouble(orbitStartAngleField.getValue(), 0.0);
+                double cur = SceneMotionFieldParser.parseDouble(orbitStartAngleField.getValue(), 0.0);
                 double step = Screen.hasShiftDown() ? 15.0 : 1.0;
                 double adjusted = (key == 262 || key == 265) ? cur + step : cur - step;
                 adjusted = SceneOrbitMath.normalizeAngle(adjusted);
                 orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", adjusted));
-                double sweep = parseDouble(orbitSweepField.getValue(), SceneOrbitSettings.DEFAULT_SWEEP);
+                double sweep = SceneMotionFieldParser.parseDouble(orbitSweepField.getValue(), SceneOrbitSettings.DEFAULT_SWEEP);
                 double end = SceneOrbitMath.normalizeAngle(adjusted + (orbitClockwise ? sweep : -sweep));
                 Minecraft.getInstance().getNarrator().sayNow(Component.translatable(
                         "screen.habitrain_core.scene_motion.dial_narrate",
-                        format(adjusted), format(sweep),
+                        SceneMotionFieldParser.format(adjusted), SceneMotionFieldParser.format(sweep),
                         Component.translatable(orbitClockwise
                                 ? "screen.habitrain_core.scene_motion.orbit_clockwise"
                                 : "screen.habitrain_core.scene_motion.orbit_counter_clockwise"),
-                        format(end)));
+                        SceneMotionFieldParser.format(end)));
                 return true;
             }
             if (key == 32) {
@@ -2540,7 +2425,7 @@ public class SceneMotionPage implements ConfigPage {
                 double adjusted = current + (key == 262 ? step : -step);
                 adjusted = Math.max(SceneLoopSettings.MIN_DISTANCE,
                         Math.min(SceneLoopSettings.MAX_DISTANCE, adjusted));
-                field.setValue(format(adjusted));
+                field.setValue(SceneMotionFieldParser.format(adjusted));
                 return true;
             }
             if (field.isFocused() && field.keyPressed(key, scan, mod)) return true;
@@ -2680,14 +2565,14 @@ public class SceneMotionPage implements ConfigPage {
                 value += key == 262 ? step : -step;
                 value = Math.max(SceneLoopSettings.MIN_DISTANCE,
                         Math.min(SceneLoopSettings.MAX_DISTANCE, value));
-                loopDistField.setValue(format(value));
+                loopDistField.setValue(SceneMotionFieldParser.format(value));
             }
             focusLoopControl(1);
             return true;
         }
         if (loopKeyboardFocus == 2 && (key == 257 || key == 32)) {
             if (editable && loopState && !getCurrentDraft().getSourceBounds().isEmpty()) {
-                loopDistField.setValue(format(loopDistancesFromFields().recommendedDistance()));
+                loopDistField.setValue(SceneMotionFieldParser.format(loopDistancesFromFields().recommendedDistance()));
                 loopDistanceMode = SceneLoopDistanceMode.CUSTOM;
                 refreshFieldAvailability();
             }

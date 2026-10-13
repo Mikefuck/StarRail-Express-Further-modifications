@@ -44,7 +44,7 @@ class RoleExtensionConfigServiceTest {
         return new ManagedRoleEntry<>(entryId, provider, "buff",
                 RoleOperation.MODIFY, RoleKey.of("sre", "vigilante"), PatchPriority.NORMAL,
                 RolePatch.builder(RoleKey.of("sre", "vigilante")).defaultMax(RolePatch.IntPatch.set(2)).build(),
-                EntryStatus.ACTIVE, "test", false);
+                EntryStatus.ACTIVE, "test");
     }
 
     @Test

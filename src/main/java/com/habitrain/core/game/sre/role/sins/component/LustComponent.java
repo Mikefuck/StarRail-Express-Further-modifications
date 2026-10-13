@@ -233,7 +233,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
 
         if (!observing) return;
 
-        // 真爱对扫描是 O(存活玩家²)，同样 10 tick 一次；LOS 与充能仍逐 tick
+        // 真爱对扫描是 O(存活玩家²)，每 10 tick 一次；LOS 每 2 tick，充能逐 tick
         // （review L4）。缓存的玩家引用每 tick 校验存活/未移除。
         long now = level.getGameTime();
         if (cachedPair == null || now - lastPairScanTick >= 10) {

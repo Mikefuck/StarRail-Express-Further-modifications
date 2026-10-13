@@ -233,7 +233,6 @@ public final class RoleFieldTrace {
             case INVALID -> DiagnosticStatus.INVALID;
             case CONFLICT -> DiagnosticStatus.CONFLICT;
             case DISABLED -> DiagnosticStatus.DISABLED;
-            case LEGACY_UNMANAGED -> DiagnosticStatus.LEGACY_UNMANAGED;
         };
     }
 }

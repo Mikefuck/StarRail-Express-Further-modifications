@@ -42,7 +42,7 @@ public final class HabiRoles {
     }
 
     /**
-     * Assigned-role check that survives v1/v2 {@code REPLACE}. Upstream
+     * Assigned-role check that survives v2 {@code REPLACE}. Upstream
      * {@code game.isRole} is instance {@code ==}; after a replacement the
      * player holds a different object with the same (or aliased) identifier.
      */

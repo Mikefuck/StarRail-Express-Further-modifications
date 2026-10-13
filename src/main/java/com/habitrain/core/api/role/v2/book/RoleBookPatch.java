@@ -1,6 +1,6 @@
 package com.habitrain.core.api.role.v2.book;
 
-import com.habitrain.core.api.role.book.RoleBookPage;
+import com.habitrain.core.api.role.v2.book.RoleBookPage;
 import com.habitrain.core.api.role.v2.definition.ListOp;
 
 import java.util.ArrayList;

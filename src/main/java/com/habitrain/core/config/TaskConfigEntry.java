@@ -66,6 +66,7 @@ public class TaskConfigEntry {
     }
 
     public static TaskConfigEntry fromJson(JsonObject json) {
+        ConfigValidation.validateTask(json);
         TaskConfigEntry entry = new TaskConfigEntry();
         if (json.has("enabled")) entry.enabled = json.get("enabled").getAsBoolean();
         if (json.has("enabledMaps")) {
@@ -99,7 +100,7 @@ public class TaskConfigEntry {
         if (json.has("outlineWidth")) entry.outlineWidth = json.get("outlineWidth").getAsFloat();
         if (json.has("goldReward")) {
             entry.hasGoldReward = true;
-            entry.goldReward = json.get("goldReward").getAsInt();
+            entry.goldReward = ConfigValidation.integer(json.get("goldReward").getAsString(), "金币奖励");
         }
         if (json.has("emotionReward")) {
             entry.hasEmotionReward = true;

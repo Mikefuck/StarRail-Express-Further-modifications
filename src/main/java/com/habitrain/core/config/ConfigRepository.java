@@ -6,6 +6,33 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class ConfigRepository {
+    public ConfigRepository copy() {
+        ConfigRepository result = new ConfigRepository();
+        result.copyFrom(this);
+        return result;
+    }
+
+    /** Deep snapshot: the client editor never shares mutable config objects with server ticks. */
+    public void copyFrom(ConfigRepository source) {
+        if (source == this) return;
+        taskConfigs.clear();
+        source.taskConfigs.forEach((key, value) -> taskConfigs.put(key, TaskConfigEntry.fromJson(value.toJson())));
+        gameModeConfigs.clear();
+        source.gameModeConfigs.forEach((key, value) -> gameModeConfigs.put(key, GameModeConfigScope.fromJson(key, value.toJson())));
+        minigameConfigs.clear();
+        source.minigameConfigs.forEach((key, value) -> minigameConfigs.put(key, MinigameConfigEntry.fromJson(value.toJson())));
+        setShaderWhitelistConfig(source.shaderWhitelistEnabled, new ArrayList<>(source.shaderWhitelist));
+        dlcProbabilityTarget = source.dlcProbabilityTarget;
+        sheriffCountDivisor = source.sheriffCountDivisor;
+        minigameGlobalEnabled = source.minigameGlobalEnabled;
+        knifeDurabilityEnabled = source.knifeDurabilityEnabled;
+        lobbyVoiceGroupEnabled = source.lobbyVoiceGroupEnabled;
+        blackoutGlobalCooldownSeconds = source.blackoutGlobalCooldownSeconds;
+        blackoutEffectEnhancementEnabled = source.blackoutEffectEnhancementEnabled;
+        modeMapVote = ModeMapVoteSettings.fromJson(source.getModeMapVote().toJson());
+        environment = EnvironmentSettings.fromJson(source.getEnvironment().toJson());
+        sceneMotion = SceneMotionSettings.fromJson(source.getSceneMotion().toJson());
+    }
     private final Map<String, TaskConfigEntry> taskConfigs = new HashMap<>();
     private final Map<String, GameModeConfigScope> gameModeConfigs = new HashMap<>();
     private final Map<String, MinigameConfigEntry> minigameConfigs = new HashMap<>();
@@ -22,7 +49,6 @@ public class ConfigRepository {
     private boolean blackoutEffectEnhancementEnabled = false;
     private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
     private EnvironmentSettings environment = EnvironmentSettings.createDefault();
-    private RoleOverrideConfigSection roleOverrides = RoleOverrideConfigSection.createDefault();
     private SceneMotionSettings sceneMotion = SceneMotionSettings.createDefault();
     @Nullable private Runnable onSaveCallback = null;
     private boolean suppressCallback = false;
@@ -66,6 +92,7 @@ public class ConfigRepository {
     public float getDlcProbabilityTarget() { return dlcProbabilityTarget; }
 
     public void setDlcProbabilityTarget(float target) {
+        if (!Float.isFinite(target)) throw new IllegalArgumentException("DLC probability must be finite");
         this.dlcProbabilityTarget = Math.max(0.0f, Math.min(1.0f, target));
     }
 
@@ -176,12 +203,6 @@ public class ConfigRepository {
 
     public void setEnvironment(EnvironmentSettings s) {
         this.environment = s != null ? s : EnvironmentSettings.createDefault();
-    }
-
-    public RoleOverrideConfigSection getRoleOverrides() { return roleOverrides; }
-
-    public void setRoleOverrides(RoleOverrideConfigSection s) {
-        this.roleOverrides = s != null ? s : RoleOverrideConfigSection.createDefault();
     }
 
     public SceneMotionSettings getSceneMotion() {

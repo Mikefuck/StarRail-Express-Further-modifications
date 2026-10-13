@@ -1,5 +1,6 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.game.sre.config.SREIntegration;
 import com.google.gson.JsonObject;
 
 import java.util.LinkedHashMap;

@@ -1,5 +1,6 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.client.gui.scene.SceneOriginPlacementController;
 import net.minecraft.core.BlockPos;
 
 import com.habitrain.core.scene.item.HabiAdminItems;

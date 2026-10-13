@@ -1,5 +1,7 @@
 package com.habitrain.core.client.gui.menu.page;
 
+
+import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
@@ -45,13 +47,13 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private static final String GROUP_OTHER = "other";
     /**
      * 「原版哈比任务」分组的成员清单。
-     * <p><b>唯一来源</b>是 {@link com.habitrain.core.game.sre.SreTaskMirrors#ids()} —— 与
+     * <p><b>唯一来源</b>是 {@link com.habitrain.core.game.sre.task.SreTaskMirrors#ids()} —— 与
      * {@code GenerateTaskMixin.BUILTIN_SRE_TASK_IDS}（派发池排除兜底）完全同源，
      * 因此「注册为镜像」「排除出 DLC 池」「配置页归入原版组」三处口径永远一致
      * （audit P1-5 的三套清单已合并）。
      */
     private static final Set<String> ORIGINAL_GROUP_TASK_IDS =
-            com.habitrain.core.game.sre.SreTaskMirrors.ids();
+            com.habitrain.core.game.sre.task.SreTaskMirrors.ids();
 
     private final ConfigMenuScreen root;
     private final Font font;

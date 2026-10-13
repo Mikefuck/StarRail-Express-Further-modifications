@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.sre.GameEndTransitionCoordinator;
+import com.habitrain.core.game.sre.match.GameEndTransitionCoordinator;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;

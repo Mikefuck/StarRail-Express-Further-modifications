@@ -11,7 +11,7 @@ import java.util.Objects;
  * <p>A {@code RoleKey} is the canonical role identity that survives
  * alias/replacement resolution; the raw upstream object id is a plain
  * {@link ResourceLocation}. The namespace and path are lower-cased and
- * normalized exactly like {@code RoleOverrideApi#roleId}, so lookups are
+ * normalized by this value object, so lookups are
  * stable regardless of the case the caller supplies.
  */
 public record RoleKey(ResourceLocation location) {

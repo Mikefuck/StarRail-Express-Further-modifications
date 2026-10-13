@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.KnifeDurabilityToggleService;
+import com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService;
 import io.wifi.starrailexpress.game.KillerKnifeDurability;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;

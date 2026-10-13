@@ -10,11 +10,11 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
-import com.habitrain.core.config.SREIntegration;
-import com.habitrain.core.game.sre.SREModeStartAdapter;
-import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
-import com.habitrain.core.game.sre.RepairModeManager;
-import com.habitrain.core.game.sre.SreOriginalModeProxy;
+import com.habitrain.core.game.sre.config.SREIntegration;
+import com.habitrain.core.game.sre.mode.SREModeStartAdapter;
+import com.habitrain.core.game.sre.map.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.game.sre.mode.SreOriginalModeProxy;
 import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -217,6 +217,7 @@ public final class ModeMapVoteOrchestrator {
 
     /** 模式已选定，进入地图投票阶段；单模式跳过模式投票时也走这里。 */
     private static void beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
+        if (!validateSelectedMode(level, session, winnerId)) return;
         // 修机：上游 startGame 丢弃 Areas / 投票图，用地图投票会把将被丢弃的图告诉玩家。
         if (isRepairModeId(winnerId)) {
             LOGGER.info("[ModeMapVote] repair mode skips map vote (upstream auto manor) mode={}", winnerId);
@@ -388,6 +389,7 @@ public final class ModeMapVoteOrchestrator {
             clearSession(level);
             return;
         }
+        if (!validateSelectedMode(level, session, session.selectedModeId)) return;
 
         if (isRepairModeId(session.selectedModeId)) {
             LOGGER.info("[ModeMapVote] repair DIRECT_PICK skipped loadMap map={} (upstream auto manor)", mapId);
@@ -415,6 +417,7 @@ public final class ModeMapVoteOrchestrator {
 
         session.phase = Phase.STARTING_MODE;
         String modeId = session.selectedModeId;
+        if (!validateSelectedMode(level, session, modeId)) return;
 
         // 开局加载协调：地图重置开始即进入协调，客户端进入「加载」转场阶段；
         // 真正开局（trueStartGame）时由 SRETrueStartGameMixin 广播开局确认。
@@ -438,6 +441,7 @@ public final class ModeMapVoteOrchestrator {
             return;
         }
         String modeId = session.selectedModeId;
+        if (!validateSelectedMode(level, session, modeId)) return;
         session.selectedMapId = REPAIR_LAUNCH_MAP_ID;
         session.phase = Phase.STARTING_MODE;
         session.phaseDurationSeconds = 0;
@@ -576,15 +580,27 @@ public final class ModeMapVoteOrchestrator {
     }
 
     /** true if mode passes optional config.modeIds filter and is not disabled in settings. */
-    private static boolean isModeAllowed(ModeMapVoteConfig cfg, ModeMapVoteSettings settings, String fullId) {
+    static boolean isModeAllowed(ModeMapVoteConfig cfg, ModeMapVoteSettings settings, String fullId) {
         if (fullId == null || fullId.isBlank()) {
             return false;
         }
+        if (!SREModeStartAdapter.isModeAvailable(fullId)) return false;
         if (cfg != null && cfg.modeIds != null && !cfg.modeIds.contains(fullId)) {
             return false;
         }
         ModeVoteEntry entry = settings != null ? settings.modes.get(fullId) : null;
         // missing entry = enabled
         return entry == null || entry.enabled;
+    }
+
+    private static boolean validateSelectedMode(ServerLevel level, Session session, String modeId) {
+        if (isModeAllowed(session.config, ConfigManager.getInstance().getModeMapVoteSettings(), modeId)) return true;
+        String reason = "所选模式已不可用，投票已取消: " + modeId;
+        fail(level, reason);
+        for (ServerPlayer player : level.players()) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(reason));
+        }
+        clearSession(level);
+        return false;
     }
 }

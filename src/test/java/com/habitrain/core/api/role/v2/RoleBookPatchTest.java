@@ -1,7 +1,7 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.book.RoleBookContent;
-import com.habitrain.core.api.role.book.RoleBookPage;
+import com.habitrain.core.api.role.v2.book.RoleBookContent;
+import com.habitrain.core.api.role.v2.book.RoleBookPage;
 import com.habitrain.core.api.role.v2.book.RoleBookPatch;
 import com.habitrain.core.api.role.v2.book.RoleBookView;
 import com.habitrain.core.api.role.v2.definition.ListOp;

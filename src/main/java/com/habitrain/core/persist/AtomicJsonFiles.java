@@ -33,6 +33,8 @@ import java.util.Objects;
  * (never a silent empty object). Neither exists → {@code MISSING}.
  */
 public final class AtomicJsonFiles {
+    public enum SourceState { ABSENT, INVALID_TYPE, UNREADABLE, INVALID_CONTENT, VALID, NOT_CHECKED }
+    private record Candidate<T>(T value, SourceState state) {}
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|AtomicJsonFiles");
 
     private AtomicJsonFiles() {
@@ -94,31 +96,27 @@ public final class AtomicJsonFiles {
     }
 
     public static <T> JsonLoad<T> readJson(Path target, Class<T> type, Gson gson) {
+        return readJsonValidated(target, type, gson, value -> {});
+    }
+
+    /** Both primary and backup must satisfy the complete caller schema before acceptance. */
+    public static <T> JsonLoad<T> readJsonValidated(Path target, Class<T> type, Gson gson,
+                                                   java.util.function.Consumer<T> validator) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(gson, "gson");
         if (target == null) {
             return JsonLoad.missing();
         }
         Path bak = bakPath(target);
-        if (Files.isRegularFile(target)) {
-            T parsed = tryParse(target, type, gson);
-            if (parsed != null) {
-                return JsonLoad.ok(parsed);
-            }
-            LOGGER.error("Unreadable JSON {}, quarantining and trying .bak", target);
-            Path quarantined = quarantine(target);
-            T fromBak = tryParse(bak, type, gson);
-            if (fromBak != null) {
-                return JsonLoad.fromBackup(fromBak, quarantined);
-            }
-            return JsonLoad.corrupt(quarantined);
-        }
-        T fromBak = tryParse(bak, type, gson);
-        if (fromBak != null) {
-            LOGGER.warn("Primary {} missing; restored from .bak", target);
-            return JsonLoad.fromBackup(fromBak, null);
-        }
-        return JsonLoad.missing();
+        Candidate<T> primary = readCandidate(target, type, gson, validator);
+        if (primary.value != null) return JsonLoad.ok(primary.value).withSources(primary.state, SourceState.NOT_CHECKED);
+        Path quarantined = primary.state == SourceState.INVALID_CONTENT ? quarantine(target) : null;
+        Candidate<T> backup = readCandidate(bak, type, gson, validator);
+        if (backup.value != null) return JsonLoad.fromBackup(backup.value, quarantined).withSources(primary.state, backup.state);
+        LOGGER.warn("JSON recovery failed for {}: primary={}, backup={}", target, primary.state, backup.state);
+        JsonLoad<T> result = primary.state == SourceState.ABSENT && backup.state == SourceState.ABSENT
+                ? JsonLoad.missing() : JsonLoad.corrupt(quarantined);
+        return result.withSources(primary.state, backup.state);
     }
 
     /**
@@ -126,7 +124,7 @@ public final class AtomicJsonFiles {
      * Returns the quarantine path, or {@code null} if the file could not be moved.
      */
     public static Path quarantine(Path file) {
-        if (file == null || !Files.exists(file)) {
+        if (file == null || !Files.isRegularFile(file)) {
             return null;
         }
         Path dest = file.resolveSibling(file.getFileName().toString() + ".corrupt-" + System.currentTimeMillis());
@@ -147,15 +145,22 @@ public final class AtomicJsonFiles {
         }
     }
 
-    private static <T> T tryParse(Path file, Class<T> type, Gson gson) {
-        if (file == null || !Files.isRegularFile(file)) {
-            return null;
-        }
+    private static <T> Candidate<T> readCandidate(Path file, Class<T> type, Gson gson, java.util.function.Consumer<T> validator) {
+        try {
+            var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            if (!attributes.isRegularFile()) return new Candidate<>(null, SourceState.INVALID_TYPE);
+        } catch (java.nio.file.NoSuchFileException e) { return new Candidate<>(null, SourceState.ABSENT); }
+        catch (IOException | SecurityException e) { return new Candidate<>(null, SourceState.UNREADABLE); }
         try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            return gson.fromJson(reader, type);
+            T value = gson.fromJson(reader, type);
+            if (value != null) validator.accept(value);
+            return new Candidate<>(value, value == null ? SourceState.INVALID_CONTENT : SourceState.VALID);
+        } catch (IOException | SecurityException e) {
+            LOGGER.warn("Failed reading {}: {}", file, e.toString());
+            return new Candidate<>(null, SourceState.UNREADABLE);
         } catch (Exception e) {
             LOGGER.warn("Failed parsing {}: {}", file, e.toString());
-            return null;
+            return new Candidate<>(null, SourceState.INVALID_CONTENT);
         }
     }
 
@@ -224,6 +229,13 @@ public final class AtomicJsonFiles {
         private final T value;
         private final Status status;
         private final Path quarantined;
+        private SourceState primaryState = SourceState.NOT_CHECKED;
+        private SourceState backupState = SourceState.NOT_CHECKED;
+        private JsonLoad<T> withSources(SourceState primary, SourceState backup) {
+            primaryState = primary; backupState = backup; return this;
+        }
+        public SourceState primaryState() { return primaryState; }
+        public SourceState backupState() { return backupState; }
 
         private JsonLoad(T value, Status status, Path quarantined) {
             this.value = value;

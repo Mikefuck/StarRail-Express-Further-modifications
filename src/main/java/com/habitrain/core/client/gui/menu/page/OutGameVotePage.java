@@ -15,7 +15,7 @@ import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
-import com.habitrain.core.config.SREIntegration;
+import com.habitrain.core.game.sre.config.SREIntegration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -623,7 +623,7 @@ public class OutGameVotePage implements ConfigPage {
                     MapPlayerCountSettings pc = settings().playerCountOrDefault();
                     pc.enabled = !pc.enabled;
                     persist();
-                    ConfigManager.getInstance().save();
+                    com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
                     return true;
                 }
                 default -> { return true; }
@@ -651,7 +651,7 @@ public class OutGameVotePage implements ConfigPage {
                     persist();
                     // Save immediately so LinkedHashMap order reaches disk / C2S merge
                     // (persist alone only marks dirty; leaving the tab later is easy to miss).
-                    ConfigManager.getInstance().save();
+                    com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
                 }
                 return true;
             }
@@ -663,7 +663,7 @@ public class OutGameVotePage implements ConfigPage {
                 if (settings().moveMode(id, +1)) {
                     rebuildIdLists();
                     persist();
-                    ConfigManager.getInstance().save();
+                    com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
                 }
                 return true;
             }

@@ -27,6 +27,7 @@ public final class RuntimeHookGates implements HookGates {
     public static final RuntimeHookGates INSTANCE = new RuntimeHookGates();
 
     private volatile Set<RoleKey> activeRoles = Set.of();
+    private volatile java.util.Map<RoleKey, ServerPlayer> activeHolders = java.util.Map.of();
     private volatile int activeRolesTick = Integer.MIN_VALUE;
 
     private RuntimeHookGates() {}
@@ -47,6 +48,7 @@ public final class RuntimeHookGates implements HookGates {
             return;
         }
         Set<RoleKey> roles = new HashSet<>();
+        java.util.Map<RoleKey, ServerPlayer> holders = new java.util.LinkedHashMap<>();
         try {
             for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
                 try {
@@ -56,7 +58,9 @@ public final class RuntimeHookGates implements HookGates {
                     }
                     SRERole r = game.getRole(p);
                     if (r != null && r.identifier() != null) {
-                        roles.add(RoleKey.of(r.identifier()));
+                        RoleKey key = RoleKey.of(r.identifier());
+                        roles.add(key);
+                        holders.putIfAbsent(key, p);
                     }
                 } catch (Throwable ignored) {
                     // one player's lookup failure must not hide other holders.
@@ -66,6 +70,7 @@ public final class RuntimeHookGates implements HookGates {
             // Fail closed: leave the role set empty for this tick.
         }
         this.activeRoles = roles;
+        this.activeHolders = holders;
         this.activeRolesTick = tick;
     }
 
@@ -79,5 +84,12 @@ public final class RuntimeHookGates implements HookGates {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    @Override
+    public @Nullable ServerPlayer holder(RoleKey role, @Nullable ServerLevel level) {
+        if (level == null || level.getServer() == null) return null;
+        refreshActiveRoles(level);
+        return activeHolders.get(role);
     }
 }

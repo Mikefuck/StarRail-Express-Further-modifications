@@ -10,7 +10,7 @@ Windows / PowerShell（当前工作区；用仓库自带的 wrapper）：
 
 ```powershell
 .\gradlew.bat build --no-daemon          # 完整构建（assemble 会触发 copyReleaseJar）
-.\gradlew.bat runClient      # 启动开发客户端
+.\gradlew.bat runClient --no-daemon      # 启动开发客户端
 ```
 
 交付构建（上级 AGENTS 要求）：
@@ -23,13 +23,13 @@ Windows / PowerShell（当前工作区；用仓库自带的 wrapper）：
 - Java 21（`options.release = 21`），Fabric Loom 1.17.13；字节码目标为 21
 - `libs/` 目录存放固定的本地 JAR 依赖（SRE、TACZ、voicechat 等）；当前仓库已跟踪这些构建输入，不可随意删除或替换
 - `copyReleaseJar` 任务将产物暂存到 `build/release/`，`assemble` 已依赖它；完整验证后按上级工作区约定复制到 `临时/`
-- `src/test/java` 包含 API 值对象与角色覆盖 API 的 JUnit 5 测试；验证以 `.\gradlew.bat build --no-daemon` 和必要的游戏内运行共同完成
+- `src/test/java` 包含 API 值对象与角色扩展 API v2 的 JUnit 5 测试；验证以 `.\gradlew.bat build --no-daemon` 和必要的游戏内运行共同完成
 - README.md、`docs/API参考手册.md` 和 `docs/使用教程.md` 是当前文档入口；移动场景相关另有 `docs/移动场景API使用教程.md` 与 `docs/大厅移动背景.md`
 
 ## 重要架构
 
 - **一个 mod ID**: `habitrain_core`。资源根是 `src/main/resources/assets/habitrain_core/`；历史遗留的 `assets/habitrain_taskapi/` 目录**已不存在**（早期文档的误记）。
-- **包结构**: `com.habitrain.core.api/`（公开 API）→ `task/`（引擎）→ `game/sre/`（模式实现）→ `network/`（网络同步）→ `config/`（JSON 配置）→ `client/`（GUI + 客户端 mixin）→ `betel/`（槟榔系统）
+- **包结构**: `com.habitrain.core.api/`（公开 API）；`task/`（任务引擎）、`game/sre/`（模式实现）、`role/`（角色引擎）、`scene/`（场景）、`vote/`（投票）、`network/`（网络同步）、`config/`（JSON 配置）、`client/`（GUI 与客户端 mixin）、`internal/`（内部边界）、`persist/`（持久化）、`misc/`（其他实现）。历史 `betel/` 包已不在当前架构中。
 - **入口点**: `HabiTrainCore` (main) → `HabiTrainCoreClient` (client) → `ModMenuIntegration` (modmenu)
 - **API 类名已重命名**: `HabiTaskRegistry` → `TaskRegistry`，`HabiTaskDefinition` → `TaskDefinition`，`HabiTaskInstance` → `TaskInstance`，`HabiTaskCategory` → `TaskCategory`
 - **GameModeRegistry**: 注册/管理游戏模式 (SRE谋杀/修机等上游模式)

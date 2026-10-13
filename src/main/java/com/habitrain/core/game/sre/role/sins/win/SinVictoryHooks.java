@@ -238,7 +238,7 @@ public final class SinVictoryHooks {
     }
 
     /**
-     * Instant rewritten Sloth win after three induced sleepers and a real bed lie-down.
+     * Instant Sloth win after max(1, ceil(startingPlayers / 5.0)) induced sleepers and a real bed lie-down.
      */
     public static void triggerSlothWin(ServerLevel level, ServerPlayer sloth) {
         if (level == null || sloth == null || SevenSins.SLOTH == null) return;

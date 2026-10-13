@@ -23,7 +23,7 @@ import net.minecraft.server.level.ServerPlayer;
  * 客户端收到后调用 ConfigManager.applySyncFromJson（抑制 save 回调，防止回环广播）。
  */
 public class FullConfigSyncPayload implements CustomPacketPayload {
-    private static final int MAX_JSON_LENGTH = 1048576;
+    private static final int MAX_JSON_LENGTH = com.habitrain.core.config.ConfigPatch.MAX_SYNC_JSON_BYTES;
 
     public static final CustomPacketPayload.Type<FullConfigSyncPayload> TYPE =
             new CustomPacketPayload.Type<>(HabiTrainCore.id("full_config_sync"));
@@ -74,12 +74,12 @@ public class FullConfigSyncPayload implements CustomPacketPayload {
     }
 
     public static void sendToPlayer(ServerPlayer player) {
-        String json = ConfigManager.getInstance().toJsonString();
+        String json = ConfigManager.getInstance().authoritativeSyncJson();
         ServerPlayNetworking.send(player, new FullConfigSyncPayload(json));
     }
 
     public static void broadcastToAll(MinecraftServer server) {
-        String json = ConfigManager.getInstance().toJsonString();
+        String json = ConfigManager.getInstance().authoritativeSyncJson();
         FullConfigSyncPayload payload = new FullConfigSyncPayload(json);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ServerPlayNetworking.send(player, payload);

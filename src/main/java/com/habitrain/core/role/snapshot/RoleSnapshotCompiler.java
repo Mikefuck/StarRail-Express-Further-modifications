@@ -15,7 +15,6 @@ import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
 
@@ -77,20 +76,19 @@ public final class RoleSnapshotCompiler {
 
     /**
      * The single authoritative effective-directory compilation (fix-doc §6.1):
-     * raw baselines minus hidden {@code REPLACE} targets, then v2 and v1
+     * raw baselines minus hidden {@code REPLACE} targets, then v2
      * replacements surfaced exactly once each, keyed by canonical id. A
      * duplicate canonical id is a compile diagnostic, never a silent overwrite.
      */
     public static Map<ResourceLocation, EffectiveRole> compileEffectiveRoles(RawRoleLookup lookup) {
         Map<ResourceLocation, EffectiveRole> roles = new LinkedHashMap<>();
-        RoleOverrideEngine engine = RoleOverrideEngine.getInstance();
         for (SRERole role : lookup.all()) {
             if (role == null || role.identifier() == null) {
                 continue;
             }
             ResourceLocation rid = role.identifier();
             if (isHiddenTarget(rid)) {
-                continue; // active v1/v2 REPLACE target is hidden; its replacement surfaces below
+                continue; // active v2 REPLACE target is hidden; its replacement surfaces below
             }
             if (RoleExtensionRegistry.INSTANCE.isActiveReplacementRoleId(rid)) {
                 continue; // active v2 REPLACE replacement surfaces below
@@ -101,12 +99,6 @@ public final class RoleSnapshotCompiler {
             if (RoleExtensionRegistry.INSTANCE.isAdded(rid)
                     && !RoleExtensionRegistry.INSTANCE.isAddedActive(rid)) {
                 continue; // config-disabled v2 ADD stays out of the effective view
-            }
-            if (engine.isManagedReplacementId(rid) && !engine.isActiveReplacementId(rid)) {
-                continue; // inactive v1 replacement stays in the raw registry but is hidden
-            }
-            if (engine.isActiveReplacementId(rid)) {
-                continue; // v1 REPLACE replacement surfaces below
             }
             EffectiveRole.Source source = sourceFor(rid);
             CompiledModifyOverlay overlay = compileOverlay(role, rid, null);
@@ -140,17 +132,6 @@ public final class RoleSnapshotCompiler {
             roles.put(cid, new EffectiveRole(profile, surfaced, overlay));
         }
 
-        // v1 REPLACE replacements from the legacy engine surface once.
-        for (var entry : engine.getSnapshot().getActiveReplaces().entrySet()) {
-            roles.remove(entry.getKey());
-            SRERole replacement = entry.getValue().replacementRole();
-            if (replacement != null && replacement.identifier() != null
-                    && !roles.containsKey(replacement.identifier())) {
-                ResourceLocation cid = replacement.identifier();
-                roles.put(cid, new EffectiveRole(EffectiveRoleProfile.from(
-                        RoleKey.of(cid), replacement, EffectiveRole.Source.REPLACEMENT), replacement));
-            }
-        }
         return roles;
     }
 
@@ -201,19 +182,17 @@ public final class RoleSnapshotCompiler {
         return aliases;
     }
 
-    /** Every active v1/v2 {@code REPLACE} target id, for the {@code includeReplaced} view. */
+    /** Every active v2 {@code REPLACE} target id, for the {@code includeReplaced} view. */
     public static Set<ResourceLocation> compileReplacedTargets(Map<ResourceLocation, EffectiveRole> roles) {
         Set<ResourceLocation> targets = new LinkedHashSet<>();
         for (RoleReplacement repl : RoleExtensionRegistry.INSTANCE.activeReplacements()) {
             targets.add(repl.target().location());
         }
-        targets.addAll(RoleOverrideEngine.getInstance().getSnapshot().getActiveReplaces().keySet());
         return targets;
     }
 
     private static boolean isHiddenTarget(ResourceLocation rid) {
-        return RoleExtensionRegistry.INSTANCE.isActiveReplaced(rid)
-                || RoleOverrideEngine.getInstance().isReplaced(rid);
+        return RoleExtensionRegistry.INSTANCE.isActiveReplaced(rid);
     }
 
     /** Folds configured v2 patches without materializing them onto {@code role}. */
@@ -233,7 +212,7 @@ public final class RoleSnapshotCompiler {
 
     /**
      * Unified source priority (fix-doc §6.3): REPLACEMENT > ADDED > MODIFIED >
-     * LEGACY > BASELINE. Replaced targets and replacement ids never reach this
+     * BASELINE. Replaced targets and replacement ids never reach this
      * from the baseline loop (they are skipped or surfaced with an explicit
      * {@code REPLACEMENT} source).
      */
@@ -242,12 +221,6 @@ public final class RoleSnapshotCompiler {
             return EffectiveRole.Source.ADDED;
         }
         if (RoleExtensionRegistry.INSTANCE.isActiveModified(id)) {
-            return EffectiveRole.Source.MODIFIED;
-        }
-        if (RoleOverrideEngine.getInstance().isActiveReplacementId(id)) {
-            return EffectiveRole.Source.REPLACEMENT;
-        }
-        if (RoleOverrideEngine.getInstance().isModified(id)) {
             return EffectiveRole.Source.MODIFIED;
         }
         return EffectiveRole.Source.BASELINE;

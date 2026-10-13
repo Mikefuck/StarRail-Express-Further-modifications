@@ -1,15 +1,11 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
-import com.habitrain.core.role.override.EffectiveSnapshot;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.GameMode;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,7 +13,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests the {@link RoleQuery} filtering in {@link RoleCatalogImpl}, using the
- * same injected-raw-map + reflection-seeded-snapshot harness as
+ * same injected-raw-map + v2 declaration harness as
  * {@link RoleCatalogApiTest}.
  */
 @SuppressWarnings("deprecation") // Retained for legacy API compatibility.
@@ -45,9 +40,9 @@ class RoleCatalogQueryTest {
 
     @BeforeEach
     @AfterEach
-    void resetEngineSnapshot() throws Exception {
+    void resetRoleSnapshots() throws Exception {
         RoleSnapshotManager.INSTANCE.clear();
-        setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
+        RoleCatalogTestFixtures.reset();
     }
 
     // ------------------------------------------------------------------
@@ -199,13 +194,7 @@ class RoleCatalogQueryTest {
         Map<ResourceLocation, SRERole> raw = new LinkedHashMap<>();
         raw.put(TARGET_ID, target);
 
-        ReplaceRoleDefinition def = ReplaceRoleDefinition.builder()
-                .sourceModId("habitrain_core")
-                .displayName(Component.literal("新黑手党"))
-                .targetRoleId(TARGET_ID)
-                .replacementRole(replacement)
-                .build();
-        setSnapshot(new EffectiveSnapshot(Map.of(TARGET_ID, def), Map.of(), List.of()));
+        RoleCatalogTestFixtures.replace(TARGET_ID, replacement);
 
         RoleCatalogImpl api = new RoleCatalogImpl(raw);
 
@@ -361,9 +350,4 @@ class RoleCatalogQueryTest {
                 .setNeutrals(true);
     }
 
-    private static void setSnapshot(EffectiveSnapshot snap) throws Exception {
-        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
-        field.setAccessible(true);
-        field.set(RoleOverrideEngine.getInstance(), snap);
-    }
 }

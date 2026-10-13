@@ -11,7 +11,7 @@ import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
@@ -104,18 +104,9 @@ public class NetworkReceiverRegistrar {
         //    applySyncFromJson 抑制 save 回调，防止回环广播。
         ClientPlayNetworking.registerGlobalReceiver(FullConfigSyncPayload.TYPE, (payload, context) -> {
             context.client().execute(() -> {
-                // 集成主机与服务端同 JVM 共享 ConfigManager；LAN 客人 singleplayerServer == null。
-                // 仍要 bump 颜色版本：LAN 客人 OP 的 C2S merge 已经改了共享内存，主机缓存必须失效。
-                if (Minecraft.getInstance().getSingleplayerServer() != null) {
-                    InstinctColorHelper.markDirty();
-                    HabiTrainCore.LOGGER.debug("跳过完整配置导入：本机是集成服务器主机");
-                    return;
-                }
                 HabiTrainCore.LOGGER.info("收到服务端完整配置同步 ({} 字节)", payload.getConfigJson().length());
                 ConfigManager.getInstance().applySyncFromJson(payload.getConfigJson());
                 InstinctColorHelper.markDirty();
-                // Refresh role override engine with synced config
-                com.habitrain.core.client.role.RoleOverrideRefreshDispatcher.refresh();
             });
         });
 
@@ -366,6 +357,7 @@ public class NetworkReceiverRegistrar {
                 com.habitrain.core.network.RoleSnapshotPayload.TYPE, (payload, ctx) ->
                         ctx.client().execute(() -> {
                             com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.accept(payload);
+                            com.habitrain.core.client.role.RoleRefreshDispatcher.refresh();
                             com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.onSnapshotUpdated();
                             // Be robust to packet reordering and future senders: if a
                             // manifest was already accepted, report again with the

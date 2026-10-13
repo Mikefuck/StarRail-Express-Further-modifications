@@ -1,5 +1,7 @@
 package com.habitrain.core.network;
 
+
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.HabiTrainCore;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -46,7 +48,7 @@ public record MapVoteLaunchTransitionPayload(String winningMapId) implements Cus
         MapVoteLaunchTransitionPayload payload =
                 new MapVoteLaunchTransitionPayload(winningMapId);
         for (ServerPlayer player : level.players()) {
-            if (com.habitrain.core.game.sre.RepairModeManager.isRepairer(player)) {
+            if (com.habitrain.core.game.sre.mode.RepairModeManager.isRepairer(player)) {
                 continue; // 维修员不看开局转场
             }
             ServerPlayNetworking.send(player, payload);

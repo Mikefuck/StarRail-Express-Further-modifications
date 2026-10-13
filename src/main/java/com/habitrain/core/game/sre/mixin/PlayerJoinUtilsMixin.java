@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.ForcedReadyJoinGate;
+import com.habitrain.core.game.sre.mode.ForcedReadyJoinGate;
 import io.wifi.starrailexpress.PlayerJoinUtils;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;

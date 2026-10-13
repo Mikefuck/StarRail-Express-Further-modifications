@@ -18,7 +18,8 @@ import net.minecraft.world.InteractionResultHolder;
  *
  * <p>The target may have any role, so these locks cannot be registered only
  * against Sloth's provider-scoped hooks. All callbacks are server-authoritative
- * and no-op for players who are not in induced sleep.</p>
+ * and no-op for players who are not in induced sleep. Round boundaries reset
+ * this shared state, and shield-break events wake affected players.</p>
  */
 public final class SevenSinEvents {
     private SevenSinEvents() {}

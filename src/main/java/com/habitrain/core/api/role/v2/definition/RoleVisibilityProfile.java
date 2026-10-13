@@ -3,8 +3,7 @@ package com.habitrain.core.api.role.v2.definition;
 /**
  * Immutable visibility / instinct profile of a role.
  *
- * <p>Maps onto the upstream instinct trio that v1 {@code FlagsPatch} already
- * exposes: whether the holder can use instinct, whether instinct grants night
+ * <p>Maps onto the upstream instinct fields: whether the holder can use instinct, whether instinct grants night
  * vision, and whether teammate killers remain visible. An absent profile on a
  * {@link RoleDefinition} leaves the upstream defaults (instinct off, teammate
  * visibility on).

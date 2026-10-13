@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.RepairModeManager;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import io.wifi.starrailexpress.game.modes.SREMurderGameMode;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;

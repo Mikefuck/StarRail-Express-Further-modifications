@@ -1,5 +1,8 @@
 package com.habitrain.core.config;
 
+
+import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
+import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.api.scene.SceneMotionSettings;
 
 import com.google.gson.Gson;
@@ -58,12 +61,27 @@ public class ConfigStore {
         return false;
     }
 
+    public ConfigSaveResult commitResult(ConfigRepository repo) {
+        if (!dirty) return ConfigSaveResult.unchanged();
+        return commit(repo) ? ConfigSaveResult.saved() : ConfigSaveResult.failed("配置写入失败，请检查配置文件与 .bak 的权限和类型");
+    }
+
     public void load(ConfigRepository repo) {
+        ConfigRepository candidate = new ConfigRepository();
+        loadCandidate(candidate);
+        repo.copyFrom(candidate);
+    }
+
+    private void loadCandidate(ConfigRepository repo) {
         this.dirty = false;
         applyDefaults(repo);
 
-        AtomicJsonFiles.JsonLoad<JsonObject> loaded = AtomicJsonFiles.readJson(
-                configFile.toPath(), JsonObject.class, gson);
+        AtomicJsonFiles.JsonLoad<JsonObject> loaded = AtomicJsonFiles.readJsonValidated(
+                configFile.toPath(), JsonObject.class, gson, root -> {
+                    ConfigValidation.validate(root);
+                    if (!new ConfigSync(this).loadFromJsonString(new ConfigRepository(), root.toString()))
+                        throw new IllegalArgumentException("配置 schema 无效");
+                });
         if (loaded.isMissing()) {
             createDefaultConfig(repo);
             save(repo);
@@ -195,12 +213,6 @@ public class ConfigStore {
                 repo.setEnvironment(EnvironmentSettings.createDefault());
             }
 
-            if (root.has("roleOverrides") && root.get("roleOverrides").isJsonObject()) {
-                repo.setRoleOverrides(RoleOverrideConfigSection.fromJson(root.getAsJsonObject("roleOverrides")));
-            } else {
-                repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
-            }
-
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
                 repo.setSceneMotion(SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion")));
             } else {
@@ -212,7 +224,7 @@ public class ConfigStore {
                     repo.getMutableGameModeConfigs().size(),
                     repo.getMutableMinigameConfigs().size());
             if (loaded.usedBackup()) {
-                if (save(repo)) {
+                if (save(repo, false)) {
                     LOGGER.warn("主配置损坏或缺失，已从 .bak 恢复");
                 } else {
                     LOGGER.error("已从 .bak 加载主配置，但恢复主文件失败");
@@ -221,9 +233,7 @@ public class ConfigStore {
         } catch (Exception e) {
             LOGGER.error("加载任务配置失败，备份损坏文件后重建默认配置", e);
             quarantineCorruptConfig();
-            // 恢复流程必须重置与 load() 开头相同的完整默认值序列：JSON 在 global
-            // 段中途抛错时，此前已 set 的项（如 knifeDurabilityEnabled /
-            // "默认"配置（review M19）。
+            // 恢复到完整默认候选，避免解析中途写入的字段泄漏至运行态。
             applyDefaults(repo);
             createDefaultConfig(repo);
             save(repo);
@@ -246,7 +256,6 @@ public class ConfigStore {
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
-        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
         repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 
@@ -271,6 +280,10 @@ public class ConfigStore {
      *         调用方据此决定是否保留 dirty flag（见 commit）。
      */
     public boolean save(ConfigRepository repo) {
+        return save(repo, true);
+    }
+
+    private boolean save(ConfigRepository repo, boolean backup) {
         try {
             File parent = configFile.getParentFile();
             if (parent != null && !parent.exists()) {
@@ -278,7 +291,8 @@ public class ConfigStore {
             }
 
             JsonObject root = buildJsonRoot(repo, true);
-            return AtomicJsonFiles.writeJson(configFile.toPath(), root, gson, true);
+            ConfigValidation.validate(root);
+            return AtomicJsonFiles.writeJson(configFile.toPath(), root, gson, true, backup);
         } catch (Exception e) {
             // 同时捕获 IOException 与 buildJsonRoot 抛出的 RuntimeException，
             // 避免非 IO 异常传出后 commit 已清 dirty 导致改动永久丢失。
@@ -307,6 +321,7 @@ public class ConfigStore {
         root.add("global", global);
 
         JsonObject tasks = new JsonObject();
+        for (var entry : repo.getAllConfigs().entrySet()) tasks.add(entry.getKey(), entry.getValue().toJson());
         for (TaskDefinition def : TaskRegistry.getAll()) {
             String fullId = def.getFullId();
             TaskConfigEntry entry = repo.getTaskConfig(fullId);
@@ -330,6 +345,7 @@ public class ConfigStore {
         JsonObject minigames = new JsonObject();
         minigames.addProperty("globalEnabled", repo.isMinigameGlobalEnabled());
         JsonObject mgEntries = new JsonObject();
+        for (var entry : repo.getAllMinigameConfigs().entrySet()) mgEntries.add(entry.getKey(), entry.getValue().toJson());
         for (String id : safeGetAllMinigameIds()) {
             MinigameConfigEntry entry = repo.getMinigameConfig(id);
             if (entry == null) entry = MinigameConfigEntry.createDefault();
@@ -341,8 +357,6 @@ public class ConfigStore {
         root.add("modeMapVote", repo.getModeMapVote().toJson());
 
         root.add("environment", repo.getEnvironment().toJson());
-
-        root.add("roleOverrides", repo.getRoleOverrides().toJson());
 
         root.add("sceneMotion", repo.getSceneMotion().toJson());
 
@@ -368,7 +382,6 @@ public class ConfigStore {
         repo.setBlackoutEffectEnhancementEnabled(false);
         repo.setModeMapVote(ModeMapVoteSettings.createDefault());
         repo.setEnvironment(EnvironmentSettings.createDefault());
-        repo.setRoleOverrides(RoleOverrideConfigSection.createDefault());
         repo.setSceneMotion(SceneMotionSettings.createDefault());
     }
 

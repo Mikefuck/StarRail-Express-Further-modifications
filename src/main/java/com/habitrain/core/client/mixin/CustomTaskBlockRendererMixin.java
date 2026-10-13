@@ -1,5 +1,7 @@
 package com.habitrain.core.client.mixin;
 
+
+import com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;
@@ -9,7 +11,7 @@ import com.habitrain.core.client.render.TaskOverlayDrawer;
 import com.habitrain.core.client.render.ViewModeDispatcher;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
-import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
@@ -66,7 +68,7 @@ public class CustomTaskBlockRendererMixin {
         int renderedCount = 0;
 
         int blockTypeId = resolveBlockTypeId(taskName);
-        if (blockTypeId < com.habitrain.core.game.sre.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
+        if (blockTypeId < com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits.CUSTOM_OVERLAY_MIN_TYPE_ID) {
             return;
         }
 

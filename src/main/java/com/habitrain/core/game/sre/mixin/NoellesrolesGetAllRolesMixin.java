@@ -1,6 +1,5 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.role.override.RoleOverrideFilter;
 import io.wifi.starrailexpress.api.SRERole;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,6 +20,6 @@ public class NoellesrolesGetAllRolesMixin {
     private static void filterReplacedRoles(boolean includeDisabled, CallbackInfoReturnable<List<SRERole>> cir) {
         List<SRERole> original = cir.getReturnValue();
         if (original == null || original.isEmpty()) return;
-        cir.setReturnValue(RoleOverrideFilter.apply(original));
+        cir.setReturnValue(com.habitrain.core.game.sre.role.SreRoleResolver.visibleRegistryRoles(original));
     }
 }

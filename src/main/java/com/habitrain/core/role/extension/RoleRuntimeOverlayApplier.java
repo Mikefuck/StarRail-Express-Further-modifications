@@ -55,7 +55,7 @@ public final class RoleRuntimeOverlayApplier {
             }
             List<RoleSkill.Definition> safe = definitions == null ? List.of() : List.copyOf(definitions);
             // RoleSkill.register rejects an empty vararg list.  Go through the
-            // same accessor used by the legacy override manager so REPLACE_ALL
+            // unified-skill accessor so REPLACE_ALL
             // can represent an intentional empty list and baseline restoration
             // can faithfully restore a role that started without skills.
             Map<ResourceLocation, List<RoleSkill.Definition>> unified =
@@ -278,8 +278,8 @@ public final class RoleRuntimeOverlayApplier {
         }
         if (overlay.flagsPatch() != null) {
             try {
-                com.habitrain.core.api.role.patch.FlagsPatch.MutableFlagsPatch out =
-                        new com.habitrain.core.api.role.patch.FlagsPatch.MutableFlagsPatch();
+                com.habitrain.core.api.role.v2.patch.FlagsPatch.MutableFlagsPatch out =
+                        new com.habitrain.core.api.role.v2.patch.FlagsPatch.MutableFlagsPatch();
                 overlay.flagsPatch().apply(role, null, out);
                 if (out.isInnocent != null) role.setInnocent(out.isInnocent);
                 if (out.canUseKiller != null) role.setCanUseKiller(out.canUseKiller);
@@ -296,8 +296,8 @@ public final class RoleRuntimeOverlayApplier {
         }
         if (overlay.spawnInfoPatch() != null) {
             try {
-                com.habitrain.core.api.role.patch.SpawnInfoPatch.MutableSpawnInfoPatch out =
-                        new com.habitrain.core.api.role.patch.SpawnInfoPatch.MutableSpawnInfoPatch();
+                com.habitrain.core.api.role.v2.patch.SpawnInfoPatch.MutableSpawnInfoPatch out =
+                        new com.habitrain.core.api.role.v2.patch.SpawnInfoPatch.MutableSpawnInfoPatch();
                 overlay.spawnInfoPatch().apply(role, null, out);
                 if (out.defaultMax != null) role.setDefaultMax(out.defaultMax);
                 if (out.defaultEnableChance != null) role.setDefaultEnableChance(out.defaultEnableChance);

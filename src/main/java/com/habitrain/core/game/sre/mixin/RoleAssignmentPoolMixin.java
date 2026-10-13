@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -30,7 +30,7 @@ public class RoleAssignmentPoolMixin {
     )
     private static ArrayList<SRERole> filterReplacedRoles(ArrayList<SRERole> roles) {
         if (roles == null || roles.isEmpty()) return roles;
-        return new ArrayList<>(com.habitrain.core.role.override.RoleOverrideFilter.apply(roles));
+        return new ArrayList<>(com.habitrain.core.game.sre.role.SreRoleResolver.visibleRegistryRoles(roles));
     }
 
     /**
@@ -39,11 +39,11 @@ public class RoleAssignmentPoolMixin {
      */
     @Inject(method = "selectRole", at = @At("RETURN"), cancellable = true)
     private void habitrain$resolveSelectedRole(CallbackInfoReturnable<SRERole> cir) {
-        cir.setReturnValue(SreRoleOverrideResolver.resolve(cir.getReturnValue()));
+        cir.setReturnValue(SreRoleResolver.resolve(cir.getReturnValue()));
     }
 
     @Inject(method = "selectRoles", at = @At("RETURN"), cancellable = true)
     private void habitrain$resolveSelectedRoles(int count, CallbackInfoReturnable<List<SRERole>> cir) {
-        cir.setReturnValue(SreRoleOverrideResolver.resolveSelection(cir.getReturnValue()));
+        cir.setReturnValue(SreRoleResolver.resolveSelection(cir.getReturnValue()));
     }
 }

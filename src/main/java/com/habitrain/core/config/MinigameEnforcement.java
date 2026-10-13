@@ -1,5 +1,6 @@
 package com.habitrain.core.config;
 
+import com.habitrain.core.game.sre.config.SREIntegration;
 import net.minecraft.server.MinecraftServer;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;

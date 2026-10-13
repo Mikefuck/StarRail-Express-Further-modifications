@@ -17,9 +17,8 @@ import java.util.function.BooleanSupplier;
  * {@code CoreLifecycleScope.run(() -> TaskRegistry.register(...))}
  * 就能在运行期绕过注册表冻结。现在作用域的唯一驱动者
  * （{@code internal.CoreLifecycleScope}）已移出公开层，
- * 本类只保留一个<b>只读</b>判定，并且驱动权用一个不可伪造的能力令牌锁定：
- * {@link #installProbe} 只接受 {@code owner} 的类名等于
- * {@value #OWNER_CLASS} 的调用——同 JVM 内不可能存在第二个同名类。
+ * 本类只保留只读判定。探针装配要求已知内部类自身调用，且加载器与实际
+ * CodeSource 均和当前 Core 一致；这是防误用守卫，不是 Java Mod 安全沙箱。
  */
 public final class CoreLifecycle {
 
@@ -57,10 +56,11 @@ public final class CoreLifecycle {
      * @param owner 调用者自身；只有 {@value #OWNER_CLASS} 可以通过校验
      * @throws IllegalStateException owner 不是 core 内部作用域类，或探针已装配过
      */
-    public static void installProbe(Class<?> owner, BooleanSupplier probe) {
+    public static synchronized void installProbe(Class<?> owner, BooleanSupplier probe) {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(probe, "probe");
-        if (!OWNER_CLASS.equals(owner.getName())) {
+        Class<?> caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).getCallerClass();
+        if (!OWNER_CLASS.equals(owner.getName()) || caller != owner || !sameOrigin(owner)) {
             throw new IllegalStateException(
                     "CoreLifecycle.installProbe is reserved for habitrain_core " + OWNER_CLASS);
         }
@@ -71,6 +71,18 @@ public final class CoreLifecycle {
         if (!INSTALLED.compareAndSet(false, true)) {
             CoreLifecycle.probe = null;
             throw new IllegalStateException("CoreLifecycle probe already installed");
+        }
+    }
+
+    private static boolean sameOrigin(Class<?> owner) {
+        try {
+            var ownSource = CoreLifecycle.class.getProtectionDomain().getCodeSource();
+            var callerSource = owner.getProtectionDomain().getCodeSource();
+            return owner.getClassLoader() == CoreLifecycle.class.getClassLoader()
+                    && ownSource != null && callerSource != null
+                    && ownSource.getLocation().toURI().normalize().equals(callerSource.getLocation().toURI().normalize());
+        } catch (Exception failure) {
+            return false;
         }
     }
 }

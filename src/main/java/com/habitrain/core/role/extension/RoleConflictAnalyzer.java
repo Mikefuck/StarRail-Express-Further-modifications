@@ -1,12 +1,7 @@
 package com.habitrain.core.role.extension;
 
-import com.habitrain.core.api.role.ModifyRoleDefinition;
-import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.api.role.v2.definition.RolePatch;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
-import com.habitrain.core.role.legacy.LegacyRoleOverrideTranslator;
-import com.habitrain.core.role.override.RoleOverrideEngine;
-import com.habitrain.core.role.override.RoleOverrideRegistry;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
@@ -19,16 +14,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Computes the unified v1+v2 entry view and the cross-version same-target
- * conflicts (fix-doc §6.5). Runs once at freeze; the result is the diagnostic
- * baseline for config, commands and Mod Menu.
- *
- * <p>Conflict rule mirrors the v1 engine's existing runtime guard: any legacy
- * (v1) {@code REPLACE}/{@code MODIFY} whose target is owned by a v2
- * {@code REPLACE}/{@code MODIFY}/{@code ADD} is {@code CONFLICT} and excluded
- * from the effective snapshot.
- *
- * <p>v2 entries are also checked at field granularity. Two enabled
+ * Computes the compiled v2 declaration view for diagnostics and configuration.
+ * Entries are checked at field granularity. Two enabled
  * {@code MODIFY} entries that issue incompatible scalar {@code SET}s for the
  * same target, priority and field are a conflict unless the server operator
  * selected one of those entries as the field winner. Every conflicting entry is
@@ -38,19 +25,8 @@ public final class RoleConflictAnalyzer {
 
     private RoleConflictAnalyzer() {}
 
-    /** The unified entry view with statuses, v2 first then translated v1. */
+    /** Compiled statuses for registered v2 declarations. */
     public static List<ManagedRoleEntry<?>> analyze() {
-        return analyze(RoleOverrideRegistry.INSTANCE.getReplaces(),
-                RoleOverrideRegistry.INSTANCE.getModifies());
-    }
-
-    /**
-     * {@link #analyze()} against explicit v1 collections (unit-test friendly:
-     * the v1 registry is a frozen singleton with no public reset).
-     */
-    public static List<ManagedRoleEntry<?>> analyze(
-            List<ReplaceRoleDefinition> v1Replaces,
-            List<ModifyRoleDefinition> v1Modifies) {
         List<ManagedRoleEntry<?>> entries = new ArrayList<>();
         entries.addAll(RoleExtensionRegistry.INSTANCE.v2Entries());
 
@@ -64,25 +40,6 @@ public final class RoleConflictAnalyzer {
             }
         }
 
-        for (ReplaceRoleDefinition def : v1Replaces) {
-            entries.add(LegacyRoleOverrideTranslator.translateReplace(def));
-        }
-        for (ModifyRoleDefinition def : v1Modifies) {
-            entries.add(LegacyRoleOverrideTranslator.translateModify(def));
-        }
-
-        for (int i = 0; i < entries.size(); i++) {
-            ManagedRoleEntry<?> entry = entries.get(i);
-            if (!entry.legacy()) {
-                continue;
-            }
-            // Only a config-ENABLED v2 owner suppresses the v1 entry; a disabled
-            // v2 REPLACE/MODIFY/ADD leaves the target to the legacy engine.
-            if (RoleOverrideEngine.v2OwnsTarget(entry.target().location())) {
-                entries.set(i, entry.withStatus(EntryStatus.CONFLICT,
-                        "v1 override conflicts with a v2 REPLACE/MODIFY/ADD on " + entry.target()));
-            }
-        }
         return Collections.unmodifiableList(entries);
     }
 
@@ -100,8 +57,7 @@ public final class RoleConflictAnalyzer {
     private static Set<String> conflictingV2ModifyEntryIds(List<ManagedRoleEntry<?>> entries) {
         Map<ScalarFieldKey, List<ScalarWrite>> writesByField = new LinkedHashMap<>();
         for (ManagedRoleEntry<?> entry : entries) {
-            if (entry.legacy()
-                    || entry.operation() != RoleOperation.MODIFY
+            if (entry.operation() != RoleOperation.MODIFY
                     || entry.status() != EntryStatus.ACTIVE
                     || !(entry.declaration() instanceof RolePatch patch)) {
                 continue;

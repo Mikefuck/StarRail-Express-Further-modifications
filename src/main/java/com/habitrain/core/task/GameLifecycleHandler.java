@@ -1,5 +1,7 @@
 package com.habitrain.core.task;
 
+
+import com.habitrain.core.game.sre.match.MvpScoreTracker;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiComponents;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
@@ -88,7 +90,7 @@ public class GameLifecycleHandler {
             BackpackSearchHandler.clearAllSearches();
 
             // 清除跨局静态状态
-            com.habitrain.core.game.sre.MvpScoreTracker.resetAll();
+            com.habitrain.core.game.sre.match.MvpScoreTracker.resetAll();
             com.habitrain.core.game.sre.role.component.FlowerGirlComponent.clearMeleeImmune();
 
             HabiTrainCore.LOGGER.info("游戏结束，已清理任务与角色状态");

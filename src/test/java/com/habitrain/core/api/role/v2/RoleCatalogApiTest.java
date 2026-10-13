@@ -1,19 +1,14 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.role.catalog.RoleCatalogImpl;
-import com.habitrain.core.role.override.EffectiveSnapshot;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -24,16 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests the v2 {@link RoleCatalogApi} logic via a {@link RoleCatalogImpl}
- * backed by an injected raw-role map and a reflection-seeded engine snapshot.
- *
- * <p>{@code RoleOverrideRegistry#registerReplace} validates the provider mod
- * through FabricLoader and cannot run outside a launched game, so the definition
- * is built through the builder only (which does not touch FabricLoader) and the
- * engine snapshot is injected directly. Injecting the raw role map also avoids
- * {@code TMMRoles}'s static initializer, so no Minecraft bootstrap is required.
- */
+/** Tests v2 catalog queries against an injected upstream map and real v2 declarations. */
 class RoleCatalogApiTest {
 
     private static final ResourceLocation TARGET_ID = ResourceLocation.parse("sre:killer");
@@ -42,11 +28,11 @@ class RoleCatalogApiTest {
 
     @BeforeEach
     @AfterEach
-    void resetEngineSnapshot() throws Exception {
+    void resetRoleSnapshots() throws Exception {
         RoleSnapshotManager.INSTANCE.clear();
         com.habitrain.core.role.snapshot.RoleSnapshotArchive.INSTANCE.clear();
         com.habitrain.core.role.snapshot.RoleSnapshotVersions.resetForTests();
-        setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
+        RoleCatalogTestFixtures.reset();
     }
 
     // ------------------------------------------------------------------
@@ -55,7 +41,7 @@ class RoleCatalogApiTest {
 
     @Test
     void plainRolesAreSurfacedAndResolvable() throws Exception {
-        resetEngineSnapshot();
+        resetRoleSnapshots();
 
         SRERole civilian = role(TARGET_ID);
         Map<ResourceLocation, SRERole> raw = new HashMap<>();
@@ -102,13 +88,7 @@ class RoleCatalogApiTest {
         Map<ResourceLocation, SRERole> raw = new HashMap<>();
         raw.put(TARGET_ID, target);
 
-        ReplaceRoleDefinition def = ReplaceRoleDefinition.builder()
-                .sourceModId("habitrain_core")
-                .displayName(Component.literal("影杀"))
-                .targetRoleId(TARGET_ID)
-                .replacementRole(replacement)
-                .build();
-        setSnapshot(new EffectiveSnapshot(Map.of(TARGET_ID, def), Map.of(), List.of()));
+        RoleCatalogTestFixtures.replace(TARGET_ID, replacement);
 
         RoleCatalogImpl api = new RoleCatalogImpl(raw);
 
@@ -150,11 +130,6 @@ class RoleCatalogApiTest {
         return api.effectiveRoles();
     }
 
-    private static void setSnapshot(EffectiveSnapshot snap) throws Exception {
-        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
-        field.setAccessible(true);
-        field.set(RoleOverrideEngine.getInstance(), snap);
-    }
 
     private static SRERole role(ResourceLocation id) {
         return new NormalRole(id, 0xFFAA0000, false, true, SRERole.MoodType.FAKE, 20, true);

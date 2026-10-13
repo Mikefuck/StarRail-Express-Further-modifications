@@ -2,6 +2,7 @@ package com.habitrain.core.role.behavior;
 
 import com.habitrain.core.api.role.v2.RoleKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -22,4 +23,7 @@ public interface HookGates {
 
     /** Whether the role is present in the current round snapshot. */
     boolean presentInRound(RoleKey role, @Nullable ServerLevel level);
+
+    /** Representative holder for once-per-declaration broadcast/global-scope callbacks. */
+    default @Nullable ServerPlayer holder(RoleKey role, @Nullable ServerLevel level) { return null; }
 }

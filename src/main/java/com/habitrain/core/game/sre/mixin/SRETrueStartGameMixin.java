@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.sre.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.map.MapVoteLoadCoordinator;
 import io.wifi.starrailexpress.api.GameMode;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameUtils;

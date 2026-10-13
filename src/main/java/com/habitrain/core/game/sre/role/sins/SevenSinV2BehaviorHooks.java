@@ -46,9 +46,9 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * <p>Replaces the process-global Fabric/SRE listeners in
  * {@link SevenSinEvents} with provider-scoped {@link RoleHooks}: component
- * init, safe-time lifecycle, sloth input locks, envy/wrath attack gates,
- * greed pouch absorption and all killer/victim combat gates. Chat lock remains
- * a small non-role global listener in {@link SevenSinEvents}.
+ * init, safe-time lifecycle, wrath interactions and greed pouch absorption.
+ * Shared induced-sleep input/chat locks, round resets and shield-break handling
+ * remain global in {@link SevenSinEvents}, since affected players can have any role.
  */
 public final class SevenSinV2BehaviorHooks {
 

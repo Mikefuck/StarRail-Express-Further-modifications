@@ -50,7 +50,6 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     public static final double DROWSINESS_RADIUS = 5.0D;
     public static final int REQUIRED_SLEEP_TASKS = 2;
-    public static final int REQUIRED_SIMULTANEOUS_SLEEPERS = 3;
     // The player CCA is cleared on reconnect/role initialization. Eligibility belongs to the round.
     private static final Map<ServerLevel, Set<UUID>> INDUCED_THIS_ROUND = new WeakHashMap<>();
 

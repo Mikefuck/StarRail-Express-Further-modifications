@@ -3,7 +3,6 @@ package com.habitrain.core.client.gui.menu;
 import com.habitrain.core.client.gui.menu.page.InGameBalancePage;
 import com.habitrain.core.client.gui.menu.page.InGameEnvPage;
 import com.habitrain.core.client.gui.menu.page.InGameMinigamesPage;
-import com.habitrain.core.client.gui.menu.page.ModeRolesPage;
 import com.habitrain.core.client.gui.menu.page.ModeTasksPage;
 import com.habitrain.core.client.gui.menu.page.OtherPage;
 import com.habitrain.core.client.gui.menu.page.OutGameLobbyEnvPage;
@@ -41,13 +40,13 @@ public class ConfigMenuScreen extends Screen {
     private static final String[][] SUB_LABELS = {
         {"小游戏", "数值平衡", "环境", "移动场景"},
         {"投票", "大厅环境", "光影白名单", Component.translatable("screen.habitrain_core.title_panorama.tab").getString(), Component.translatable("screen.habitrain_core.scene_performance.tab").getString()},
-        {"任务配置", "角色覆盖", "角色扩展"},
+        {"任务配置", "角色扩展"},
         {}
     };
     private static final String[][] PAGE_HINTS = {
         {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气", "配置列车窗外移动场景与几何资产"},
         {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包", Component.translatable("screen.habitrain_core.title_panorama.page_hint").getString(), Component.translatable("screen.habitrain_core.scene_performance.page_hint").getString()},
-        {"按模式管理任务并编辑奖励与地图", "管理角色替换、调整和冲突状态", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
+        {"按模式管理任务并编辑奖励与地图", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
         {"兼容、耐久与服务端自动行为"}
     };
 
@@ -96,6 +95,7 @@ public class ConfigMenuScreen extends Screen {
 
     private ConfigMenuScreen(Screen parent, AccessMode accessMode) {
         super(Component.literal("哈比列车核心 — 控制台"));
+        ConfigManager.getInstance().beginClientEditing();
         this.parent = parent;
         this.accessMode = accessMode;
         ConfigUpdateContext.setCurrentScope(configUpdateScope());
@@ -173,7 +173,6 @@ public class ConfigMenuScreen extends Screen {
         };
         pages[TOP_MODE] = new ConfigPage[]{
             new ModeTasksPage(this, font, remoteEditable),
-            new ModeRolesPage(this, font, remoteEditable),
             new com.habitrain.core.client.gui.menu.page.RoleExtensionsPage(this, font, remoteEditable)
         };
         pages[TOP_OTHER] = new ConfigPage[]{new OtherPage(this, font, remoteEditable)};
@@ -210,13 +209,7 @@ public class ConfigMenuScreen extends Screen {
     }
 
     public void saveConfigNow() {
-        ConfigManager.getInstance().save();
-    }
-
-    /** 角色覆盖配置同步后刷新列表。 */
-    public void refreshRoleOverrideTab() {
-        ConfigPage[][] all = ensurePages();
-        if (all[TOP_MODE][1] instanceof ModeRolesPage roles) roles.rebuildRows();
+        com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
     }
 
     /** Dedicated map profile editor changed values also shown by the inline vote page. */
@@ -272,6 +265,13 @@ public class ConfigMenuScreen extends Screen {
         if (showSaveBar) {
             saveBar.render(g, font, contentX, contentW, height, accent,
                     page.isSaveAllowed(), mx, my);
+            if (ConfigManager.getInstance().hasClientConfigConflict()) {
+                int reloadX = contentX + Math.max(0, contentW - 226);
+                int reloadY = height - SaveBar.HEIGHT + 10;
+                g.fill(contentX, height - SaveBar.HEIGHT + 2, reloadX + 122, height, MenuTheme.BG_SIDEBAR);
+                MenuTheme.button(g, font, "放弃草稿并重载", reloadX, reloadY, 122, 22,
+                        MenuTheme.ACCENT_AMBER, true, MenuTheme.inBounds(mx, my, reloadX, reloadY, 122, 22));
+            }
         }
     }
 
@@ -421,6 +421,10 @@ public class ConfigMenuScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
         if (!isScreenAllowed()) return false;
+        if (currentPage().canSave() && ConfigManager.getInstance().hasClientConfigConflict()
+                && MenuTheme.inBounds(mx, my, contentX() + Math.max(0, contentW() - 226), height - SaveBar.HEIGHT + 10, 122, 22)) {
+            ConfigManager.getInstance().reloadClientDraft(); pages = null; return true;
+        }
         int navW = navWidth();
         for (int i = 0; i < TOP_LABELS.length; i++) {
             int y = NAV_TOP + i * (NAV_ITEM_H + NAV_GAP);
@@ -456,9 +460,7 @@ public class ConfigMenuScreen extends Screen {
             ConfigPage page = currentPage();
             page.flushPending();
             page.save();
-            ConfigManager.getInstance().save();
-            var player = Minecraft.getInstance().player;
-            if (player != null) player.displayClientMessage(Component.literal("§a配置已保存"), true);
+            saveConfigNow();
             return true;
         }
 
@@ -529,6 +531,7 @@ public class ConfigMenuScreen extends Screen {
             page.save();
         }
         saveConfigNow();
+        ConfigManager.getInstance().endClientEditing();
         // A live scene preview belongs to the client session, not to this disposable Screen.
         // Keep it running after Save/Close so reopening the editor can truthfully show “预览中”.
         // Map switches, game start and client/world lifecycle resets still stop it explicitly.

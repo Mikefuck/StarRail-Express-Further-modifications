@@ -112,8 +112,8 @@ public final class SceneTransferService {
      * 处理客户端发来的分片请求。
      *
      * <p>本方法在服务端线程执行（由 C2S 接收器调度）。每一个未满足的请求都会收到
-     * 一条 {@link SceneAssetChunkStatusS2C}，不存在「静默丢弃」路径：此前被静默拒绝的
-     * 请求会让客户端永远停留在等待下一片的 {@code activeDownloads} 里。</p>
+     * 一条 {@link SceneAssetChunkStatusS2C}；读取异常也会回传 REJECTED 终态。
+     * 连接断开或服务器停止后无法保证送达，客户端仍以超时机制兜底。</p>
      */
     public void handleChunkRequest(ServerPlayer player, SceneAssetChunkRequestC2S request) {
         if (player == null || request == null) return;
@@ -270,6 +270,13 @@ public final class SceneTransferService {
         } catch (Throwable t) {
             releasePlayerSlot(playerId);
             LOGGER.error("读取场景资产分片异常: file=" + file.getName() + ", offset=" + offset, t);
+            try {
+                player.server.execute(() -> sendStatus(player, sha256, transferId, requestId, offset,
+                        SceneAssetChunkStatusS2C.Status.REJECTED, 0));
+            } catch (RuntimeException deliveryFailure) {
+                LOGGER.warn("服务器停止或调度失败，分片读取错误无法送达；客户端将超时: player={}, request={}",
+                        playerId, requestId, deliveryFailure);
+            }
         }
     }
 

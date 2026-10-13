@@ -1,5 +1,6 @@
 package com.habitrain.core.client;
 
+import com.habitrain.core.client.role.sre.HabiRoleClientHooks;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.client.render.TaskOverlayDrawer;
 import net.fabricmc.api.ClientModInitializer;
@@ -24,6 +25,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        com.habitrain.core.config.ConfigManager.getInstance().installClientSession();
+        com.habitrain.core.client.config.ClientConfigSubmission.init();
         // 审核 A2/B14：装配客户端侧 SPI（场景渲染运行时 + 菜单门控客户端状态）。
         // 与主入口一致，只在 core 生命周期作用域内生效。
         com.habitrain.core.internal.CoreLifecycleScope.run(() -> {
@@ -70,7 +73,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
                 context -> com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance().render(context));
         com.habitrain.core.scene.client.SceneToolHud.init();
-        com.habitrain.core.scene.client.SceneOriginPlacementController.init();
+        com.habitrain.core.client.gui.scene.SceneOriginPlacementController.init();
         com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().init();
         // 分片请求超时判定与退避重试需要一个与帧率无关的固定节奏。
         com.habitrain.core.scene.client.SceneClientTicker.init();

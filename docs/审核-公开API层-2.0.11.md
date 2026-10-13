@@ -1,5 +1,7 @@
 # habitrain_core 公开 API 层审核（mod_version 2.0.11）
 
+> 历史审核记录：描述 2.0.11 当时的实现。当前角色覆盖 API v1 和兼容桥已移除，现行接口与包路径请以 [API 参考手册](API参考手册.md) 和 [角色扩展 API v2 使用教程](角色扩展API-v2使用教程.md) 为准。
+
 审核范围：`src/main/java/com/habitrain/core/api/**`（225 个顶层类型）、`src/test/java/com/habitrain/core/api/**`、
 顶层公开入口 `CoreApi` / `GameModeRegistry` / `TaskRegistry` / `ItemReclaimHelper` / `OptionVoteApi` /
 `ModeMapVoteApi` / `GameModeIds` / `WinResult` / `VoteOption` / `VoteResult` / `GameStateProvider` /

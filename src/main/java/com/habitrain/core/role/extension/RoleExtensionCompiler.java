@@ -240,16 +240,16 @@ public final class RoleExtensionCompiler {
                                     @Nullable Function<RolePatch, Set<String>> fieldMask) {
         int color = baseline != null ? baseline.color() : base.getColor();
         MoodType mood = baseline != null ? baseline.mood() : base.getMoodType();
-        com.habitrain.core.api.role.patch.ColorPatch colorProvider = null;
-        com.habitrain.core.api.role.patch.FlagsPatch flagsPatch = null;
-        com.habitrain.core.api.role.patch.SpawnInfoPatch spawnInfoPatch = null;
-        com.habitrain.core.api.role.patch.NamePatch namePatch = null;
-        com.habitrain.core.api.role.patch.RoleTextPatch descriptionPatch = null;
-        com.habitrain.core.api.role.patch.RoleTextPatch simpleDescriptionPatch = null;
-        com.habitrain.core.api.role.patch.DefaultItemsPatch defaultItemsPatch = null;
-        com.habitrain.core.api.role.patch.ShopPatch shopPatch = null;
-        com.habitrain.core.api.role.patch.ShopTransform shopTransform = null;
-        com.habitrain.core.api.role.patch.WinConditionHook winConditionHook = null;
+        com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider = null;
+        com.habitrain.core.api.role.v2.patch.FlagsPatch flagsPatch = null;
+        com.habitrain.core.api.role.v2.patch.SpawnInfoPatch spawnInfoPatch = null;
+        com.habitrain.core.api.role.v2.patch.NamePatch namePatch = null;
+        com.habitrain.core.api.role.v2.patch.RoleTextPatch descriptionPatch = null;
+        com.habitrain.core.api.role.v2.patch.RoleTextPatch simpleDescriptionPatch = null;
+        com.habitrain.core.api.role.v2.patch.DefaultItemsPatch defaultItemsPatch = null;
+        com.habitrain.core.api.role.v2.patch.ShopPatch shopPatch = null;
+        com.habitrain.core.api.role.v2.patch.ShopTransform shopTransform = null;
+        com.habitrain.core.api.role.v2.patch.WinConditionHook winConditionHook = null;
         boolean innocent = baseline != null ? baseline.innocent() : base.isInnocent();
         boolean canUseKiller = baseline != null ? baseline.canUseKiller() : base.canUseKiller();
         boolean neutral = baseline != null ? baseline.neutral() : base.isNeutrals();
@@ -401,16 +401,16 @@ public final class RoleExtensionCompiler {
 
     private record FoldedState(
             int color, MoodType mood,
-            com.habitrain.core.api.role.patch.ColorPatch colorProvider,
-            com.habitrain.core.api.role.patch.FlagsPatch flagsPatch,
-            com.habitrain.core.api.role.patch.SpawnInfoPatch spawnInfoPatch,
-            com.habitrain.core.api.role.patch.NamePatch namePatch,
-            com.habitrain.core.api.role.patch.RoleTextPatch descriptionPatch,
-            com.habitrain.core.api.role.patch.RoleTextPatch simpleDescriptionPatch,
-            com.habitrain.core.api.role.patch.DefaultItemsPatch defaultItemsPatch,
-            com.habitrain.core.api.role.patch.ShopPatch shopPatch,
-            com.habitrain.core.api.role.patch.ShopTransform shopTransform,
-            com.habitrain.core.api.role.patch.WinConditionHook winConditionHook,
+            com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider,
+            com.habitrain.core.api.role.v2.patch.FlagsPatch flagsPatch,
+            com.habitrain.core.api.role.v2.patch.SpawnInfoPatch spawnInfoPatch,
+            com.habitrain.core.api.role.v2.patch.NamePatch namePatch,
+            com.habitrain.core.api.role.v2.patch.RoleTextPatch descriptionPatch,
+            com.habitrain.core.api.role.v2.patch.RoleTextPatch simpleDescriptionPatch,
+            com.habitrain.core.api.role.v2.patch.DefaultItemsPatch defaultItemsPatch,
+            com.habitrain.core.api.role.v2.patch.ShopPatch shopPatch,
+            com.habitrain.core.api.role.v2.patch.ShopTransform shopTransform,
+            com.habitrain.core.api.role.v2.patch.WinConditionHook winConditionHook,
             boolean innocent, boolean canUseKiller, boolean neutral,
             boolean vigilanteTeam, int defaultMax, int enableChance, int needPlayerCount,
             int maxPlayerCount, boolean canSeeCoin, boolean canPickUpRevolver, boolean canBeRandomed,

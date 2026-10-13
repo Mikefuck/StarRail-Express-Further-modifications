@@ -1,5 +1,6 @@
 package com.habitrain.core;
 
+import com.habitrain.core.game.sre.voice.VoiceGroupService;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteApi;
@@ -7,8 +8,8 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MenuGateService;
 import com.habitrain.core.config.ModeMapVoteSettings;
-import com.habitrain.core.game.sre.RepairModeManager;
-import com.habitrain.core.game.sre.SREModeStartAdapter;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.game.sre.mode.SREModeStartAdapter;
 import com.habitrain.core.network.MenuGatePayload;
 import com.habitrain.core.role.config.RoleConfigApplyService;
 import com.habitrain.core.role.config.RoleExtensionConfigService;

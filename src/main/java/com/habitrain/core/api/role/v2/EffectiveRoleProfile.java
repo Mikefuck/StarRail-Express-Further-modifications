@@ -1,13 +1,13 @@
 package com.habitrain.core.api.role.v2;
 
-import com.habitrain.core.api.role.patch.DefaultItemsPatch;
-import com.habitrain.core.api.role.patch.FlagsPatch;
-import com.habitrain.core.api.role.patch.NamePatch;
-import com.habitrain.core.api.role.patch.RoleTextPatch;
-import com.habitrain.core.api.role.patch.ShopPatch;
-import com.habitrain.core.api.role.patch.ShopTransform;
-import com.habitrain.core.api.role.patch.SpawnInfoPatch;
-import com.habitrain.core.api.role.patch.WinConditionHook;
+import com.habitrain.core.api.role.v2.patch.DefaultItemsPatch;
+import com.habitrain.core.api.role.v2.patch.FlagsPatch;
+import com.habitrain.core.api.role.v2.patch.NamePatch;
+import com.habitrain.core.api.role.v2.patch.RoleTextPatch;
+import com.habitrain.core.api.role.v2.patch.ShopPatch;
+import com.habitrain.core.api.role.v2.patch.ShopTransform;
+import com.habitrain.core.api.role.v2.patch.SpawnInfoPatch;
+import com.habitrain.core.api.role.v2.patch.WinConditionHook;
 import com.habitrain.core.api.role.v2.skill.RoleSkillSpec;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.SRERole.MoodType;
@@ -69,7 +69,7 @@ public record EffectiveRoleProfile(
         ShopPatch shopPatch,
         ShopTransform shopTransform,
         WinConditionHook winConditionHook,
-        com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+        com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider,
         FlagsPatch flagsPatch,
         SpawnInfoPatch spawnInfoPatch) {
 
@@ -103,7 +103,7 @@ public record EffectiveRoleProfile(
             NamePatch namePatch, RoleTextPatch descriptionPatch, RoleTextPatch simpleDescriptionPatch,
             DefaultItemsPatch defaultItemsPatch, ShopPatch shopPatch, ShopTransform shopTransform,
             WinConditionHook winConditionHook,
-            com.habitrain.core.api.role.patch.ColorPatch colorProvider,
+            com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider,
             FlagsPatch flagsPatch, SpawnInfoPatch spawnInfoPatch) {
         this(key, source, color, mood, innocent, canUseKiller, neutral, vigilanteTeam,
                 defaultMax, enableChance, needPlayerCount, maxPlayerCount,

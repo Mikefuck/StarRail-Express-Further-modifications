@@ -1,5 +1,6 @@
 package com.habitrain.core.client.gui.menu.page;
 
+import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.MenuPermissions;
@@ -12,7 +13,7 @@ import com.habitrain.core.config.EnvProfile;
 import com.habitrain.core.config.EnvTimeSpec;
 import com.habitrain.core.config.EnvironmentSettings;
 import com.habitrain.core.config.PostMatchTimeRule;
-import com.habitrain.core.game.sre.SREModeStartAdapter;
+import com.habitrain.core.game.sre.mode.SREModeStartAdapter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.gui.Font;
@@ -185,7 +186,7 @@ public class InGameEnvPage implements ConfigPage {
                 }
             }
         } catch (Throwable ignored) {}
-        ids.removeIf(com.habitrain.core.config.SREIntegration::isReservedMapId);
+        ids.removeIf(com.habitrain.core.game.sre.config.SREIntegration::isReservedMapId);
         return new ArrayList<>(ids);
     }
 
@@ -193,7 +194,7 @@ public class InGameEnvPage implements ConfigPage {
 
     @Override public boolean canSave() { return true; }
 
-    /** 所有改动即时生效；写盘统一由根 SaveBar 处理，这里只标记环境脏。 */
+    /** 所有改动先进入草稿；服务器确认提交后生效，这里只标记环境脏。 */
     @Override public void save() { ConfigManager.getInstance().markEnvironmentDirty(); }
 
     /** 提交聚焦的 profile tick/fog 文本框到当前 profile（保存/切页/关闭前调用）。 */

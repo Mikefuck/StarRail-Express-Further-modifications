@@ -4,7 +4,7 @@ import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapVoteEntry;
 import com.habitrain.core.config.ModeMapVoteSettings;
 import com.habitrain.core.config.ModeVoteEntry;
-import com.habitrain.core.config.SREIntegration;
+import com.habitrain.core.game.sre.config.SREIntegration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -96,8 +96,7 @@ public class ModeAllowedMapsScreen extends Screen {
 
         saveBtn = Button.builder(Component.literal("§a保存"), b -> {
             if (!remoteEditable) { MenuPermissions.showDeniedMessage(); return; }
-            commitSave();
-            Minecraft.getInstance().setScreen(parent);
+            if (commitSave()) Minecraft.getInstance().setScreen(parent);
         }).bounds(-10000, -10000, 80, 20).build();
         addRenderableWidget(saveBtn);
 
@@ -107,12 +106,14 @@ public class ModeAllowedMapsScreen extends Screen {
         }
     }
 
-    private void commitSave() {
+    private boolean commitSave() {
         ModeMapVoteSettings s = settings();
         ModeVoteEntry mode = s.modes.computeIfAbsent(modeId, k -> ModeVoteEntry.createDefault());
         mode.allowedMaps = new ArrayList<>(selected);
         ConfigManager.getInstance().setModeMapVoteSettings(s);
-        ConfigManager.getInstance().save();
+        var result = ConfigManager.getInstance().save();
+        com.habitrain.core.client.config.ClientConfigSubmission.show(result);
+        return result.successful() || result.status() == com.habitrain.core.config.ConfigSaveResult.Status.SUBMITTING;
     }
 
     @Override

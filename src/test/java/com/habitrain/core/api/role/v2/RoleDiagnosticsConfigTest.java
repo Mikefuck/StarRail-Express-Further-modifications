@@ -13,8 +13,6 @@ import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
 import com.habitrain.core.role.diag.RoleDiagnosticsImpl;
 import com.habitrain.core.role.diag.RoleFieldTrace;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
-import com.habitrain.core.role.override.EffectiveSnapshot;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import io.wifi.starrailexpress.api.NormalRole;
 import io.wifi.starrailexpress.api.SRERole;
@@ -48,7 +46,6 @@ class RoleDiagnosticsConfigTest {
     void reset() throws Exception {
         RoleExtensionConfigService.INSTANCE.resetForTests();
         RoleSnapshotManager.INSTANCE.clear();
-        setSnapshot(new EffectiveSnapshot(Map.of(), Map.of(), List.of()));
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "compiledReplacements", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "patches", new ArrayList<>());
@@ -227,12 +224,6 @@ class RoleDiagnosticsConfigTest {
 
     private static SRERole role(ResourceLocation id) {
         return new NormalRole(id, COLOR, false, true, SRERole.MoodType.FAKE, 20, true);
-    }
-
-    private static void setSnapshot(EffectiveSnapshot snap) throws Exception {
-        Field field = RoleOverrideEngine.class.getDeclaredField("snapshot");
-        field.setAccessible(true);
-        field.set(RoleOverrideEngine.getInstance(), snap);
     }
 
     private static void setField(Class<?> clazz, Object target, String name, Object value) throws Exception {

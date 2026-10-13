@@ -429,7 +429,10 @@ public final class MapVoteProfileScreen extends Screen {
         return MapVoteProfileStore.PREVIEW_DIR + "/" + MapVoteProfileStore.escapeId(mapId) + ".png";
     }
 
+    private boolean preparingPreview;
+
     private void choosePreview() {
+        if (preparingPreview) return;
         if (!editable || !profileOverride) {
             MenuPermissions.showDeniedMessage();
             return;
@@ -440,16 +443,38 @@ public final class MapVoteProfileScreen extends Screen {
             return;
         }
         try {
-            MapVotePreviewFilePicker.PreparedPreview selected =
-                    MapVotePreviewFilePicker.chooseAndPrepare(
-                            Component.translatable(
-                                    "config.habitrain_core.map_profile.file_dialog_title").getString());
+            java.nio.file.Path selected = MapVotePreviewFilePicker.choose(Component.translatable(
+                    "config.habitrain_core.map_profile.file_dialog_title").getString());
             if (selected == null) return;
-            pendingPreview = selected;
-            uploadStatus = Component.translatable(
-                    "config.habitrain_core.map_profile.preview_selected",
-                    selected.fileName(), selected.width(), selected.height(), selected.kibibytes());
-            refreshState();
+            preparingPreview = true;
+            uploadStatus = Component.literal("正在处理预览图片…");
+            Minecraft client = Minecraft.getInstance();
+            var connection = client.getConnection();
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    MapVotePreviewFilePicker.PreparedPreview prepared =
+                            MapVotePreviewFilePicker.readAndPrepare(selected);
+                    client.execute(() -> {
+                        preparingPreview = false;
+                        if (client.screen != this || client.getConnection() != connection) return;
+                        pendingPreview = prepared;
+                        uploadStatus = Component.translatable(
+                                "config.habitrain_core.map_profile.preview_selected", prepared.fileName(),
+                                prepared.width(), prepared.height(), prepared.kibibytes());
+                        refreshState();
+                    });
+                } catch (Exception | LinkageError failure) {
+                    HabiTrainCore.LOGGER.warn("Failed to prepare map vote preview for '{}'", mapId, failure);
+                    client.execute(() -> {
+                        preparingPreview = false;
+                        if (client.screen != this || client.getConnection() != connection) return;
+                        pendingPreview = null;
+                        uploadStatus = Component.translatable(
+                                "config.habitrain_core.map_profile.preview_pick_failed", failure.getMessage());
+                        refreshState();
+                    });
+                }
+            });
         } catch (Exception | LinkageError e) {
             pendingPreview = null;
             uploadStatus = Component.translatable(

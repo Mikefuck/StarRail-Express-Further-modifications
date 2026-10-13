@@ -152,7 +152,7 @@ public final class SevenSinsMutex {
         if (type == civilian.getRoleType()) return civilian;
 
         // Neutrals / other: prefer a non-sin same-type role that is not loose-end / other-mode.
-        // Pool comes from the v2 catalog (v1 fallback) so v2-added roles join the pool (audit P2-1).
+        // Pool comes from the v2 catalog  so v2-added roles join the pool (audit P2-1).
         SRERole candidate =
                 com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool().stream()
                 .filter(role -> role != null && !SevenSins.isSin(role))

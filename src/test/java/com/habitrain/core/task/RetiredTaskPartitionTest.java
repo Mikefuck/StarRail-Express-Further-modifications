@@ -1,7 +1,9 @@
 package com.habitrain.core.task;
 
+
+import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.game.sre.SRETrainTaskWrapper;
+import com.habitrain.core.game.sre.task.SRETrainTaskWrapper;
 import com.habitrain.core.network.ActiveTaskPayload;
 import org.junit.jupiter.api.Test;
 
@@ -82,7 +84,7 @@ class RetiredTaskPartitionTest {
 
     @Test
     void dlcTaskPoolBuilderHasNoGhostPartitionParameters() {
-        List<Method> adders = Arrays.stream(com.habitrain.core.game.sre.DlcTaskPoolBuilder.class
+        List<Method> adders = Arrays.stream(com.habitrain.core.game.sre.task.DlcTaskPoolBuilder.class
                         .getDeclaredMethods())
                 .filter(m -> m.getName().equals("addDlcTasks"))
                 .toList();

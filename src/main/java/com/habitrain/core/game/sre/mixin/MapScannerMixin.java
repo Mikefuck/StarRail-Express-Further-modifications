@@ -1,6 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.game.sre.CustomTaskBlockScanner;
+import com.habitrain.core.game.sre.task.CustomTaskBlockScanner;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
 import net.minecraft.server.level.ServerLevel;
 import org.agmas.noellesroles.utils.MapScanner;

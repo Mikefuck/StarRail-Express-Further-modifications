@@ -25,6 +25,10 @@ import java.util.function.UnaryOperator;
  * 实际是抛异常并整批回滚，诊断里连 INVALID 行都不会出现；fix-doc §10.6 — no declared
  * persistence/sync is silently ignored).
  *
+ * <p>Synced transient values are committed as codec snapshots, and each read
+ * decodes its own value. Caller mutation cannot change a committed synchronized
+ * slot; write changes through set(). Unsynced in-memory slots retain reference semantics.
+ *
  * @param <T> value type. Prefer boxed primitives and immutable records.
  */
 public final class RoleStateSpec<T> {

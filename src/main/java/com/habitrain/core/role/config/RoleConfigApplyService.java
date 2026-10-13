@@ -3,7 +3,7 @@ package com.habitrain.core.role.config;
 import com.habitrain.core.network.RoleManifestPayload;
 import com.habitrain.core.network.RoleSnapshotPayload;
 import com.habitrain.core.role.extension.RoleExtensionRegistry;
-import com.habitrain.core.role.override.RoleOverrideLifecycleHandler;
+import com.habitrain.core.role.extension.RoleExtensionLifecycleHandler;
 import net.minecraft.server.MinecraftServer;
 
 /**
@@ -19,7 +19,7 @@ public final class RoleConfigApplyService {
 
     public static void applyAndBroadcast(MinecraftServer server) {
         RoleExtensionRegistry.INSTANCE.recomputeCompiledEntries();
-        RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
+        RoleExtensionLifecycleHandler.publishSnapshotAfterRebuild();
         if (server == null) {
             return;
         }

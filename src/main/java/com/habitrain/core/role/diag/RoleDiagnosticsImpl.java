@@ -27,7 +27,7 @@ import java.util.Set;
  * Default {@link RoleDiagnostics} implementation. Every v2 entry's status is a
  * <em>compiled</em> result (fix-doc §13.2) read from
  * {@link RoleExtensionRegistry#getCompiledEntries()}, which folds validation,
- * the v1/v2 conflict analyzer and the live {@code roleExtensionsV2} config — the
+ * the v2 conflict analyzer and the live {@code roleExtensionsV2} config — the
  * diagnostic never guesses {@code ACTIVE} from mere registration.
  */
 public final class RoleDiagnosticsImpl implements RoleDiagnostics {
@@ -96,14 +96,10 @@ public final class RoleDiagnosticsImpl implements RoleDiagnostics {
             case INVALID -> DiagnosticStatus.INVALID;
             case CONFLICT -> DiagnosticStatus.CONFLICT;
             case DISABLED -> DiagnosticStatus.DISABLED;
-            case LEGACY_UNMANAGED -> DiagnosticStatus.LEGACY_UNMANAGED;
         };
     }
 
     private static String enabledSource(ManagedRoleEntry<?> entry) {
-        if (entry.legacy()) {
-            return "legacy";
-        }
         return switch (RoleExtensionConfigService.INSTANCE.gateFor(entry.providerId(), entry.entryId())) {
             case ENABLED -> "active";
             case GLOBAL_DISABLED -> "global";

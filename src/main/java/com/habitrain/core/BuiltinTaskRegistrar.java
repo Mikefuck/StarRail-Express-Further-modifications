@@ -1,5 +1,6 @@
 package com.habitrain.core;
 
+import com.habitrain.core.game.sre.task.LootHelper;
 import com.habitrain.core.api.ItemReclaimHelper;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskRegistry;

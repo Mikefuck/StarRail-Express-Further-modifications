@@ -63,4 +63,16 @@ public enum HookType {
     public Category category() {
         return category;
     }
+
+    /** Participant matrix. Broadcast-only hooks have no killer/victim/target side. */
+    public boolean supportsScope(com.habitrain.core.api.role.v2.behavior.RoleScope scope) {
+        return switch (scope) {
+            case HOLDER, ANY_ACTIVE_HOLDER, ROUND_PRESENT, GLOBAL_WHILE_ENABLED -> true;
+            case KILLER -> this == COMBAT_ON_KILL || this == COMBAT_ALLOW_DEATH_BY_KILLER
+                    || this == COMBAT_ALLOW_KILL_BY_KILLER || this == COMBAT_ON_DEATH_WITH_BODY;
+            case VICTIM -> category == Category.COMBAT || this == MEETING_ALLOW_VOTE_OUT;
+            case TARGET -> this == INTERACTION_USE_ENTITY || this == INTERACTION_ATTACK_ENTITY
+                    || this == MEETING_ALLOW_VOTE_OUT;
+        };
+    }
 }

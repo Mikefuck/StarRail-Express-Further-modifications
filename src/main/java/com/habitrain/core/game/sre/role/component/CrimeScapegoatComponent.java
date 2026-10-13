@@ -4,7 +4,7 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoleItems;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
-import com.habitrain.core.game.sre.roleoverride.SreRolePoolFilter;
+import com.habitrain.core.game.sre.role.SreRolePoolFilter;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.api.TMMRoles;
@@ -258,7 +258,7 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
     /** 转职用杀手池（上游杀手逻辑：canUseKiller && !isInnocent；排除其他模式/禁用/不可随机/七宗罪角色）。 */
     public static List<SRERole> randomKillerPool() {
         List<SRERole> killers = new ArrayList<>();
-        // 池来自 v2 目录（v1 回退），使 v2 ADD 角色能进入转职杀手池（audit P2-1）。
+        // 池来自 v2 目录，使 v2 ADD 角色能进入转职杀手池（audit P2-1）。
         for (SRERole role :
                 com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool()) {
             if (role == null) continue;

@@ -13,8 +13,8 @@ class ConfigUpdateAdmitPolicyTest {
     }
 
     @Test
-    void duplicateJsonIsSkippedEvenInsideCooldown() {
-        assertEquals(ConfigUpdateAdmitPolicy.Result.SKIP_DUPLICATE,
+    void historicalJsonCanBeRestoredAfterAnotherAdministratorChangesAuthority() {
+        assertEquals(ConfigUpdateAdmitPolicy.Result.APPLY,
                 ConfigUpdateAdmitPolicy.admit("{\"a\":1}", "{\"a\":1}", 1100L, 1000L, 2000L));
     }
 

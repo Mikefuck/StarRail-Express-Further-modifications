@@ -20,124 +20,20 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class C2SReceiverRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|C2SReceiverRegistrar");
-    private static final ConcurrentHashMap<UUID, String> LAST_APPLIED_CONFIG_JSON = new ConcurrentHashMap<>();
+
 
     private C2SReceiverRegistrar() {}
 
     public static void clearConfigUpdateHistory(UUID playerId) {
         if (playerId != null) {
-            LAST_APPLIED_CONFIG_JSON.remove(playerId);
+            ConfigSubmissionService.clearPlayer(playerId);
         }
     }
 
     public static void init() {
-        // C2S 配置更新接收器
-        ServerPlayNetworking.registerGlobalReceiver(ConfigUpdatePayload.TYPE, (payload, context) -> {
-            context.server().execute(() -> {
-                ServerPlayer player = context.player();
-                if (player == null) return;
-                boolean hasOp2 = player.hasPermissions(2);
-                if (!ConfigUpdateAccessPolicy.mayInspectPayload(hasOp2)) {
-                    player.sendSystemMessage(Component.literal("§c你没有权限修改服务器配置（需要 OP2）"));
-                    return;
-                }
-                ConfigUpdateScope scope = ConfigUpdateScope.fromConfigJson(payload.getConfigJson());
-                boolean allowed = ConfigUpdateAccessPolicy.isAllowed(scope, hasOp2,
-                        context.server().isDedicatedServer(), MenuGateService.isEnabled(),
-                        MenuGateService.isAllowed(player));
-                if (!allowed) {
-                    String message = scope == ConfigUpdateScope.FULL_MOD_MENU
-                            ? "§c完整 Mod 菜单需要 OP2 和服务器后台单独授权"
-                            : "§c你没有权限修改此背包设置（需要 OP2）";
-                    player.sendSystemMessage(Component.literal(message));
-                    return;
-                }
-                final String filteredJson;
-                String sceneTargetMapKey = "";
-                try {
-                    if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
-                        String currentMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
-                                .resolve(player.serverLevel()).mapKey();
-                        java.util.LinkedHashSet<String> allowedMapKeys = new java.util.LinkedHashSet<>(
-                                ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
-                        allowedMapKeys.addAll(ConfigManager.getInstance().getSceneMotionSettings().profiles.keySet());
-                        sceneTargetMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
-                                ConfigUpdateScope.sceneMapKeyFromConfigJson(payload.getConfigJson()),
-                                currentMapKey, allowedMapKeys);
-                        filteredJson = ConfigUpdateAccessPolicy.filterAdminSceneProfile(
-                                payload.getConfigJson(), sceneTargetMapKey,
-                                ConfigManager.getInstance().getSceneMotionSettings().toJson());
-                    } else {
-                        filteredJson = ConfigUpdateAccessPolicy.filterConfigJson(scope, payload.getConfigJson());
-                    }
-                } catch (RuntimeException e) {
-                    player.sendSystemMessage(Component.literal("§c配置更新被拒绝：JSON 根节点无效"));
-                    return;
-                }
-                // The selected map is tool-session state, not configuration content. Confirm it
-                // before duplicate suppression so switching to a map with an unchanged profile
-                // still updates subsequent tool uses and the client HUD.
-                if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
-                    syncSceneToolTarget(player, sceneTargetMapKey);
-                }
-                ConfigUpdateAdmitPolicy.Result admit = ConfigUpdateAdmitPolicy.admit(
-                        filteredJson, LAST_APPLIED_CONFIG_JSON.get(player.getUUID()),
-                        System.currentTimeMillis(), 0L, 0L);
-                if (admit == ConfigUpdateAdmitPolicy.Result.SKIP_DUPLICATE) {
-                    LOGGER.debug("玩家 {} 的配置更新与上次相同，跳过", player.getName().getString());
-                    return;
-                }
-                // 背包 scope 会先剥离无关区域，不能借由伪造完整 JSON 修改其他配置。
-                java.util.Set<String> previousBackgroundAssets = configuredAdditionalSceneAssetKeys(
-                        ConfigManager.getInstance().getSceneMotionSettings());
-                boolean merged = ConfigManager.getInstance().mergeFromJsonString(filteredJson);
-                if (!merged) {
-                    player.sendSystemMessage(Component.literal(
-                            "§c配置合并失败：JSON 无效或字段类型错误，服务端配置未改动"));
-                    LOGGER.warn("玩家 {} 的配置 merge 被拒绝（解析失败）", player.getName().getString());
-                    return;
-                }
-                java.util.Set<String> currentBackgroundAssets = configuredAdditionalSceneAssetKeys(
-                        ConfigManager.getInstance().getSceneMotionSettings());
-                previousBackgroundAssets.removeAll(currentBackgroundAssets);
-                for (String removedAssetKey : previousBackgroundAssets) {
-                    com.habitrain.core.scene.server.SceneAssetStore.getInstance().deleteAsset(removedAssetKey);
-                    LOGGER.info("已删除被移除动态背景的正式资产: assetKey={}", removedAssetKey);
-                }
-                LAST_APPLIED_CONFIG_JSON.put(player.getUUID(), filteredJson);
-                ConfigManager.getInstance().save();
-                ConfigManager.getInstance().applyMinigameEnforcement(context.server());
-                // Rebuild role override engine with updated config
-                com.habitrain.core.role.override.RoleOverrideEngine.getInstance().rebuild();
-                com.habitrain.core.role.override.RoleOverrideLifecycleHandler.publishSnapshotAfterRebuild();
-                com.habitrain.core.game.sre.roleoverride.SreRoleOverrideRefreshService
-                        .refreshServer(context.server());
-                LOGGER.info("玩家 {} 通过 {} 更新了服务端配置", player.getName().getString(), scope);
-                // 同步最新的地图档案与预览图
-                try {
-                    ServerLevel overworld = context.server().overworld();
-                    if (overworld != null) {
-                        var configMaps = ConfigManager.getInstance().getModeMapVoteSettings().maps;
-                        var profiles = com.habitrain.core.vote.MapVoteProfileStore.loadProfiles(
-                                overworld, configMaps.keySet(), configMaps);
-                        if (!profiles.isEmpty()) {
-                            var profilePayloads = MapVoteProfilePayload.fragment(profiles);
-                            for (ServerPlayer sp : context.server().getPlayerList().getPlayers()) {
-                                for (var profilePayload : profilePayloads) {
-                                    ServerPlayNetworking.send(sp, profilePayload);
-                                }
-                            }
-                        }
-                    }
-                } catch (Throwable t) {
-                    LOGGER.debug("MapVoteProfile broadcast on ConfigUpdate skipped", t);
-                }
-                // 始终广播 FullConfig；集成主机客户端跳过 import，LAN 客人必须应用。
-                // FullConfigSyncPayload 已含 global + tasks + gameModes + minigames + shader，
-                // 单独的 TaskConfigPayload / ShaderConfigPayload 广播冗余，去掉（P1-16）。
-                FullConfigSyncPayload.broadcastToAll(context.server());
-            });
-        });
+        com.habitrain.core.config.ShaderRuleRevalidation.init();
+        ServerPlayNetworking.registerGlobalReceiver(ConfigUpdatePayload.TYPE, (payload, context) ->
+                context.server().execute(() -> ConfigSubmissionService.handle(context.server(), context.player(), payload.getConfigJson())));
         // C2S 地图介绍预览图：属于背包地图投票权限边界，只要求 OP2，不受完整菜单门控影响。
         ServerPlayNetworking.registerGlobalReceiver(MapVotePreviewUploadPayload.TYPE, (payload, context) -> {
             context.server().execute(() -> {
@@ -198,23 +94,11 @@ public final class C2SReceiverRegistrar {
             context.server().execute(() -> {
                 ServerPlayer player = context.player();
                 if (player == null) return;
-                if (!C2SRateLimiter.tryAcquire(player.getUUID(), "shader_info", 1000)) {
+                if (!com.habitrain.core.config.ShaderRuleRevalidation.awaitingReport(player.getUUID())
+                        && !C2SRateLimiter.tryAcquire(player.getUUID(), "shader_info", 1000)) {
                     return;
                 }
-                ConfigManager cfg = ConfigManager.getInstance();
-                if (!cfg.isShaderWhitelistEnabled()) return;
-                String shaderPackName = payload.getShaderPackName();
-                // 关光影（空包名）始终允许；白名单只拦截“启用了但不在名单内”的光影
-                if (shaderPackName == null || shaderPackName.isEmpty()) return;
-                boolean allowed = cfg.getShaderWhitelist().stream()
-                        .anyMatch(name -> name.equalsIgnoreCase(shaderPackName));
-                if (!allowed) {
-                    player.connection.disconnect(Component.literal(
-                            "§c✖ 未授权的光影包\n\n" +
-                            "§7你使用的光影包 §e" + shaderPackName + " §7不在服务器白名单中。\n" +
-                            "§7请更换为允许的光影包，或关闭光影后重新加入。\n\n" +
-                            "§7如需帮助，请联系服务器管理员。"));
-                }
+                com.habitrain.core.config.ShaderRuleRevalidation.report(player, payload.getShaderPackName(), payload.ruleRevision());
             });
         });
 
@@ -430,7 +314,7 @@ public final class C2SReceiverRegistrar {
         ServerPlayNetworking.send(sloth, new SlothSleepRosterPayload(entries));
     }
 
-    private static void syncSceneToolTarget(ServerPlayer player, String mapKey) {
+    public static void syncSceneToolTarget(ServerPlayer player, String mapKey) {
         var manager = com.habitrain.core.scene.server.SceneSelectionSessionManager.getInstance();
         syncSceneToolTarget(player, mapKey, manager.getEditorBackgroundId(player.getUUID(), mapKey));
     }

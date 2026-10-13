@@ -1,10 +1,14 @@
 package com.habitrain.core;
 
+
+import com.habitrain.core.game.sre.map.MapVoteLoadCoordinator;
+import com.habitrain.core.game.sre.match.GameEndTransitionCoordinator;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.api.GameModeRegistry;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import com.habitrain.core.game.sre.EnvironmentController;
-import com.habitrain.core.game.sre.SREGameModeBase;
-import com.habitrain.core.game.sre.SREWeatherController;
+import com.habitrain.core.game.sre.environment.EnvironmentController;
+import com.habitrain.core.game.sre.mode.SREGameModeBase;
+import com.habitrain.core.game.sre.environment.SREWeatherController;
 import com.habitrain.core.task.GameLifecycleHandler;
 import com.habitrain.core.vote.OptionVoteManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -22,10 +26,10 @@ public class ModTickHandler {
             SREGameModeBase.processGameEndGroupJoin(server);
             GameModeRegistry.tickAll(server);
             // 天气状态需先经过世界 tick 同步到客户端，再发送开局/结算动画的环境就绪阶段。
-            com.habitrain.core.game.sre.MapVoteLoadCoordinator.tick(server);
-            com.habitrain.core.game.sre.GameEndTransitionCoordinator.tick(server);
+            com.habitrain.core.game.sre.map.MapVoteLoadCoordinator.tick(server);
+            com.habitrain.core.game.sre.match.GameEndTransitionCoordinator.tick(server);
             // 维修员在对局开始/结束后切一次冒险再切回创造
-            com.habitrain.core.game.sre.RepairModeManager.tickGameModeRefresh(server);
+            com.habitrain.core.game.sre.mode.RepairModeManager.tickGameModeRefresh(server);
 
             // 1Hz option-vote tick (mode/map lobby vote countdown)
             voteTickCounter++;
@@ -34,9 +38,9 @@ public class ModTickHandler {
                     OptionVoteManager.tickSecond(level);
                 }
                 // 1Hz 开局加载进度广播（投票→地图重置→真正开局窗口内）
-                com.habitrain.core.game.sre.MapVoteLoadCoordinator.tickSecond(server);
+                com.habitrain.core.game.sre.map.MapVoteLoadCoordinator.tickSecond(server);
                 // 维修人员模式：异常兜底，释放「离线但仍持锁」的记录（覆盖崩溃/异常断线）
-                com.habitrain.core.game.sre.RepairModeManager.checkAbnormal(server);
+                com.habitrain.core.game.sre.mode.RepairModeManager.checkAbnormal(server);
             }
 
             // 5s (100 ticks): 自动检测服务端地图定义与档案文件修改，若修改则自动重载并全量同步给客户端
@@ -49,13 +53,6 @@ public class ModTickHandler {
     }
 
     public static void tickMoreMods(MinecraftServer server) {
-        // Apply MODIFY flags/spawnInfo patches on each tick
-        try {
-            com.habitrain.core.role.override.RoleOverrideTickApplier.tick(server);
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[ModTick] RoleOverrideTickApplier.tick failed", t);
-        }
-
         boolean isGameActive = false;
         for (ServerLevel world : server.getAllLevels()) {
             if (isGameActive(world)) {

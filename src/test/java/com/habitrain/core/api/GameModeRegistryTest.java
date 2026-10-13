@@ -29,7 +29,7 @@ class GameModeRegistryTest {
 
     @Test
     void freezeInsideBootstrapIsIdempotent() {
-        CoreLifecycleScope.run(() -> {
+        com.habitrain.core.internal.CoreLifecycleTestSupport.run(() -> {
             GameModeRegistry.freeze();
             TaskRegistry.freeze();
             assertTrue(GameModeRegistry.isFrozen());
@@ -44,7 +44,7 @@ class GameModeRegistryTest {
 
     @Test
     void nestedBootstrapStillFreezes() {
-        CoreLifecycleScope.run(() -> CoreLifecycleScope.run(GameModeRegistry::freeze));
+        com.habitrain.core.internal.CoreLifecycleTestSupport.run(() -> com.habitrain.core.internal.CoreLifecycleTestSupport.run(GameModeRegistry::freeze));
         assertTrue(GameModeRegistry.isFrozen());
         assertFalse(CoreLifecycleScope.isActive());
     }

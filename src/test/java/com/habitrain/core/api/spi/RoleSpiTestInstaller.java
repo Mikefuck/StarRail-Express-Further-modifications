@@ -31,7 +31,7 @@ public final class RoleSpiTestInstaller implements BeforeAllCallback {
             return;
         }
         // 装配受 CoreLifecycle 作用域保护；测试类与生产 bootstrap 一样位于 com.habitrain.core 下。
-        com.habitrain.core.internal.CoreLifecycleScope.run(() -> {
+        com.habitrain.core.internal.CoreLifecycleTestSupport.run(() -> {
             RoleSpi.installCatalog(com.habitrain.core.role.catalog.RoleCatalogImpl::defaultInstance);
             RoleSpi.installChange(com.habitrain.core.role.change.RoleChangeServiceImpl::new);
             RoleSpi.installDiagnostics(com.habitrain.core.role.diag.RoleDiagnosticsImpl::new);
@@ -41,7 +41,6 @@ public final class RoleSpiTestInstaller implements BeforeAllCallback {
             RoleSpi.installCapability(com.habitrain.core.role.capability.RoleCapabilityServiceImpl::new);
             RoleSpi.installClientExtension(com.habitrain.core.role.client.RoleClientExtensionRegistry::new);
             RoleSpi.installState(com.habitrain.core.role.state.RoleStateServiceImpl::new);
-            RoleSpi.installOverride(com.habitrain.core.role.override.RoleOverrideBridgeImpl.INSTANCE);
             RoleSpi.installActionClient(() -> com.habitrain.core.client.role.RoleActionClientSession.INSTANCE);
             CoreSpi.installMenuGate(com.habitrain.core.config.MenuGateBridgeImpl.INSTANCE);
         });

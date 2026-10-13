@@ -1,5 +1,8 @@
 package com.habitrain.core.game;
 
+
+import com.habitrain.core.game.sre.mode.ForcedReadyJoinGate;
+import com.habitrain.core.game.sre.role.SreRoleAssignmentEffects;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,10 +45,10 @@ class RemovedModePackagingTest {
         }
         for (String retained : new String[] {
                 "HabiTrainCore", "NetworkRegistrar", "C2SReceiverRegistrar",
-                "client/VoteKeyHandler", "game/sre/ForcedReadyJoinGate",
+                "client/VoteKeyHandler", "game/sre/mode/ForcedReadyJoinGate",
                 "internal/CoreSpiRegistrar", "api/spi/CoreSpi",
                 "role/change/RoleChangeServiceImpl",
-                "role/override/RoleOverrideWinHook", "game/sre/SreRoleAssignmentEffects"}) {
+                "role/extension/RoleV2WinHookSupport", "game/sre/role/SreRoleAssignmentEffects"}) {
             try (var stream = getClass().getResourceAsStream(root + retained + ".class")) {
                 assertNotNull(stream, retained);
                 // JVM symbolic references retain internal class names in the constant pool.

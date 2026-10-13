@@ -185,10 +185,10 @@ public final class RoleStateSyncService {
      * re-tracks a target (or re-enters a world) no longer keeps mirrors for
      * slots the server no longer holds.
      */
-    public void sendTo(@Nullable UUID playerId, RoleStateSpec<?> spec, StateSlotKey slot,
+    public boolean sendTo(@Nullable UUID playerId, RoleStateSpec<?> spec, StateSlotKey slot,
                        @Nullable byte[] encoded, boolean snapshot, long snapshotId) {
         if (!isRecipient(spec, slot, playerId)) {
-            return;
+            return true;
         }
         try {
             sender.send(playerId, snapshot
@@ -200,34 +200,50 @@ public final class RoleStateSyncService {
                             spec.id(), spec.role(), spec.scope(), slot.worldKey(),
                             spec.dataVersion(), encoded, slot.playerId(),
                             revisionSeq.incrementAndGet()));
+            return true;
         } catch (Throwable t) {
             LOGGER.warn("state full-sync {} -> {} failed", slot, playerId, t);
+            return false;
         }
     }
 
     /** Sends the explicit start of a full snapshot batch. */
-    public void beginSnapshot(@Nullable UUID playerId, long snapshotId) {
+    public boolean beginSnapshot(@Nullable UUID playerId, long snapshotId) {
         if (playerId == null) {
-            return;
+            return false;
         }
         try {
             sender.send(playerId, RoleStateSyncPayload.snapshotBegin(
                     snapshotId, revisionSeq.incrementAndGet()));
+            return true;
         } catch (Throwable t) {
             LOGGER.warn("state snapshot begin -> {} failed", playerId, t);
+            return false;
         }
     }
 
     /** Sends the explicit end of a full snapshot batch. */
-    public void endSnapshot(@Nullable UUID playerId, long snapshotId) {
+    public boolean endSnapshot(@Nullable UUID playerId, long snapshotId) {
         if (playerId == null) {
-            return;
+            return false;
         }
         try {
             sender.send(playerId, RoleStateSyncPayload.snapshotEnd(
                     snapshotId, revisionSeq.incrementAndGet()));
+            return true;
         } catch (Throwable t) {
             LOGGER.warn("state snapshot end -> {} failed", playerId, t);
+            return false;
+        }
+    }
+
+    /** Cancels staging while preserving the client's previously committed mirror. */
+    public void cancelSnapshot(@Nullable UUID playerId, long snapshotId) {
+        if (playerId == null) return;
+        try {
+            sender.send(playerId, RoleStateSyncPayload.snapshotCancelled(snapshotId, nextRevision()));
+        } catch (Throwable failure) {
+            LOGGER.warn("state snapshot cancellation -> {} failed; committed mirror remains unchanged", playerId, failure);
         }
     }
 

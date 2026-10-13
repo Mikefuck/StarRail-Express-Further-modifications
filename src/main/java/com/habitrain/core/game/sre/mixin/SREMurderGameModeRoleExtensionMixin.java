@@ -1,0 +1,67 @@
+package com.habitrain.core.game.sre.mixin;
+
+import com.habitrain.core.game.sre.role.SreRoleResolver;
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Redirect;
+
+/**
+ * Redirects SRE's hard-coded base-role constants through the live override
+ * snapshot. This covers both fallback assignment and identity checks.
+ *
+ * <p>The lambda names below are verified against the deployed SRE 4.3.0 jar
+ * ($6–$12). Keeping them explicit lets Loom validate every target at build time.
+ */
+@Mixin(targets = "io.wifi.starrailexpress.game.modes.SREMurderGameMode", remap = false)
+public abstract class SREMurderGameModeRoleExtensionMixin {
+    @Redirect(
+            method = {
+                    "assignRole",
+                    "getAllRoles",
+                    "assignRolesToPlayers",
+                    "lambda$getAllRoles$6",
+                    "lambda$getAllRoles$7",
+                    "lambda$getAllRoles$8",
+                    "lambda$getAllRoles$9",
+                    "lambda$getAllRoles$10",
+                    "lambda$getAllRoles$11",
+                    "lambda$getAllRoles$12",
+                    "lambda$assignRole$0"
+            },
+            at = @At(
+                    value = "FIELD",
+                    target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
+            ),
+            require = 0,
+            remap = false
+    )
+    private static SRERole habitrain$resolveCivilian() {
+        return SreRoleResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
+    }
+
+    @Redirect(
+            method = "tickServerGameLoop",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lio/wifi/starrailexpress/api/TMMRoles;VIGILANTE:Lio/wifi/starrailexpress/api/SRERole;"
+            ),
+            require = 0
+    )
+    private SRERole habitrain$resolveVigilante() {
+        return SreRoleResolver.resolveOrOriginal(TMMRoles.VIGILANTE);
+    }
+
+    @Redirect(
+            method = "tickServerGameLoop",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lio/wifi/starrailexpress/api/TMMRoles;LOOSE_END:Lio/wifi/starrailexpress/api/SRERole;"
+            ),
+            require = 0
+    )
+    private SRERole habitrain$resolveLooseEnd() {
+        return SreRoleResolver.resolveOrOriginal(TMMRoles.LOOSE_END);
+    }
+}

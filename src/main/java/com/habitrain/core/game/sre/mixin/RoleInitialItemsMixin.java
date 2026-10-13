@@ -1,9 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
-import com.habitrain.core.api.role.ModifyRoleDefinition;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleOverlayAccessor;
-import com.habitrain.core.role.override.RoleOverrideEngine;
 import com.habitrain.core.role.state.RuntimeRoleServer;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.server.MinecraftServer;
@@ -87,20 +85,11 @@ public abstract class RoleInitialItemsMixin {
                 return overlay.defaultItemsPatch().getDefaultItems(role, server);
             } catch (Throwable throwable) {
                 com.habitrain.core.HabiTrainCore.LOGGER.warn(
-                        "[RoleOverride] v2 default-items patch failed for {}", role.identifier(), throwable);
+                        "[RoleExtension] v2 default-items patch failed for {}", role.identifier(), throwable);
                 return null;
             }
         }
-        ModifyRoleDefinition def =
-                RoleOverrideEngine.getInstance().getGameplayModify(role.identifier());
-        if (def == null || def.defaultItemsPatch().isEmpty()) return null;
-        try {
-            return def.defaultItemsPatch().get().getDefaultItems(role, server);
-        } catch (Throwable throwable) {
-            com.habitrain.core.HabiTrainCore.LOGGER.warn(
-                    "[RoleOverride] default-items patch failed for {}", role.identifier(), throwable);
-            return null;
-        }
+        return null;
     }
 
     private static List<ItemStack> copyItems(List<ItemStack> items) {

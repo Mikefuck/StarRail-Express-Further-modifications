@@ -1,5 +1,6 @@
 package com.habitrain.core.api.spi;
 
+
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.match.MatchPhase;
 import io.wifi.starrailexpress.api.SRERole;
@@ -38,7 +39,7 @@ import java.util.function.Predicate;
  *   <li>{@code api.OptionVoteApi / api.ModeMapVoteApi →vote.*}</li>
  *   <li>{@code 下游 →game.sre.EliminatedRestAreaService}。0.12 起由
  *       {@link RestAreaBridge} / {@code api.MatchRestStateApi} 取代，审核 B-01。</li>
- *   <li>{@code 下游 →game.sre.roleoverride.SreRoleOverrideResolver}。0.12 起由
+ *   <li>{@code 下游 →game.sre.role.SreRoleResolver}。0.12 起由
  *       {@link RoleVisibilityBridge} / {@code api.role.v2.RoleVisibilityApi} 取代，审核 M-01。</li>
  * </ul>
  *

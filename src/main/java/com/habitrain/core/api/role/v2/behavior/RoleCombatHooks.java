@@ -61,8 +61,9 @@ public interface RoleCombatHooks {
                         ResourceLocation deathReason, RoleHookContext ctx) {}
 
     /**
-     * Called after a corpse is spawned. Dispatched once for the victim's
-     * role and once for the killer's role (when they differ).
+     * Called after a corpse is spawned. HOLDER retains dual ownership: once
+     * per victim/killer holder, including distinct players with the same role.
+     * KILLER or VICTIM limits it to that participant; ctx.holder names the holder.
      */
     default void onDeathWithBody(ServerPlayer victim, @Nullable ServerPlayer killer,
                                  ResourceLocation deathReason, @Nullable PlayerBodyEntity body,

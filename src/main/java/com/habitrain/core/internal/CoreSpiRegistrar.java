@@ -5,10 +5,10 @@ import com.habitrain.core.api.spi.RoleSpi;
 import com.habitrain.core.api.spi.TaskPoolCacheBridge;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MenuGateBridgeImpl;
-import com.habitrain.core.game.sre.RestAreaBridgeImpl;
-import com.habitrain.core.game.sre.SreExtraSlotReclaimBridge;
-import com.habitrain.core.game.sre.SreRuntimeBridgeImpl;
-import com.habitrain.core.role.override.RoleVisibilityBridgeImpl;
+import com.habitrain.core.game.sre.rest.RestAreaBridgeImpl;
+import com.habitrain.core.game.sre.bridge.SreExtraSlotReclaimBridge;
+import com.habitrain.core.game.sre.bridge.SreRuntimeBridgeImpl;
+import com.habitrain.core.role.catalog.RoleVisibilityBridgeImpl;
 import com.habitrain.core.scene.server.SceneAssetStore;
 import com.habitrain.core.scene.server.SceneCaptureService;
 import com.habitrain.core.scene.server.SceneInstanceService;
@@ -85,6 +85,5 @@ public final class CoreSpiRegistrar {
         // guard when the Fabric client entrypoint runs, and also leaks a client implementation
         // into the common/dedicated-server bootstrap path.
         RoleSpi.installState(com.habitrain.core.role.state.RoleStateServiceImpl::new);
-        RoleSpi.installOverride(com.habitrain.core.role.override.RoleOverrideBridgeImpl.INSTANCE);
     }
 }

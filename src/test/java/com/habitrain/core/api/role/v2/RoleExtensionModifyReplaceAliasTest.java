@@ -614,12 +614,12 @@ class RoleExtensionModifyReplaceAliasTest {
         RoleExtensionRegistry.INSTANCE.freeze();
 
         SRERole target = role(TARGET);
-        assertFalse(com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver.isVisible(target));
-        SRERole resolved = com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver.resolve(target);
+        assertFalse(com.habitrain.core.game.sre.role.SreRoleResolver.isVisible(target));
+        SRERole resolved = com.habitrain.core.game.sre.role.SreRoleResolver.resolve(target);
         assertEquals(ResourceLocation.parse("habitrain_core:shadow_killer"), resolved.identifier());
 
         java.util.List<SRERole> visible =
-                com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver.visibleRegistryRoles(
+                com.habitrain.core.game.sre.role.SreRoleResolver.visibleRegistryRoles(
                         java.util.List.of(target));
         assertEquals(1, visible.size());
         assertEquals(ResourceLocation.parse("habitrain_core:shadow_killer"), visible.getFirst().identifier());

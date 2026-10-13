@@ -266,10 +266,8 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
             entry.remainingTicks--;
             if (entry.remainingTicks <= 0) {
                 it.remove();
-                Holder<MobEffect> holder = resolveEffect(e.getKey());
-                if (holder != null) {
-                    self.removeEffect(holder);
-                }
+                // Stop maintaining our contribution. Vanilla expires it naturally;
+                // removing by effect id would also delete external/hidden effects.
                 continue;
             }
             Holder<MobEffect> holder = resolveEffect(e.getKey());

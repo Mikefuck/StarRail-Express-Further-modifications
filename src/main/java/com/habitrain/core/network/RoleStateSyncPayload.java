@@ -100,6 +100,12 @@ public record RoleStateSyncPayload(
                 false, revision, snapshotId, false, true, false);
     }
 
+    /** Both boundary flags encode cancellation without changing the wire layout. */
+    public static RoleStateSyncPayload snapshotCancelled(long snapshotId, long revision) {
+        return new RoleStateSyncPayload(null, null, null, null, 0, null, null,
+                false, revision, snapshotId, true, true, false);
+    }
+
     public RoleStateSyncPayload {
         encoded = encoded == null ? null : encoded.clone();
     }

@@ -1,5 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
+
+import com.habitrain.core.game.sre.task.ExerciseTaskBlocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.agmas.noellesroles.utils.MapScanner;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,6 +29,6 @@ public abstract class ExerciseMapScannerMixin {
             require = 1
     )
     private static boolean habitrain$matchExerciseBlocks(BlockState state, net.minecraft.world.level.block.Block block) {
-        return com.habitrain.core.game.sre.ExerciseTaskBlocks.matchesVanillaBlackConcreteCheck(state, block);
+        return com.habitrain.core.game.sre.task.ExerciseTaskBlocks.matchesVanillaBlackConcreteCheck(state, block);
     }
 }

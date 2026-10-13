@@ -1,5 +1,6 @@
 package com.habitrain.core.api.spi;
 
+
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.match.MatchPhase;
 import net.minecraft.server.level.ServerLevel;

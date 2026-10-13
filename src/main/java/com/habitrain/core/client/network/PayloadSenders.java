@@ -29,21 +29,25 @@ public final class PayloadSenders {
 
     /** 从客户端发送当前光影包名称到服务端（空字符串表示无光影包）。 */
     public static void sendShaderInfo(String shaderPackName) {
+        sendShaderInfo(shaderPackName, -1);
+    }
+    public static void sendShaderInfo(String shaderPackName, long ruleRevision) {
         if (Minecraft.getInstance().getConnection() == null) return;
-        ClientPlayNetworking.send(new ShaderInfoPayload(shaderPackName));
+        ClientPlayNetworking.send(new ShaderInfoPayload(shaderPackName, ruleRevision));
     }
 
     /**
      * 从客户端发送配置更新到服务端。
-     * 单机模式（集成服务器）下配置已保存在本地文件，无需网络同步。
+     * 委托统一草稿提交链；集成主机同样由服务器线程确认。
      */
     public static void sendConfigUpdate(String configJson, ConfigUpdateScope scope) {
         var client = Minecraft.getInstance();
         if (client.getConnection() == null) return;
-        if (client.getSingleplayerServer() != null) return;
-        String sceneMapKey = com.habitrain.core.client.gui.menu.ConfigUpdateContext.currentSceneMapKey();
-        ClientPlayNetworking.send(new ConfigUpdatePayload(
-                ConfigUpdateScope.attachToConfigJson(configJson, scope, sceneMapKey)));
+        var manager = com.habitrain.core.config.ConfigManager.getInstance();
+        manager.beginClientEditing();
+        manager.loadFromJsonString(configJson);
+        com.habitrain.core.client.gui.menu.ConfigUpdateContext.setCurrentScope(scope);
+        com.habitrain.core.client.config.ClientConfigSubmission.show(manager.save());
     }
 
     /**

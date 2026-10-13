@@ -195,45 +195,20 @@ public class MinigameEditScreen extends Screen {
         ConfigManager.getInstance().putMinigameConfig(minigame.id(), cfg);
     }
 
-    private void commitFields() {
-        String v;
-        v = goldField.getValue().trim();
+    private boolean commitFields() {
         try {
-            cfg.hasGoldReward = !v.isEmpty();
-            cfg.goldReward = v.isEmpty() ? 0 : Integer.parseInt(v);
-        } catch (NumberFormatException e) {
-            cfg.hasGoldReward = false;
-            cfg.goldReward = 0;
-        }
-        v = emotionField.getValue().trim();
-        try {
-            cfg.hasEmotionReward = !v.isEmpty();
-            cfg.emotionReward = v.isEmpty() ? 0f : Float.parseFloat(v);
-        } catch (NumberFormatException e) {
-            cfg.hasEmotionReward = false;
-            cfg.emotionReward = 0f;
-        }
-        v = weightField.getValue().trim();
-        try {
-            cfg.hasRefreshWeight = !v.isEmpty();
-            cfg.refreshWeight = v.isEmpty() ? 0f : Math.max(0f, Float.parseFloat(v));
-        } catch (NumberFormatException e) {
-            cfg.hasRefreshWeight = false;
-            cfg.refreshWeight = 0f;
-        }
-        v = mapField.getValue().trim();
-        cfg.enabledMaps.clear();
-        if (!v.isEmpty()) {
-            for (String s : v.split(",")) {
-                String t = s.trim();
-                if (!t.isEmpty()) cfg.enabledMaps.add(t);
-            }
+            var numbers = com.habitrain.core.config.TaskNumericDraft.parse(goldField.getValue(), emotionField.getValue(), weightField.getValue());
+            var maps = TaskMapFilterEditor.parseMapList(mapField.getValue());
+            numbers.apply(cfg); cfg.enabledMaps = maps;
+            return true;
+        } catch (IllegalArgumentException error) {
+            TaskSaveController.showMessage("§c" + error.getMessage() + "，未保存");
+            return false;
         }
     }
-
     private void goBack() {
         if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
-            commitFields();
+            if (!commitFields()) return;
             ConfigManager.getInstance().setMinigameConfig(minigame.id(), cfg);
         }
         Minecraft.getInstance().setScreen(parent);

@@ -2,7 +2,7 @@ package com.habitrain.core.vote;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.config.SREIntegration;
+import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.network.MapVoteProfilePayload;
 import io.wifi.starrailexpress.game.MapManager;
 import io.wifi.starrailexpress.game.data.MapConfig;

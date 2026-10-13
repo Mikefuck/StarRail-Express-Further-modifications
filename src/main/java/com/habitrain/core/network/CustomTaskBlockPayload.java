@@ -1,6 +1,6 @@
 package com.habitrain.core.network;
 
-import com.habitrain.core.game.sre.CustomTaskBlockCache;
+import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;

@@ -1,7 +1,7 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.game.sre.PerPlayerTaskTicker;
+import com.habitrain.core.game.sre.task.PerPlayerTaskTicker;
 import com.habitrain.core.task.TaskManager;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.world.entity.player.Player;

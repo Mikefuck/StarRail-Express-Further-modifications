@@ -10,15 +10,15 @@ package com.habitrain.core.api.role.v2.behavior;
  */
 public enum RoleScope {
 
-    /** The event player currently holds the role. */
+    /** Primary event player holds the role; corpse events have both participants, broadcasts require a holder. */
     HOLDER,
     /** The killer in a kill/death event holds the role. */
     KILLER,
     /** The victim in a kill/death event holds the role. */
     VICTIM,
-    /** The explicit target of the event holds the role. */
+    /** Explicit player target of an entity interaction or vote-out holds the role; non-player targets do not match. */
     TARGET,
-    /** Any live/online holder of the role receives the event. */
+    /** Fires once per declaration when an online holder exists; context names a representative holder. */
     ANY_ACTIVE_HOLDER,
     /** The role is present in this round's pool/history. */
     ROUND_PRESENT,

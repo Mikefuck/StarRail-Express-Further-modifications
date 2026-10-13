@@ -1,8 +1,5 @@
 package com.habitrain.core.api.spi;
 
-import com.habitrain.core.api.role.RoleOverrideEntry;
-import com.habitrain.core.api.role.ModifyRoleDefinition;
-import com.habitrain.core.api.role.ReplaceRoleDefinition;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleChangeApi;
 import com.habitrain.core.api.role.v2.RoleDiagnostics;
@@ -12,10 +9,8 @@ import com.habitrain.core.api.role.v2.action.RoleActionApi;
 import com.habitrain.core.api.role.v2.capability.RoleCapabilityApi;
 import com.habitrain.core.api.role.v2.client.RoleClientExtensionApi;
 import com.habitrain.core.api.role.v2.state.RoleStateApi;
-import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -47,7 +42,6 @@ public final class RoleSpi {
     private static final Slot<RoleCapabilityApi> CAPABILITY = new Slot<>("RoleCapabilityApi");
     private static final Slot<RoleClientExtensionApi> CLIENT_EXTENSION = new Slot<>("RoleClientExtensionApi");
     private static final Slot<RoleStateApi> STATE = new Slot<>("RoleStateApi");
-    private static final Slot<RoleOverrideBridge> OVERRIDE = new Slot<>("RoleOverrideBridge");
     private static final Slot<RoleActionClientBridge> ACTION_CLIENT = new Slot<>("RoleActionClientBridge");
 
     private RoleSpi() {}
@@ -88,10 +82,6 @@ public final class RoleSpi {
 
     public static void installState(Supplier<RoleStateApi> supplier) {
         STATE.install(supplier);
-    }
-
-    public static void installOverride(RoleOverrideBridge bridge) {
-        OVERRIDE.install(() -> bridge);
     }
 
     public static void installActionClient(RoleActionClientBridge bridge) {
@@ -136,34 +126,9 @@ public final class RoleSpi {
         return STATE.get();
     }
 
-    public static RoleOverrideBridge override() {
-        return OVERRIDE.get();
-    }
-
     /** @return 客户端动作会话桥；未装配（专用服务端）时返回 {@code null}。 */
     public static @Nullable RoleActionClientBridge actionClientOrNull() {
         return ACTION_CLIENT.getOrNull();
-    }
-
-    /** v1 角色覆盖（REPLACE / MODIFY）的桥接接口。 */
-    public interface RoleOverrideBridge {
-        void registerReplace(ReplaceRoleDefinition def);
-
-        void registerModify(ModifyRoleDefinition def);
-
-        String entryId(ReplaceRoleDefinition def);
-
-        String entryId(ModifyRoleDefinition def);
-
-        Collection<RoleOverrideEntry> effectiveEntries();
-
-        boolean isReplaced(ResourceLocation targetRoleId);
-
-        @Nullable io.wifi.starrailexpress.api.SRERole replacement(ResourceLocation targetRoleId);
-
-        boolean isModified(ResourceLocation targetRoleId);
-
-        @Nullable ModifyRoleDefinition activeModify(ResourceLocation targetRoleId);
     }
 
     /**

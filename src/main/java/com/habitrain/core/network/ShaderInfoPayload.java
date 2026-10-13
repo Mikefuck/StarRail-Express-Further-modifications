@@ -29,10 +29,16 @@ public class ShaderInfoPayload implements CustomPacketPayload {
             new CustomPacketPayload.Type<>(ID);
 
     private final String shaderPackName;
+    private final long ruleRevision;
 
     public ShaderInfoPayload(String shaderPackName) {
-        this.shaderPackName = shaderPackName != null ? shaderPackName : "";
+        this(shaderPackName, -1);
     }
+    public ShaderInfoPayload(String shaderPackName, long ruleRevision) {
+        this.shaderPackName = shaderPackName != null ? shaderPackName : "";
+        this.ruleRevision = ruleRevision;
+    }
+    public long ruleRevision() { return ruleRevision; }
 
     public String getShaderPackName() {
         return shaderPackName;
@@ -47,22 +53,26 @@ public class ShaderInfoPayload implements CustomPacketPayload {
         @Override
         public ShaderInfoPayload decode(ByteBuf buf) {
             int len = buf.readInt();
-            if (len <= 0) return new ShaderInfoPayload("");
+            if (len < 0) throw new DecoderException("Negative shader report length");
             if (len > MAX_STRING_LENGTH) {
                 throw new DecoderException("ShaderInfo payload 过大: " + len + " > " + MAX_STRING_LENGTH);
             }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
-            return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8));
+            return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8), buf.readableBytes() >= 8 ? buf.readLong() : -1);
         }
 
         @Override
         public void encode(ByteBuf buf, ShaderInfoPayload payload) {
             byte[] bytes = payload.shaderPackName.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_STRING_LENGTH) throw new io.netty.handler.codec.EncoderException("Shader name exceeds UTF-8 budget");
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);
             }
+            // Ordinary reports retain the old body; only a new server's versioned
+            // refresh request receives the revision extension.
+            if (payload.ruleRevision >= 0) buf.writeLong(payload.ruleRevision);
         }
     };
 

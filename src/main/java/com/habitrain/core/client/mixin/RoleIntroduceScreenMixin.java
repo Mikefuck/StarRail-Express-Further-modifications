@@ -1,10 +1,8 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.role.RoleIntroduceScreenRefreshAccess;
-import com.habitrain.core.client.role.RoleOverrideTextTab;
-import com.habitrain.core.game.sre.roleoverride.SreRoleOverrideResolver;
-import com.habitrain.core.role.override.RoleOverrideFilter;
-import com.habitrain.core.role.override.RoleOverrideEngine;
+import com.habitrain.core.client.role.RoleBookTextTab;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
 import io.wifi.starrailexpress.api.SRERole;
 import org.agmas.noellesroles.Noellesroles;
 import org.agmas.noellesroles.client.screen.RoleIntroduceScreen;
@@ -59,7 +57,7 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
     @Inject(method = "buildTabs", at = @At("HEAD"))
     private void habitrain$resolveSelectedRole(CallbackInfo ci) {
         if (selectedRole instanceof SRERole selected) {
-            SRERole resolved = SreRoleOverrideResolver.resolve(selected);
+            SRERole resolved = SreRoleResolver.resolve(selected);
             if (resolved != null) {
                 selectedRole = resolved;
             }
@@ -74,33 +72,17 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
     private void habitrain$applyRoleBookPages(CallbackInfo ci) {
         if (!(selectedRole instanceof SRERole role) || role.identifier() == null) return;
 
-        var snapshot = RoleOverrideEngine.getInstance().getSnapshot();
-        for (var definition : snapshot.getActiveReplaces().values()) {
-            if (!definition.replacementRole().identifier().equals(role.identifier())) continue;
-            definition.roleBookContent().ifPresent(content -> {
-                tabs.clear();
-                content.pages().forEach(page -> tabs.add(new RoleOverrideTextTab(page)));
-            });
-            return;
-        }
-
-        var modify = snapshot.getActiveModifies().get(role.identifier());
-        if (modify != null) {
-            modify.roleBookAppendices()
-                    .forEach(page -> tabs.add(new RoleOverrideTextTab(page)));
-        }
-
         var v2 = com.habitrain.core.role.book.RoleBookResolver.resolve(role.identifier());
         if (!v2.isEmpty()) {
             if (v2.replaceAll()) {
                 tabs.clear();
             }
-            v2.pages().forEach(page -> tabs.add(new RoleOverrideTextTab(page)));
+            v2.pages().forEach(page -> tabs.add(new RoleBookTextTab(page)));
         }
     }
 
     @Override
-    public void habitrain$refreshRoleOverrides() {
+    public void habitrain$refreshRoleExtensions() {
         habitrain$reloadAvailableRoles();
         refreshFilter(currentMode);
         // Upstream only calls onSelectionChanged/buildTabs when filtering
@@ -112,10 +94,10 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
 
     private void habitrain$reloadAvailableRoles() {
         availableRoles.clear();
-        availableRoles.addAll(RoleOverrideFilter.apply(Noellesroles.getAllRolesSorted(true)));
+        availableRoles.addAll(com.habitrain.core.game.sre.role.SreRoleResolver.visibleRegistryRoles(Noellesroles.getAllRolesSorted(true)));
 
         if (selectedRole instanceof SRERole selected) {
-            SRERole resolved = SreRoleOverrideResolver.resolve(selected);
+            SRERole resolved = SreRoleResolver.resolve(selected);
             selectedRole = resolved != null && availableRoles.contains(resolved) ? resolved : null;
         }
     }

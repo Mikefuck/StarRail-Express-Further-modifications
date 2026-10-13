@@ -8,7 +8,7 @@ import net.minecraft.network.chat.Component;
  * 客户端侧字幕提示辅助：直接调用 SRE 的 {@link SubtitleHUD} 入队，
  * 用于客户端自发提示（无法走服务端 {@code SubtitleNotifier} 的场景，例如按键反馈）。
  *
- * 与服务端 {@code com.habitrain.core.util.SubtitleNotifier} 对应，避免依赖被屏蔽的聊天栏。
+ * 与服务端 {@code com.habitrain.core.game.sre.task.SubtitleNotifier} 对应，避免依赖被屏蔽的聊天栏。
  */
 public final class ClientSubtitleNotifier {
     private static final int DEFAULT_DURATION = 60;

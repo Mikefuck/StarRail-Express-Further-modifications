@@ -1,5 +1,6 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.client.gui.scene.SceneOriginPlacementController;
 import com.habitrain.core.scene.item.HabiAdminItems;
 import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.ChatFormatting;
