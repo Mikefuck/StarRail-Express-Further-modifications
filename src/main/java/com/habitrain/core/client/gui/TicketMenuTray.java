@@ -102,7 +102,11 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         hovered = -1;
         keyboardIndex = -2;
         open = openState != null && openState.getAsBoolean();
-        changedAt = Util.getMillis();
+        // A newly closed album is already at rest, not the start of a closing animation.
+        changedAt = open ? Util.getMillis() : -1L;
+        lastFrameAt = -1L;
+        bookHovered = false;
+        bookHover = 0.0f;
     }
 
     public void sync(List<? extends Button> buttons) {
@@ -180,15 +184,10 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         g.pose().pushPose();
         g.pose().translate(x, y, 0.0f);
         GuiGeo geo = GuiGeo.begin(g);
-        geo.convexV(RailArt.chamfer(1.5f, 2.5f, STRIP_W, STRIP_H, 4.0f), 0, STRIP_H, RailArt.a(0xFF000000, 0.3f),
-                RailArt.a(0xFF000000, 0.42f));
         geo.convexV(RailArt.chamfer(0, 0, STRIP_W, STRIP_H, 4.0f), 0, STRIP_H, p.paperTop(), p.paperBottom());
-        geo.rectV(0, 0, STRIP_W, 5.0f, RailArt.a(p.band(), 0.75f), RailArt.a(p.band(), 0));
-        // 两端检票缺口
-        geo.arc(0, STRIP_H / 2.0f, 0, 3.6f, 1.0f, -Mth.HALF_PI, Mth.HALF_PI, RailArt.a(RailArt.NIGHT_0, 0.95f),
-                RailArt.a(RailArt.NIGHT_0, 0.95f));
-        geo.arc(STRIP_W, STRIP_H / 2.0f, 0, 3.6f, 1.0f, Mth.HALF_PI, Mth.PI + Mth.HALF_PI,
-                RailArt.a(RailArt.NIGHT_0, 0.95f), RailArt.a(RailArt.NIGHT_0, 0.95f));
+        // Keep every layer inside the paper silhouette; a dark painted notch/shadow reads as a black rim.
+        geo.convexV(new float[] {4, 0, STRIP_W - 4, 0, STRIP_W, 4, STRIP_W, 5, 0, 5, 0, 4},
+                0, 5, RailArt.a(p.band(), 0.55f), RailArt.a(p.band(), 0));
         geo.outline(RailArt.chamfer(2.5f, 2.5f, STRIP_W - 5.0f, STRIP_H - 5.0f, 3.0f), 0.7f, p.trim());
         for (int i = 0; i < 9; i++) {
             float fx = 7.0f + i * 18.0f;
@@ -252,7 +251,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         int end = Math.min(entries.size(), start + perPage);
 
         // 位置与动画量
-        boolean settledClosed = !open && (lightweight || now - changedAt >= CLOSE_MS);
+        boolean settledClosed = !open && (changedAt < 0L || lightweight || now - changedAt >= CLOSE_MS);
         float motion = lightweight ? 0 : mc.options.screenEffectScale().get().floatValue();
         for (int i = start; !settledClosed && i < end; i++) {
             Entry e = entries.get(i);
