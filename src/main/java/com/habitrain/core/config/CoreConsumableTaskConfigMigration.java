@@ -1,7 +1,6 @@
 package com.habitrain.core.config;
 
 
-import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import java.util.ArrayList;
 import java.util.Map;
 

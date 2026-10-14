@@ -4,7 +4,6 @@ package com.habitrain.core.game.sre.task;
 import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
 import com.habitrain.core.api.TaskInstance;
-import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;

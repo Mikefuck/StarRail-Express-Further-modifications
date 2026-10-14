@@ -1,8 +1,6 @@
 package com.habitrain.core.game.sre.voice;
 
 
-import com.habitrain.core.game.sre.mode.SREGameModeBase;
-import com.habitrain.core.game.sre.mode.SREGameModeState;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**

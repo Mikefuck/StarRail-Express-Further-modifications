@@ -18,6 +18,7 @@ package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import io.wifi.starrailexpress.client.gui.screen.ingame.GameMenuEntries;
+import io.wifi.starrailexpress.client.gui.screen.roster.RoleRosterEditScreen;
 import java.util.ArrayList;
 import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
@@ -36,6 +37,7 @@ public abstract class TaskSettingsMenuEntriesMixin {
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
     private static final String UPSTREAM_TASK_INSTINCT_CHOICES_KEY = "screen.limited_inventory.menu.task_instinct_choices";
     private static final String UPSTREAM_MAP_ROTATION_KEY = "screen.limited_inventory.menu.map_rotation";
+    private static final String UPSTREAM_ROLE_ROSTER_KEY = "screen.limited_inventory.menu.roster";
 
     @Inject(method={"entries"}, at={@At(value="RETURN")}, cancellable=true, remap=false)
     private static void habitrain$replaceInGameSettings(Minecraft minecraft, Screen parent, Consumer<Boolean> toggleViewMenu, CallbackInfoReturnable<ArrayList<GameMenuEntries.MenuEntry>> cir) {
@@ -49,6 +51,7 @@ public abstract class TaskSettingsMenuEntriesMixin {
         ArrayList<GameMenuEntries.MenuEntry> entries = cir.getReturnValue();
         habitrain$removeTaskInstinctEntry(entries);
         habitrain$replaceMapRotationEntry(minecraft, parent, toggleViewMenu, entries);
+        habitrain$replaceRoleRosterEntry(minecraft, toggleViewMenu, entries);
         habitrain$replaceSettingsEntry(minecraft, parent, toggleViewMenu, entries);
     }
 
@@ -65,6 +68,19 @@ public abstract class TaskSettingsMenuEntriesMixin {
             entries.set(i, new GameMenuEntries.MenuEntry(
                     entry.label().copy().withStyle(ChatFormatting.RED),
                     button -> habitrain$openMapSettings(minecraft, parent, toggleViewMenu)
+            ));
+            return;
+        }
+    }
+
+    private static void habitrain$replaceRoleRosterEntry(Minecraft minecraft, Consumer<Boolean> toggleViewMenu, ArrayList<GameMenuEntries.MenuEntry> entries) {
+        if (entries == null) return;
+        for (int i = 0; i < entries.size(); ++i) {
+            GameMenuEntries.MenuEntry entry = entries.get(i);
+            if (!habitrain$isKey(entry.label(), UPSTREAM_ROLE_ROSTER_KEY)) continue;
+            entries.set(i, new GameMenuEntries.MenuEntry(
+                    entry.label().copy().withStyle(ChatFormatting.RED),
+                    button -> habitrain$openRoleRoster(minecraft, toggleViewMenu)
             ));
             return;
         }
@@ -117,6 +133,16 @@ public abstract class TaskSettingsMenuEntriesMixin {
             return;
         }
         minecraft.setScreen(ConfigMenuScreen.openMapSettings(parent));
+        if (toggleViewMenu != null) {
+            toggleViewMenu.accept(false);
+        }
+    }
+
+    private static void habitrain$openRoleRoster(Minecraft minecraft, Consumer<Boolean> toggleViewMenu) {
+        if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)) {
+            return;
+        }
+        minecraft.setScreen(new RoleRosterEditScreen());
         if (toggleViewMenu != null) {
             toggleViewMenu.accept(false);
         }

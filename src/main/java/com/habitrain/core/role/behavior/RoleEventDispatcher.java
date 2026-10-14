@@ -1039,19 +1039,6 @@ public final class RoleEventDispatcher {
                 == com.habitrain.core.role.config.RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
-    private RoleHookContext ctx(RoleKey role, @Nullable ServerPlayer player) {
-        if (player == null) {
-            return ctx(role, (MinecraftServer) null);
-        }
-        ServerLevel level = player.serverLevel();
-        return new RoleHookContext(role, snapshotProvider.get(), player.getServer(),
-                level, player, null, null, null);
-    }
-
-    private RoleHookContext ctx(RoleKey role, @Nullable MinecraftServer server) {
-        return new RoleHookContext(role, snapshotProvider.get(), server);
-    }
-
     private RoleHookContext ctxBroadcast(ManagedHookEntry entry, @Nullable ServerLevel level) {
         return new RoleHookContext(entry.role(), snapshotProvider.get(),
                 level == null ? null : level.getServer(), level, scopedHolder(entry, level), null, null, null);

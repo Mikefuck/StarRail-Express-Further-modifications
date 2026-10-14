@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
 
-import com.habitrain.core.game.sre.task.ExerciseTaskBlocks;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;

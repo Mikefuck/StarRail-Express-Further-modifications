@@ -1,10 +1,8 @@
 package com.habitrain.core.game.sre.mixin;
 
 
-import com.habitrain.core.game.sre.mode.SREGameModeBase;
 import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
 import com.habitrain.core.game.sre.task.DlcTaskTracker;
-import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.game.sre.task.TaskSelector;
 import com.habitrain.core.game.sre.task.TaskWeightCalculator;
 import com.habitrain.core.game.sre.role.sins.component.SlothComponent;

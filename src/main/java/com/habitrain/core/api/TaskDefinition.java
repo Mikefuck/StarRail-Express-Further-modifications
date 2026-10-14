@@ -4,8 +4,6 @@ package com.habitrain.core.api;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -20,8 +18,6 @@ import java.util.function.BiPredicate;
  * 新增: timeLimit、canRepeat、tags 等扩展字段。
  */
 public class TaskDefinition {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|TaskDefinition");
 
     private final String modId;
     private final String taskId;

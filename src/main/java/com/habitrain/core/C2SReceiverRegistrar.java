@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * C2S 网络包接收器注册器 — 负责注册所有客户端→服务端的数据包接收与路由逻辑。
@@ -334,19 +333,6 @@ public final class C2SReceiverRegistrar {
         ServerPlayNetworking.send(player,
                 com.habitrain.core.scene.network.SceneSelectionStateS2C.fromBounds(
                         dimension, selectionMapKey, bounds, bounds.isEmpty() ? 0L : bounds.volume()));
-    }
-
-    private static java.util.Set<String> configuredAdditionalSceneAssetKeys(
-            com.habitrain.core.api.scene.SceneMotionSettings settings) {
-        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
-        if (settings == null) return keys;
-        for (var mapEntry : settings.backgrounds.entrySet()) {
-            for (String backgroundId : mapEntry.getValue().keySet()) {
-                keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.assetKey(
-                        mapEntry.getKey(), backgroundId));
-            }
-        }
-        return keys;
     }
 
 }

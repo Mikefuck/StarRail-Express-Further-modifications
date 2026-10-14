@@ -37,6 +37,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class TaskSettingsBackpackPermissionMixin {
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
     private static final String MAP_ROTATION_KEY = "screen.limited_inventory.menu.map_rotation";
+    private static final String ROLE_ROSTER_KEY = "screen.limited_inventory.menu.roster";
     @Shadow
     public ArrayList<Button> menuSelections;
     @Shadow
@@ -88,6 +89,7 @@ public abstract class TaskSettingsBackpackPermissionMixin {
         if (label == null) return false;
         ComponentContents componentContents = label.getContents();
         if (!(componentContents instanceof TranslatableContents contents)) return false;
-        return TASK_SETTINGS_KEY.equals(contents.getKey()) || MAP_ROTATION_KEY.equals(contents.getKey());
+        return TASK_SETTINGS_KEY.equals(contents.getKey()) || MAP_ROTATION_KEY.equals(contents.getKey())
+                || ROLE_ROSTER_KEY.equals(contents.getKey());
     }
 }

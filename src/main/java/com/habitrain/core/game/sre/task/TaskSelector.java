@@ -7,7 +7,6 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -80,9 +79,4 @@ public final class TaskSelector {
         return null;
     }
 
-    private static String formatKey(Object key) {
-        if (key instanceof SREPlayerTaskComponent.Task t) return t.name();
-        if (key instanceof TaskDefinition d) return d.getFullId();
-        return key.toString();
-    }
 }

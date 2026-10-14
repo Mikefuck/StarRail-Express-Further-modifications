@@ -1,7 +1,6 @@
 package com.habitrain.core.client.gui.menu.page;
 
 
-import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;

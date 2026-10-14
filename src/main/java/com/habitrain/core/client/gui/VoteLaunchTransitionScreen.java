@@ -78,11 +78,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private static final long STAMP_SLAM_MILLIS = 170L;
 
     private static final int VOID = RailArt.NIGHT_0;
-    private static final int GOLD = RailArt.BRASS;
     private static final int GOLD_DARK = RailArt.BRASS_DIM;
-    private static final int GOLD_BRIGHT = RailArt.BRASS_LIGHT;
-    private static final int IVORY = RailArt.CHAMPAGNE;
-    private static final int TEXT_MUTED = RailArt.TEXT_MUTED;
 
     /** 被车票覆盖的投票页，仅在飘落阶段作为背景渲染。 */
     private final Screen coveredScreen;
@@ -95,7 +91,6 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private int progress = 0;
     private int playerCount = 0;
     private int killerCount = 0;
-    private String mapId = "";
     private String modeId = "";
     /** 平滑后的显示进度：服务端进度是阶梯式跳变，直接绘制会一顿一顿。 */
     private float displayedProgress = -1.0f;
@@ -138,7 +133,6 @@ public final class VoteLaunchTransitionScreen extends Screen {
         this.coveredScreen = destination;
         this.destination = unwrapVoteScreen(destination);
         this.winningMapId = winningMapId == null ? "" : winningMapId;
-        this.mapId = this.winningMapId;
         this.skipEnterAnimation = skipEnter;
         this.serial = 100_000 + Math.floorMod(this.winningMapId.hashCode() * 31 + (int) (startedAtMillis / 1000L), 900_000);
         VoteLaunchOverlayState.setActive(true);
@@ -176,7 +170,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         this.progress = Math.max(this.progress, Mth.clamp(prog, 0, 100));
         if (players > 0) this.playerCount = players;
         if (killers >= 0) this.killerCount = killers;
-        if (map != null && !map.isBlank()) { this.mapId = map; this.winningMapId = map; }
+        if (map != null && !map.isBlank()) this.winningMapId = map;
         if (mode != null && !mode.isBlank()) this.modeId = mode;
     }
 
@@ -202,7 +196,6 @@ public final class VoteLaunchTransitionScreen extends Screen {
     public void confirmLaunch(String confirmedMapId) {
         if (confirmedMapId != null && !confirmedMapId.isBlank()) {
             winningMapId = confirmedMapId;
-            mapId = confirmedMapId;
         }
         if (!launchConfirmed) {
             launchConfirmed = true;

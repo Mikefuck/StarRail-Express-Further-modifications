@@ -1,7 +1,6 @@
 package com.habitrain.core.task;
 
 
-import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.game.sre.task.SRETrainTaskWrapper;
 import com.habitrain.core.network.ActiveTaskPayload;

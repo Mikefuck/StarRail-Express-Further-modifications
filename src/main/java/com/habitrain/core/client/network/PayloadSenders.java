@@ -1,6 +1,5 @@
 package com.habitrain.core.client.network;
 
-import com.habitrain.core.network.ConfigUpdatePayload;
 import com.habitrain.core.network.ConfigUpdateScope;
 import com.habitrain.core.network.OptionVoteCastPayload;
 import com.habitrain.core.network.ShaderInfoPayload;

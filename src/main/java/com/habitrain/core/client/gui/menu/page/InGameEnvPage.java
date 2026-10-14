@@ -1,6 +1,5 @@
 package com.habitrain.core.client.gui.menu.page;
 
-import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.MenuPermissions;

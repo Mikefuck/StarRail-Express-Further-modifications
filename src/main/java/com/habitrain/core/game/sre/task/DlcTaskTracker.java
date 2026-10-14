@@ -4,7 +4,6 @@ import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskInstance;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.task.TaskManager;
-import com.habitrain.core.game.sre.task.SubtitleNotifier;
 import io.wifi.starrailexpress.cca.SREPlayerTaskComponent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;

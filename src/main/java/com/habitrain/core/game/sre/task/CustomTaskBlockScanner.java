@@ -37,7 +37,6 @@ public final class CustomTaskBlockScanner {
     private static final Map<String, Long> LOAD_REVISIONS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicLong NEXT_REVISION = new java.util.concurrent.atomic.AtomicLong();
     public enum ScanStatus { COMPLETE, INCOMPLETE, FAILED }
-    private static ScanStatus lastStatus = ScanStatus.INCOMPLETE;
 
     /** Upstream map loading/edit rescans invalidate same-name, same-bounds snapshots. */
     public static void beginMapLoad(ServerLevel level) {
@@ -74,7 +73,6 @@ public final class CustomTaskBlockScanner {
                 Map<BlockPos, Set<Integer>> diskData = diskHit.get();
                 CustomTaskBlockCache.loadFromSnapshot(diskData);
                 SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis(), diskData.isEmpty());
-                lastStatus = ScanStatus.COMPLETE;
                 CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
                 LOGGER.info("[CustomTaskBlockScanner] 命中磁盘缓存，已恢复地图 {} 的 {} 个自定义任务方块并广播",
                         areas.mapName, diskData.size());
@@ -87,13 +85,11 @@ public final class CustomTaskBlockScanner {
 
     public static void scan(ServerLevel serverLevel, AreasWorldComponent areas) {
         if (serverLevel == null || areas == null) {
-            lastStatus = ScanStatus.INCOMPLETE;
             return;
         }
 
         BoundingBox areaBox = resolveScanBox(areas);
         if (areaBox == null) {
-            lastStatus = ScanStatus.INCOMPLETE;
             return;
         }
         // Explicit editor/scan requests must observe content changes immediately.
@@ -103,11 +99,9 @@ public final class CustomTaskBlockScanner {
 
     private static void scan(ServerLevel serverLevel, AreasWorldComponent areas,
                              BoundingBox areaBox, CustomTaskBlockScanKey scanKey) {
-        lastStatus = ScanStatus.INCOMPLETE;
         try {
             scanComplete(serverLevel, areas, areaBox, scanKey);
         } catch (Throwable t) {
-            lastStatus = ScanStatus.FAILED;
             LOGGER.error("Custom task block scan failed; previous snapshot retained map={}", scanKey.mapName(), t);
         }
     }
@@ -116,7 +110,6 @@ public final class CustomTaskBlockScanner {
                              BoundingBox areaBox, CustomTaskBlockScanKey scanKey) {
         long now = System.currentTimeMillis();
         if (SCAN_TRACKER.shouldSkipScan(scanKey, CustomTaskBlockCache.isEmpty(), now)) {
-            lastStatus = ScanStatus.COMPLETE;
             LOGGER.info("[MapScannerMixin] skip duplicate scan for map {} ({} entries)",
                     scanKey.mapName(), CustomTaskBlockCache.size());
             CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
@@ -172,7 +165,6 @@ public final class CustomTaskBlockScanner {
             CustomTaskBlockCache.clear();
             CustomTaskBlockDiskCache.save(serverLevel, scanKey, Map.of());
             SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis(), true);
-            lastStatus = ScanStatus.COMPLETE;
             CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
             LOGGER.info("[MapScannerMixin] 没有可扫描的方块，已广播空快照");
             return;
@@ -193,7 +185,6 @@ public final class CustomTaskBlockScanner {
                     serverLevel.getChunk(chunkX, chunkZ);
                 } catch (Exception failure) {
                     LOGGER.warn("Chunk unavailable during custom task scan; no snapshot committed", failure);
-                    lastStatus = ScanStatus.INCOMPLETE;
                     return;
                 }
             }
@@ -254,7 +245,6 @@ public final class CustomTaskBlockScanner {
         // Complete empty scans overwrite previous nonempty data, too.
         CustomTaskBlockDiskCache.save(serverLevel, scanKey, scannedBlocks);
         SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis(), scannedBlocks.isEmpty());
-        lastStatus = ScanStatus.COMPLETE;
         CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
         LOGGER.info("[MapScannerMixin] updated custom task block cache for map {} with {} entries (multi-typeId)",
                 scanKey.mapName(), totalAddedCount);

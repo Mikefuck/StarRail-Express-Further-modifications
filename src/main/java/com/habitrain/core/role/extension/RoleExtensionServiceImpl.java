@@ -85,7 +85,8 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
             }
         }
         // Common initialization also runs on remote clients, which never start a server.
-        // Publish only committed declarations, after all provider transactions have finished.
+        // Compile replacements as well as their skills after all provider transactions:
+        // waiting for SERVER_STARTED leaves remote clients unable to resolve REPLACE IDs.
         RoleExtensionRegistry.INSTANCE.registerDeclaredSkills();
         LOGGER.info("Loaded {} role extension provider(s)", count());
     }

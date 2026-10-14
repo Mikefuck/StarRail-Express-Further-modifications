@@ -1,7 +1,6 @@
 package com.habitrain.core.config;
 
 
-import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
 import com.habitrain.core.game.sre.config.SREIntegration;
 import com.habitrain.core.api.scene.SceneMotionSettings;
 

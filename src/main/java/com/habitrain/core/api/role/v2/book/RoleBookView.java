@@ -1,6 +1,5 @@
 package com.habitrain.core.api.role.v2.book;
 
-import com.habitrain.core.api.role.v2.book.RoleBookPage;
 
 import java.util.List;
 import java.util.Objects;

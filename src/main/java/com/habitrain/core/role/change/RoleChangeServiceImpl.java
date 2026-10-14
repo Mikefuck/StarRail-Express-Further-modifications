@@ -1,7 +1,6 @@
 package com.habitrain.core.role.change;
 
 
-import com.habitrain.core.game.sre.role.SreRoleAssignmentEffects;
 import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleChangeApi;

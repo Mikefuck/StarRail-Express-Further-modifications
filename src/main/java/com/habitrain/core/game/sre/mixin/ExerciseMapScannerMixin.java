@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
 
-import com.habitrain.core.game.sre.task.ExerciseTaskBlocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.agmas.noellesroles.utils.MapScanner;
 import org.spongepowered.asm.mixin.Mixin;

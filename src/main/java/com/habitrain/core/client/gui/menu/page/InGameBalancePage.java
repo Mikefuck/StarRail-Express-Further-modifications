@@ -8,7 +8,6 @@ import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ui.*;
 import com.habitrain.core.config.BlackoutGlobalCooldownRules;
 import com.habitrain.core.config.ConfigManager;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;

@@ -1,8 +1,6 @@
 package com.habitrain.core.game;
 
 
-import com.habitrain.core.game.sre.mode.ForcedReadyJoinGate;
-import com.habitrain.core.game.sre.role.SreRoleAssignmentEffects;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

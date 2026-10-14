@@ -374,7 +374,6 @@ public final class RoleExtensionRegistry {
             return;
         }
         validateAliasCycles();
-        compileReplacements();
         // Relations are intentionally NOT linked here. Snapshot activation owns
         // all relation writes so ADD/REPLACE/MODIFY relations follow the current
         // effective snapshot and are restored/reapplied in a fixed order.
@@ -594,12 +593,15 @@ public final class RoleExtensionRegistry {
     }
 
     /**
-     * Registers ADD / REPLACE skills that carry a finished
-     * {@link io.wifi.starrailexpress.api.RoleSkill.Definition}. Skipped in unit
-     * tests that never touched {@code TMMRoles}.
+     * Prepares committed REPLACE objects before publishing ADD / REPLACE skills.
+     * Common initialization calls this on remote clients too: those clients never
+     * reach the server-start freeze, but CCA role IDs and the skill HUD already
+     * need the replacement objects. This does not freeze provider registration.
+     * Skill publication is skipped when the upstream registry is unavailable.
      */
     void registerDeclaredSkills() {
-        if (!tmmAccessible) {
+        compileReplacements();
+        if (!canTouchTmmRoles()) {
             return;
         }
         for (SRERole managed : managedRoles.values()) {

@@ -1,7 +1,6 @@
 package com.habitrain.core.client.mixin;
 
 
-import com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskDefinition;
 import com.habitrain.core.api.TaskRegistry;

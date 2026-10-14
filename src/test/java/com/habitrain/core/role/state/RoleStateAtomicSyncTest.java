@@ -5,7 +5,6 @@ import com.habitrain.core.api.role.v2.state.*;
 import com.habitrain.core.client.role.RoleStateClientCache;
 import com.habitrain.core.network.RoleStateSyncPayload;
 import com.mojang.serialization.Codec;
-import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

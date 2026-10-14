@@ -1,7 +1,6 @@
 package com.habitrain.core.client;
 
 
-import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
 /**
  * Decides which client session caches may be wiped at JOIN / DISCONNECT / game end.
  *

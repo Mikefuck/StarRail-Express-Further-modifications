@@ -93,6 +93,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
     private static final TicketArt.Palette PALETTE = TicketArt.SAPPHIRE;
     private static final String TASK_SETTINGS_KEY = "screen.habitrain_core.task_settings";
     private static final String MAP_ROTATION_KEY = "screen.limited_inventory.menu.map_rotation";
+    private static final String ROLE_ROSTER_KEY = "screen.limited_inventory.menu.roster";
     private static final String PARTICIPATE_HINT_KEY = "screen.limited_inventory.button.participate.hover_text";
 
     private static final Wire3D.Style LOCO_STYLE = new Wire3D.Style(RailArt.BRASS_LIGHT, 0.5f, 2.4f, 0.1f, 0.72f);
@@ -569,6 +570,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         float after = (now - openedAt - WIRE_START_MS - WIRE_MS) / 450.0f;
         float pulse = !still && reentryAt < 0L && after > 0.0f && after < 1.0f ? Mth.sin(after * Mth.PI) : 0.0f;
         float hw = width / 2.0f / k;
+        float hh = height / 2.0f / k;
         float side = Math.max(0.0f, hw - TICKET_W / 2.0f);
 
         g.pose().pushPose();
@@ -581,12 +583,12 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         }
         GuiGeo geo = still ? GuiGeo.record() : GuiGeo.glow(g);
 
-        // 左：原地奔跑的蒸汽机车
-        // 车头朝左前方（远离车票），煤水车尾藏到票后
+        // 右下：原地奔跑的蒸汽机车
+        // 车头朝右前方（远离车票），煤水车尾藏到票后
         float locoSize = Mth.clamp(side * 0.56f, 40.0f, 100.0f);
-        float locoX = -(TICKET_W / 2.0f + side * 0.52f);
-        float locoY = 18.0f;
-        float yaw = Mth.PI - 0.6f + 0.07f * Mth.sin(time * 0.37f);
+        float locoX = Math.min(TICKET_W / 2.0f + side * 0.52f, hw - locoSize * 0.96f - 8.0f);
+        float locoY = Math.min(64.0f, hh * 0.36f);
+        float yaw = 0.6f + 0.07f * Mth.sin(time * 0.37f);
         float pitch = -0.3f;
         view.orient(yaw, pitch, 0.0f)
                 .origin(WireModels.LOCO_CENTER_X, WireModels.LOCO_CENTER_Y, 0.0f)
@@ -630,10 +632,10 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
             geo.softGlow(lx, ly, 7.0f, 7.0f, RailArt.LAMP, Math.round(150 * lampVisible));
         }
 
-        // 右：星穹仪
-        float skySize = Mth.clamp(side * 0.6f, 40.0f, 88.0f);
-        float skyX = TICKET_W / 2.0f + side * 0.5f;
-        float skyY = -4.0f;
+        // 左上：放大的星穹仪，按画幅限高并为左边缘留出空间
+        float skySize = Math.min(Mth.clamp(side * 0.9f, 60.0f, 132.0f), hh * 0.7f);
+        float skyX = -Math.min(TICKET_W / 2.0f + side * 0.5f, hw - skySize * 0.72f - 8.0f);
+        float skyY = -Math.min(64.0f, hh * 0.36f);
         float spin = time * 0.35f;
         view.orient(-0.5f + time * 0.06f, -0.24f, 0.12f)
                 .origin(0.0f, -0.35f, 0.0f)
@@ -722,7 +724,6 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
             s.top = top;
             s.gx = ticketX + (x + shake) * k;
             s.gy = ticketY + yDu * k;
-            s.order = order;
             s.intro = intro;
         }
 
@@ -858,9 +859,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         return isLockedKey(s.key);
     }
 
-    /** 地图轮换与任务点设置只对 OP2 开放；延迟执行动作时也会重新检查。 */
+    /** 地图轮换、职业轮换与任务点设置只对 OP2 开放；延迟执行动作时也会重新检查。 */
     static boolean isLockedKey(String key) {
-        return (TASK_SETTINGS_KEY.equals(key) || MAP_ROTATION_KEY.equals(key))
+        return (TASK_SETTINGS_KEY.equals(key) || MAP_ROTATION_KEY.equals(key) || ROLE_ROSTER_KEY.equals(key))
                 && !MenuPermissions.canAccessTaskSettings();
     }
 
@@ -1079,7 +1080,6 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
     }
 
     private void drawPassengerInfo(GuiGraphics g, Font font, long now, float alpha) {
-        LocalPlayer player = mc.player;
         String name = passengerName;
         int ink = RailArt.a(PALETTE.ink(), alpha);
         int soft = RailArt.a(PALETTE.inkSoft(), alpha * 0.9f);
@@ -1647,7 +1647,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
     /** 自有受限入口按键识别，其余管理员项沿用上游的红色标记。 */
     static boolean isRestricted(Component label) {
         String key = keyOf(label);
-        if (TASK_SETTINGS_KEY.equals(key) || MAP_ROTATION_KEY.equals(key)) return true;
+        if (TASK_SETTINGS_KEY.equals(key) || MAP_ROTATION_KEY.equals(key) || ROLE_ROSTER_KEY.equals(key)) return true;
         TextColor color = label.getStyle().getColor();
         return color != null && color.equals(TextColor.fromLegacyFormat(ChatFormatting.RED));
     }
@@ -1736,7 +1736,6 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         // 本帧布局
         boolean shown;
         boolean top;
-        int order;
         float intro;
         float gx;
         float gy;

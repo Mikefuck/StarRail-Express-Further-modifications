@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mode;
 
 
-import com.habitrain.core.game.sre.task.DlcTaskPoolBuilder;
 import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.game.sre.voice.VoiceChatPresence;
 import com.habitrain.core.api.*;

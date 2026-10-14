@@ -1,7 +1,6 @@
 package com.habitrain.core.task;
 
 
-import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
 import org.junit.jupiter.api.Test;
