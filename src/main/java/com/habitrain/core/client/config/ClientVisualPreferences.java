@@ -30,6 +30,7 @@ public final class ClientVisualPreferences {
 
     private static boolean loaded;
     private static boolean customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
+    private static boolean lightweightInventory;
     private static int requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
     private static int maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
     private static int diskCacheQuotaMiB = SceneClientPerformanceRules.DEFAULT_DISK_CACHE_QUOTA_MIB;
@@ -61,6 +62,7 @@ public final class ClientVisualPreferences {
         }
 
         JsonObject root = result.value();
+        lightweightInventory = readBoolean(root, "lightweightInventory", false);
         customTitlePanoramaEnabled = !root.has("customTitlePanoramaEnabled")
                 ? DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED
                 : root.get("customTitlePanoramaEnabled").isJsonPrimitive()
@@ -104,6 +106,7 @@ public final class ClientVisualPreferences {
     }
 
     private static void applyDefaults() {
+        lightweightInventory = false;
         customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
         requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
         maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
@@ -140,6 +143,21 @@ public final class ClientVisualPreferences {
     public static synchronized boolean isCustomTitlePanoramaEnabled() {
         load();
         return customTitlePanoramaEnabled;
+    }
+
+    public static synchronized boolean isLightweightInventory() {
+        load();
+        return lightweightInventory;
+    }
+
+    /** Local only; preserve the previous selection if persistence fails. */
+    public static synchronized boolean setLightweightInventory(boolean enabled) {
+        load();
+        boolean previous = lightweightInventory;
+        lightweightInventory = enabled;
+        if (save()) return true;
+        lightweightInventory = previous;
+        return false;
     }
 
     /**
@@ -314,6 +332,7 @@ public final class ClientVisualPreferences {
     private static boolean save() {
         JsonObject root = new JsonObject();
         root.addProperty("customTitlePanoramaEnabled", customTitlePanoramaEnabled);
+        root.addProperty("lightweightInventory", lightweightInventory);
         JsonObject performance = new JsonObject();
         performance.addProperty("requestTimeoutMs", requestTimeoutMs);
         performance.addProperty("maxChunkRetries", maxChunkRetries);

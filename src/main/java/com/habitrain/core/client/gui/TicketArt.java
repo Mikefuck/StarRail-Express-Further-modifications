@@ -91,6 +91,12 @@ final class TicketArt {
 
     /** 票纸底色 + 票头色带。 */
     static void paper(GuiGraphics g, Shape s, Palette p, Part part, float alpha) {
+        GuiGeo geo = GuiGeo.begin(g);
+        paper(geo, s, p, part, alpha);
+        geo.end();
+    }
+
+    static void paper(GuiGeo geo, Shape s, Palette p, Part part, float alpha) {
         float w = s.w;
         float h = s.h;
         float px = s.stubX;
@@ -99,7 +105,6 @@ final class TicketArt {
         float b = s.band;
         int top = fade(p.paperTop, alpha);
         int bottom = fade(p.paperBottom, alpha);
-        GuiGeo geo = GuiGeo.begin(g);
         if (part != Part.STUB) {
             geo.convexV(new float[] {c, 0, px - r, 0, px - r, h, c, h, 0, h - c, 0, c}, 0, h, top, bottom);
             notchColumn(geo, px - r, px, px, r, h, top, bottom);
@@ -116,7 +121,6 @@ final class TicketArt {
         if (part != Part.BODY) {
             geo.convexV(new float[] {px + r, 0, w - c, 0, w, c, w, b, px + r, b}, 0, b, band, bandLow);
         }
-        geo.end();
     }
 
     /** 撕票线所在竖条：上下各被半圆缺口挖去。 */
@@ -145,13 +149,18 @@ final class TicketArt {
      * @param rich 是否绘制团花与纸面斑点（大票使用；小票省略以保持清爽）
      */
     static void details(GuiGraphics g, Shape s, Palette p, Part part, float alpha, int seed, boolean rich) {
+        GuiGeo geo = GuiGeo.begin(g);
+        details(geo, s, p, part, alpha, seed, rich);
+        geo.end();
+    }
+
+    static void details(GuiGeo geo, Shape s, Palette p, Part part, float alpha, int seed, boolean rich) {
         float w = s.w;
         float h = s.h;
         float px = s.stubX;
         float r = s.notch;
         float in = s.inset;
         float b = s.band;
-        GuiGeo geo = GuiGeo.begin(g);
         if (part != Part.STUB) {
             // 防伪波纹：几道相位不同的正弦细线，像钞票底纹
             float left = in + 3.0f;
@@ -205,7 +214,6 @@ final class TicketArt {
             }
         }
         edge(geo, s, part, fade(p.edge, alpha));
-        geo.end();
     }
 
     private static float wave(float x, float amp, float phase) {

@@ -279,6 +279,7 @@ final class RailArt {
 
         private String shown = "";
         private String previous = "";
+        private String[] glyphs = new String[0];
         private long changedAt;
 
         void set(String text) {
@@ -290,6 +291,8 @@ final class RailArt {
             // 翻动中途再次变化：以当前显示为旧值重新开始
             previous = shown;
             shown = next;
+            glyphs = new String[next.length()];
+            for (int i = 0; i < next.length(); i++) glyphs[i] = String.valueOf(next.charAt(i));
             changedAt = now;
         }
 
@@ -306,10 +309,21 @@ final class RailArt {
          */
         void render(GuiGraphics g, Font font, int x, int y, int tileW, int tileH, int gap,
                     int textColor, int tileTop, int tileBottom, float alpha) {
+            render(g, font, x, y, tileW, tileH, gap, textColor, tileTop, tileBottom, alpha, true);
+        }
+
+        void render(GuiGraphics g, Font font, int x, int y, int tileW, int tileH, int gap,
+                    int textColor, int tileTop, int tileBottom, float alpha, boolean animate) {
             if (alpha <= 0.02f || shown.isEmpty()) {
                 return;
             }
             long now = Util.getMillis();
+            if (!animate || previous.equals(shown)
+                    || now - changedAt >= FLIP_MILLIS + (shown.length() - 1L) * STAGGER_MILLIS) {
+                previous = shown;
+                renderStill(g, font, x, y, tileW, tileH, gap, textColor, tileTop, tileBottom, alpha);
+                return;
+            }
             int seam = tileH / 2;
             for (int i = 0; i < shown.length(); i++) {
                 int tx = x + i * (tileW + gap);
@@ -353,6 +367,39 @@ final class RailArt {
                 seamGeo.rectV(tx, y, tx + tileW, y + 1.0f, a(0xFFFFFFFF, alpha * 0.12f), a(0xFFFFFFFF, 0));
                 seamGeo.end();
             }
+        }
+
+        /** All tile backgrounds, then all glyphs, then all seams: two geometry batches, no per-glyph scissor. */
+        private void renderStill(GuiGraphics g, Font font, int x, int y, int tileW, int tileH, int gap,
+                                 int textColor, int tileTop, int tileBottom, float alpha) {
+            int seam = tileH / 2;
+            GuiGeo tiles = GuiGeo.begin(g);
+            for (int i = 0; i < shown.length(); i++) {
+                int tx = x + i * (tileW + gap);
+                tiles.rect(tx - 0.5f, y + 1, tx + tileW + 0.5f, y + tileH + 1.5f, a(0xFF000000, alpha * 0.6f));
+                tiles.rectV(tx, y, tx + tileW, y + seam, a(tileTop, alpha), a(tileBottom, alpha));
+                tiles.rectV(tx, y + seam, tx + tileW, y + tileH, a(tileBottom, alpha), a(tileTop, alpha * 0.9f));
+            }
+            tiles.end();
+            for (int i = 0; i < shown.length(); i++) {
+                String glyph = glyphs[i];
+                float scale = Math.min(tileH / 11.0f, (tileW - 1.0f) / Math.max(1, font.width(glyph)));
+                g.pose().pushPose();
+                g.pose().translate(x + i * (tileW + gap) + tileW / 2.0f, y + tileH / 2.0f, 0);
+                g.pose().scale(scale, scale, 1);
+                g.pose().translate(-font.width(glyph) / 2.0f + 0.5f, -3.5f, 0);
+                g.drawString(font, glyph, 0, 0, a(textColor, alpha), false);
+                g.pose().popPose();
+            }
+            GuiGeo seams = GuiGeo.begin(g);
+            for (int i = 0; i < shown.length(); i++) {
+                int tx = x + i * (tileW + gap);
+                seams.rect(tx, y + seam - 0.5f, tx + tileW, y + seam + 0.5f, a(0xFF000000, alpha * 0.85f));
+                seams.rect(tx - 1, y + seam - 1.5f, tx, y + seam + 1.5f, a(BRASS_DIM, alpha));
+                seams.rect(tx + tileW, y + seam - 1.5f, tx + tileW + 1, y + seam + 1.5f, a(BRASS_DIM, alpha));
+                seams.rectV(tx, y, tx + tileW, y + 1, a(0xFFFFFFFF, alpha * 0.12f), a(0xFFFFFFFF, 0));
+            }
+            seams.end();
         }
 
         private static void flapFace(GuiGraphics g, int x0, int y0, int x1, int y1, int c0, int c1,

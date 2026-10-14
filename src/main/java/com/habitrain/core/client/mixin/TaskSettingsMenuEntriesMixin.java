@@ -18,9 +18,9 @@ package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import io.wifi.starrailexpress.client.gui.screen.ingame.GameMenuEntries;
-import io.wifi.starrailexpress.client.gui.screen.maprotation.MapRotationScreen;
 import java.util.ArrayList;
 import java.util.function.Consumer;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -63,7 +63,7 @@ public abstract class TaskSettingsMenuEntriesMixin {
             GameMenuEntries.MenuEntry entry = entries.get(i);
             if (!habitrain$isKey(entry.label(), UPSTREAM_MAP_ROTATION_KEY)) continue;
             entries.set(i, new GameMenuEntries.MenuEntry(
-                    entry.label(),
+                    entry.label().copy().withStyle(ChatFormatting.RED),
                     button -> habitrain$openMapSettings(minecraft, parent, toggleViewMenu)
             ));
             return;
@@ -76,7 +76,7 @@ public abstract class TaskSettingsMenuEntriesMixin {
             GameMenuEntries.MenuEntry entry = entries.get(i);
             if (!habitrain$isUpstreamSettingsEntry(entry.label())) continue;
             entries.set(i, new GameMenuEntries.MenuEntry(
-                    Component.translatable(TASK_SETTINGS_KEY),
+                    Component.translatable(TASK_SETTINGS_KEY).withStyle(ChatFormatting.RED),
                     button -> habitrain$openTaskSettings(minecraft, parent, toggleViewMenu)
             ));
             return;
@@ -113,14 +113,10 @@ public abstract class TaskSettingsMenuEntriesMixin {
     }
 
     private static void habitrain$openMapSettings(Minecraft minecraft, Screen parent, Consumer<Boolean> toggleViewMenu) {
-        if (minecraft == null) {
+        if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)) {
             return;
         }
-        if (minecraft.player != null && minecraft.player.hasPermissions(2)) {
-            minecraft.setScreen(ConfigMenuScreen.openMapSettings(parent));
-        } else {
-            minecraft.setScreen(new MapRotationScreen());
-        }
+        minecraft.setScreen(ConfigMenuScreen.openMapSettings(parent));
         if (toggleViewMenu != null) {
             toggleViewMenu.accept(false);
         }

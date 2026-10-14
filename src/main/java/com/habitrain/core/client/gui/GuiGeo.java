@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexBuffer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.util.Mth;
@@ -30,9 +31,79 @@ final class GuiGeo {
     private final boolean additive;
 
     private GuiGeo(GuiGraphics g, boolean additive) {
-        this.pose = new Matrix4f(g.pose().last().pose());
+        this(g.pose().last().pose(), additive);
+    }
+
+    private GuiGeo(Matrix4f pose, boolean additive) {
+        this.pose = new Matrix4f(pose);
         this.additive = additive;
         this.buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+    }
+
+    /** Build local-space geometry once, for upload into a screen-owned cached mesh. */
+    static GuiGeo record() {
+        return new GuiGeo(new Matrix4f(), false);
+    }
+
+    /** No textures or shader references are retained; numeric meshes survive resource reloads. */
+    static final class CachedMesh implements AutoCloseable {
+        private VertexBuffer vertices;
+        private final Matrix4f modelView = new Matrix4f();
+
+        boolean ready() {
+            return vertices != null;
+        }
+
+        void upload(GuiGeo geometry) {
+            close();
+            MeshData data = geometry.buffer.build();
+            if (data == null) return;
+            VertexBuffer next = new VertexBuffer(VertexBuffer.Usage.STATIC);
+            try {
+                next.bind();
+                next.upload(data); // VertexBuffer owns/closes MeshData after upload.
+                vertices = next;
+            } catch (RuntimeException | Error e) {
+                next.close();
+                throw e;
+            } finally {
+                VertexBuffer.unbind();
+            }
+        }
+
+        void draw(GuiGraphics g, float alpha, boolean additive) {
+            if (vertices == null || alpha <= 0.01f) return;
+            g.flush();
+            RenderSystem.enableBlend();
+            if (additive) {
+                RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+            } else {
+                RenderSystem.defaultBlendFunc();
+            }
+            RenderSystem.disableCull();
+            RenderSystem.disableDepthTest();
+            RenderSystem.setShaderColor(1, 1, 1, alpha);
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            try {
+                vertices.bind();
+                modelView.set(RenderSystem.getModelViewMatrix()).mul(g.pose().last().pose());
+                vertices.drawWithShader(modelView, RenderSystem.getProjectionMatrix(), RenderSystem.getShader());
+            } finally {
+                VertexBuffer.unbind();
+                RenderSystem.setShaderColor(1, 1, 1, 1);
+                RenderSystem.enableCull();
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.disableBlend();
+            }
+        }
+
+        @Override
+        public void close() {
+            if (vertices != null) {
+                vertices.close();
+                vertices = null;
+            }
+        }
     }
 
     /** 普通 alpha 混合批次。 */
@@ -93,6 +164,11 @@ final class GuiGeo {
 
     GuiGeo rect(float x0, float y0, float x1, float y1, int color) {
         return quad(x0, y0, color, x0, y1, color, x1, y1, color, x1, y0, color);
+    }
+
+    GuiGeo rectOutline(float x0, float y0, float x1, float y1, float thickness, int color) {
+        return line(x0, y0, x1, y0, thickness, color).line(x1, y0, x1, y1, thickness, color)
+                .line(x1, y1, x0, y1, thickness, color).line(x0, y1, x0, y0, thickness, color);
     }
 
     /** 竖向渐变矩形。 */

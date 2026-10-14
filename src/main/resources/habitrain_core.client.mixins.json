@@ -33,6 +33,7 @@
         "TaskSettingsMenuEntriesMixin",
         "TaskSettingsBackpackPermissionMixin",
         "TaskSettingsWaitingButtonMixin",
+        "LimitedInventoryTicketMixin",
         "RoleIntroduceScreenMixin",
         "VoteLaunchFadeBlockMixin",
         "VoteLaunchCameraBlockMixin",

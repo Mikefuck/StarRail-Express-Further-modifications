@@ -1,0 +1,373 @@
+package com.habitrain.core.client.mixin;
+
+import com.habitrain.core.client.gui.TicketInventoryLayer;
+import com.habitrain.core.client.gui.TicketMenuTray;
+import com.habitrain.core.client.gui.TicketPerformanceButton;
+import com.habitrain.core.client.config.ClientVisualPreferences;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.systems.RenderSystem;
+import io.wifi.starrailexpress.client.SREClient;
+import io.wifi.starrailexpress.client.gui.screen.ingame.LimitedHandledScreen;
+import io.wifi.starrailexpress.client.gui.screen.ingame.LimitedInventoryScreen;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.lwjgl.glfw.GLFW;
+
+/**
+ * 背包车票化：等待开局时把上游背包面板换成「乘车凭证」车票页（{@link TicketInventoryLayer}）；
+ * 对局中只换外观——快捷栏底图换成票条、右下角菜单换成邮票册（{@link TicketMenuTray}），布局不变。
+ *
+ * <p>上游的菜单按钮、翻页箭头与参与按钮仍然创建（其它 mixin 依赖它们），只是隐藏起来，
+ * 由邮票与票价框代为触发；等待时快捷栏槽位改排到车票的「随身行李」格里。</p>
+ */
+@Mixin(LimitedInventoryScreen.class)
+public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<InventoryMenu> {
+    @Unique
+    private static final int[] HABITRAIN$HIDDEN_SLOT = {-10000, -10000};
+
+    @Shadow(remap = false)
+    @Final
+    private ArrayList<LimitedInventoryScreen.WaitingMenuCellButton> waitingMenuButtons;
+    @Shadow(remap = false)
+    private Button waitingPrevPageButton;
+    @Shadow(remap = false)
+    private Button waitingNextPageButton;
+    @Shadow(remap = false)
+    private Button participationButton;
+    @Shadow(remap = false)
+    public ArrayList<Button> menuSelections;
+    @Shadow(remap = false)
+    public Button menuButton;
+    @Shadow(remap = false)
+    public boolean isMenuOpen;
+    @Shadow(remap = false)
+    protected abstract void updateWaitingMenuVisibility();
+
+    @Unique
+    private TicketInventoryLayer habitrain$ticket;
+    @Unique
+    private TicketMenuTray habitrain$tray;
+    @Unique
+    private TicketPerformanceButton habitrain$modeButton;
+
+    protected LimitedInventoryTicketMixin(InventoryMenu handler, Inventory inventory, Component title) {
+        super(handler, inventory, title);
+    }
+
+    @Unique
+    private static boolean habitrain$gameRunning() {
+        return SREClient.gameComponent != null && SREClient.gameComponent.isRunning();
+    }
+
+    @Unique
+    private boolean habitrain$ticketView() {
+        return habitrain$ticket != null && habitrain$ticket.usable() && !habitrain$gameRunning();
+    }
+
+    @Unique
+    private boolean habitrain$gameView() {
+        return habitrain$tray != null && habitrain$ticket != null && habitrain$ticket.usable() && habitrain$gameRunning();
+    }
+
+    @Inject(method = "init", at = @At("TAIL"))
+    private void habitrain$installTicket(CallbackInfo ci) {
+        if (habitrain$modeButton == null) {
+            habitrain$modeButton = new TicketPerformanceButton();
+        }
+        if (habitrain$ticket == null) {
+            habitrain$ticket = new TicketInventoryLayer(habitrain$modeButton);
+        }
+        habitrain$ticket.rebuild(waitingMenuButtons, participationButton);
+        habitrain$ticket.layout(this.width, this.height);
+        this.addWidget(habitrain$ticket);
+        if (habitrain$tray == null) {
+            habitrain$tray = new TicketMenuTray(habitrain$modeButton);
+        }
+        LimitedInventoryScreen self = (LimitedInventoryScreen) (Object) this;
+        habitrain$tray.rebuild(menuSelections, self::toggleViewMenu, () -> this.isMenuOpen);
+        habitrain$tray.layout(this.width, this.height);
+        this.addWidget(habitrain$tray);
+        habitrain$syncTicketState();
+        habitrain$hideUpstreamWaitingWidgets();
+        habitrain$hideUpstreamGameMenu();
+    }
+
+    @Inject(method = "updateWaitingMenuVisibility", at = @At("TAIL"), remap = false)
+    private void habitrain$keepUpstreamWaitingHidden(CallbackInfo ci) {
+        habitrain$hideUpstreamWaitingWidgets();
+        habitrain$hideUpstreamGameMenu();
+    }
+
+    @Inject(method = "toggleViewMenu", at = @At("TAIL"), remap = false)
+    private void habitrain$keepUpstreamGameMenuHidden(boolean open, CallbackInfo ci) {
+        habitrain$hideUpstreamGameMenu();
+    }
+
+    @Unique
+    private void habitrain$syncTicketState() {
+        if (habitrain$ticket == null || habitrain$tray == null) return;
+        habitrain$ticket.sync(waitingMenuButtons, participationButton);
+        habitrain$tray.sync(menuSelections);
+        boolean lightweight = ClientVisualPreferences.isLightweightInventory();
+        habitrain$ticket.setLightweight(lightweight);
+        habitrain$tray.setLightweight(lightweight);
+        habitrain$ticket.setShowing(habitrain$ticketView());
+        habitrain$tray.setActive(habitrain$gameView());
+    }
+
+    @Inject(method = "render", at = @At("HEAD"))
+    private void habitrain$prepareFrame(GuiGraphics graphics, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        habitrain$syncTicketState();
+        habitrain$hideUpstreamWaitingWidgets();
+        habitrain$hideUpstreamGameMenu();
+    }
+
+    /** 对局中：上游右下角的「菜单」按钮与展开的竖列由邮票册代替。 */
+    @Unique
+    private void habitrain$hideUpstreamGameMenu() {
+        if (!habitrain$gameView()) {
+            return;
+        }
+        if (menuButton != null) {
+            menuButton.visible = false;
+            menuButton.active = false;
+        }
+        if (menuSelections != null) {
+            for (Button button : menuSelections) {
+                button.visible = false;
+                button.active = false;
+            }
+        }
+    }
+
+    @Unique
+    private void habitrain$hideUpstreamWaitingWidgets() {
+        if (!habitrain$ticketView()) {
+            return;
+        }
+        for (Button button : waitingMenuButtons) {
+            button.visible = false;
+            button.active = false;
+        }
+        habitrain$hideButton(waitingPrevPageButton);
+        habitrain$hideButton(waitingNextPageButton);
+        habitrain$hideButton(participationButton);
+    }
+
+    @Unique
+    private static void habitrain$hideButton(Button button) {
+        if (button == null) return;
+        button.visible = false;
+        button.active = false;
+    }
+
+    @Inject(method = "drawBackground", at = @At("HEAD"), cancellable = true, remap = false)
+    private void habitrain$drawTicket(GuiGraphics graphics, float delta, int mouseX, int mouseY, CallbackInfo ci) {
+        if (habitrain$ticket == null || habitrain$tray == null) {
+            return;
+        }
+        boolean show = habitrain$ticketView();
+        boolean game = habitrain$gameView();
+        habitrain$ticket.setShowing(show);
+        habitrain$tray.setActive(game);
+        if (!show && !game) {
+            return;
+        }
+        if (habitrain$renderSafely(graphics, () -> {
+            if (show) {
+                habitrain$ticket.render(graphics, mouseX, mouseY);
+            } else {
+                habitrain$hideUpstreamGameMenu();
+                habitrain$tray.renderStrip(graphics, this.x, this.y, mouseX, mouseY);
+            }
+        })) {
+            ci.cancel();
+        }
+    }
+
+    @Unique
+    private boolean habitrain$renderSafely(GuiGraphics graphics, Runnable draw) {
+        var pose = graphics.pose().last();
+        try {
+            draw.run();
+            return true;
+        } catch (RuntimeException e) {
+            // Restore the original coordinate system before falling back in this very frame.
+            while (graphics.pose().last() != pose) graphics.pose().popPose();
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
+            RenderSystem.enableDepthTest();
+            habitrain$ticket.fail(e);
+            habitrain$ticket.setShowing(false);
+            habitrain$tray.setActive(false);
+            updateWaitingMenuVisibility();
+            return false;
+        }
+    }
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void habitrain$drawTicketOverlay(GuiGraphics graphics, int mouseX, int mouseY, float delta,
+                                             CallbackInfo ci) {
+        if (habitrain$ticketView()) {
+            habitrain$renderSafely(graphics, () -> habitrain$ticket.renderOverlay(graphics, mouseX, mouseY));
+        } else if (habitrain$gameView()) {
+            // The album is in front of role/shop widgets. Its input has the same priority below.
+            habitrain$renderSafely(graphics, () -> {
+                habitrain$tray.renderTray(graphics, mouseX, mouseY);
+                habitrain$tray.renderOverlay(graphics, mouseX, mouseY);
+            });
+        }
+    }
+
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void habitrain$tickTicket(CallbackInfo ci) {
+        habitrain$syncTicketState();
+        if (habitrain$ticketView()) {
+            habitrain$ticket.tick();
+        } else if (habitrain$gameView()) {
+            habitrain$tray.tick();
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        habitrain$syncTicketState();
+        if (habitrain$ticketView() && habitrain$ticket.mouseClicked(mouseX, mouseY, button)) {
+            this.setFocused(habitrain$ticket);
+            return true;
+        }
+        if (habitrain$gameView() && habitrain$tray.mouseClicked(mouseX, mouseY, button)) {
+            this.setFocused(habitrain$tray);
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    protected boolean isClickOutsideBounds(double mouseX, double mouseY, int left, int top, int button) {
+        // Touchscreen mode must use the relocated ticket's bounds, including its real hotbar slots.
+        if (habitrain$ticketView()) return !habitrain$ticket.isMouseOver(mouseX, mouseY);
+        if (habitrain$gameView() && habitrain$tray.isMouseOver(mouseX, mouseY)) return false;
+        return super.isClickOutsideBounds(mouseX, mouseY, left, top, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (habitrain$ticketView() && habitrain$ticket.isMouseOver(mouseX, mouseY)
+                && habitrain$ticket.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) return true;
+        if (habitrain$gameView() && habitrain$tray.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) return true;
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (key == GLFW.GLFW_KEY_F6 && (habitrain$ticketView() || habitrain$gameView())) {
+            habitrain$modeButton.toggleMode();
+            habitrain$syncTicketState();
+            return true;
+        }
+        if (habitrain$ticketView() && habitrain$ticket.keyPressed(key, scanCode, modifiers)) {
+            setFocused(habitrain$ticket);
+            return true;
+        }
+        if (habitrain$gameView() && habitrain$tray.keyPressed(key, scanCode, modifiers)) {
+            setFocused(habitrain$tray);
+            return true;
+        }
+        return super.keyPressed(key, scanCode, modifiers);
+    }
+
+    @Override
+    public void removed() {
+        try {
+            super.removed();
+        } finally {
+            if (habitrain$ticket != null) {
+                habitrain$ticket.setShowing(false);
+                habitrain$ticket.releaseResources();
+            }
+            if (habitrain$tray != null) {
+                habitrain$tray.setActive(false);
+                habitrain$tray.releaseResources();
+            }
+        }
+    }
+
+    // ==================== 快捷栏槽位 ====================
+
+    @Unique
+    private int[] habitrain$slotPosition(Slot slot) {
+        if (slot == null || slot.index < 36 || slot.index > 44 || !habitrain$ticketView()) {
+            return null;
+        }
+        int[] position = habitrain$ticket.slotPosition(slot.index - 36);
+        return position != null ? position : HABITRAIN$HIDDEN_SLOT;
+    }
+
+    @Inject(method = "getSlotRenderX", at = @At("HEAD"), cancellable = true, remap = false)
+    private void habitrain$ticketSlotX(Slot slot, CallbackInfoReturnable<Integer> cir) {
+        int[] position = habitrain$slotPosition(slot);
+        if (position != null) {
+            cir.setReturnValue(position[0] - this.x);
+        }
+    }
+
+    @Inject(method = "getSlotRenderY", at = @At("HEAD"), cancellable = true, remap = false)
+    private void habitrain$ticketSlotY(Slot slot, CallbackInfoReturnable<Integer> cir) {
+        int[] position = habitrain$slotPosition(slot);
+        if (position != null) {
+            cir.setReturnValue(position[1] - (this.y - getYOffset()));
+        }
+    }
+
+    @Inject(method = "getSlotRenderScale", at = @At("HEAD"), cancellable = true, remap = false)
+    private void habitrain$ticketSlotScale(Slot slot, CallbackInfoReturnable<Float> cir) {
+        if (habitrain$slotPosition(slot) != null) {
+            cir.setReturnValue(habitrain$ticket.slotScale());
+        }
+    }
+
+    /** 上游把物品说明固定画在屏幕正中，会压住车票；车票页里改为跟随鼠标。 */
+    @WrapOperation(method = "render", at = @At(value = "INVOKE",
+            target = "Lio/wifi/starrailexpress/client/gui/screen/ingame/LimitedInventoryScreen;drawMouseoverTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"))
+    private void habitrain$ticketTooltip(LimitedInventoryScreen self, GuiGraphics graphics, int mouseX, int mouseY,
+                                         Operation<Void> original) {
+        if (!habitrain$ticketView()) {
+            if (habitrain$gameView() && habitrain$tray.isMouseOver(mouseX, mouseY)) return;
+            original.call(self, graphics, mouseX, mouseY);
+            return;
+        }
+        if (!this.handler.getCarried().isEmpty() || this.focusedSlot == null || !this.focusedSlot.hasItem()) {
+            return;
+        }
+        ItemStack stack = this.focusedSlot.getItem();
+        List<Component> lines = new ArrayList<>(this.getTooltipFromItem(stack));
+        if (this.minecraft != null && this.minecraft.player != null) {
+            float cooldown = this.minecraft.player.getCooldowns().getCooldownPercent(stack.getItem(), 0.0f);
+            if (cooldown > 0.0f) {
+                lines.add(Component.translatable("inventory.habitrain_core.ticket.cooldown",
+                        Math.round(cooldown * 100.0f)).withStyle(ChatFormatting.GRAY));
+            }
+        }
+        graphics.renderTooltip(this.font, lines, stack.getTooltipImage(), mouseX, mouseY);
+    }
+}

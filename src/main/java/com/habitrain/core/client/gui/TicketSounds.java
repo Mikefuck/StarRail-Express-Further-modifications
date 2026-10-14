@@ -78,6 +78,26 @@ final class TicketSounds {
         play(SoundEvents.SOUL_ESCAPE.value(), 0.55f, 1.0f);
     }
 
+    /** 背包车票页：邮票从票后抽出、车票滑入。 */
+    static void slide(float pitch) {
+        play(SoundEvents.BOOK_PAGE_TURN, pitch, 0.22f);
+    }
+
+    /** 盖邮戳 / 检票戳。 */
+    static void postmark() {
+        play(SoundEvents.BOOK_PUT, 0.9f, 0.55f);
+    }
+
+    /** 票价框打孔。 */
+    static void punch() {
+        play(SoundEvents.UI_BUTTON_CLICK.value(), 1.7f, 0.3f);
+    }
+
+    /** 无权限的邮票：一声闷响。 */
+    static void denied() {
+        play(SoundEvents.NOTE_BLOCK_BASS.value(), 0.6f, 0.4f);
+    }
+
     private static void play(SoundEvent sound, float pitch, float volume) {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(sound, pitch, volume));
     }
