@@ -2,7 +2,6 @@ package com.habitrain.core.role.extension;
 
 import com.habitrain.core.api.role.v2.RoleExtensionEntrypoint;
 import com.habitrain.core.internal.CoreLifecycleTestSupport;
-import com.habitrain.core.role.extension.RoleExtensionServiceImpl;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.impl.ModContainerImpl;
 import net.fabricmc.loader.impl.entrypoint.EntrypointStorage;
