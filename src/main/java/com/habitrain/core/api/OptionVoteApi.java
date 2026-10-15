@@ -17,6 +17,11 @@ import java.util.function.Consumer;
  * 非并发容器保存候选人与会话状态，异步线程调用会与主线程 tick 并发改写集合。
  */
 public final class OptionVoteApi {
+    public static final int MAX_OPTIONS = 64;
+    public static final int MAX_ID_LENGTH = 64;
+    public static final int MAX_TITLE_LENGTH = 128;
+    public static final int MAX_DESCRIPTION_LENGTH = 256;
+
     private OptionVoteApi() {}
 
     /**
@@ -34,8 +39,10 @@ public final class OptionVoteApi {
     /**
      * 发起一次选项投票（自定义标题与描述）。
      *
-     * <p>{@code options} 的 {@code id} 必须非空、长度 ≤ 64、且互不重复；{@code durationSeconds ≥ 1}。
-     * 任一不满足都会在改动任何状态<b>之前</b>返回 {@code false}（审核 B17）。</p>
+     * <p>候选数量为 1–64；voteId/option id 非空、长度 ≤ 64，option id 互不重复；
+     * displayName 非 null 且长度 ≤ 64；标题 ≤ 128、描述 ≤ 256；durationSeconds ≥ 1。
+     * 长度按 Java String.length() 计。非法参数在改动会话之前返回 false；
+     * 首次广播失败也返回 false，并取消该会话，不调用结算回调。</p>
      *
      * @param title       投票界面标题，{@code null} 回退「投票」
      * @param description 投票界面描述，{@code null} 回退空串

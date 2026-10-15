@@ -14,6 +14,8 @@ import com.habitrain.core.role.extension.RoleExtensionRegistry;
 import com.habitrain.core.api.role.v2.CompiledModifyOverlay;
 import com.habitrain.core.role.extension.RoleExtensionCompiler;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
+import com.habitrain.core.api.role.v2.action.RoleActionApi;
+import com.habitrain.core.role.action.RoleActionServiceImpl;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import io.wifi.starrailexpress.api.SRERole;
 import net.minecraft.resources.ResourceLocation;
@@ -68,6 +70,12 @@ public final class RoleSnapshotCompiler {
                         behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId()));
                     }
                 }
+            }
+        }
+        for (var entry : ((RoleActionServiceImpl) RoleActionApi.instance()).declarations()) {
+            if (RoleExtensionConfigService.INSTANCE.gateFor(entry.providerId(), entry.entryId())
+                    == RoleExtensionConfigService.EntryGate.ENABLED) {
+                behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId()));
             }
         }
         return new RoleSnapshot(id, roles, aliases, replacedTargets, behavior,

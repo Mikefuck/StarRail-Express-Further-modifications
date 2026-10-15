@@ -138,9 +138,24 @@ public final class ItemReclaimHelper {
      */
     public static void reclaimForTask(Player player, TaskInstance task) {
         if (player == null || task == null) return;
-        // 先让任务自定义回调处理（如清除效果等）
-        task.getDefinition().onReclaim(player, task);
-        // 再扫描回收物理道具（按 fullId 匹配 NBT 标签）
-        reclaim(player, task.getFullId());
+        Throwable callbackFailure = null;
+        try {
+            task.getDefinition().onReclaim(player, task);
+        } catch (RuntimeException | Error failure) {
+            callbackFailure = failure;
+            throw failure;
+        } finally {
+            // A provider callback must never prevent Core's tagged-item cleanup.
+            try {
+                reclaim(player, task.getFullId());
+            } catch (RuntimeException | Error reclaimFailure) {
+                if (callbackFailure == null) {
+                    throw reclaimFailure;
+                }
+                if (callbackFailure != reclaimFailure) {
+                    callbackFailure.addSuppressed(reclaimFailure);
+                }
+            }
+        }
     }
 }

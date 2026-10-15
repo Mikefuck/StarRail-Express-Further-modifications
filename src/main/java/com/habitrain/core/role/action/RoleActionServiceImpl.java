@@ -168,6 +168,11 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         return specs.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
+    /** Committed identities shared by snapshot compilation and runtime gates. */
+    public synchronized List<ManagedDeclaration<RoleActionSpec>> declarations() {
+        return List.copyOf(specs.values());
+    }
+
     @Override
     public List<RoleActionSpec> specsFor(RoleKey role) {
         if (role == null) {

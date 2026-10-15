@@ -80,8 +80,8 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
                 tx.commit();
             } catch (Throwable e) {
                 tx.rollback();
-                LOGGER.error("Role extension entrypoint {} failed and was rolled back",
-                        container.getEntrypoint().getClass().getName(), e);
+                LOGGER.error("Role extension provider {} entrypoint {} failed and was rolled back",
+                        providerId, container.getDefinition(), e);
             }
         }
         // Common initialization also runs on remote clients, which never start a server.

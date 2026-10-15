@@ -107,6 +107,8 @@ test {
     // Real ItemStack tests need a fresh Minecraft bootstrap, isolated from registry mocks.
     exclude("**/GreedPouchItemTest.class")
     exclude("**/ReplacementRoleBootstrapTest.class")
+    exclude("**/ApiRuntimeRegressionTest.class")
+    exclude("**/ProviderConstructorFailureTest.class")
     dependsOn(tasks.named("stageTestRuntime"))
     // Gradle's Windows test worker corrupts non-ASCII classpath entries.
     // Stage classes and resolved jars under Gradle home before forking it.
@@ -138,6 +140,16 @@ tasks.register("replacementRoleBootstrapTest", Test) {
 tasks.named("check") {
     dependsOn(tasks.named("greedPouchTest"))
     dependsOn(tasks.named("replacementRoleBootstrapTest"))
+    dependsOn(tasks.named("apiRuntimeRegressionTest"))
+}
+
+tasks.register("apiRuntimeRegressionTest", Test) {
+    useJUnitPlatform()
+    dependsOn(tasks.named("stageTestRuntime"))
+    testClassesDirs = tasks.named("test").get().testClassesDirs
+    classpath = tasks.named("test").get().classpath
+    include("**/ApiRuntimeRegressionTest.class")
+    include("**/ProviderConstructorFailureTest.class")
 }
 
 processResources {

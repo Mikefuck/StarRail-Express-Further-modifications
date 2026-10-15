@@ -1,7 +1,7 @@
 # 哈比列车完整角色扩展 API v2 使用教程
 
 > 适用：HabiTrain Core 当前工作树、Role Extension API `2.0`、固定 StarRailExpress 4.3.0、Minecraft 1.21.1、Fabric、Java 21；[版本来源与安装依赖](版本与安装依赖.md)
-> 公开 API 语义版本 `2.2`（`CoreApi.apiVersion()`），角色扩展 API 语义版本 `2.0`（`CoreApi.roleApiVersion()` / `RoleExtensionApi.apiVersion()`）。2.0.11 依赖示例说明该门面的历史最低版本。
+> 公开 API 语义版本 `2.3`（`CoreApi.apiVersion()`），角色扩展 API 语义版本 `2.0`（`CoreApi.roleApiVersion()` / `RoleExtensionApi.apiVersion()`）。2.0.11 依赖示例说明该门面的历史最低版本。
 > 状态：角色扩展统一使用 v2（preview / experimental）；旧角色覆盖接口和兼容桥已移除
 > 最后更新：2026-10-13
 
@@ -508,6 +508,26 @@ PLAYER scope 以玩家 UUID 为槽；WORLD/ROUND 使用玩家所在世界，或�
 
 迁移链必须从 v1 连续到当前版本；缺链时不应破坏原始存储数据。
 
+### 8.4 客户端读取同步状态
+
+2.0.25 / 公开 API 2.3 起，客户端 HUD 使用公开的 `api.role.v2.state.RoleStateClientApi` 读取同步镜像。
+在 client-only 代码中调用，`SOULS` 是公共 provider 注册 state 时得到的 key；例如上面的状态配置为 `SyncPolicy.OWNER` 后：
+
+```java
+var mc = net.minecraft.client.Minecraft.getInstance();
+if (mc.player != null && mc.level != null) {
+    var mirror = RoleStateClientApi.instance().read(
+            SOULS, StateScope.PLAYER, mc.level.dimension().location(), mc.player.getUUID());
+    Integer souls = mirror.orElse(0);
+    // 将 souls 用于自绘 RoleHudWidget；显式 null 请由你的业务决定显示方式。
+}
+```
+
+`PRESENT` 包括显式 null；未同步、已删除或断线清空后为 `MISSING`，重连全量同步完成后恢复。
+未注册 schema、scope/type/版本不一致、Codec 解码失败分别返回 `UNKNOWN_SCHEMA`、`SCHEMA_MISMATCH`、`DECODE_FAILED`。
+这里不自动读取默认值，也不访问单人游戏的服务端内存。客户端只解码相同 dataVersion，不迁移网络值；每次读取均产生独立解码结果。
+PLAYER 忽略 world、按 owner 定位；WORLD/ROUND 忽略 owner、按 world 定位。快照同步期间继续显示上次完整镜像，收到结束标记后整体替换。
+
 ## 9. 受管动作 Action
 
 Action 使用 Core 的复用 C2S/S2C 通道，避免每个角色自建 payload。平台负责 config/handshake、方向、大小、速率、序列、角色、存活、冷却和结构化目标验证。
@@ -705,7 +725,27 @@ registrar.screen(RoleScreenSpec.of("example_mod", "plague_picker")
         .build());
 ```
 
-声明不会自动决定何时打开。当前 stock 触发桥为客户端类 `com.habitrain.core.client.role.RoleClientExtensionHooks.openRoleScreen()`；只从 provider 的 client-only 代码调用。需要完全自定义布局时可自建 screen，但仍用 catalog/config 状态门控。
+声明不会自动决定何时打开。2.0.25 / 公开 API 2.3 起，从 provider 的客户端线程通过公开入口打开，并接收结果：
+
+```java
+RoleScreenClientApi.instance().open(
+        ResourceLocation.fromNamespaceAndPath("example_mod", "plague_picker"), result -> {
+            if (result.outcome() != RoleScreenResult.Outcome.SELECTED || result.playerId() == null) return;
+            var target = result.playerId();
+            byte[] payload = java.nio.ByteBuffer.allocate(16)
+                    .putLong(target.getMostSignificantBits()).putLong(target.getLeastSignificantBits()).array();
+            RoleActionClientApi.instance().send(BITE, payload, (actionId, response) -> {
+                // response.ok() 表示服务端完成了角色、目标、距离等验证并执行。
+            });
+        });
+```
+
+`PLAYER_PICK` 默认列出当前客户端世界内可见玩家；也可用三参数重载传入 `RoleScreenOption.player(uuid, label)` 候选。
+`LIST` 用三参数重载传 `RoleScreenOption.item(stableId, label)`，回调读取 selectedId；`CONFIRM` 不传候选，返回 CONFIRMED 或 CANCELLED。
+选择列表支持分页、键盘焦点及确认按钮；titleKey 使用翻译文本。没有当前角色或声明未启用时返回 false，不调用回调。
+成功打开后结果只回调一次；Escape、取消、替换窗口、断线或换世界会取消。客户端结果不授予权限，仍应通过受管 action 让服务端验证。
+
+仅依赖公开 Core API 的[外部包编译示例](../src/test/java/external/RoleClientPublicApiExample.java)覆盖状态更新、HUD 读取、选人结果和动作请求。它随构建编译，不会打入发布 JAR。接入时让 common provider 的 `requiresClient()` 返回 true；客户端声明的 entryKey 对应 common 的 MODIFY/REPLACE entryKey，ADD 角色可使用角色 ID 门控。
 
 ## 12. 语音与聊天策略
 
@@ -889,7 +929,7 @@ public final class ExampleRoleProvider implements RoleExtensionEntrypoint {
 | instinct/skin | 已有消费点，仍随 v2 preview |
 | name render NAMEPLATE | hide/color 已消费 |
 | 其他 name render phase | 预留 |
-| stock screen | 有声明与触发桥；触发时机由 provider 决定 |
+| stock screen | 公开打开入口、玩家/列表选择、确认/取消及结果回调；触发时机由 provider 决定，仍属 preview |
 | voice | 可选适配器消费 |
 | chat muteSend | 已消费 |
 | chat muteReceive | experimental，当前不可依赖 |

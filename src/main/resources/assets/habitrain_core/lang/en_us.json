@@ -1,4 +1,11 @@
 {
+    "habitrain_core.role_screen.title": "Role actions",
+    "habitrain_core.role_screen.confirm": "Confirm",
+    "habitrain_core.role_screen.previous": "Previous",
+    "habitrain_core.role_screen.next": "Next",
+    "habitrain_core.role_screen.selected": "Selected: %s",
+    "habitrain_core.role_screen.empty": "No available options",
+    "habitrain_core.role_screen.page": "%s / %s",
     "itemGroup.habitrain_core.items": "HabiTrain API Items",
     "message.habitrain_core.sin_greed.forbidden_item": "§c[Greed] Keys, letters, notes, food and drinks cannot enter the pouch.",
     "menu.habitrain_core.greed.inventory": "Greed: %s's inventory",

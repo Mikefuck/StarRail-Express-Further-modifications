@@ -1,6 +1,7 @@
 package com.habitrain.core.network;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.OptionVoteApi;
 import io.netty.handler.codec.DecoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -30,7 +31,10 @@ public record OptionVotePayload(
         List<Entry> candidates
 ) implements CustomPacketPayload {
 
-    private static final int MAX_CANDIDATES = 64;
+    private static final int MAX_CANDIDATES = OptionVoteApi.MAX_OPTIONS;
+    private static final int MAX_ID_LENGTH = OptionVoteApi.MAX_ID_LENGTH;
+    private static final int MAX_TITLE_LENGTH = OptionVoteApi.MAX_TITLE_LENGTH;
+    private static final int MAX_DESCRIPTION_LENGTH = OptionVoteApi.MAX_DESCRIPTION_LENGTH;
 
     public record Entry(String optionId, String displayName, int votes) {}
 
@@ -42,11 +46,14 @@ public record OptionVotePayload(
     public OptionVotePayload {
         resolvedOptionId = resolvedOptionId == null ? "" : resolvedOptionId;
         candidates = List.copyOf(candidates);
+        if (candidates.size() > MAX_CANDIDATES) {
+            throw new IllegalArgumentException("Too many option vote candidates: " + candidates.size());
+        }
     }
 
     private OptionVotePayload(FriendlyByteBuf buf) {
-        this(buf.readUtf(64), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
-                buf.readVarInt(), buf.readUtf(128), buf.readUtf(256), buf.readUtf(64),
+        this(buf.readUtf(MAX_ID_LENGTH), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(),
+                buf.readVarInt(), buf.readUtf(MAX_TITLE_LENGTH), buf.readUtf(MAX_DESCRIPTION_LENGTH), buf.readUtf(MAX_ID_LENGTH),
                 readCandidates(buf));
     }
 
@@ -57,24 +64,24 @@ public record OptionVotePayload(
         }
         List<Entry> list = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
-            list.add(new Entry(buf.readUtf(64), buf.readUtf(64), buf.readVarInt()));
+            list.add(new Entry(buf.readUtf(MAX_ID_LENGTH), buf.readUtf(MAX_ID_LENGTH), buf.readVarInt()));
         }
         return list;
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeUtf(voteId, 64);
+        buf.writeUtf(voteId, MAX_ID_LENGTH);
         buf.writeBoolean(active);
         buf.writeVarInt(remainingSeconds);
         buf.writeVarInt(totalSeconds);
         buf.writeVarInt(maxSelections);
-        buf.writeUtf(title, 128);
-        buf.writeUtf(description, 256);
-        buf.writeUtf(resolvedOptionId, 64);
+        buf.writeUtf(title, MAX_TITLE_LENGTH);
+        buf.writeUtf(description, MAX_DESCRIPTION_LENGTH);
+        buf.writeUtf(resolvedOptionId, MAX_ID_LENGTH);
         buf.writeVarInt(candidates.size());
         for (Entry e : candidates) {
-            buf.writeUtf(e.optionId(), 64);
-            buf.writeUtf(e.displayName(), 64);
+            buf.writeUtf(e.optionId(), MAX_ID_LENGTH);
+            buf.writeUtf(e.displayName(), MAX_ID_LENGTH);
             buf.writeVarInt(e.votes());
         }
     }

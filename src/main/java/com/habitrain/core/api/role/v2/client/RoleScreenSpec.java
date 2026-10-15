@@ -12,7 +12,7 @@ import java.util.Objects;
  * spec as the catalog entry.
  *
  * <p>The stock client consumes these specs through
- * {@code RoleClientExtensionHooks.openRoleScreen(...)}. Providers choose the
+ * {@code RoleScreenClientApi.instance().open(id, options, callback)}. Providers choose the
  * gameplay trigger; the dispatcher supplies the standard picker/confirm/list
  * implementation declared by {@link #kind()}.
  */

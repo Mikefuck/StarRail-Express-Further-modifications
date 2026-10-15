@@ -1,7 +1,7 @@
 # 哈比列车核心 API 参考手册
 
 > HabiTrain Core 当前工作树 · Minecraft 1.21.1 · Fabric · Java 21
-> 当前版本统一见 [版本来源与安装依赖](版本与安装依赖.md)；公开 API `2.2`，角色扩展 API `2.0`。标注 2.0.11 的变更章节与旧示例是历史说明。
+> 当前版本统一见 [版本来源与安装依赖](版本与安装依赖.md)；公开 API `2.3`，角色扩展 API `2.0`。标注 2.0.11 的变更章节与旧示例是历史说明。
 > 公开根包：`com.habitrain.core.api`
 > 文档日期：2026-09-20
 
@@ -23,7 +23,7 @@
 
 **其余一切都是内部实现，不要在编译期引用**：`com.habitrain.core.task`、`game`、`role`、`scene`、`config`、`client`、`vote`、`network`、`internal`、`misc`、`persist`、`util`、`betel`。这些包既不保证兼容，也可能在任意小版本重命名或删除；升级时若发现它们变动，属于内部重构而不是 API 破坏性变更。
 
-> **文档历史遗留**：本文档与其他文档过去把若干实现类当作可编程 API 引用，例如 `CcaRoleStateStore`（§8.3）、`ForcedRandomRoleChangePolicy`（§8.2、使用教程 §2.8、README 安全与运维防御）、`MenuGateService` / `MenuAccessGuard`（§3.4）、`TMMRoles` / `SRERole`（§8.1、§12）。**它们全部是内部实现（含上游 SRE 类型），只是说明其行为，任何下游代码都不得直接调用。**
+> **依赖边界**：`CcaRoleStateStore`、`ForcedRandomRoleChangePolicy`、`MenuGateService` / `MenuAccessGuard` 是 Core 内部实现，下游不得引用。公开签名明确使用的上游 API 类型（例如 `SRERole`、`RoleSkill`）可以用于声明和调用；不要直接修改 `TMMRoles` 注册表或绕过有效角色目录。
 
 任务和模式在初始化期注册，并在服务端启动阶段冻结。v2 通用与客户端声明分别通过 Fabric entrypoint 注册：
 
@@ -158,7 +158,7 @@ void cancel(ServerLevel level);
 ```
 
 - 保留 voteId `"mode"` / `"map"` 由模式→地图编排器占用，公开入口会**直接拒绝**（返回 `false`），第三方用它们会意外继承维修锁图过滤并抢占唯一投票位。
-- `options` 的 `id` 必须非空、长度 ≤ 64、互不重复；`durationSeconds >= 1`。任一项不满足时在改动任何状态**之前**就返回 `false`。
+- 候选数量为 1–64；voteId/option id 非空且长度 ≤ 64，option id 互不重复；displayName 非 null 且长度 ≤ 64；title ≤ 128、description ≤ 256；`durationSeconds >= 1`。长度按 Java String.length() 计，公开上限见 `OptionVoteApi.MAX_*`。非法输入在改动会话前返回 false；首次广播失败也返回 false 并撤销会话、不调用结算回调。
 - **线程契约**：所有方法必须在服务端主线程调用；实现内部用非并发容器保存会话状态。C2S `option_vote_cast` 当前没有按请求时间限速；同票去重和广播合并不等于入口限速。
 
 `VoteResult` 是 5 元 record：`voteId`、`winnerId`、`tallies`、`randomPick`、`cancelled`。四参构造重载仍在（等价于 `cancelled = false`）。取消 / 重置路径会以 `VoteResult.cancelled(voteId)` 回调 `onResolved`（`winnerId == null`、票数为空、`cancelled == true`），不再丢弃回调；`isActive(...) == false` 无法区分「已结算」与「已取消」，判据请用 `cancelled`。
@@ -179,7 +179,7 @@ void cancel(ServerLevel level);
 ### 4.4 `CoreApi`
 
 ```java
-CoreApi.apiVersion();        // "2.2"
+CoreApi.apiVersion();        // "2.3"
 CoreApi.roleApiVersion();    // "2.0"
 CoreApi.supports("scene.instances");   // 未知能力键 fail-closed 返回 false
 CoreApi.capabilities();                // 全部已知能力键（只读 Set）
@@ -191,7 +191,7 @@ CoreApi.capabilities();                // 全部已知能力键（只读 Set）
 
 ```json
 "custom": {
-  "habitrain_core:api_version": "2.2",
+  "habitrain_core:api_version": "2.3",
   "habitrain_core:role_api": "2.0"
 }
 ```
@@ -385,7 +385,7 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 |---|---|
 | **谁该实现** | 只有 habitrain_core 自己。实现在 core 初始化时由 `CoreSpi` 装配；装配入口带调用者限制，不是给下游用的扩展点 |
 | **谁不该调** | 第三方 mod **只允许**读其中的查询助手（如 `CoreLifecycle.isActive()`），不得调用/替换/复装桥接实现，也不要把桥接当作「我可以提供实现」的 SPI 来用 |
-| **失败语义** | 所有桥接都有**安全 no-op 默认实现**：未装配时查询返回中性与保守值（空集合、`false`、`null`/空 `Optional`），绝不抛异常。因此「桥未装配」表现为能力缺失而不是崩溃；`CoreLifecycle.isActive()` 未装配时恒为 `false` |
+| **失败语义** | `CoreSpi` 提供保守的默认桥接，未装配时按各接口返回空集合、false、null 等；`CoreLifecycle.isActive()` 未装配时为 false。`RoleSpi` 的必需角色服务未装配时抛 `IllegalStateException`，经 API 静态 holder 首次访问还可能包装为 `ExceptionInInitializerError`。角色服务必须在 Core 初始化后访问。客户端桥的 `*OrNull()` 探针返回 null，客户端 API 的 `instance()` 则在未装配时抛异常 |
 | **依赖方向** | `api.spi` 的实现类在 `internal` 包内；`api.**` 不反向依赖 `task` / `game` / `role` / `scene` 等实现包 |
 
 ## 9. v2 客户端端口
@@ -402,6 +402,17 @@ WORLD/PERMANENT persistence 或非 NONE sync 必须提供 `Codec<T>`。声明 `d
 | `screen(RoleScreenSpec)` | PLAYER_PICK/CONFIRM/LIST 声明；由 provider 触发 stock screen |
 
 `RoleClientExtensionApi` 是只读查询门面，旧写形方法会抛异常。不要让 common/server 类加载 `Minecraft` 客户端类型。
+
+2.0.25 / 公开 API 2.3 新增的客户端入口（仅物理客户端）：
+
+| 入口 | 合同 |
+|---|---|
+| `RoleScreenClientApi.instance().open(id, options, callback)` | 按当前玩家角色与已启用声明打开窗口；PLAYER_PICK 支持 UUID 候选，LIST 支持稳定 ID 列表，CONFIRM 返回确认/取消。空 PLAYER_PICK 候选默认取当前世界可见玩家；选择列表分页显示。标题按翻译键解析 |
+| `RoleScreenResult` | SELECTED / CONFIRMED / CANCELLED；成功打开后结果至多一次，Escape、窗口替换和断线均取消；打开失败返回 false 且不回调。结果可用于调用 `RoleActionClientApi.send`，权限仍由服务端验证 |
+| `RoleStateClientApi.instance().read(key, scope, world, owner)` | 只读已提交的客户端同步镜像，用本地已注册 Codec 解码；PLAYER 只按 owner，WORLD/ROUND 只按 world；不读取服务端内存 |
+| `RoleStateClientValue` | PRESENT（包括显式 null）、MISSING、UNKNOWN_SCHEMA、SCHEMA_MISMATCH、DECODE_FAILED；删除/断线后为 MISSING，重连后随全量同步恢复。版本必须一致，读取不做客户端迁移；每次解码产生独立值 |
+
+完整调用示例见[角色扩展教程的客户端状态章节](角色扩展API-v2使用教程.md#84-客户端读取同步状态)及 stock screen 章节。
 
 ## 10. v2 配置、快照与命令
 配置文件：`config/habitrain_role_v2.json`。门控顺序：全局 → provider → entry。
@@ -513,7 +524,7 @@ v1 的 `SceneMotionApi` 保留且行为不变。
 8. 不把 `muteReceive`、非 NAMEPLATE 名称渲染或完整视觉 HUD 当成稳定消费能力。
 9. 不在服务端主线程之外调用 `SceneApi` 的写操作（注册表突变与发包都是同步的）。
 10. 不把 API 实例当持久数据用；重启即清空，请在启动/开局时重新注册。
-11. 只把 `com.habitrain.core.api.**` 当 API；`TMMRoles`、`SRERole`、`CcaRoleStateStore`、`ForcedRandomRoleChangePolicy`、`MenuGateService`、`MenuAccessGuard` 等都是内部/上游实现，不要 import。
+11. Core 依赖限于 `com.habitrain.core.api.**`；可使用公开签名明确依赖的上游 API 类型，如 `SRERole`。不要引用 Core 内部类或直接修改 `TMMRoles`。
 12. 不用 `MatchStateApi.modeId()` 判大厅/锁定（大厅是空串）；用 `MatchStateApi.phase(...)`。
 13. 不用 `MenuGateApi.isAllowed(player)` 做门禁判断（它是名单查询，不是 `isBlocked` 的取反）。
 14. `MatchEvents` 监听器只在 `onInitialize()` 注册一次（Fabric `Event` 无注销）。

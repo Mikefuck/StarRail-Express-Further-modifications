@@ -23,7 +23,7 @@
         "habitrain:role_client_extensions": []
     },
     "custom": {
-        "habitrain_core:api_version": "2.2",
+        "habitrain_core:api_version": "2.3",
         "habitrain_core:role_api": "2.0",
         "cardinal-components": [
             "habitrain_core:crime_scapegoat",

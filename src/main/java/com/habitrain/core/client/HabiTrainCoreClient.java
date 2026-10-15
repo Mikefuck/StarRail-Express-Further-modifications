@@ -38,6 +38,10 @@ public class HabiTrainCoreClient implements ClientModInitializer {
                     com.habitrain.core.role.client.RoleClientExtensionRegistry::new);
             com.habitrain.core.api.spi.RoleSpi.installActionClient(
                     () -> com.habitrain.core.client.role.RoleActionClientSession.INSTANCE);
+            com.habitrain.core.api.spi.RoleSpi.installStateClient(
+                    () -> com.habitrain.core.client.role.RoleStateClientService.INSTANCE);
+            com.habitrain.core.api.spi.RoleSpi.installScreenClient(
+                    () -> com.habitrain.core.client.role.RoleScreenDispatcher.INSTANCE);
         });
         com.habitrain.core.client.config.ClientVisualPreferences.load();
         // 结算纪念车票的做旧/燃烧与 MVP 人像着色器

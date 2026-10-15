@@ -43,6 +43,9 @@ public final class RoleSpi {
     private static final Slot<RoleClientExtensionApi> CLIENT_EXTENSION = new Slot<>("RoleClientExtensionApi");
     private static final Slot<RoleStateApi> STATE = new Slot<>("RoleStateApi");
     private static final Slot<RoleActionClientBridge> ACTION_CLIENT = new Slot<>("RoleActionClientBridge");
+    // Object keeps physical-client API classes out of dedicated-server signatures.
+    private static final Slot<Object> STATE_CLIENT = new Slot<>("RoleStateClientApi");
+    private static final Slot<Object> SCREEN_CLIENT = new Slot<>("RoleScreenClientApi");
 
     private RoleSpi() {}
 
@@ -87,6 +90,14 @@ public final class RoleSpi {
     public static void installActionClient(RoleActionClientBridge bridge) {
         ACTION_CLIENT.install(() -> bridge);
     }
+
+    public static void installStateClient(Supplier<Object> supplier) { STATE_CLIENT.install(supplier); }
+
+    public static void installScreenClient(Supplier<Object> supplier) { SCREEN_CLIENT.install(supplier); }
+
+    public static @Nullable Object stateClientOrNull() { return STATE_CLIENT.getOrNull(); }
+
+    public static @Nullable Object screenClientOrNull() { return SCREEN_CLIENT.getOrNull(); }
 
     // ==================== 读取 ====================
 

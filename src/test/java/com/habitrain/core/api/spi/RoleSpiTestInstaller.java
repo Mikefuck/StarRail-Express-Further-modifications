@@ -42,6 +42,8 @@ public final class RoleSpiTestInstaller implements BeforeAllCallback {
             RoleSpi.installClientExtension(com.habitrain.core.role.client.RoleClientExtensionRegistry::new);
             RoleSpi.installState(com.habitrain.core.role.state.RoleStateServiceImpl::new);
             RoleSpi.installActionClient(() -> com.habitrain.core.client.role.RoleActionClientSession.INSTANCE);
+            RoleSpi.installStateClient(() -> com.habitrain.core.client.role.RoleStateClientService.INSTANCE);
+            RoleSpi.installScreenClient(() -> com.habitrain.core.client.role.RoleScreenDispatcher.INSTANCE);
             CoreSpi.installMenuGate(com.habitrain.core.config.MenuGateBridgeImpl.INSTANCE);
         });
     }

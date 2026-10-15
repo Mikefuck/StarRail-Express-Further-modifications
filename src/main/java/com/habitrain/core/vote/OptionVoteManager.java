@@ -1,6 +1,7 @@
 package com.habitrain.core.vote;
 
 import com.habitrain.core.api.VoteOption;
+import com.habitrain.core.api.OptionVoteApi;
 import com.habitrain.core.api.VoteResult;
 import com.habitrain.core.game.sre.mode.RepairModeManager;
 import com.habitrain.core.network.MapVoteProfilePayload;
@@ -64,7 +65,7 @@ public final class OptionVoteManager {
     }
 
     /** 网络层 {@code writeUtf/readUtf(64)} 的硬上限。 */
-    static final int MAX_WIRE_ID_LENGTH = 64;
+    static final int MAX_WIRE_ID_LENGTH = OptionVoteApi.MAX_ID_LENGTH;
 
     /** 审核 B17：voteId 必须非空且不超网络上限。 */
     static boolean isValidWireId(@Nullable String value) {
@@ -76,6 +77,9 @@ public final class OptionVoteManager {
      * （{@link VoteOption} 是含 displayName 的 record，用 {@code Set} 去重救不回来）。
      */
     static boolean hasValidOptionIds(List<VoteOption> options) {
+        if (options == null || options.isEmpty() || options.size() > OptionVoteApi.MAX_OPTIONS) {
+            return false;
+        }
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (VoteOption option : options) {
             if (option == null) {
@@ -100,6 +104,14 @@ public final class OptionVoteManager {
         return true;
     }
 
+    static boolean hasValidWireContract(String voteId, @Nullable String title,
+                                        @Nullable String description, List<VoteOption> options) {
+        return isValidWireId(voteId)
+                && (title == null || title.length() <= OptionVoteApi.MAX_TITLE_LENGTH)
+                && (description == null || description.length() <= OptionVoteApi.MAX_DESCRIPTION_LENGTH)
+                && hasValidOptionIds(options);
+    }
+
     /**
      * 发起一次选项投票。
      *
@@ -117,11 +129,8 @@ public final class OptionVoteManager {
         if (level == null || options == null || options.isEmpty() || durationSeconds < 1) {
             return false;
         }
-        if (!isValidWireId(voteId)) {
-            LOGGER.warn("[OptionVote] start refused: invalid voteId (blank or longer than {} chars)", MAX_WIRE_ID_LENGTH);
-            return false;
-        }
-        if (!hasValidOptionIds(options)) {
+        if (!hasValidWireContract(voteId, title, description, options)) {
+            LOGGER.warn("[OptionVote] start refused: parameters exceed the vote wire contract");
             return false;
         }
         State state = getOrCreate(level);
@@ -146,8 +155,26 @@ public final class OptionVoteManager {
 
         LOGGER.info("[OptionVote] started voteId={} options={} duration={}s",
                 voteId, state.options.size(), durationSeconds);
-        broadcastState(level);
-        return true;
+        try {
+            broadcastState(level);
+            return true;
+        } catch (RuntimeException failure) {
+            // Some recipients may already have received the opening packet.
+            // Publish a cancellation when possible and always release the session.
+            state.active = false;
+            state.remainingSeconds = 0;
+            state.onResolved = null;
+            markChanged(state);
+            try {
+                broadcastState(level);
+            } catch (RuntimeException cancelFailure) {
+                if (failure != cancelFailure) failure.addSuppressed(cancelFailure);
+            } finally {
+                STATES.remove(level.dimension(), state);
+            }
+            LOGGER.error("[OptionVote] opening broadcast failed; session {} cancelled", voteId, failure);
+            return false;
+        }
     }
 
     /**
@@ -579,8 +606,6 @@ public final class OptionVoteManager {
         if (state == null) return;
 
         if (state.stateVersion == state.lastSentVersion) return;
-        state.lastSentVersion = state.stateVersion;
-
         List<OptionVotePayload.Entry> entries = buildEntries(state);
         for (ServerPlayer player : level.players()) {
             // 维修人员不进入对局，不收到大厅投票 GUI
@@ -598,6 +623,7 @@ public final class OptionVoteManager {
                     entries
             );
         }
+        state.lastSentVersion = state.stateVersion;
     }
 
     private static void markChanged(State state) {

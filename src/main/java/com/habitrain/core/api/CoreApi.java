@@ -67,9 +67,11 @@ public final class CoreApi {
      *         <li>新增 {@link CoreApi#capabilityVersions()}，{@code supports(...)}
      *             开始查询装配探针（审核 A-09）</li>
      *       </ul></li>
+     *   <li>{@code 2.3} — 2.0.25 新增只读 RoleStateClientApi、可交互的
+     *       RoleScreenClientApi，以及公开投票参数上限。</li>
      * </ul>
      */
-    public static final String API_VERSION = "2.2";
+    public static final String API_VERSION = "2.3";
 
     /** 角色扩展 API 的版本（与 {@code RoleExtensionApi#apiVersion()} 一致）。 */
     public static final String ROLE_API_VERSION = "2.0";
