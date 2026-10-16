@@ -33,6 +33,7 @@ public final class NetworkRegistrar {
         SlothSleepRosterRequestPayload.register(); count++;
         SlothSleepTargetPayload.register(); count++;
         SlothSleepRosterPayload.register(); count++;
+        LustActionPayload.register(); count++;
         EliminatedRestPromptPayload.register(); count++;
         MenuGatePayload.register(); count++;
         RepairModeSyncPayload.register(); count++;

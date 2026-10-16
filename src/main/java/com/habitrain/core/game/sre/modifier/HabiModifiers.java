@@ -27,6 +27,8 @@ public final class HabiModifiers {
     public static SREModifier DILIGENCE;
     public static SREModifier TEMPERANCE;
     public static SREModifier CHASTITY;
+    /** Applied by Lust only; never rolled as a random opening modifier. */
+    public static SREModifier CHARMED;
     /** Upstream noellesroles:generous — linked only, never re-registered. */
     public static SREModifier GENEROUS;
 
@@ -62,6 +64,12 @@ public final class HabiModifiers {
         CHASTITY = HMLModifiers.registerModifier(new SREModifier(
                 HabiTrainCore.id("virtue_chastity"), 0xF0E6D0,
                 new HashSet<>(), new HashSet<>(), false, false)).setDefaultMax(2);
+
+        CHARMED = HMLModifiers.registerModifier(new SREModifier(
+                HabiTrainCore.id("lust_charmed"), 0xEF72B5,
+                new HashSet<>(), new HashSet<>(), false, false))
+                .setDefaultMax(0).setDefaultEnableChance(0)
+                .addBothRelatedRole(com.habitrain.core.game.sre.role.sins.SevenSins.LUST);
 
         try {
             GENEROUS = org.agmas.noellesroles.role.TraitorAndModifiers.GENEROUS;

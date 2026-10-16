@@ -30,6 +30,7 @@
         "SlothScreenLockMixin",
         "ScreenWidgetAccessor",
         "SlothBackpackSleepMixin",
+        "LustBackpackMixin",
         "TaskSettingsMenuEntriesMixin",
         "TaskSettingsBackpackPermissionMixin",
         "TaskSettingsWaitingButtonMixin",

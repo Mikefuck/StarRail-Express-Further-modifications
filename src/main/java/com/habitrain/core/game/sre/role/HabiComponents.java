@@ -93,6 +93,7 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
 
     public static void clearAll(Player player) {
         clearRoundComponents(player, true);
+        if (player != null) LustComponent.KEY.get(player).clear();
     }
 
     /**
@@ -121,7 +122,10 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
         try { WrathComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         try { GreedComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         try { GluttonyComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
-        try { LustComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
+        // Keep selection cooldown / revival deadline and stimulant aftermath through reconnects.
+        if (!isActiveRound(player)) {
+            try { LustComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
+        }
         try { SlothComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
     }
 
@@ -178,7 +182,9 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
                 return;
             }
             if (HabiRoles.isHabiRole(player, SevenSins.LUST)) {
-                LustComponent.KEY.get(player).init();
+                if (!LustComponent.KEY.get(player).isInitialized()) {
+                    LustComponent.KEY.get(player).startRound();
+                }
                 return;
             }
             if (HabiRoles.isHabiRole(player, SevenSins.SLOTH)) {

@@ -115,6 +115,17 @@ public final class C2SReceiverRegistrar {
         });
         ServerPlayNetworking.registerGlobalReceiver(SlothSleepRosterRequestPayload.TYPE, (payload, context) ->
                 context.server().execute(() -> sendSlothSleepRoster(context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(LustActionPayload.TYPE, (payload, context) ->
+                context.server().execute(() -> {
+                    ServerPlayer player = context.player();
+                    if (!C2SRateLimiter.tryAcquire(player.getUUID(), "lust_action", 50)) return;
+                    if (payload.action() == LustActionPayload.SELECT) {
+                        com.habitrain.core.game.sre.role.sins.component.LustComponent.select(player, payload.id());
+                    } else {
+                        com.habitrain.core.game.sre.role.sins.component.LustComponent.answerRevival(
+                                player, payload.id(), payload.action() == LustActionPayload.REVIVE);
+                    }
+                }));
         ServerPlayNetworking.registerGlobalReceiver(SlothSleepTargetPayload.TYPE, (payload, context) ->
                 context.server().execute(() -> {
                     ServerPlayer sloth = context.player();

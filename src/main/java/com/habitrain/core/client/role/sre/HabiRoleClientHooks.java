@@ -28,14 +28,14 @@ public final class HabiRoleClientHooks {
 
     private static boolean registered;
 
-    /** Soft pink for true lovers (phase 1 read-only). */
-    private static final int LOVER_HIGHLIGHT = 0xFF66AA;
-    /** Magenta for desire-marked survivors (phase 2). */
+    /** Pink for the viewer's authorized charm relationships. */
     private static final int DESIRE_HIGHLIGHT = 0xCC3399;
     public static void init() {
         if (registered) return;
         registered = true;
-        CommonInstinctEvents.ALIVE_COMMON_AFTER_EVENT.register(HabiRoleClientHooks::sinInstinctHighlight);
+        CommonInstinctEvents.ALIVE_COMMON_BEFORE_EVENT.register(HabiRoleClientHooks::sinInstinctHighlight);
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
+                com.habitrain.core.client.gui.LustRevivalScreen::clientTick);
         // WrathDoorAttackMixin lets this callback run past the adventure restriction.
         net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
             if (world.isClientSide && WrathComponent.canPryDoorWithBat(player, pos)) {
@@ -51,7 +51,7 @@ public final class HabiRoleClientHooks {
     }
 
     private static TrueFalseAndCustomResult<Integer> sinInstinctHighlight(
-            LocalPlayer viewer, Entity entity, boolean spectator) {
+            LocalPlayer viewer, Entity entity, boolean instinctEnabled) {
         if (viewer == null || entity == null) {
             return TrueFalseAndCustomResult.pass();
         }
@@ -67,14 +67,9 @@ public final class HabiRoleClientHooks {
             if (game == null) {
                 return TrueFalseAndCustomResult.pass();
             }
-            if (HabiRoles.isHabiRole(viewer, SevenSins.LUST)) {
-                LustComponent lust = LustComponent.KEY.get(viewer);
-                if (lust != null && lust.isDesireMarked(target.getUUID())) {
-                    return TrueFalseAndCustomResult.custom(DESIRE_HIGHLIGHT);
-                }
-                if (lust != null && lust.isKnownLover(target.getUUID())) {
-                    return TrueFalseAndCustomResult.custom(LOVER_HIGHLIGHT);
-                }
+            if (game.getGameStatus() == SREGameWorldComponent.GameStatus.ACTIVE
+                    && !viewer.isSpectator() && LustComponent.KEY.get(viewer).highlights(target.getUUID())) {
+                return TrueFalseAndCustomResult.custom(DESIRE_HIGHLIGHT);
             }
         } catch (Throwable t) {
             // Client highlight is best-effort.

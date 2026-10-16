@@ -22,6 +22,7 @@ public final class HabiRoleItems {
 
     public static final String TAG_BOUQUET = "habitrain_bouquet";
     public static final String TAG_PEPPER_SPRAY = "habitrain_pepper_spray";
+    public static final String TAG_LUST_INCENSE = "habitrain_lust_incense";
     public static final String TAG_MELEE_IMMUNE_UNTIL = "habitrain_melee_immune_until";
     /** 凶案替罪羊被动发放的假刀标记，回收时只删带此 tag 的刀。 */
     public static final String TAG_SCAPEGOAT_KNIFE = "habitrain_scapegoat_knife";
@@ -47,6 +48,15 @@ public final class HabiRoleItems {
                 Component.literal("冷却 30 秒")
         )));
         putFlag(stack, TAG_PEPPER_SPRAY, true);
+        return stack;
+    }
+
+    public static ItemStack createLustIncense() {
+        ItemStack stack = new ItemStack(Items.BLAZE_POWDER);
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.lust_incense"));
+        stack.set(DataComponents.LORE, new ItemLore(List.of(
+                Component.translatable("item.habitrain_core.lust_incense.desc"))));
+        putFlag(stack, TAG_LUST_INCENSE, true);
         return stack;
     }
 

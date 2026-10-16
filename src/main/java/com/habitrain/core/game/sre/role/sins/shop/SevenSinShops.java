@@ -32,7 +32,9 @@ public final class SevenSinShops {
     public static final int GLUTTONY_MILK_PRICE = 300;
     public static final int GLUTTONY_HONEY_PRICE = 100;
 
-    public static final int LUST_LOCKPICK_PRICE = 300;
+    public static final int LUST_INCENSE_PRICE = 100;
+    public static final int LUST_BOTTLE_PRICE = 350;
+    public static final int LUST_STIMULANT_PRICE = 150;
 
     public static List<ShopEntry> empty() {
         return new ArrayList<>();
@@ -122,10 +124,23 @@ public final class SevenSinShops {
         return shop;
     }
 
-    /** 色欲店：开锁 300。 */
+    /** Incense is a consumable; stimulant applies immediately on purchase. */
     public static List<ShopEntry> lustShop() {
         List<ShopEntry> shop = new ArrayList<>();
-        shop.add(new ShopEntry(TMMItems.LOCKPICK.getDefaultInstance(), LUST_LOCKPICK_PRICE, ShopEntry.Type.TOOL));
+        shop.add(new ShopEntry(com.habitrain.core.game.sre.role.HabiRoleItems.createLustIncense(),
+                LUST_INCENSE_PRICE, ShopEntry.Type.TOOL));
+        shop.add(new ShopEntry(org.agmas.noellesroles.init.ModItems.HALLUCINATION_BOTTLE.getDefaultInstance(),
+                LUST_BOTTLE_PRICE, ShopEntry.Type.TOOL));
+        ItemStack stimulant = new ItemStack(Items.POTION);
+        stimulant.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.translatable(
+                "item.habitrain_core.lust_stimulant"));
+        stimulant.set(DataComponents.LORE, new net.minecraft.world.item.component.ItemLore(List.of(
+                net.minecraft.network.chat.Component.translatable("item.habitrain_core.lust_stimulant.desc"))));
+        shop.add(new ShopEntry(stimulant, LUST_STIMULANT_PRICE, ShopEntry.Type.TOOL) {
+            @Override public boolean onBuy(@NotNull Player player) {
+                return com.habitrain.core.game.sre.role.sins.component.LustComponent.useStimulant(player);
+            }
+        });
         return shop;
     }
 }

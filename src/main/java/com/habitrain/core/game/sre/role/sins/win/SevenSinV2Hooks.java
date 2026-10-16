@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * v2 {@link RoleWinHooks} for the seven sins. Replaces the
  * {@code AllowGameEnd} first-wins listener in {@link SinVictoryHooks} so
- * pride/lust participate in the central dispatcher fold. Sloth's rewritten
+ * pride and greed participate in the central dispatcher fold. Sloth's rewritten
  * bed win is triggered directly by its component. Registered
  * through the provider-scoped {@link RoleExtensionRegistrar} of
  * {@link com.habitrain.core.role.extension.CoreRoleExtensionProvider} (audit
@@ -35,10 +35,9 @@ public final class SevenSinV2Hooks {
         if (registrar == null) {
             throw new IllegalArgumentException("registrar must not be null");
         }
-        registrar.hooks(RoleKey.of(SevenSins.LUST_ID), RoleHooks.builder().win(LUST).build());
         registrar.hooks(RoleKey.of(SevenSins.GREED_ID), RoleHooks.builder().win(GREED).build());
         registrar.hooks(RoleKey.of(SevenSins.PRIDE_ID), RoleHooks.builder().win(PRIDE).build());
-        HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/lust/greed)");
+        HabiTrainCore.LOGGER.info("[SevenSins] v2 RoleWinHooks registered (pride/greed)");
     }
 
     /** Pride DENY/last-survivor run for ordinary faction outcomes. */
@@ -72,26 +71,6 @@ public final class SevenSinV2Hooks {
             return WinPatch.declareCustom("sin_pride",
                     pride == null ? List.of() : List.of(pride.getUUID()),
                     "傲慢成为最后的幸存者");
-        }
-    };
-
-    private static final RoleWinHooks LUST = new RoleWinHooks() {
-        @Override
-        public WinPatch evaluateWin(@Nullable ServerLevel level, @Nullable String proposed,
-                                    boolean loose, RoleHookContext ctx) {
-            if (loose || level == null || !"LOVERS".equals(proposed)) {
-                return WinPatch.noChange();
-            }
-            if (!SinVictoryHooks.isLustAlive(level)) {
-                return WinPatch.noChange();
-            }
-            ServerPlayer lust = SinVictoryHooks.findAliveLustPlayer(level);
-            if (lust != null) {
-                SinVictoryHooks.stealLoversWinForLust(level, lust);
-            }
-            return WinPatch.declareCustom("sin_lust",
-                    lust == null ? List.of() : List.of(lust.getUUID()),
-                    "色欲夺走了恋人的胜利");
         }
     };
 

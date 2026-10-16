@@ -175,37 +175,18 @@ public final class SevenSinV2BehaviorHooks {
         @Override
         public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
             LustComponent.KEY.get(player).init();
+            if (SREGameWorldComponent.KEY.get(player.level()).getGameStatus()
+                    == SREGameWorldComponent.GameStatus.ACTIVE) {
+                LustComponent.KEY.get(player).startRound();
+            }
         }
 
         @Override
         public void onGameTrueStart(ServerLevel level, RoleHookContext ctx) {
-            try {
-                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-                if (game == null || SevenSins.LUST == null
-                        || LustComponent.findTrueLoverPair(level) != null) {
-                    return;
+            for (ServerPlayer player : level.players()) {
+                if (HabiRoles.isHabiRole(player, SevenSins.LUST)) {
+                    LustComponent.KEY.get(player).startRound();
                 }
-                boolean changed = false;
-                for (ServerPlayer player : level.players()) {
-                    if (!HabiRoles.isHabiRole(player, SevenSins.LUST)) {
-                        continue;
-                    }
-                    if (SevenSinsMutex.isForcedSinPlayer(player, SevenSins.LUST)) {
-                        HabiTrainCore.LOGGER.info(
-                                "[Lust] forced keep for {} without lover pair",
-                                player.getGameProfile().getName());
-                        continue;
-                    }
-                    game.addRole(player, SevenSinsMutex.fallbackNonSin(SevenSins.LUST), true);
-                    changed = true;
-                    HabiTrainCore.LOGGER.warn(
-                            "[Lust] removed at true start because no non-Lust mutual lover pair exists");
-                }
-                if (changed) {
-                    game.syncRoles();
-                }
-            } catch (Throwable t) {
-                HabiTrainCore.LOGGER.warn("[SevenSins] lust true-start demotion failed", t);
             }
         }
 

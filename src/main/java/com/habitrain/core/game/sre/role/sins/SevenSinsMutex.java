@@ -7,8 +7,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.agmas.harpymodloader.Harpymodloader;
 import org.agmas.harpymodloader.SREDisableManager;
-import org.agmas.harpymodloader.component.WorldModifierComponent;
-import pro.fazeclan.river.stupid_express.constants.SEModifiers;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,14 +26,14 @@ public final class SevenSinsMutex {
         if (map == null || map.isEmpty()) return;
         Map<UUID, SRERole> forced = readForcedRoles();
 
-        // Natural Lust only when lovers can exist; forced Lust is kept for testing.
+        // Natural Lust needs at least 24 opening participants; forced roles remain available for testing.
         for (var entry : new ArrayList<>(map.entrySet())) {
             SRERole role = entry.getValue();
             if (role == null || !SevenSins.LUST_ID.equals(role.getIdentifier())) continue;
             if (isForcedSin(entry, forced)) continue;
             if (!lustEligible(level, map)) {
                 map.put(entry.getKey(), fallbackNonSin(role));
-                HabiTrainCore.LOGGER.info("[SevenSins] lust removed (natural): no valid lover pair");
+                HabiTrainCore.LOGGER.info("[SevenSins] lust removed (natural): fewer than 24 participants");
             }
         }
 
@@ -113,23 +111,8 @@ public final class SevenSinsMutex {
     }
 
     static boolean lustEligible(ServerLevel level, Map<Player, SRERole> map) {
-        if (map == null || map.size() < 3) return false;
-        try {
-            var lovers = SEModifiers.LOVERS;
-            if (lovers == null || SREDisableManager.isModifierDisabled(lovers)) return false;
-
-            WorldModifierComponent modifiers = WorldModifierComponent.getInstance(level);
-            if (modifiers != null && !modifiers.getModifiers().isEmpty()) {
-                long loversAssigned = map.keySet().stream()
-                        .filter(player -> modifiers.isModifier(player, lovers))
-                        .count();
-                return loversAssigned >= 2;
-            }
-            return true;
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[SevenSins] lover eligibility API mismatch; disabling Lust", t);
-            return false;
-        }
+        return map != null && map.size() >=
+                com.habitrain.core.game.sre.role.sins.component.LustPolicy.MIN_PLAYERS;
     }
 
     /**

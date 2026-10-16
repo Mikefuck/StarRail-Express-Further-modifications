@@ -322,22 +322,19 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                         .color(rgb(200, 50, 150))
                         .build())
                 .faction(RoleFactionProfile.builder().neutral().build())
-                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1)
+                        .needPlayerCount(com.habitrain.core.game.sre.role.sins.component.LustPolicy.MIN_PLAYERS).build())
                 .compatibility(RoleCompatibilityProfile.builder()
                         .componentKey(LustComponent.KEY)
                         .canSeeCoin()
                         .build())
                 .visibility(RoleVisibilityProfile.builder().canUseInstinct().build())
                 .skill(RoleSkillSpec.of(RoleSkill.skill(
-                        HabiTrainCore.id("sin_lust_observe"),
-                        "skill.habitrain_core.sin_lust.observe",
-                        LustComponent::useObserve
-                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
-                .skill(RoleSkillSpec.of(RoleSkill.skill(
-                        HabiTrainCore.id("sin_lust_desire"),
-                        "skill.habitrain_core.sin_lust.desire",
-                        LustComponent::useDesireMark
-                ).cooldownSeconds(1).showOnHud(true).announceToSelf(true).build()))
+                        HabiTrainCore.id("sin_lust_coin_gift"),
+                        "skill.habitrain_core.sin_lust.coin_gift",
+                        LustComponent::useCoinGift
+                ).cooldownSeconds(com.habitrain.core.game.sre.role.sins.component.LustPolicy.GIFT_COOLDOWN_SECONDS)
+                        .showOnHud(true).announceToSelf(true).build()))
                 .roleFactory(d -> new LustRole(d.key().location(),
                         d.presentation().color(), false, false,
                         d.presentation().moodType(), d.maxSprintTime(), d.canSeeTime()))

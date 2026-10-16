@@ -30,6 +30,22 @@ public final class SevenSinEvents {
         if (registered) return;
         registered = true;
 
+        // The selected victim can hold any role, so this adapter is shared like induced sleep.
+        io.wifi.starrailexpress.event.OnPlayerDeath.EVENT.register((victim, reason) ->
+                com.habitrain.core.game.sre.role.sins.component.LustComponent.onPlayerDeath(victim));
+        io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(level -> {
+            for (var player : level.players()) {
+                com.habitrain.core.game.sre.role.sins.component.LustComponent.KEY.get(player).clear();
+            }
+        });
+        // Runs even after the only Lust disconnects or changes role, clearing stale vision.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_WORLD_TICK.register(level -> {
+            if (level.getGameTime() % 5 == 0
+                    && io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level).isRunning()) {
+                com.habitrain.core.game.sre.role.sins.component.LustComponent.refreshViews(level);
+            }
+        });
+
         io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(SlothComponent::resetRound);
         io.wifi.starrailexpress.event.OnGameEnd.EVENT.register((level, game) -> SlothComponent.resetRound(level));
 

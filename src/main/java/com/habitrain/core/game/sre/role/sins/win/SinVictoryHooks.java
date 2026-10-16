@@ -9,10 +9,7 @@ import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.AllowGameEnd;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.noellesroles.utils.RoleUtils;
-import pro.fazeclan.river.stupid_express.constants.SEModifiers;
-import pro.fazeclan.river.stupid_express.modifier.lovers.cca.LoversComponent;
 
 import java.util.ArrayList;
 import java.util.UUID;
@@ -71,63 +68,6 @@ public final class SinVictoryHooks {
         return level.getServer().getPlayerList().getPlayer(p.slothId);
     }
 
-    public static boolean isLustAlive(ServerLevel level) {
-        return scanLust(level).lustAlive;
-    }
-
-    public static ServerPlayer findAliveLustPlayer(ServerLevel level) {
-        if (level == null || level.getServer() == null) return null;
-        LustPresence p = scanLust(level);
-        if (!p.lustAlive || p.lustId == null) return null;
-        return level.getServer().getPlayerList().getPlayer(p.lustId);
-    }
-
-    /**
-     * True when any true-lover player currently has {@link LoversComponent#won()}.
-     * Used to race {@code LoversWinCheckEvent} on the AllowGameEnd bus.
-     */
-    public static boolean wouldLoversWin(ServerLevel level) {
-        if (level == null) return false;
-        try {
-            WorldModifierComponent wmc = WorldModifierComponent.KEY.get(level);
-            if (wmc == null || SEModifiers.LOVERS == null) return false;
-            for (ServerPlayer p : level.players()) {
-                if (p == null || p.isSpectator()) continue;
-                if (!wmc.isModifier(p, SEModifiers.LOVERS)) continue;
-                LoversComponent lc = LoversComponent.KEY.get(p);
-                if (lc != null && lc.isLover() && lc.won()) {
-                    return true;
-                }
-            }
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.debug("[SinVictoryHooks] wouldLoversWin check failed", t);
-        }
-        return false;
-    }
-
-    /**
-     * Replace lovers custom winners with lust only and fire custom sin win.
-     */
-    public static void stealLoversWinForLust(ServerLevel level, ServerPlayer lust) {
-        if (level == null) return;
-        try {
-            SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
-            if (roundEnd != null) {
-                if (roundEnd.CustomWinnerPlayers == null) {
-                    roundEnd.CustomWinnerPlayers = new ArrayList<>();
-                } else {
-                    roundEnd.CustomWinnerPlayers.clear();
-                }
-                if (lust != null) {
-                    roundEnd.CustomWinnerPlayers.add(lust.getUUID());
-                }
-            }
-        } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[SinVictoryHooks] clear CustomWinnerPlayers for lust failed", t);
-        }
-        triggerCustomSinWin(level, SevenSins.LUST, lust);
-    }
-
     private static PridePresence scanPride(ServerLevel level) {
         PridePresence out = new PridePresence();
         if (level == null) return out;
@@ -165,27 +105,6 @@ public final class SinVictoryHooks {
             if (SevenSins.SLOTH_ID.equals(role.getIdentifier())) {
                 out.slothAlive = true;
                 out.slothId = player.getUUID();
-                break;
-            }
-        }
-        return out;
-    }
-
-    private static LustPresence scanLust(ServerLevel level) {
-        LustPresence out = new LustPresence();
-        if (level == null) return out;
-
-        SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-        if (game == null || !game.isRunning()) {
-            return out;
-        }
-        for (ServerPlayer player : level.players()) {
-            if (player == null || player.isSpectator()) continue;
-            SRERole role = game.getRole(player);
-            if (role == null) continue;
-            if (SevenSins.LUST_ID.equals(role.getIdentifier())) {
-                out.lustAlive = true;
-                out.lustId = player.getUUID();
                 break;
             }
         }
@@ -320,11 +239,6 @@ public final class SinVictoryHooks {
     private static final class SlothPresence {
         boolean slothAlive;
         UUID slothId;
-    }
-
-    private static final class LustPresence {
-        boolean lustAlive;
-        UUID lustId;
     }
 
     private static final class GreedPresence {

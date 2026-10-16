@@ -33,6 +33,16 @@ public final class HabiRoleEvents {
 
         UseItemCallback.EVENT.register((player, world, hand) -> {
             ItemStack stack = player.getItemInHand(hand);
+            if (HabiRoleItems.hasFlag(stack, HabiRoleItems.TAG_LUST_INCENSE)) {
+                if (world.isClientSide) return InteractionResultHolder.success(stack);
+                if (com.habitrain.core.game.sre.role.sins.component.LustComponent.useIncense(player)) {
+                    stack.shrink(1);
+                    return InteractionResultHolder.success(stack);
+                }
+                player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                        "message.habitrain_core.sin_lust.incense_failed"), true);
+                return InteractionResultHolder.fail(stack);
+            }
             if (world.isClientSide) return InteractionResultHolder.pass(stack);
             if (!HabiRoleItems.isPepperSpray(stack)) {
                 return InteractionResultHolder.pass(stack);
