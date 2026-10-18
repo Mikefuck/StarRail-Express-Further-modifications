@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
 
@@ -37,13 +38,14 @@ public final class LustRole extends CustomWinnerRole {
         if (player == null || !(player.level() instanceof ServerLevel level) || HabiModifiers.CHARMED == null) return false;
         // LustFollowVictoryMixin settles other players first, including their custom winner hooks.
         var result = SREGameRoundEndComponent.KEY.get(level);
-        boolean survived = result.players.stream().anyMatch(data ->
-                player.getUUID().equals(data.player().getId()) && !data.wasDead());
-        Set<java.util.UUID> winners = result.players.stream()
+        Set<UUID> survivors = result.players.stream()
+                .filter(data -> !data.wasDead())
+                .map(data -> data.player().getId()).collect(Collectors.toSet());
+        Set<UUID> winners = result.players.stream()
                 .filter(SREGameRoundEndComponent.RoundEndData::hasWin)
                 .map(data -> data.player().getId()).collect(Collectors.toSet());
-        Set<java.util.UUID> marked = Set.copyOf(WorldModifierComponent.getInstance(level)
+        Set<UUID> marked = Set.copyOf(WorldModifierComponent.getInstance(level)
                 .getAllWithModifier(HabiModifiers.CHARMED));
-        return LustPolicy.canFollow(survived, marked, winners);
+        return LustPolicy.canFollow(survivors.contains(player.getUUID()), marked, winners, survivors);
     }
 }

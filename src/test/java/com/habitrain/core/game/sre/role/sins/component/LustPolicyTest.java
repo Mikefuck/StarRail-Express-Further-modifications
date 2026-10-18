@@ -20,9 +20,22 @@ class LustPolicyTest {
         assertEquals(1, Math.abs(grants.get(A) - grants.get(D)));
     }
 
-    @Test void soleChosenPlayerOnlyReceivesHalfButUnchosenPlayerReceivesAll() {
+    @Test void soleChosenPlayerOnlyReceivesHalfAndSoleUnchosenPlayerIsCapped() {
         assertEquals(Map.of(A, 120), LustPolicy.distribute(24, List.of(A), A));
-        assertEquals(Map.of(A, 240), LustPolicy.distribute(24, List.of(A), null));
+        assertEquals(Map.of(A, 150), LustPolicy.distribute(24, List.of(A), null));
+        assertEquals(Map.of(A, 150), LustPolicy.distribute(31, List.of(A), A));
+    }
+
+    @Test void ordinarySharesAreCappedAt150IncludingRemainderCoins() {
+        assertEquals(Map.of(A, 145, B, 145), LustPolicy.distribute(29, List.of(A, B), null));
+        assertEquals(Map.of(A, 150, B, 150), LustPolicy.distribute(30, List.of(A, B), null));
+        assertEquals(Map.of(A, 150, B, 150), LustPolicy.distribute(31, List.of(A, B), null));
+        assertEquals(Map.of(A, 150, B, 150, C, 150), LustPolicy.distribute(46, List.of(A, B, C), null));
+    }
+
+    @Test void chosenAndOtherSharesAreCappedWithoutRedistributingExcess() {
+        assertEquals(Map.of(B, 150, A, 100, C, 100), LustPolicy.distribute(40, List.of(A, B, C), B));
+        assertEquals(Map.of(B, 150, A, 150), LustPolicy.distribute(40, List.of(A, B), B));
     }
 
     @Test void deadChosenPlayerDoesNotReserveAnyCoins() {
@@ -34,15 +47,17 @@ class LustPolicyTest {
         assertEquals(Map.of(A, 120, B, 120), LustPolicy.distribute(24, List.of(A, A, B), null));
     }
 
-    @Test void giftConservationAcrossDifferentRoundAndRecipientSizes() {
+    @Test void giftTotalsRespectEachSharesCapAcrossDifferentRoundAndRecipientSizes() {
         for (int opening = 24; opening < 64; opening++) {
             for (int count = 1; count <= opening; count++) {
                 List<UUID> recipients = new ArrayList<>();
                 for (int n = 0; n < count; n++) recipients.add(new UUID(0, n));
                 int total = LustPolicy.distribute(opening, recipients, null).values().stream().mapToInt(Integer::intValue).sum();
-                assertEquals(opening * 10, total);
+                assertEquals(Math.min(opening * 10, count * 150), total);
                 total = LustPolicy.distribute(opening, recipients, recipients.getFirst()).values().stream().mapToInt(Integer::intValue).sum();
-                assertEquals(count == 1 ? opening * 5 : opening * 10, total);
+                int expected = Math.min(opening * 5, 150)
+                        + Math.min(opening * 5, (count - 1) * 150);
+                assertEquals(expected, total);
             }
         }
     }
@@ -54,10 +69,16 @@ class LustPolicyTest {
         assertFalse(LustPolicy.canRevive(1000, 999));
     }
 
-    @Test void followingNeedsBothSurvivalAndAnActuallyWinningCharmedPlayer() {
-        assertTrue(LustPolicy.canFollow(true, Set.of(A, B), Set.of(B, C)));
-        assertFalse(LustPolicy.canFollow(false, Set.of(A, B), Set.of(B, C)));
-        assertFalse(LustPolicy.canFollow(true, Set.of(A), Set.of(B, C)));
-        assertFalse(LustPolicy.canFollow(true, Set.of(), Set.of(A)));
+    @Test void followingNeedsLustAndAnActuallyWinningCharmedPlayerToSurvive() {
+        assertTrue(LustPolicy.canFollow(true, Set.of(A, B), Set.of(B, C), Set.of(B)));
+        assertFalse(LustPolicy.canFollow(false, Set.of(A, B), Set.of(B, C), Set.of(B)));
+        assertFalse(LustPolicy.canFollow(true, Set.of(A), Set.of(B, C), Set.of(A, B, C)));
+        assertFalse(LustPolicy.canFollow(true, Set.of(), Set.of(A), Set.of(A)));
+        assertFalse(LustPolicy.canFollow(true, Set.of(A), Set.of(A), Set.of()));
+    }
+
+    @Test void livingCharmedLoserAndDeadCharmedWinnerDoNotQualifyTogether() {
+        assertFalse(LustPolicy.canFollow(true, Set.of(A, B), Set.of(B), Set.of(A)));
+        assertFalse(LustPolicy.canFollow(true, Set.of(A), Set.of(A, B), Set.of(B)));
     }
 }
