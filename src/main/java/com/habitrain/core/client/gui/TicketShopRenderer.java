@@ -33,9 +33,8 @@ public final class TicketShopRenderer {
     private Price hoveredPrice;
     private boolean pointerBlocked;
 
-    public TicketShopLayout layout(int width, int hotbarY, List<StoreItemWidget> widgets, int page,
-                                   Button previous, Button next) {
-        layout = TicketShopLayout.fit(width, hotbarY, widgets.size(), page);
+    public void layout(TicketShopLayout layout, List<StoreItemWidget> widgets, Button previous, Button next) {
+        this.layout = layout;
         hovered = null;
         for (int i = 0; i < widgets.size(); i++) {
             StoreItemWidget widget = widgets.get(i);
@@ -45,11 +44,19 @@ public final class TicketShopRenderer {
             widget.setHeight(layout.cardHeight());
             if (widget.visible) widget.setPosition(layout.cardX(i), layout.cardY(i));
         }
-        int center = width / 2;
+        int center = layout.left() + layout.width() / 2;
         int navOffset = Math.round(28 * layout.scale());
         positionPageButton(previous, center - navOffset - layout.navSize(), layout.page() > 0);
         positionPageButton(next, center + navOffset, layout.page() + 1 < layout.pages());
-        return layout;
+    }
+
+    public void clearLayout() {
+        layout = null;
+        hovered = null;
+    }
+
+    public boolean contains(double mouseX, double mouseY) {
+        return layout != null && layout.contains(mouseX, mouseY);
     }
 
     private void positionPageButton(Button button, int x, boolean enabled) {

@@ -1,6 +1,7 @@
 package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.LustCharmPlayerWidget;
+import com.habitrain.core.client.gui.InventoryShopLayoutAccess;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.component.LustComponent;
@@ -48,6 +49,7 @@ public abstract class LustBackpackMixin extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void habitrain$initCharms(CallbackInfo ci) {
+        if (habitrain$isLust()) InventoryShopLayoutAccess.reserveRoleSelection(this);
         habitrain$lastCharms = null;
         if (habitrain$charmPages != null) habitrain$charmPages.clearManagedWidgets((PlayerPaginationHelper.ScreenWithChildren) this);
     }
@@ -68,7 +70,7 @@ public abstract class LustBackpackMixin extends Screen {
             habitrain$charmPages().setPlayerEntries(state.roster());
             habitrain$charmPages().refreshPage(this);
         }
-        int centerY = (height - 32) / 2;
+        int centerY = InventoryShopLayoutAccess.centerY(this);
         habitrain$charmPages().drawPagination(graphics, this, centerY);
         Component hint = state.roster().isEmpty()
                 ? Component.translatable("message.habitrain_core.sin_lust.no_targets")

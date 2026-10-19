@@ -31,6 +31,7 @@ public final class ClientVisualPreferences {
     private static boolean loaded;
     private static boolean customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
     private static boolean lightweightInventory;
+    private static boolean decoratedShopEnabled = true;
     private static int requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
     private static int maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
     private static int diskCacheQuotaMiB = SceneClientPerformanceRules.DEFAULT_DISK_CACHE_QUOTA_MIB;
@@ -63,6 +64,7 @@ public final class ClientVisualPreferences {
 
         JsonObject root = result.value();
         lightweightInventory = readBoolean(root, "lightweightInventory", false);
+        decoratedShopEnabled = readBoolean(root, "decoratedShopEnabled", true);
         customTitlePanoramaEnabled = !root.has("customTitlePanoramaEnabled")
                 ? DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED
                 : root.get("customTitlePanoramaEnabled").isJsonPrimitive()
@@ -107,6 +109,7 @@ public final class ClientVisualPreferences {
 
     private static void applyDefaults() {
         lightweightInventory = false;
+        decoratedShopEnabled = true;
         customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
         requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
         maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
@@ -148,6 +151,21 @@ public final class ClientVisualPreferences {
     public static synchronized boolean isLightweightInventory() {
         load();
         return lightweightInventory;
+    }
+
+    public static synchronized boolean isDecoratedShopEnabled() {
+        load();
+        return decoratedShopEnabled;
+    }
+
+    /** Shop appearance is independent of the stamp album and its performance mode. */
+    public static synchronized boolean setDecoratedShopEnabled(boolean enabled) {
+        load();
+        boolean previous = decoratedShopEnabled;
+        decoratedShopEnabled = enabled;
+        if (save()) return true;
+        decoratedShopEnabled = previous;
+        return false;
     }
 
     /** Local only; preserve the previous selection if persistence fails. */
@@ -333,6 +351,7 @@ public final class ClientVisualPreferences {
         JsonObject root = new JsonObject();
         root.addProperty("customTitlePanoramaEnabled", customTitlePanoramaEnabled);
         root.addProperty("lightweightInventory", lightweightInventory);
+        root.addProperty("decoratedShopEnabled", decoratedShopEnabled);
         JsonObject performance = new JsonObject();
         performance.addProperty("requestTimeoutMs", requestTimeoutMs);
         performance.addProperty("maxChunkRetries", maxChunkRetries);

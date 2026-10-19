@@ -5,6 +5,8 @@ import com.habitrain.core.client.gui.TicketMenuTray;
 import com.habitrain.core.client.gui.TicketPerformanceButton;
 import com.habitrain.core.client.gui.TicketShopLayout;
 import com.habitrain.core.client.gui.TicketShopRenderer;
+import com.habitrain.core.client.gui.TicketShopStyleButton;
+import com.habitrain.core.client.gui.InventoryShopLayoutAccess;
 import com.habitrain.core.client.config.ClientVisualPreferences;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -31,19 +33,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import org.agmas.noellesroles.client.widget.ExecutionerPlayerWidget;
 import org.lwjgl.glfw.GLFW;
 
 /**
  * 背包车票化：等待开局时把上游背包面板换成「乘车凭证」车票页（{@link TicketInventoryLayer}）；
- * 对局中只换外观——快捷栏底图换成票条、右下角菜单换成邮票册（{@link TicketMenuTray}），布局不变。
+ * 对局中将商店、快捷栏和角色选人区统一排布；放不下时恢复上游商店布局。
  *
  * <p>上游的菜单按钮、翻页箭头与参与按钮仍然创建（其它 mixin 依赖它们），只是隐藏起来，
  * 由邮票与票价框代为触发；等待时快捷栏槽位改排到车票的「随身行李」格里。</p>
  */
 @Mixin(LimitedInventoryScreen.class)
 public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<InventoryMenu>
-        implements TicketShopRenderer.ScreenAccess {
+        implements TicketShopRenderer.ScreenAccess, InventoryShopLayoutAccess {
     @Unique
     private static final int[] HABITRAIN$HIDDEN_SLOT = {-10000, -10000};
 
@@ -90,6 +95,16 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     private TicketShopRenderer habitrain$shop;
     @Unique
     private boolean habitrain$shopActive;
+    @Unique
+    private boolean habitrain$expandedShop;
+    @Unique
+    private boolean habitrain$roleSelection;
+    @Unique
+    private boolean habitrain$initializing;
+    @Unique
+    private final Map<Button, Integer> habitrain$directRoleWidgets = new IdentityHashMap<>();
+    @Unique
+    private boolean habitrain$directRoleOverflow;
 
     protected LimitedInventoryTicketMixin(InventoryMenu handler, Inventory inventory, Component title) {
         super(handler, inventory, title);
@@ -110,6 +125,28 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         return habitrain$tray != null && habitrain$ticket != null && habitrain$ticket.usable() && habitrain$gameRunning();
     }
 
+    @Override
+    public int habitrain$inventoryCenterY() {
+        return habitrain$gameView() && habitrain$expandedShop
+                ? this.y : (this.height - TicketShopLayout.HOTBAR_HEIGHT) / 2;
+    }
+
+    @Override
+    public void habitrain$reserveRoleSelection() {
+        if (habitrain$roleSelection) return;
+        habitrain$roleSelection = true;
+        if (!habitrain$initializing && habitrain$shop != null) refreshShopLayout();
+    }
+
+    @Inject(method = "init", at = @At("HEAD"))
+    private void habitrain$resetShopLayout(CallbackInfo ci) {
+        habitrain$initializing = true;
+        habitrain$roleSelection = false;
+        habitrain$expandedShop = false;
+        habitrain$directRoleWidgets.clear();
+        habitrain$directRoleOverflow = false;
+    }
+
     @Inject(method = "init", at = @At("TAIL"))
     private void habitrain$installTicket(CallbackInfo ci) {
         if (habitrain$modeButton == null) {
@@ -122,19 +159,15 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         habitrain$ticket.layout(this.width, this.height);
         this.addWidget(habitrain$ticket);
         if (habitrain$tray == null) {
-            habitrain$tray = new TicketMenuTray(habitrain$modeButton);
+            habitrain$tray = new TicketMenuTray(habitrain$modeButton,
+                    new TicketShopStyleButton(this::habitrain$syncTicketState));
         }
         LimitedInventoryScreen self = (LimitedInventoryScreen) (Object) this;
         habitrain$tray.rebuild(menuSelections, self::toggleViewMenu, () -> this.isMenuOpen);
         habitrain$tray.layout(this.width, this.height);
         this.addWidget(habitrain$tray);
         if (habitrain$shop == null) habitrain$shop = new TicketShopRenderer();
-        this.removeWidget(shopPrevPageButton);
-        this.removeWidget(shopNextPageButton);
-        shopPrevPageButton = this.addRenderableWidget(new TicketShopRenderer.PageButton(
-                shopPrevPageButton, -1, this::habitrain$gameView));
-        shopNextPageButton = this.addRenderableWidget(new TicketShopRenderer.PageButton(
-                shopNextPageButton, 1, this::habitrain$gameView));
+        habitrain$initializing = false;
         habitrain$syncTicketState();
         refreshShopLayout();
         habitrain$hideUpstreamWaitingWidgets();
@@ -162,9 +195,9 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         habitrain$tray.setLightweight(lightweight);
         habitrain$ticket.setShowing(habitrain$ticketView());
         habitrain$tray.setActive(habitrain$gameView());
-        boolean game = habitrain$gameView();
-        if (habitrain$shop != null && game != habitrain$shopActive) {
-            habitrain$shopActive = game;
+        boolean decoratedShop = habitrain$gameView() && ClientVisualPreferences.isDecoratedShopEnabled();
+        if (habitrain$shop != null && decoratedShop != habitrain$shopActive) {
+            habitrain$shopActive = decoratedShop;
             refreshShopLayout();
         }
     }
@@ -172,6 +205,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     @Inject(method = "render", at = @At("HEAD"))
     private void habitrain$prepareFrame(GuiGraphics graphics, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         habitrain$syncTicketState();
+        habitrain$syncDirectRoleWidgets();
         habitrain$hideUpstreamWaitingWidgets();
         habitrain$hideUpstreamGameMenu();
         if (habitrain$gameView()) {
@@ -180,11 +214,39 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         }
     }
 
+    /** Executioner creates its heads directly instead of using PlayerPaginationHelper. */
+    @Unique
+    private void habitrain$syncDirectRoleWidgets() {
+        habitrain$directRoleWidgets.keySet().removeIf(widget -> !this.children().contains(widget));
+        boolean overflow = false;
+        for (var child : this.children()) {
+            if (child instanceof ExecutionerPlayerWidget widget) {
+                habitrain$directRoleWidgets.putIfAbsent(widget, widget.getY());
+                overflow |= widget.getX() - 7 < 8 || widget.getX() + 23 > this.width - 8;
+            }
+        }
+        boolean changed = overflow != habitrain$directRoleOverflow;
+        habitrain$directRoleOverflow = overflow;
+        if (!habitrain$directRoleWidgets.isEmpty()) habitrain$reserveRoleSelection();
+        if (changed && habitrain$shop != null) refreshShopLayout();
+        int offset = InventoryShopLayoutAccess.offset(this);
+        habitrain$directRoleWidgets.forEach((widget, originalY) -> widget.setY(originalY + offset));
+    }
+
     @Inject(method = "refreshShopLayout", at = @At("HEAD"), cancellable = true, remap = false)
     private void habitrain$layoutShop(CallbackInfo ci) {
-        if (!habitrain$gameView() || habitrain$shop == null) return;
-        TicketShopLayout layout = habitrain$shop.layout(this.width, this.y, shopWidgets, shopCurrentPage,
-                shopPrevPageButton, shopNextPageButton);
+        // Restore the upstream origin before every fit, including resize and artwork fallback.
+        this.y = (this.height - this.backgroundHeight) / 2;
+        habitrain$expandedShop = false;
+        if (habitrain$shop != null) habitrain$shop.clearLayout();
+        if (!habitrain$gameView() || !ClientVisualPreferences.isDecoratedShopEnabled()
+                || habitrain$shop == null || habitrain$directRoleOverflow) return;
+        var fitted = TicketShopLayout.fit(this.width, this.height, shopWidgets.size(), habitrain$roleSelection);
+        if (fitted.isEmpty()) return;
+        TicketShopLayout layout = fitted.get();
+        this.y = layout.hotbarY();
+        habitrain$expandedShop = true;
+        habitrain$shop.layout(layout, shopWidgets, shopPrevPageButton, shopNextPageButton);
         shopCurrentPage = layout.page();
         shopTotalPages = layout.pages();
         shopNavY = layout.navY();
@@ -193,7 +255,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
 
     @Inject(method = "refreshShopLayout", at = @At("TAIL"), remap = false)
     private void habitrain$restoreShopBounds(CallbackInfo ci) {
-        if (habitrain$gameView()) return;
+        if (habitrain$expandedShop) return;
         for (Button widget : shopWidgets) {
             widget.setWidth(16);
             widget.setHeight(16);
@@ -209,7 +271,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     @Override
     public boolean habitrain$renderShopItem(LimitedInventoryScreen.StoreItemWidget widget, GuiGraphics graphics,
                                            int mouseX, int mouseY) {
-        return habitrain$gameView() && habitrain$renderSafely(graphics,
+        return habitrain$gameView() && habitrain$expandedShop && habitrain$renderSafely(graphics,
                 () -> habitrain$shop.renderItem(widget, graphics, mouseX, mouseY));
     }
 
@@ -218,7 +280,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
             "Lnet/minecraft/client/gui/GuiGraphics;drawString(Lnet/minecraft/client/gui/Font;Lnet/minecraft/network/chat/Component;IIIZ)I"))
     private int habitrain$shopPageLabel(GuiGraphics graphics, Font font, Component text, int x, int y, int color,
                                         boolean shadow, Operation<Integer> original) {
-        return habitrain$gameView() ? 0 : original.call(graphics, font, text, x, y, color, shadow);
+        return habitrain$expandedShop ? 0 : original.call(graphics, font, text, x, y, color, shadow);
     }
 
     /** 对局中：上游右下角的「菜单」按钮与展开的竖列由邮票册代替。 */
@@ -350,6 +412,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     protected boolean isClickOutsideBounds(double mouseX, double mouseY, int left, int top, int button) {
         // Touchscreen mode must use the relocated ticket's bounds, including its real hotbar slots.
         if (habitrain$ticketView()) return !habitrain$ticket.isMouseOver(mouseX, mouseY);
+        if (habitrain$expandedShop && habitrain$shop.contains(mouseX, mouseY)) return false;
         if (habitrain$gameView() && habitrain$tray.isMouseOver(mouseX, mouseY)) return false;
         return super.isClickOutsideBounds(mouseX, mouseY, left, top, button);
     }
@@ -436,7 +499,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
             target = "Lio/wifi/starrailexpress/client/gui/screen/ingame/LimitedInventoryScreen;drawMouseoverTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"))
     private void habitrain$ticketTooltip(LimitedInventoryScreen self, GuiGraphics graphics, int mouseX, int mouseY,
                                          Operation<Void> original) {
-        if (!habitrain$ticketView()) {
+        if (!habitrain$ticketView() && !habitrain$expandedShop) {
             if (habitrain$gameView() && habitrain$tray.isMouseOver(mouseX, mouseY)) return;
             original.call(self, graphics, mouseX, mouseY);
             return;

@@ -36,6 +36,8 @@
         "TaskSettingsWaitingButtonMixin",
         "LimitedInventoryTicketMixin",
         "TicketShopItemMixin",
+        "RoleSelectionShopLayoutMixin",
+        "PlayerSelectionShopLayoutMixin",
         "RoleIntroduceScreenMixin",
         "VoteLaunchFadeBlockMixin",
         "VoteLaunchCameraBlockMixin",

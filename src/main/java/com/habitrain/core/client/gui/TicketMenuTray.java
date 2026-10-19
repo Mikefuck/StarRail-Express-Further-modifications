@@ -47,6 +47,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
 
     private final Minecraft mc = Minecraft.getInstance();
     private final TicketPerformanceButton modeButton;
+    private final TicketShopStyleButton shopStyleButton;
     private final List<Entry> entries = new ArrayList<>();
     private final Set<String> visited = new HashSet<>();
     private final TicketTextCache texts = new TicketTextCache();
@@ -81,8 +82,9 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
     private float pagerLeft;
     private float pagerRight;
 
-    public TicketMenuTray(TicketPerformanceButton modeButton) {
+    public TicketMenuTray(TicketPerformanceButton modeButton, TicketShopStyleButton shopStyleButton) {
         this.modeButton = modeButton;
+        this.shopStyleButton = shopStyleButton;
     }
 
     /** 屏幕 init 时调用：按上游对局菜单按钮重建邮票；toggle/openState 对应上游的菜单开关。 */
@@ -97,6 +99,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
                 entries.add(new Entry(button, ++number));
             }
         }
+        entries.add(new Entry(shopStyleButton, ++number));
         entries.add(new Entry(modeButton, ++number));
         pending = null;
         hovered = -1;
@@ -110,7 +113,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
     }
 
     public void sync(List<? extends Button> buttons) {
-        boolean changed = buttons.size() + 1 != entries.size();
+        boolean changed = buttons.size() + 2 != entries.size();
         for (int i = 0; !changed && i < buttons.size(); i++) {
             Button source = buttons.get(i);
             changed = source != entries.get(i).source || !source.getMessage().equals(entries.get(i).label);
@@ -119,11 +122,14 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             rebuild(buttons, toggle, openState);
             layout(width, height);
         }
-        Entry mode = entries.getLast();
-        if (!mode.label.equals(modeButton.getMessage())) {
-            mode.label = modeButton.getMessage();
-            mode.face = null;
-            mode.art.close();
+        // Refresh local stamps without rebuilding the album, losing focus or replaying its opening.
+        for (int i = buttons.size(); i < entries.size(); i++) {
+            Entry entry = entries.get(i);
+            if (!entry.label.equals(entry.source.getMessage())) {
+                entry.label = entry.source.getMessage();
+                entry.face = null;
+                entry.art.close();
+            }
         }
     }
 
@@ -461,10 +467,11 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             return;
         }
         Entry e = entries.get(selected);
-        if (e.source == modeButton) {
+        if (e.source == modeButton || e.source == shopStyleButton) {
             int tipX = keyboardIndex >= 0 ? Math.round(e.gx + STAMP_W * k / 2.0f) : mouseX;
             int tipY = keyboardIndex >= 0 ? Math.round(e.gy) : mouseY;
-            g.renderTooltip(mc.font, mc.font.split(modeButton.description(), 200), tipX, tipY);
+            Component description = e.source == shopStyleButton ? shopStyleButton.description() : modeButton.description();
+            g.renderTooltip(mc.font, mc.font.split(description, 200), tipX, tipY);
             return;
         }
         List<Component> lines = new ArrayList<>();
@@ -613,9 +620,11 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         int index = keyboardIndex >= 0 ? keyboardIndex : hovered;
         output.add(NarratedElementType.TITLE, index >= 0 && index < entries.size() ? entries.get(index).label
                 : texts.label("inventory.habitrain_core.ticket.menu"));
-        output.add(NarratedElementType.USAGE, texts.label(index >= 0 && index < entries.size()
-                && entries.get(index).source == modeButton ? "inventory.habitrain_core.ticket.mode.hint"
-                : "inventory.habitrain_core.ticket.controls_pages"));
+        Button source = index >= 0 && index < entries.size() ? entries.get(index).source : null;
+        String hint = source == shopStyleButton ? TicketShopStyleButton.KEY + ".hint"
+                : source == modeButton ? "inventory.habitrain_core.ticket.mode.hint"
+                : "inventory.habitrain_core.ticket.controls_pages";
+        output.add(NarratedElementType.USAGE, texts.label(hint));
     }
 
     private static float easeOutBack(float x) {
@@ -649,9 +658,10 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             this.source = source;
             this.label = source.getMessage();
             this.key = source instanceof TicketPerformanceButton ? TicketPerformanceButton.KEY
+                    : source instanceof TicketShopStyleButton ? TicketShopStyleButton.KEY
                     : TicketInventoryLayer.keyOf(label);
-            this.icon = TicketInventoryLayer.iconFor(key);
-            this.ink = TicketInventoryLayer.inkFor(key, number);
+            this.icon = source instanceof TicketShopStyleButton ? WireModels.Icon.CARDS : TicketInventoryLayer.iconFor(key);
+            this.ink = source instanceof TicketShopStyleButton ? StampArt.SAPPHIRE : TicketInventoryLayer.inkFor(key, number);
             this.number = number;
             this.restricted = TicketInventoryLayer.isRestricted(label);
             this.yaw = TicketArt.hash(key.hashCode() * 3) * Mth.TWO_PI;

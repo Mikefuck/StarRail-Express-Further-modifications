@@ -2,6 +2,7 @@ package com.habitrain.core.client.mixin;
 
 import com.habitrain.core.client.gui.SlothSleepRosterView;
 import com.habitrain.core.client.gui.SlothSleepPlayerWidget;
+import com.habitrain.core.client.gui.InventoryShopLayoutAccess;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
@@ -59,6 +60,7 @@ public abstract class SlothBackpackSleepMixin extends Screen implements SlothSle
     @Inject(method = "init", at = @At("TAIL"))
     private void habitrain$requestSlothSleepRoster(CallbackInfo ci) {
         if (!habitrain$isSloth()) return;
+        InventoryShopLayoutAccess.reserveRoleSelection(this);
         habitrain$sleepPagination().clearManagedWidgets((PlayerPaginationHelper.ScreenWithChildren) this);
         habitrain$sleepRosterEmpty = false;
         PayloadSenders.requestSlothSleepRoster();
@@ -73,7 +75,7 @@ public abstract class SlothBackpackSleepMixin extends Screen implements SlothSle
             }
             return;
         }
-        int centerY = (height - 32) / 2;
+        int centerY = InventoryShopLayoutAccess.centerY(this);
         habitrain$sleepPagination().drawPagination(graphics, this, centerY);
         if (habitrain$sleepRosterEmpty) {
             graphics.drawCenteredString(Minecraft.getInstance().font,
