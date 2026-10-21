@@ -16,6 +16,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** Keep player heads, page labels and click targets together, including late roster updates. */
@@ -24,6 +25,8 @@ public abstract class PlayerSelectionShopLayoutMixin {
     @Shadow @Final private List<Button> managedButtons;
     @Shadow @Final private List<Button> managedPlayerWidgets;
     @Unique private int habitrain$appliedOffset;
+    /** Widgets removed by the current {@code clearManagedWidgets} call, so they can be untracked. */
+    @Unique private List<Button> habitrain$clearedWidgets = List.of();
 
     @Inject(method = "addPageWidgets", at = @At("HEAD"))
     private void habitrain$reservePlayerArea(Screen screen, CallbackInfo ci) {
@@ -38,7 +41,27 @@ public abstract class PlayerSelectionShopLayoutMixin {
 
     @Inject(method = "addPageWidgets", at = @At("TAIL"))
     private void habitrain$rememberPlayerOffset(Screen screen, CallbackInfo ci) {
+        // The shop fits its layout by looking for these widgets, so ordering of role-screen init
+        // injections no longer decides whether the player row is reserved.
+        InventoryShopLayoutAccess.trackRoleWidgets(screen, managedPlayerWidgets);
+        InventoryShopLayoutAccess.trackRoleWidgets(screen, managedButtons);
         habitrain$appliedOffset = InventoryShopLayoutAccess.offset(screen);
+    }
+
+    @Inject(method = "clearManagedWidgets", at = @At("HEAD"))
+    private void habitrain$captureClearedPlayers(PlayerPaginationHelper.ScreenWithChildren screen, CallbackInfo ci) {
+        List<Button> cleared = new ArrayList<>(managedPlayerWidgets.size() + managedButtons.size());
+        cleared.addAll(managedPlayerWidgets);
+        cleared.addAll(managedButtons);
+        habitrain$clearedWidgets = cleared;
+    }
+
+    @Inject(method = "clearManagedWidgets", at = @At("TAIL"))
+    private void habitrain$untrackClearedPlayers(PlayerPaginationHelper.ScreenWithChildren screen, CallbackInfo ci) {
+        if (screen instanceof Screen target) {
+            InventoryShopLayoutAccess.untrackRoleWidgets(target, habitrain$clearedWidgets);
+        }
+        habitrain$clearedWidgets = List.of();
     }
 
     @Inject(method = "drawPagination", at = @At("HEAD"))

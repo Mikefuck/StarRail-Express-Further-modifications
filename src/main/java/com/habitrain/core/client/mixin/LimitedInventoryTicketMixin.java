@@ -141,6 +141,8 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     @Inject(method = "init", at = @At("HEAD"))
     private void habitrain$resetShopLayout(CallbackInfo ci) {
         habitrain$initializing = true;
+        // Cleared per open; {@link #habitrain$roleSelectionVisible()} re-derives it from the widgets
+        // that role screens actually added during this init, independent of injection order.
         habitrain$roleSelection = false;
         habitrain$expandedShop = false;
         habitrain$directRoleWidgets.clear();
@@ -214,6 +216,28 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         }
     }
 
+    /** True while the Executioner heads this role adds directly are still on the screen. */
+    @Unique
+    private boolean habitrain$hasDirectRoleWidget() {
+        for (var child : this.children()) {
+            if (child instanceof ExecutionerPlayerWidget) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The role-selector row exists on the screen itself, no matter which role mixin added it or in
+     * which {@code init} order. The shop must leave that row below the hotbar, otherwise its extra
+     * product rows push the hotbar down into the player heads.
+     */
+    @Unique
+    private boolean habitrain$roleSelectionVisible() {
+        return habitrain$roleSelection
+                || !habitrain$directRoleWidgets.isEmpty()
+                || habitrain$hasDirectRoleWidget()
+                || InventoryShopLayoutAccess.hasRoleSelection(this);
+    }
+
     /** Executioner creates its heads directly instead of using PlayerPaginationHelper. */
     @Unique
     private void habitrain$syncDirectRoleWidgets() {
@@ -227,7 +251,8 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         }
         boolean changed = overflow != habitrain$directRoleOverflow;
         habitrain$directRoleOverflow = overflow;
-        if (!habitrain$directRoleWidgets.isEmpty()) habitrain$reserveRoleSelection();
+        // Heads may appear after the shop was laid out (roster updates, late payloads).
+        if (habitrain$roleSelectionVisible()) habitrain$reserveRoleSelection();
         if (changed && habitrain$shop != null) refreshShopLayout();
         int offset = InventoryShopLayoutAccess.offset(this);
         habitrain$directRoleWidgets.forEach((widget, originalY) -> widget.setY(originalY + offset));
@@ -241,7 +266,9 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         if (habitrain$shop != null) habitrain$shop.clearLayout();
         if (!habitrain$gameView() || !ClientVisualPreferences.isDecoratedShopEnabled()
                 || habitrain$shop == null || habitrain$directRoleOverflow) return;
-        var fitted = TicketShopLayout.fit(this.width, this.height, shopWidgets.size(), habitrain$roleSelection);
+        boolean roleSelection = habitrain$roleSelectionVisible();
+        if (roleSelection) habitrain$roleSelection = true;
+        var fitted = TicketShopLayout.fit(this.width, this.height, shopWidgets.size(), roleSelection);
         if (fitted.isEmpty()) return;
         TicketShopLayout layout = fitted.get();
         this.y = layout.hotbarY();
