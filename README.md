@@ -1,353 +1,178 @@
-> [!IMPORTANT]
-> **必须使用本仓库 `libs/` 目录提供的星穹列车（StarRailExpress / SRE）模组。**
->
-> - **安装游戏或服务器**：使用 [`libs/star_rail_express-4.3.0.jar`](libs/star_rail_express-4.3.0.jar)，放入对应的 `mods` 目录。
-> - **开发与编译 Core**：使用 [`libs/star_rail_express-4.3.0-dev.jar`](libs/star_rail_express-4.3.0-dev.jar)，当前构建配置已引用该开发版。
-> - 不要用其他来源或仅版本号相同的 SRE JAR 替换这些文件，也不要把 `-dev.jar` 当作游戏运行版安装。
+# 哈比列车核心 · HabiTrain Core
 
-# 哈比列车核心（HabiTrain Core）
+为 Minecraft 1.21.1 / Fabric 下的《星穹列车》（StarRailExpress，简称 SRE）提供玩法扩展、可视化配置和附属模组开发接口。模组 ID 为 `habitrain_core`。
 
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen.svg)](https://minecraft.net/)
-[![Fabric Loader](https://img.shields.io/badge/Fabric%20Loader-0.18.2+-blue.svg)](https://fabricmc.net/)
-[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
-[![License](https://img.shields.io/badge/License-GPLv3-yellow.svg)](LICENSE)
-[![Mod ID](https://img.shields.io/badge/Mod%20ID-habitrain__core-purple.svg)](#)
-[![Version](https://img.shields.io/badge/Version-gradle.properties-blueviolet.svg)](gradle.properties)
+Core 扩展角色与对局体验，提供任务配置工具，并将角色扩展、游戏模式、投票和移动场景等能力开放给下游模组。
 
-**哈比列车核心（HabiTrain Core）** 是专为 Minecraft 1.21.1 / Fabric 开发的《星穹列车》（StarRailExpress，简称 SRE）大型扩展核心模组，模组 ID 为 `habitrain_core`。
+[使用教程](docs/使用教程.md) · [安装依赖](docs/版本与安装依赖.md) · [API 参考手册](docs/API参考手册.md) · [角色扩展教程](docs/角色扩展API-v2使用教程.md)
 
-它拥有**双重核心定位**：
-1. **开箱即用的大型游戏机制增强模组**：管理专用「维修人员模式」、5 大特色投稿职业、完整的「七宗罪」角色体系与「七美德」词条修饰符体系、淘汰玩家休息区、全功能 ModMenu 中文可视化配置中心（四分类十三页面）、全服 3D MVP 结算大屏（固定人像姿势）、智能模式与地图双阶段投票、大厅与局内环境控制、Simple Voice Chat 语音联动以及 Iris 光影白名单检测防护等。
-2. **面向下游生态的标准化扩展 API 框架**：为所有 SRE 扩展/DLC 模组提供角色扩展 API v2（支持新增、可撤销修改、完全替换与别名迁移）、自定义任务系统 API、游戏模式注册与生命周期拦截 API、双阶段投票系统 API、任务道具安全回收体系及完整的诊断与快照体系。
+## 主要功能
 
----
+| 方向 | 提供的功能 |
+|---|---|
+| 角色与词条 | 替罪羊、卖花女、疾风、默杀者、Mike 五个投稿角色；七宗罪角色；七美德修饰符体系，其中慷慨沿用上游实现 |
+| 模式与地图 | 桥接上游游戏模式，提供模式与地图双阶段投票、按人数筛选地图池，以及地图介绍图和预设配置 |
+| 地图维修 | 管理员进入创造模式维修地图；维修中的地图暂时退出投票池，退出维修时恢复玩家原有状态 |
+| 对局体验 | 淘汰玩家休息区与观战切换、角色商店自适应布局、美化版与原版商店切换，以及 MVP 结算界面 |
+| 移动场景 | 配置列车窗外动态外景，支持直线与环绕运动、循环、环境音和镜头微震；附属模组可通过 API 创建场景实例 |
+| 环境与语音 | 分别配置大厅、对局和结算后的天气与时间；联动 Simple Voice Chat 管理语音群组 |
+| 配置与管理 | 中文配置中心、角色扩展状态与冲突诊断、配置界面访问控制，以及 Iris 光影白名单检查 |
 
-## 目录
+角色规则、功能开关与操作步骤见[使用教程](docs/使用教程.md)。
 
-- [环境要求](#环境要求)
-- [核心内置功能与玩法](#核心内置功能与玩法)
-  - [1. 特色游戏模式](#1-特色游戏模式)
-  - [2. 角色与修饰符体系](#2-角色与修饰符体系)
-  - [3. 对局与体验增强](#3-对局与体验增强)
-  - [4. 全服 3D MVP 结算大屏与固定姿势](#4-全服-3d-mvp-结算大屏与固定姿势)
-  - [5. 安全与运维防御](#5-安全与运维防御)
-- [ModMenu 可视化配置中心（四大分类）](#modmenu-可视化配置中心四大分类)
-- [开发者 API 体系总览](#开发者-api-体系总览)
-  - [API 模块索引](#api-模块索引)
-  - [快速代码示例](#快速代码示例)
-- [完整命令速查表](#完整命令速查表)
-- [项目结构](#项目结构)
-- [构建与交付](#构建与交付)
-- [文档索引](#文档索引)
-- [许可证](#许可证)
+## 游戏截图
 
----
+以下画面截取自实际运行的 Minecraft 1.21.1 开发客户端。
 
-## 环境要求
+**小游戏配置**：查看已注册的小游戏，并进入各项任务的配置页面。
 
-| 依赖项 | 推荐 / 最低版本 | 说明 |
+![哈比列车核心的小游戏配置页面](docs/images/readme/config-minigames.png)
+
+**投票配置**：管理模式与地图的投票流程。
+
+![哈比列车核心的模式与地图投票配置页面](docs/images/readme/config-voting.png)
+
+**角色扩展**：查看角色扩展提供方、条目状态和配置入口。
+
+![哈比列车核心的角色扩展配置页面](docs/images/readme/config-roles.png)
+
+## 安装
+
+### 运行环境
+
+| 项目 | 版本 |
+|---|---|
+| Minecraft | 1.21.1 |
+| Java | 推荐使用 Java 21 |
+| Fabric Loader | 0.18.2 或更高 |
+| Fabric API | 项目固定版本为 0.116.13+1.21.1 |
+| StarRailExpress | 本仓库提供的固定 4.3.0 成品 |
+
+Core 的当前版本见 [gradle.properties](gradle.properties) 中的 `mod_version`。上表只列出主要环境要求，完整安装清单见[版本与安装依赖](docs/版本与安装依赖.md)。
+
+### 安装步骤
+
+1. 准备 Minecraft 1.21.1 的 Fabric 实例，并确认使用兼容 Java 21 字节码的运行环境。
+2. 将 Core 成品 JAR 和安装清单中的依赖放入实例的 `mods` 目录。自行构建的 Core 成品位于 `build/libs/`。
+3. SRE 必须使用仓库中的 [`libs/star_rail_express-4.3.0.jar`](libs/star_rail_express-4.3.0.jar)。请保留该固定文件；`star_rail_express-4.3.0-dev.jar` 仅供开发编译使用。
+4. 按安装清单核对 DataSync、CCA 四模块及 SRE 的依赖，再启动实例检查加载结果。
+
+Core 已内嵌 playerAnimator，其余开发运行依赖并不会全部随 Core 打包。Simple Voice Chat 虽然在 Core 元数据中列为建议项，但它是固定 SRE 成品的硬依赖，安装时仍需提供。
+
+**专用服部署**：固定 SRE 4.3.0 强制依赖 Mod Menu，而固定 Mod Menu 版本仅用于客户端。部署前请阅读[专用服限制与启动验收](docs/版本与安装依赖.md#专用服限制与启动验收)，确认并验证所用的服务端方案。
+
+## 配置与常用操作
+
+在 Mod Menu 中选择「哈比列车核心」，点击配置按钮即可进入控制台。
+
+| 分类 | 配置内容 |
+|---|---|
+| 游戏内 | 小游戏、数值平衡、环境、移动场景 |
+| 游戏外 | 投票、大厅环境、光影白名单、主菜单背景、移动场景性能 |
+| 游戏模式 | 任务配置、角色扩展 |
+| 其他 | 兼容性选项和其他扩展设置 |
+
+主要配置保存在 `config/habitrain_core.json`；角色扩展配置使用 `config/habitrain_role_v2.json`。联机环境中的服务端配置受权限与 MenuGate 控制，配置提交、确认及冲突处理见[配置提交协议](docs/配置提交协议.md)。
+
+角色扩展配置在大厅应用到大厅快照；对局中的变更会形成待生效快照，当前局的角色行为继续使用本局快照。具体生效范围见[角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md)。
+
+光影白名单依赖正常客户端上报 Iris 光影信息，不能防止修改客户端伪造上报。
+
+### 常用命令
+
+以下命令均需 OP 2 权限。地图 ID 可通过游戏内命令补全查询。
+
+| 命令 | 用途 |
+|---|---|
+| `/habi_api list` | 查看已注册的游戏模式 |
+| `/habi_api vote start` | 开启模式与地图双阶段投票 |
+| `/habi_api vote status` | 查看投票阶段和剩余时间 |
+| `/habi_api vote cancel` | 取消当前投票 |
+| `/habi_api repair <map>` | 进入指定地图的维修模式 |
+| `/habi_api repair cancel` | 退出自己的维修模式 |
+| `/habi_api repair list` | 查看维修人员和锁定地图 |
+| `/instantgroup [range]` | 将范围内玩家加入临时语音群组，默认范围为 128 格 |
+| `/habitrain roleapi providers` | 查看已加载的角色扩展提供方 |
+| `/habitrain roleapi list` | 查看当前有效角色目录 |
+| `/habi_api scene status` | 查看地图级移动场景状态 |
+
+更多维修、门控、角色诊断和场景管理命令见[使用教程](docs/使用教程.md)。
+
+## 开发附属模组
+
+公开 API 位于 `com.habitrain.core.api.**`。下游模组应通过公开接口扩展功能，避免编译期依赖 Core 的内部实现包。
+
+| 扩展方向 | 主要入口 | 文档 |
 |---|---|---|
-| **Java** | 21 (`options.release = 21`) | 必须使用 Java 21 运行与编译 |
-| **Minecraft** | 1.21.1 | 目标游戏版本 |
-| **Fabric Loader** | 0.18.2 或更高 | 模组加载器 |
-| **Fabric API** | 0.116.13+1.21.1 | 核心运行库 |
-| **StarRailExpress (SRE)** | 4.3.0 | 上游本体模组 |
-| **playerAnimator** | 2.0.4+ | 由 Core 嵌套提供，用于 MVP 结算画面 3D 玩家固定骨骼姿势 |
-| **Simple Voice Chat** | 1.21.1-2.6.18 | 固定 SRE 4.3.0 的硬依赖，用于语音群组划分与静音集成 |
+| 版本与能力查询 | `CoreApi` | [API 参考手册](docs/API参考手册.md) |
+| 自定义任务 | `TaskRegistry`、`TaskDefinition`、`TaskInstance` | [使用教程](docs/使用教程.md) |
+| 游戏模式 | `GameModeRegistry`、`GameMode`、`WinResult` | [API 参考手册](docs/API参考手册.md) |
+| 角色扩展 v2 | `RoleExtensionEntrypoint`、`RoleDefinition`、`RolePatch` | [角色扩展教程](docs/角色扩展API-v2使用教程.md) |
+| 角色状态与客户端交互 | `RoleStateApi`、`RoleStateClientApi`、`RoleScreenClientApi` | [角色扩展教程](docs/角色扩展API-v2使用教程.md) |
+| 对局状态与结算 | `MatchStateApi`、`MatchEvents`、`MatchSettlement` | [API 参考手册](docs/API参考手册.md) |
+| 投票 | `OptionVoteApi`、`ModeMapVoteApi` | [API 参考手册](docs/API参考手册.md) |
+| 移动场景 | `SceneApi`、`SceneInstanceSpec`、`SceneProfileBuilder` | [移动场景教程](docs/移动场景API使用教程.md) |
 
-安装所需的直接依赖、上游传递依赖与嵌套 JAR 见 [版本与安装依赖](docs/版本与安装依赖.md)。`datasync_minecraft` 与 CCA 四模块均为 Core 硬依赖；上表不是完整安装清单。
+### 注册一个任务
 
----
+在模组初始化阶段注册任务。下面的例子定义一个需要完成三次进度的维修任务，具体交互由附属模组推进。
 
-## 核心内置功能与玩法
-
-### 1. 特色游戏模式
-
-#### 🛠️ 维修人员模式（Repair Mode）
-- OP 管理员可通过 `/habi_api repair <mapId>` 直接进入创造模式对指定地图进行实地修缮与排查。
-- **智能抽图隔离**：被维修人员锁定的地图会自动从玩家模式投票池和选图池中临时移除，避免对局选入未修好的地图。
-- **安全恢复**：退出维修模式时自动恢复原本的参与状态与游戏模式，支持多人协同维修与强制解锁。
-
-#### 🚆 原版模式无缝桥接（SRE Bridge）
-- 自动扫描并代理 SRE / Wathe 及其衍生版本中的所有原版模式（谋杀模式、修机模式等），统一纳入 `GameModeRegistry` 并自动展示在模式列表与投票池中。
-
----
-
-### 2. 角色与修饰符体系
-
-#### 🎭 5 大投稿特色角色
-- **替罪羊（Crime Scapegoat）**：具有特殊的罪名替罪与阵营博弈机制。
-- **卖花女（Flower Girl）**：拥有鲜花传递、祝福与专属辅助技能。
-- **疾风（Swift Wind）**：拥有极速突进与高机动位移能力。
-- **默杀者（Mime Killer）**：无声刺杀，击杀时不触发常规声音提示与警报。
-- **Mike**：具有专属的代码编辑技能与独特的对局干预机制。
-
-#### 👿 七宗罪角色体系（Seven Sins）
-七大具备极强博弈深度的中立/独立阵营角色，各具独特的胜利条件与互斥规则：
-- **傲慢（Pride）** / **嫉妒（Envy）** / **暴怒（Wrath）** / **懒惰（Sloth）**
-- **贪婪（Greed）**：携带专属「贪婪钱袋」，支持玩家间匿名发起交易与双确认机制（可使用 `/habi_api greed_trade`）。
-- **暴食（Gluttony）** / **色欲（Lust）**
-
-#### 🕊️ 七美德修饰符体系（Seven Virtues）
-为玩家角色附加的词条修饰符系统，遵循**单美德独占互斥规则**：
-- **纯洁（Chastity）**、**谦逊（Humility）**、**宽容（Mercy，仅好人阵营）**、**节制（Temperance）**、**勤勉（Diligence）**、**耐心（Patience）**，并深度关联上游**慷慨（Generosity）**。
-
----
-
-### 3. 对局与体验增强
-
-- 🛒 **角色商店自适应布局**：商品按原顺序向下排列，最多三排并在一页完整显示；商店、背包快捷栏、下方玩家头像、职业提示及选人翻页按钮共同调整位置。按当前窗口和 GUI 缩放后的可用空间判断，空间不足或商品超过三排时，整家商店自动恢复上游翻页模式；调整窗口或 GUI 缩放后重新判断。
-- 🎟️ **商店样式切换**：对局中展开右下角邮票袋，点击「商店：美化版 / 原版」邮票即可切换商店样式，也支持键盘选择后按 Enter / 空格。默认使用美化版，选择立即生效并保存在本机，独立于简洁模式。
-- 🛋️ **淘汰玩家休息区（Eliminated Rest Area）**：玩家被击杀或处决后，可通过屏幕提示或按键一键在「休息区漫步」与「全图自由观战」之间自由切换。
-- 🗳️ **智能双阶段投票（Mode & Map Voting）**：
-  - 第一阶段投票选定游戏模式，第二阶段投票选定游戏地图。
-  - **按人数动态抽图**：根据当前在线玩家数自动过滤适配该人数区间的地图池，并随机抽取设定数量的地图供玩家投票。
-  - **预设与介绍图支持**：支持地图预设配置与客户端地图介绍图（简介、标签、作者）高效本地缓存。
-- 🌦️ **全局环境控制器（Environment Controller）**：大厅（Lobby）、对局中（Match）、结算后（Post-Match）三阶段独立配置天气（晴天/雨天/雷暴）与时间锁定。
-- 🗡️ **小刀耐久与平衡机制**：可配置杀手小刀耐久度与充能机制，支持基于总人数自动计算警长比例（`sheriffCountDivisor`）。
-- 🎙️ **Simple Voice Chat 联动**：提供 `/instantgroup [range]` 范围快速组队，并支持大厅阶段自动组队语音。
-- 🚄 **移动场景（窗外动态外景）**：地图级场景（配置页，每图最多 5 个背景）与 **API 场景实例（外部 Mod 运行时注册，数量无上限）** 两条通道并存；支持直线/环绕运动、无缝循环、车外环境音、镜头微震、空间锚点跟随、逐字段实时调参。开发者见 [移动场景 API 使用教程](docs/移动场景API使用教程.md)。
-
----
-
-### 4. 全服 3D MVP 结算大屏与固定姿势
-
-对局结束时全服平滑进入结算大屏（`GameEndTransitionScreen`），展示胜利阵营、MVP 玩家及击杀、存活时长、道具使用等表现数据。MVP 预览人像通过 `MvpStillPose` 保持身体略侧、双臂垂落、头部转向镜头的固定姿势。
-
-**playerAnimator** 随 Core 嵌套打包，负责覆盖原版骨骼站姿与手臂摆动。结算固定姿势由代码定义，不需要外部动作资源或动作选择配置。
-
----
-
-### 5. 安全与运维防御
-
-- 🛡️ **Iris 光影白名单检测**：正常客户端通过反射探测已启用的 Iris 光影包并上报，服务端校验白名单；非允许光影将收到告警或被强制踢出。该功能依赖客户端自报，不能防止修改客户端伪报。
-- 🔒 **ModMenu 访问门控（`menugate`）**：支持服务端 OP4 控制台维护可访问 ModMenu 配置界面的白名单玩家，彻底防止普通玩家越权查看或篡改服务端对局参数。
-- 🔄 **角色安全转职策略（内部实现类 `ForcedRandomRoleChangePolicy`）**：转职时全面执行事务化清理（旧状态、CCA 组件、药水效果与计分板），彻底防止非法转职导致的逻辑崩坏与状态残留。它是内部实现，下游只通过 `RoleChangeApi` + `RoleChangeCause.FORCED_RANDOM` 使用该策略。
-
----
-
-## ModMenu 可视化配置中心（四大分类）
-
-模组提供了基于 ModMenu 的全中文交互式 GUI 配置界面（按 `Esc -> 选项 -> 模组 -> HabiTrain Core -> 配置` 打开），采用「左侧一级导航 + 右侧二级子标签页」设计，划分为四大核心分类共 13 个配置页面：
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                             哈比列车核心配置中心 (ModMenu)                               │
-├──────────────┬──────────────────┬──────────────────────────────────────────────────────┤
-│ 一级分类     │ 二级子页面       │ 功能与配置项说明                                     │
-├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
-│ 1. 游戏内    │ · 小游戏         │ 管理小游戏任务池、奖励、出现条件与在各地图中的开关   │
-│   (对局体验) │ · 数值平衡       │ 警长比例(分母)、小刀耐久开关、临时电力价格、致盲开关 │
-│              │ · 环境           │ 对局内天气(晴/雨/雷)、时间锁定、局后环境与动态雨     │
-│              │ · 移动场景       │ 配置列车窗外场景资产、方向、循环、环境音与镜头微震   │
-├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
-│ 2. 游戏外    │ · 投票           │ 模式/地图双阶段投票倒计时、按人数动态抽图池、投票预设│
-│   (大厅投票) │ · 大厅环境       │ 等待大厅天气、时间锁定、大厅雾效与自动语音组开关     │
-│              │ · 光影白名单     │ Iris 光影检测总开关、允许使用的光影包文件名列表维护  │
-│              │ · 主菜单         │ 本机启用六面 3D 旋转全景，替换 DLC 视频或默认背景    │
-├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
-│ 3. 游戏模式  │ · 任务配置       │ 各模式任务池管理、DLC 任务生成权重加成与地图绑定     │
-│   (任务角色) │ · 角色扩展       │ v2 Provider/Entry 状态查看、热启用/禁用与冲突裁决    │
-├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
-│ 4. 其他      │ · 扩展设置       │ 兼容性选项、网络同步策略、只读/OP 权限分级与全局安全 │
-└──────────────┴──────────────────┴──────────────────────────────────────────────────────┘
-```
-
-> **提示**：大厅阶段修改 v2 配置会立即成为 lobby snapshot。对局中的 v2 修改编译为 pending，本局 gameplay（hooks、受管动作、HUD/直觉/皮肤）继续使用 round snapshot；Mod Menu 诊断可能同时显示 pending 与 live。这不是「所有 API 对局中修改都绝不破坏当前对局」的保证。
-
----
-
-## 开发者 API 体系总览
-
-Core 的公开 API 位于 `com.habitrain.core.api.**`（含 `api.spi`、`api.scene`、`api.role`、`api.match`、`api.menu`、`api.client`）；`com.habitrain.core.task`、`game`、`role`、`scene`、`config`、`client`、`vote`、`network`、`internal`、`misc`、`persist`、`util` 等是内部实现，下游不得编译期引用。公开签名明确使用的上游 API 类型，例如 `io.wifi.starrailexpress.api.SRERole`、`RoleSkill`，可以用于声明和调用；不要直接修改 `TMMRoles` 注册表或绕过 Core 的有效角色目录。
-
-版本与能力判定请用 `CoreApi`（2.0.11 新增），不要比对 mod 版本号：`CoreApi.apiVersion()` 返回公开 API 语义版本 `2.3`，`CoreApi.roleApiVersion()` 返回角色扩展 API 版本 `2.0`，`CoreApi.supports(key)` / `capabilities()` / `capabilityVersions()` 用于能力探测（未知键 fail-closed 返回 `false`；`supports` 会组合查询 SPI 装配探针，未装配的能力键返回 `false`）。**注意区分两个版本概念**：`mod_version`（产物版本，每次修复都递增，可用 `CoreApi.modVersion()` 读取）与 `api_version`（公开 API 语义版本，只在契约变化时递增）不是一回事；下游判断能力只用后者。同一信息也写在 `fabric.mod.json` 的 `custom` 段：`habitrain_core:api_version` = `2.3`、`habitrain_core:role_api` = `2.0`。
-
-安全相关的能力判定（菜单门控、休息区）不要只信 `CoreApi.supports(...)`：请直接读 `com.habitrain.core.api.spi.CoreSpi` 的装配探针（`isMenuGateInstalled()` / `isRestAreaInstalled()`），并且每次判定都读——装配失败会保持未装配状态而不是谎报已装配。
-
-角色覆盖 API v1 及其兼容桥已移除。角色声明只使用 `api.role.v2`；职业书类型位于 `api.role.v2.book`，动态补丁回调位于 `api.role.v2.patch`。旧附属模组需迁移并重新编译，详见 [角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md#14-升级与包路径)。
-
-### API 模块索引
-
-| 子系统 | 核心包路径 | 主要类 / 接口 | 功能定位 |
-|---|---|---|---|
-| **版本与能力** | `com.habitrain.core.api` | `CoreApi` | 机器可读的公开 API 语义版本（`2.3`）、角色扩展 API 版本（`2.0`）与能力键查询 |
-| **对局状态 / 休息区** | `com.habitrain.core.api` | `MatchStateApi`<br>`MatchRestStateApi` | 对局阶段与模式 ID；淘汰玩家是否在休息区（下游门禁必须用它，不得越层引用实现层服务） |
-| **角色扩展 v2** | `com.habitrain.core.api.role.v2.*` | `RoleExtensionEntrypoint`<br>`RoleExtensionRegistrar`<br>`RoleDefinition`<br>`RolePatch`<br>`RoleCatalogApi`<br>`RoleChangeApi`<br>`RoleStateApi`<br>`RoleActionApi` | 完整的声明式角色注册、可撤销补丁、受管 Hooks、受管状态、受管网络动作、客户端 HUD 与目录转职体系 |
-| **任务系统** | `com.habitrain.core.api.*` | `TaskRegistry`<br>`TaskDefinition`<br>`TaskInstance`<br>`TaskCategory` | 声明式任务注册、分类、直觉透视、进度监控与回调 |
-| **游戏模式** | `com.habitrain.core.api.*` | `GameModeRegistry`<br>`GameMode`<br>`WinResult`<br>`GameModeIds` | 自定义游戏模式注册、对局生命周期与胜负判定拦截 |
-| **对局状态与结算** | `com.habitrain.core.api.match` | `MatchStateApi`<br>`MatchPhase`<br>`MatchEvents`<br>`MatchSettlement`<br>`MatchWinKind`<br>`MatchWinFaction` | 对局阶段查询、开局/结算事件与逐局结算快照（`factionOfOrEmpty` 可区分「查不到」与「乘客阵营」） |
-| **投票系统** | `com.habitrain.core.api.*` | `OptionVoteApi`<br>`VoteResult`<br>`ModeMapVoteApi`<br>`ModeMapVoteConfig`<br>`ModeMapVoteSnapshot`<br>`ModeMapVotePhase` | 通用选项投票与双阶段模式/地图投票（阶段为公开枚举，取消会回调 `VoteResult.cancelled`） |
-| **ModMenu 门控** | `com.habitrain.core.api.menu` / `api.client.menu` | `MenuGateApi`<br>`MenuGateClientApi` | 服务端 `isBlocked` 门禁判定与客户端 `isScreenAllowed` / `isServerDedicated` 查询。注意 `isAllowed` 只是名单查询，不是 `isBlocked` 的取反；顶层同名 `api.MenuGateApi` 已移除，服务端 import 应用 `com.habitrain.core.api.menu.MenuGateApi` |
-| **实现层桥接** | `com.habitrain.core.api.spi` | `CoreSpi`<br>`CoreLifecycle`<br>`Scene*Bridge`<br>`MenuGate*Bridge`<br>`VoteBridge`<br>`RoleSpi` | Core 自己装配。CoreSpi 通常有保守默认值；RoleSpi 必需服务未装配时抛异常，角色服务应在 Core 初始化后访问 |
-| **道具管理** | `com.habitrain.core.api.*` | `ItemReclaimHelper` | 任务临时道具打标、跟踪与安全回收 |
-| **移动场景 v2** | `com.habitrain.core.api.scene.*` | `SceneApi`<br>`SceneInstanceSpec`<br>`SceneProfileBuilder`<br>`SceneInstanceAnchor`<br>`SceneInstanceView`<br>`SceneListener`<br>`SceneClientApi` | 无数量上限的运行时场景实例、逐字段实时调参、锚点跟随、可见性与生命周期控制、资产发布、客户端查询与诊断。值对象位于 `api.scene.model` / `api.scene.asset`。教程见 [docs/移动场景API使用教程.md](docs/移动场景API使用教程.md) |
-
----
-
-### 快速代码示例
-
-#### 0. 按 API 版本 / 能力做分支（推荐）
 ```java
-// 不要比对 mod 版本号；用机器可读的语义版本与能力键
-if (CoreApi.supports("scene.instances")) {
-    SceneApi.instance().spawn(level, spec);
-}
-if (CoreApi.apiVersion().compareTo("2.1") >= 0) {
-    // 2.1 起可用：api.spi 桥接、api.scene 公开值对象、MatchEvents 覆盖 GameModeRegistry 对局等
-}
-```
+import com.habitrain.core.api.TaskCategory;
+import com.habitrain.core.api.TaskRegistry;
 
-#### 1. 注册自定义任务
-```java
 TaskRegistry.register("my_mod", "repair_radio", builder -> builder
         .displayName("维修无线电台")
         .category(TaskCategory.ALL)
         .gameMode("sre:base")
-        .weight(1.2F)
         .timeLimit(60)
-        .instinctColor(80, 180, 255, 200) // ARGB 直觉高亮色
         .onAssign((player, task) -> task.setMaxProgress(3))
-        .completionChecker((player, task) -> task.getProgress() >= task.getMaxProgress())
-        .onComplete((player, task) -> player.sendSystemMessage(Component.literal("§a电台维修完成！")))
-        .onFail((player, task) -> player.sendSystemMessage(Component.literal("§c维修超时，任务失败！"))));
+        .completionChecker((player, task) ->
+                task.getProgress() >= task.getMaxProgress()));
 ```
 
-#### 2. 使用角色扩展 API v2 注册全新角色
-在 `fabric.mod.json` 中声明 Entrypoint：
-```json
-{
-  "entrypoints": {
-    "habitrain:role_extensions": ["com.example.mod.MyRoleProvider"],
-    "habitrain:role_client_extensions": ["com.example.mod.client.MyRoleClientProvider"]
-  }
-}
-```
-编写通用 Provider：
-```java
-public final class MyRoleProvider implements RoleExtensionEntrypoint {
-    public static final RoleKey MEDIC = RoleKey.of("my_mod", "medic");
+任务分配、进度更新、完成回调和临时道具回收见[使用教程](docs/使用教程.md)。
 
-    @Override
-    public void register(RoleExtensionRegistrar registrar) {
-        registrar.add(RoleDefinition.builder(MEDIC)
-                .presentation(RolePresentation.builder()
-                        .color(0xFF55FF55)
-                        .nameKey("role.my_mod.medic")
-                        .descriptionKey("role.my_mod.medic.desc")
-                        .build())
-                .faction(RoleFactionProfile.builder().innocent().build())
-                .spawn(RoleSpawnProfile.builder().defaultMax(1).needPlayerCount(6).build())
-                .compatibility(RoleCompatibilityProfile.builder().canBeRandomed().build())
-                .maxSprintTime(20)
-                .build());
-    }
-}
-```
+### 版本兼容
 
----
+产物版本、公开 API 版本和角色扩展 API 版本分别维护。下游查询接口能力时使用 `CoreApi.apiVersion()`、`CoreApi.roleApiVersion()` 和 `CoreApi.supports(key)`，具体契约以 [CoreApi](src/main/java/com/habitrain/core/api/CoreApi.java) 为准。
 
-## 完整命令速查表
+角色扩展 v1 及其兼容桥已移除，角色声明使用 `api.role.v2`。旧附属模组需要按[迁移说明](docs/角色扩展API-v2使用教程.md#14-升级与包路径)调整并重新编译。
 
-| 命令 | 权限要求 | 说明 |
-|---|---|---|
-| `/instantgroup [range]` | OP 2 | 将指定方块半径（默认 128）内的所有玩家加入临时语音群组 |
-| `/habi_api list` | OP 2 | 列出当前所有已注册的游戏模式 |
-| `/habi_api vote start` | OP 2 | 手动开启双阶段模式→地图投票 |
-| `/habi_api vote cancel` | OP 2 | 取消当前正在进行的投票 |
-| `/habi_api vote status` | OP 2 / 所有人 | 查看当前投票阶段与剩余秒数 |
-| `/habi_api mappool status` | OP 2 | 查看按人数抽图池的配置与状态 |
-| `/habi_api repair <map>` | OP 2 | 进入创造模式维修指定地图并锁定该地图 |
-| `/habi_api repair cancel` | OP 2 | 退出维修模式，恢复原本状态与模式 |
-| `/habi_api repair list` | OP 2 | 列出当前所有维修人员及其锁定的地图 |
-| `/habi_api repair unlock <map>` | OP 2 | 强制解锁指定地图 |
-| `/habi_api repair add <player> <map>`| OP 2 | 强制指定某玩家进入某地图的维修模式 |
-| `/habi_api repair remove <player>` | OP 2 | 强制某玩家退出维修模式 |
-| `/habi_api menugate enable\|disable` | 控制台 (OP 4) | 开启/关闭 ModMenu 配置界面的访问门控 |
-| `/habi_api menugate status\|list` | 控制台 (OP 4) | 查看 ModMenu 门控状态及授权名单 |
-| `/habi_api menugate add\|remove <p>` | 控制台 (OP 4) | 将玩家加入/移除 ModMenu 门控允许名单 |
-| `/habi_api greed_trade confirm\|cancel` | 所有人 | 贪婪匿名交易双确认的备用命令接口 |
-| `/habitrain roleapi providers` | OP 2 | 查看所有已加载的角色扩展 Provider 状态 |
-| `/habitrain roleapi list [filter]` | OP 2 | 列出有效/冲突/禁用/无效等状态的角色目录 |
-| `/habitrain roleapi inspect <role>` | OP 2 | 深度检查指定角色的有效配置与合并结果 |
-| `/habitrain roleapi trace <role> <field>`| OP 2 | 追踪指定角色某字段由哪些 Provider/Patch 修改 |
-| `/habitrain roleapi aliases [role]` | OP 2 | 查询旧 ID 别名映射链 |
-| `/habitrain roleapi snapshot` | OP 2 | 查看当前大厅/对局快照版本与哈希 |
-| `/habitrain roleapi hooks <role>` | OP 2 | 查看指定角色挂载的所有受管 Hooks |
-| `/habitrain roleapi actions [role]` | OP 2 | 查看注册的受管网络动作与调用统计 |
-| `/habitrain roleapi capabilities` | OP 2 | 查看语音与聊天策略及适配器状态 |
-| `/habitrain roleapi perf` | OP 2 | 查看受管事件分发耗时与性能指标 |
-| `/habitrain roleapi state [p] [role]` | OP 2 | 查看玩家或角色的受管状态数据 |
-| `/habitrain roleapi config status` | OP 2 | 查看角色扩展 v2 独立配置文件状态 |
-| `/habitrain roleapi config set ...` | OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 热启用/禁用 Provider、Entry 或全局 Hooks |
-| `/habitrain roleapi config winner ...`| OP 4；游戏内玩家另需 MenuGate；控制台/命令方块为 break-glass | 手动设置字段补丁冲突的获胜条目 |
-| `/habitrain roleapi manifest` | OP 2 | 生成当前所有角色条目的只读清单摘要 |
-| `/habitrain scene status` | OP 2 | 查看当前地图级移动场景状态（地图键、激活、资产哈希、速度） |
-| `/habitrain scene start [map]` / `stop` | OP 2 | 手动启停当前维度的地图级场景运动 |
-| `/habitrain scene tool` | OP 2 | 获取移动场景配置器道具 |
-| `/habitrain scene build [map]` | OP 2 | 用已保存源选区发起场景资产生成 |
-| `/habitrain scene export` | OP 2 | 导出全部场景资产供整合包免下载分发 |
-| `/habitrain scene api` | OP 2 | 列出全部 API 场景实例（外部 Mod 注册，数量无上限） |
-| `/habitrain scene api clear\|resync` | OP 2 | 回收 / 全量重发全部 API 场景实例 |
+## 从源码构建
 
-C2S `role_config_update`（Mod 菜单保存角色扩展配置）需要 **OP2 + MenuGate**。`/habitrain roleapi config set|winner` 需要 **OP4**；专用服且门控开启时，游戏内玩家还须在 MenuGate 允许名单中；控制台 / 命令方块仅需 OP4（break-glass）。
-
----
-
-## 项目结构
-
-```text
-src/main/java/com/habitrain/core/
-├── api/                   # 公开 API 根目录（稳定契约）
-│   └── role/v2/           # 角色扩展 v2 完整 API，含 book / patch 类型
-├── task/                  # 核心任务调度与进度追踪引擎
-├── game/
-│   ├── sre/               # SRE 原版桥接、投稿职业、七宗罪、七美德、环境与淘汰休息区
-├── role/                  # 角色扩展平台 v2 内部实现与引擎
-├── network/               # S2C / C2S 自定义网络 Payload 与编解码
-├── config/                # JSON 配置文件读写、同步与 ModMenu 门控
-└── client/                # ModMenu 四大分类 13 个配置页、MVP 固定姿势、HUD、GUI、渲染与客户端 Mixin
-    ├── gui/menu/          # 统一配置中心根屏与各分类页面
-    └── mvp/               # playerAnimator MVP 3D 固定骨骼姿势
-```
-
----
-
-## 构建与交付
-
-使用标准 Gradle 命令构建项目：
+使用 Java 21 和仓库自带的 Gradle Wrapper。在项目根目录运行：
 
 ```powershell
 .\gradlew.bat build --no-daemon
 ```
 
-构建完成后，生成的标准交付 JAR 产物位于：
+成品路径如下，`<version>` 对应 `gradle.properties` 中的 `mod_version`：
+
 ```text
-build/libs/habitrain_core-<mod_version>.jar     # 版本取 gradle.properties
-build/release/habitrain_core-<mod_version>-restored.jar
+build/libs/habitrain_core-<version>.jar
 ```
 
-> **版本号说明（审核 D-01）**：`mod_version`（`gradle.properties`）是**产物版本**，每次修复递增；
-> `api_version`（`CoreApi.API_VERSION` / `fabric.mod.json` 的 `custom` 段）是**公开 API 语义版本**，
-> 只在契约变化时递增。当前值统一见 [版本来源](docs/版本与安装依赖.md#版本来源)，两者**不同步**是正常的。
-> 下游判断能力请用 `CoreApi.apiVersion()` / `CoreApi.supports(key)`，不要比对 mod 版本号。
-> 二者的格式与一致性有单测守卫（`VersionConstantsConsistencyTest`）。
+启动开发客户端：
 
-按工作区统一规范，验证完成后将该 JAR 复制到同级目录 `../临时/` 即可。
+```powershell
+.\gradlew.bat runClient --no-daemon
+```
 
----
+构建使用 `libs/` 中固定的本地依赖，其中 SRE 使用开发版 JAR。请保留这些构建输入，并按[安装依赖文档](docs/版本与安装依赖.md)区分开发环境和成品运行环境。
 
-## 文档索引
+## 文档
 
-- 📘 **[使用教程](docs/使用教程.md)**：面向玩家、服主与模组开发者的全方位实战指南（涵盖玩法机制、MVP 固定姿势结算、配置中心四分类运维、任务/模式开发与角色扩展实战）。
-- 📑 **[API 参考手册](docs/API参考手册.md)**：公开 API 接口契约、方法签名与类族索引速查。
-- 📕 **[角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md)**：角色扩展平台 v2 深度开发指南（ADD/MODIFY/REPLACE、Hooks、State、Action、Client HUD 与诊断）。
-- 🚄 **[移动场景 API 使用教程](docs/移动场景API使用教程.md)**：`SceneApi` v2 全量教程（无上限实例、全参数表、锚点、资产发布、事件、性能模型与实战配方）。
-
----
+| 文档 | 内容 |
+|---|---|
+| [使用教程](docs/使用教程.md) | 玩法、配置、管理命令与任务开发 |
+| [版本与安装依赖](docs/版本与安装依赖.md) | 版本来源、完整依赖清单与专用服限制 |
+| [API 参考手册](docs/API参考手册.md) | 公开接口、类型和调用契约 |
+| [角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md) | 新增角色、补丁、替换、状态、事件与客户端扩展 |
+| [移动场景 API 使用教程](docs/移动场景API使用教程.md) | 场景实例、资产、锚点、参数与生命周期 |
+| [大厅移动背景](docs/大厅移动背景.md) | 大厅移动外景的配置与使用 |
+| [配置提交协议](docs/配置提交协议.md) | 配置草稿、提交确认、权限与冲突处理 |
 
 ## 许可证
 
-本项目基于 **GNU General Public License v3.0 (GPLv3)** 开源，详见 [LICENSE](LICENSE)。
-
-配置保存的草稿、确认、冲突与网络预算见 [配置提交协议](docs/配置提交协议.md)。
+本项目采用 [GNU General Public License v3.0](LICENSE)。
