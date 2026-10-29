@@ -1,176 +1,225 @@
 # 哈比列车核心 · HabiTrain Core
 
-为 Minecraft 1.21.1 / Fabric 下的《星穹列车》（StarRailExpress，简称 SRE）提供玩法扩展、可视化配置和附属模组开发接口。模组 ID 为 `habitrain_core`。
+**为星穹列车增添玩法，也为附属模组提供扩展接口。**
 
-Core 扩展角色与对局体验，提供任务配置工具，并将角色扩展、游戏模式、投票和移动场景等能力开放给下游模组。
+HabiTrain Core 是面向 Minecraft 1.21.1 / Fabric 的《星穹列车》（StarRailExpress，简称 SRE）扩展模组。它补充角色与词条、投票选图、地图维修和车票式背包等功能，并向开发者开放任务、游戏模式、角色、对局、投票与移动场景 API。
 
-[使用教程](docs/使用教程.md) · [安装依赖](docs/版本与安装依赖.md) · [API 参考手册](docs/API参考手册.md) · [角色扩展教程](docs/角色扩展API-v2使用教程.md)
+[使用教程](docs/使用教程.md) · [安装依赖](docs/版本与安装依赖.md) · [API 参考](docs/API参考手册.md) · [角色扩展教程](docs/角色扩展API-v2使用教程.md)
+
+| 项目 | 说明 |
+|---|---|
+| 游戏环境 | Minecraft **1.21.1** · Fabric Loader **≥ 0.18.2** · Java **21** |
+| 模组 ID | `habitrain_core`，兼容旧依赖 ID `habitrain_taskapi` |
+| 模组版本 | 以 [gradle.properties](gradle.properties) 中的 `mod_version` 为准 |
+| API 版本 | 公开 API **2.3** · 角色扩展 API **2.0**，见 [CoreApi](src/main/java/com/habitrain/core/api/CoreApi.java) |
+| SRE 前置 | 仓库 `libs/` 中固定的 **StarRailExpress 4.3.0** 成品 |
+| 许可证 | [GPL-3.0](LICENSE) |
 
 ## 主要功能
 
-| 方向 | 提供的功能 |
+| 方向 | 功能 |
 |---|---|
-| 角色与词条 | 替罪羊、卖花女、疾风、默杀者、Mike 五个投稿角色；七宗罪角色；七美德修饰符体系，其中慷慨沿用上游实现 |
-| 模式与地图 | 桥接上游游戏模式，提供模式与地图双阶段投票、按人数筛选地图池，以及地图介绍图和预设配置 |
-| 地图维修 | 管理员进入创造模式维修地图；维修中的地图暂时退出投票池，退出维修时恢复玩家原有状态 |
-| 背包美化 | 车票式候车背包、邮票快捷菜单、对局邮票册和票券商店；支持简洁模式、键盘操作与窗口适配，详见[背包车票界面](docs/背包车票界面.md) |
-| 对局体验 | 淘汰玩家休息区与观战切换、角色商店自适应布局、美化版与原版商店切换，以及 MVP 结算界面 |
-| 移动场景 | 配置列车窗外动态外景，支持直线与环绕运动、循环、环境音和镜头微震；附属模组可通过 API 创建场景实例 |
-| 环境与语音 | 分别配置大厅、对局和结算后的天气与时间；联动 Simple Voice Chat 管理语音群组 |
-| 配置与管理 | 中文配置中心、角色扩展状态与冲突诊断、配置界面访问控制，以及 Iris 光影白名单检查 |
+| 角色与词条 | 替罪羊、卖花女、疾风、默杀者、Mike 五个投稿角色，七宗罪角色，以及七美德修饰符体系；慷慨沿用上游实现 |
+| 模式与地图 | 桥接 SRE 游戏模式，先投模式再投地图，按在线人数筛选地图池，并提供地图介绍图与预设配置 |
+| 地图维修 | 管理员进入创造模式维修地图；维修中的地图退出投票池，退出维修后恢复玩家原有状态 |
+| 车票式背包 | 候车背包、邮票快捷菜单、对局邮票册与票券商店，支持简洁模式、键盘操作和窗口适配 |
+| 对局体验 | 淘汰玩家休息区与观战切换、角色商店自适应布局、美化版与原版商店切换、MVP 结算展示 |
+| 移动外景 | 列车窗外动态场景，支持直线与环绕运动、循环、环境音及镜头微震，也可由附属模组创建场景实例 |
+| 环境与语音 | 分别设置大厅、对局和结算后的天气与时间，联动 Simple Voice Chat 管理语音群组 |
+| 配置与管理 | 中文配置中心、角色扩展状态与冲突诊断、配置界面访问控制（MenuGate）、Iris 光影白名单 |
 
-角色规则、功能开关与操作步骤见[使用教程](docs/使用教程.md)。
+角色规则、功能开关及操作步骤见[使用教程](docs/使用教程.md)。
 
-## 游戏截图
+## 界面预览
 
-以下画面截取自实际运行的 Minecraft 1.21.1 开发客户端。背包、商店与邮票册截图于 **2026-10-22** 使用当前 **2.0.26** 源码重新启动客户端拍摄，运行于独立测试世界；玩家与随身物品为示例，商店展示杀手职业的默认商品与价格。
+**车票式背包**将旅客信息、参与 / 旁观切换、随身行李和快捷菜单放在一张乘车凭证上。
 
-**车票式背包**：候车页以蓝色乘车凭证展示旅客模型、参与 / 旁观切换、随身行李和翻牌时钟；上下两排邮票提供快捷菜单入口，背景配有线框机车与星穹仪。
+![车票式背包与邮票快捷菜单](docs/images/readme/inventory-ticket-20261022.png)
 
-![哈比列车核心的车票式背包与邮票快捷菜单](docs/images/readme/inventory-ticket-20261022.png)
+**票券商店**以蓝色票券展示商品与价格，随窗口空间调整布局和分页，并保留原版商店样式切换。
 
-**简洁模式**：点击「简洁模式」邮票或按 `F6` 切换，使用静态头像和简化票面，保留背包操作、参与切换及全部菜单；选择只保存在本机。
+![对局中的票券商店](docs/images/readme/inventory-ticket-shop-20261022.png)
 
-![哈比列车核心的简洁模式背包页面](docs/images/readme/inventory-lightweight-20261022.png)
+<details>
+<summary>查看更多：简洁模式、邮票册与配置中心</summary>
 
-**票券商店**：对局中的商品与价格统一呈现为蓝色票券，按窗口空间缩放与分页；右下角邮票册可展开快捷菜单，也可切回原版商店样式。
+**简洁模式**：点击对应邮票或按 `F6` 切换，使用静态头像与简化票面；选择保存在本机。
 
-![哈比列车核心的票券商店与对局背包页面](docs/images/readme/inventory-ticket-shop-20261022.png)
+![简洁模式背包](docs/images/readme/inventory-lightweight-20261022.png)
 
-**对局邮票册**：点击右下角邮票册展开快捷菜单，可在其中切换简洁模式与商店样式，并打开职业介绍、地图介绍等页面。
+**对局邮票册**：展开后可切换简洁模式与商店样式，并打开职业介绍、地图介绍等页面。
 
-![哈比列车核心展开后的对局邮票册与商店样式切换](docs/images/readme/inventory-stamp-album-20261022.png)
+![展开后的对局邮票册](docs/images/readme/inventory-stamp-album-20261022.png)
 
-打开 SRE 的背包界面即可使用上述美化；邮票操作、翻页、简洁模式和扩展菜单说明见[背包车票界面](docs/背包车票界面.md)。
+**小游戏配置**：查看已注册的小游戏，进入各项任务的配置页。
 
-**小游戏配置**：查看已注册的小游戏，并进入各项任务的配置页面。
-
-![哈比列车核心的小游戏配置页面](docs/images/readme/config-minigames.png)
+![小游戏配置页面](docs/images/readme/config-minigames.png)
 
 **投票配置**：管理模式与地图的投票流程。
 
-![哈比列车核心的模式与地图投票配置页面](docs/images/readme/config-voting.png)
+![模式与地图投票配置页面](docs/images/readme/config-voting.png)
 
-**角色扩展**：查看角色扩展提供方、条目状态和配置入口。
+**角色扩展**：查看扩展提供方、条目状态与配置入口。
 
-![哈比列车核心的角色扩展配置页面](docs/images/readme/config-roles.png)
+![角色扩展配置页面](docs/images/readme/config-roles.png)
 
-## 安装
+</details>
 
-### 运行环境
+截图来自 Minecraft 1.21.1 开发客户端；背包、商店与邮票册画面于 2026-10-22 使用 2.0.26 源码拍摄。玩家、物品和价格仅作示例，操作说明见[背包车票界面](docs/背包车票界面.md)。
 
-| 项目 | 版本 |
+## 安装与依赖
+
+1. 准备 Minecraft **1.21.1** 的 Fabric 实例，使用 Java **21** 和 Fabric Loader **0.18.2 或更高版本**。
+2. 将 Core 成品 `habitrain_core-<version>.jar` 放入实例的 `mods/` 目录，联机双方使用相同版本。
+3. 放入仓库提供的 [`libs/star_rail_express-4.3.0.jar`](libs/star_rail_express-4.3.0.jar)。
+4. 按下表补齐依赖，再启动游戏检查加载结果。
+
+### 固定 SRE 依赖
+
+**请使用本仓库 `libs/` 中固定的 SRE 文件，不要从其他渠道下载或用其他分支自行构建的同版本 JAR 替换。** Core 调用并适配 SRE 内部接口，仅版本号一致不能保证兼容。
+
+| 文件 | 用途 |
 |---|---|
-| Minecraft | 1.21.1 |
-| Java | 推荐使用 Java 21 |
-| Fabric Loader | 0.18.2 或更高 |
-| Fabric API | 项目固定版本为 0.116.13+1.21.1 |
-| StarRailExpress | 本仓库提供的固定 4.3.0 成品 |
+| [`star_rail_express-4.3.0.jar`](libs/star_rail_express-4.3.0.jar) | 玩家与服务器使用的成品，放入游戏实例的 `mods/` |
+| [`star_rail_express-4.3.0-dev.jar`](libs/star_rail_express-4.3.0-dev.jar) | 仅供开发编译和开发运行使用，不放入普通游戏实例 |
 
-Core 的当前版本见 [gradle.properties](gradle.properties) 中的 `mod_version`。上表只列出主要环境要求，完整安装清单见[版本与安装依赖](docs/版本与安装依赖.md)。
+两个文件不能互换。开发版使用 named 映射，且没有成品内嵌的部分依赖；开发项目中的引入方式见下方说明。
 
-### 安装步骤
+<details>
+<summary>SRE 文件的 SHA-256 校验值</summary>
 
-1. 准备 Minecraft 1.21.1 的 Fabric 实例，并确认使用兼容 Java 21 字节码的运行环境。
-2. 将 Core 成品 JAR 和安装清单中的依赖放入实例的 `mods` 目录。自行构建的 Core 成品位于 `build/libs/`。
-3. SRE 必须使用仓库中的 [`libs/star_rail_express-4.3.0.jar`](libs/star_rail_express-4.3.0.jar)。请保留该固定文件；`star_rail_express-4.3.0-dev.jar` 仅供开发编译使用。
-4. 按安装清单核对 DataSync、CCA 四模块及 SRE 的依赖，再启动实例检查加载结果。
+```text
+star_rail_express-4.3.0.jar
+081d4598a675be74a1351ad4c68602c1f80936f32f87352eee52c418e6906b21
 
-Core 已内嵌 playerAnimator，其余开发运行依赖并不会全部随 Core 打包。Simple Voice Chat 虽然在 Core 元数据中列为建议项，但它是固定 SRE 成品的硬依赖，安装时仍需提供。
+star_rail_express-4.3.0-dev.jar
+24ad766930a190d00b2e1fbd6703d4b72b96f9f9083935d1829b5e694c4498b6
+```
 
-**专用服部署**：固定 SRE 4.3.0 强制依赖 Mod Menu，而固定 Mod Menu 版本仅用于客户端。部署前请阅读[专用服限制与启动验收](docs/版本与安装依赖.md#专用服限制与启动验收)，确认并验证所用的服务端方案。
+在仓库根目录执行以下命令可校验成品：
 
-## 配置与常用操作
+```powershell
+Get-FileHash .\libs\star_rail_express-4.3.0.jar -Algorithm SHA256
+```
 
-在 Mod Menu 中选择「哈比列车核心」，点击配置按钮即可进入控制台。
+</details>
 
-| 分类 | 配置内容 |
-|---|---|
-| 游戏内 | 小游戏、数值平衡、环境、移动场景 |
-| 游戏外 | 投票、大厅环境、光影白名单、主菜单背景、移动场景性能 |
-| 游戏模式 | 任务配置、角色扩展 |
-| 其他 | 兼容性选项和其他扩展设置 |
+### 其余运行依赖
 
-主要配置保存在 `config/habitrain_core.json`；角色扩展配置使用 `config/habitrain_role_v2.json`。联机环境中的服务端配置受权限与 MenuGate 控制，配置提交、确认及冲突处理见[配置提交协议](docs/配置提交协议.md)。
+下表列出项目固定使用的版本；标注 `libs/` 的文件可直接从本仓库取得。
 
-角色扩展配置在大厅应用到大厅快照；对局中的变更会形成待生效快照，当前局的角色行为继续使用本局快照。具体生效范围见[角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md)。
+| 依赖 | 固定版本 | 安装来源 |
+|---|---|---|
+| Fabric API | 0.116.13+1.21.1 | 另装完整 Fabric API |
+| DataSync | 0.10.2 | 另装；已有 Ratatouille 1.4.3 内嵌的同版本时无需重复 |
+| Cardinal Components（base / entity / world / scoreboard） | 6.1.3 | 另装，四个模块均需满足要求 |
+| Cloth Config | 15.0.140 | 另装 Fabric 版 |
+| Mod Menu | 11.0.3 | 客户端另装；专用服限制见下文 |
+| Wathe | 1.3.2-1.21.1 | [`libs/wathe-1.3.2.jar`](libs/wathe-1.3.2.jar) |
+| Simple Voice Chat | 1.21.1-2.6.18 | [`libs/voicechat-fabric-1.21.1-2.6.18.jar`](libs/voicechat-fabric-1.21.1-2.6.18.jar) |
+| Architectury | 13.0.11 | [`libs/architectury-13.0.11-fabric.jar`](libs/architectury-13.0.11-fabric.jar) |
+| Exposure | 1.9.11 | [`libs/exposure-fabric-1.21.1-1.9.11.jar`](libs/exposure-fabric-1.21.1-1.9.11.jar) |
+| SRE Resource | 1.0.3 | [`libs/sre-lib-1.0.3.jar`](libs/sre-lib-1.0.3.jar) |
+| Forge Config API Port | 21.1.6 | [`libs/ForgeConfigAPIPort-v21.1.6-1.21.1-Fabric.jar`](libs/ForgeConfigAPIPort-v21.1.6-1.21.1-Fabric.jar) |
 
-光影白名单依赖正常客户端上报 Iris 光影信息，不能防止修改客户端伪造上报。
+playerAnimator **2.0.4+1.21.1 已内嵌在 Core 中**。Simple Voice Chat 是固定 SRE 的必需依赖；Wathe、TACZ 内嵌的旧版 CCA / DataSync 不能单独满足 Core 的要求。
 
-### 常用命令
+**专用服部署限制**：固定 SRE 4.3.0 强制依赖 Mod Menu，而 Mod Menu 11.0.3 仅用于客户端。部署前请阅读[专用服限制与启动验收](docs/版本与安装依赖.md#专用服限制与启动验收)，确认可用的服务端方案。完整依赖与内嵌组件说明见[版本与安装依赖](docs/版本与安装依赖.md)。
 
-以下命令均需 OP 2 权限。地图 ID 可通过游戏内命令补全查询。
+## 配置与常用命令
+
+在 Mod Menu 中选择「哈比列车核心」即可打开配置中心，管理小游戏、数值平衡、投票、环境、角色扩展和移动场景等功能。
+
+- 主配置：`config/habitrain_core.json`。
+- 角色扩展配置：`config/habitrain_role_v2.json`。
+- 联机时，服务端配置提交受 OP 权限与 MenuGate 控制；草稿、确认及冲突处理见[配置提交协议](docs/配置提交协议.md)。
+- 对局中修改角色扩展会形成待生效快照，当前局继续使用开局快照；具体生效范围见[角色扩展教程](docs/角色扩展API-v2使用教程.md)。
+
+以下常用命令均需 **OP 2** 权限；地图 ID 可用 `Tab` 补全。
 
 | 命令 | 用途 |
 |---|---|
 | `/habi_api list` | 查看已注册的游戏模式 |
 | `/habi_api vote start` | 开启模式与地图双阶段投票 |
-| `/habi_api vote status` | 查看投票阶段和剩余时间 |
+| `/habi_api vote status` | 查看当前投票状态 |
 | `/habi_api vote cancel` | 取消当前投票 |
-| `/habi_api repair <map>` | 进入指定地图的维修模式 |
+| `/habi_api repair <地图ID>` | 进入指定地图的维修模式 |
 | `/habi_api repair cancel` | 退出自己的维修模式 |
-| `/habi_api repair list` | 查看维修人员和锁定地图 |
-| `/instantgroup [range]` | 将范围内玩家加入临时语音群组，默认范围为 128 格 |
+| `/habi_api repair list` | 查看维修人员与锁定地图 |
+| `/habi_api scene status` | 查看地图级移动场景状态 |
 | `/habitrain roleapi providers` | 查看已加载的角色扩展提供方 |
 | `/habitrain roleapi list` | 查看当前有效角色目录 |
-| `/habi_api scene status` | 查看地图级移动场景状态 |
+| `/instantgroup [range]` | 将范围内玩家加入临时语音群组，默认 128 格 |
 
-更多维修、门控、角色诊断和场景管理命令见[使用教程](docs/使用教程.md)。
+更多管理命令见[使用教程](docs/使用教程.md)。Iris 光影白名单依赖客户端上报信息，无法防止修改后的客户端伪造上报。
 
 ## 开发附属模组
 
-公开 API 位于 `com.habitrain.core.api.**`。下游模组应通过公开接口扩展功能，避免编译期依赖 Core 的内部实现包。
+公开 API 根包为 **`com.habitrain.core.api.**`**。请通过公开接口扩展功能，避免在编译期引用 Core 内部实现包。
 
-| 扩展方向 | 主要入口 | 文档 |
-|---|---|---|
-| 版本与能力查询 | `CoreApi` | [API 参考手册](docs/API参考手册.md) |
-| 自定义任务 | `TaskRegistry`、`TaskDefinition`、`TaskInstance` | [使用教程](docs/使用教程.md) |
-| 游戏模式 | `GameModeRegistry`、`GameMode`、`WinResult` | [API 参考手册](docs/API参考手册.md) |
-| 角色扩展 v2 | `RoleExtensionEntrypoint`、`RoleDefinition`、`RolePatch` | [角色扩展教程](docs/角色扩展API-v2使用教程.md) |
-| 角色状态与客户端交互 | `RoleStateApi`、`RoleStateClientApi`、`RoleScreenClientApi` | [角色扩展教程](docs/角色扩展API-v2使用教程.md) |
-| 对局状态与结算 | `MatchStateApi`、`MatchEvents`、`MatchSettlement` | [API 参考手册](docs/API参考手册.md) |
-| 投票 | `OptionVoteApi`、`ModeMapVoteApi` | [API 参考手册](docs/API参考手册.md) |
-| 移动场景 | `SceneApi`、`SceneInstanceSpec`、`SceneProfileBuilder` | [移动场景教程](docs/移动场景API使用教程.md) |
+### 接入依赖
 
-### 注册一个任务
+以下片段适用于与本仓库一致的 **Fabric 1.21.1 / Java 21 / Mojang 官方映射**项目。将 Core 成品与固定 SRE 开发版复制到附属模组的 `libs/`，把 `<version>` 替换为实际版本：
 
-在模组初始化阶段注册任务。下面的例子定义一个需要完成三次进度的维修任务，具体交互由附属模组推进。
-
-```java
-import com.habitrain.core.api.TaskCategory;
-import com.habitrain.core.api.TaskRegistry;
-
-TaskRegistry.register("my_mod", "repair_radio", builder -> builder
-        .displayName("维修无线电台")
-        .category(TaskCategory.ALL)
-        .gameMode("sre:base")
-        .timeLimit(60)
-        .onAssign((player, task) -> task.setMaxProgress(3))
-        .completionChecker((player, task) ->
-                task.getProgress() >= task.getMaxProgress()));
+```groovy
+dependencies {
+    modImplementation files("libs/habitrain_core-<version>.jar")
+    // SRE 开发版已经是 named 映射，使用 implementation，避免再次重映射。
+    implementation files("libs/star_rail_express-4.3.0-dev.jar")
+}
 ```
 
-任务分配、进度更新、完成回调和临时道具回收见[使用教程](docs/使用教程.md)。
+在附属模组的 `fabric.mod.json` 中合并以下依赖声明；示例最低 Core 版本对应当前源码版本：
 
-### 版本兼容
+```json
+{
+  "depends": {
+    "fabricloader": ">=0.18.2",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "habitrain_core": ">=2.0.26",
+    "starrailexpress": "~4.3.0"
+  }
+}
+```
 
-产物版本、公开 API 版本和角色扩展 API 版本分别维护。下游查询接口能力时使用 `CoreApi.apiVersion()`、`CoreApi.roleApiVersion()` 和 `CoreApi.supports(key)`，具体契约以 [CoreApi](src/main/java/com/habitrain/core/api/CoreApi.java) 为准。
+这两项 JAR 引用只展示 Core 与 SRE 的接入方式。需要开发运行时，请参照本仓库 [build.gradle](build.gradle) 补齐 SRE 的外部依赖及开发版缺少的库，保留其依赖配置方式。
 
-角色扩展 v1 及其兼容桥已移除，角色声明使用 `api.role.v2`。旧附属模组需要按[迁移说明](docs/角色扩展API-v2使用教程.md#14-升级与包路径)调整并重新编译。
+### 选择扩展入口
+
+| 要做的事 | 主要入口 | 教程 |
+|---|---|---|
+| 注册任务与推进任务进度 | `TaskRegistry`、`TaskDefinition`、`TaskInstance` | [使用教程](docs/使用教程.md) |
+| 注册游戏模式与处理胜利结果 | `GameModeRegistry`、`GameMode`、`WinResult` | [API 参考](docs/API参考手册.md) |
+| 新增、修改、替换角色或建立别名 | `RoleExtensionEntrypoint`、`RoleDefinition`、`RolePatch`、`RoleReplacement` | [角色扩展 v2](docs/角色扩展API-v2使用教程.md) |
+| 扩展角色状态与客户端交互 | `RoleStateApi`、`RoleStateClientApi`、`RoleScreenClientApi` | [角色扩展 v2](docs/角色扩展API-v2使用教程.md) |
+| 读取对局状态与接收结算事件 | `MatchStateApi`、`MatchEvents`、`MatchSettlement` | [API 参考](docs/API参考手册.md) |
+| 创建通用投票或模式 / 地图投票 | `OptionVoteApi`、`ModeMapVoteApi` | [API 参考](docs/API参考手册.md) |
+| 创建和控制移动场景 | `SceneApi`、`SceneInstanceSpec`、`SceneProfileBuilder` | [移动场景 API](docs/移动场景API使用教程.md) |
+| 控制配置界面访问 | `MenuGateApi`、`MenuGateClientApi` | [API 参考](docs/API参考手册.md) |
+
+角色扩展通过 `habitrain:role_extensions`（common）和 `habitrain:role_client_extensions`（client）入口注册。角色 API v2 当前标记为 **preview / experimental**；v1 接口与兼容桥已移除，旧扩展需按[升级说明](docs/角色扩展API-v2使用教程.md#14-升级与包路径)迁移后重新编译。
+
+模组产物版本、公开 API 版本与角色 API 版本相互独立。按能力分支时使用 `CoreApi.supports(key)`，能力键见 `CoreApi.capabilities()`；版本查询与装配状态的具体约定见 [CoreApi](src/main/java/com/habitrain/core/api/CoreApi.java)。
 
 ## 从源码构建
 
-使用 Java 21 和仓库自带的 Gradle Wrapper。在项目根目录运行：
+准备 Java **21**，保留仓库 `libs/` 中的固定依赖，并在仓库根目录使用自带的 Gradle Wrapper。
+
+Windows / PowerShell：
 
 ```powershell
 .\gradlew.bat build --no-daemon
 ```
 
-成品路径如下，`<version>` 对应 `gradle.properties` 中的 `mod_version`：
+Linux / macOS：
 
-```text
-build/libs/habitrain_core-<version>.jar
+```sh
+./gradlew build --no-daemon
 ```
+
+普通成品位于 `build/libs/habitrain_core-<version>.jar`；`assemble` 还会将成品暂存到 `build/release/`。
 
 启动开发客户端：
 
@@ -178,21 +227,24 @@ build/libs/habitrain_core-<version>.jar
 .\gradlew.bat runClient --no-daemon
 ```
 
-构建使用 `libs/` 中固定的本地依赖，其中 SRE 使用开发版 JAR。请保留这些构建输入，并按[安装依赖文档](docs/版本与安装依赖.md)区分开发环境和成品运行环境。
+开发运行使用 SRE `-dev.jar`。发布验收应使用固定 SRE 成品与新构建的 Core，具体项目见[运行验收清单](docs/运行验收清单.md)。
 
-## 文档
+## 文档索引
 
 | 文档 | 内容 |
 |---|---|
 | [使用教程](docs/使用教程.md) | 玩法、配置、管理命令与任务开发 |
-| [背包车票界面](docs/背包车票界面.md) | 背包与商店美化、邮票菜单、简洁模式、操作及扩展说明 |
-| [版本与安装依赖](docs/版本与安装依赖.md) | 版本来源、完整依赖清单与专用服限制 |
-| [API 参考手册](docs/API参考手册.md) | 公开接口、类型和调用契约 |
-| [角色扩展 API v2 使用教程](docs/角色扩展API-v2使用教程.md) | 新增角色、补丁、替换、状态、事件与客户端扩展 |
-| [移动场景 API 使用教程](docs/移动场景API使用教程.md) | 场景实例、资产、锚点、参数与生命周期 |
+| [版本与安装依赖](docs/版本与安装依赖.md) | 固定版本、完整依赖、内嵌组件与专用服限制 |
+| [背包车票界面](docs/背包车票界面.md) | 车票背包、邮票菜单、简洁模式与商店样式 |
+| [API 参考手册](docs/API参考手册.md) | 公开接口、类型与调用契约 |
+| [角色扩展 API v2](docs/角色扩展API-v2使用教程.md) | 角色定义、补丁、替换、状态、动作与客户端扩展 |
+| [移动场景 API](docs/移动场景API使用教程.md) | 场景实例、资产、锚点、参数与生命周期 |
 | [大厅移动背景](docs/大厅移动背景.md) | 大厅移动外景的配置与使用 |
-| [配置提交协议](docs/配置提交协议.md) | 配置草稿、提交确认、权限与冲突处理 |
+| [配置提交协议](docs/配置提交协议.md) | 草稿、提交确认、权限与冲突处理 |
+| [运行验收清单](docs/运行验收清单.md) | 成品启动与多人场景验收项 |
 
-## 许可证
+## 许可证与致谢
 
-本项目采用 [GNU General Public License v3.0](LICENSE)。
+HabiTrain Core 采用 [GNU General Public License v3.0](LICENSE) 发布。
+
+感谢 **Catmoon Train Team** 开发 StarRailExpress。仓库 `libs/` 中的 SRE JAR 作为固定依赖提供，采用 LGPL-3.0 许可；各第三方依赖的版权与许可归其原作者所有。
