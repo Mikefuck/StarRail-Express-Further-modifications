@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.role;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
+import com.habitrain.core.game.sre.role.shop.SnakeFruitService;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.shop.SevenSinShops;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
@@ -54,6 +55,7 @@ public final class HabiRoleShops {
     public static final int MIME_KILLER_LOCKPICK_PRICE = 80;
 
     public static void register() {
+        ShopContent.customEntries.put(HabiRoles.SNAKE_FRUIT_ID, snakeFruitShop());
         ShopContent.customEntries.put(HabiRoles.FLOWER_GIRL_ID, flowerGirlShop());
         ShopContent.customEntries.put(HabiRoles.SWIFT_WIND_ID, swiftWindShop());
         ShopContent.customEntries.put(HabiRoles.MIME_KILLER_ID, mimeKillerShop());
@@ -75,6 +77,28 @@ public final class HabiRoleShops {
             ShopContent.customEntries.put(SevenSins.LUST_ID, SevenSinShops.lustShop());
         }
         HabiTrainCore.LOGGER.info("[HabiRoleShops] custom shop entries registered (role getShopEntries is authoritative)");
+    }
+
+    public static List<ShopEntry> snakeFruitShop() {
+        return List.of(new ShopEntry(HabiRoleItems.createRedApple(),
+                com.habitrain.core.game.sre.role.shop.SnakeFruitPricePolicy.APPLE_PRICE, ShopEntry.Type.TOOL) {
+            @Override
+            public boolean canBuy(@NotNull Player player) {
+                if (!super.canBuy(player)) return false;
+                long remaining = SnakeFruitService.purchaseCooldownTicks(player);
+                if (remaining <= 0) return true;
+                setFailedMessage(net.minecraft.network.chat.Component.translatable(
+                        "message.tip.purchase_cooldown", (remaining + 19) / 20));
+                return false;
+            }
+
+            @Override
+            public boolean onBuy(@NotNull Player player) {
+                if (!canBuy(player) || !super.onBuy(player)) return false;
+                SnakeFruitService.recordApplePurchase(player);
+                return true;
+            }
+        });
     }
 
     public static List<ShopEntry> flowerGirlShop() {

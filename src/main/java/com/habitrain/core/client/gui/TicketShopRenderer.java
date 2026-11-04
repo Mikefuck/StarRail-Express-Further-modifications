@@ -105,7 +105,7 @@ public final class TicketShopRenderer {
     public void renderItem(StoreItemWidget widget, GuiGraphics g, int mouseX, int mouseY) {
         ShopEntry entry = widget.index >= 0 && widget.index < liveEntries.size()
                 ? liveEntries.get(widget.index) : widget.entry;
-        Price price = priceOf(widget.index, entry);
+        Price price = priceOf(widget, entry);
         boolean selected = !pointerBlocked && widget.isHoveredOrFocused();
         if (selected) {
             hovered = widget;
@@ -138,7 +138,9 @@ public final class TicketShopRenderer {
         int itemX = Math.round((w - 16) / 2);
         g.renderItem(entry.stack(), itemX, 12);
         g.renderItemDecorations(font, entry.stack(), itemX, 12);
-        Component amount = Component.literal(price.effective() + "\uE781");
+        Component amount = price.apple()
+                ? AppleShopPriceDisplay.amount(price.base(), price.effective())
+                : Component.literal(price.effective() + "\uE781");
         int ink = price.effective() < price.base() ? 0xFF9FE0BB
                 : price.effective() > price.base() ? 0xFFFFA594 : RailArt.BRASS_LIGHT;
         TicketArt.drawCentered(g, font, amount, w / 2, h - 10,
@@ -148,11 +150,13 @@ public final class TicketShopRenderer {
         RenderSystem.enableDepthTest();
     }
 
-    private Price priceOf(int index, ShopEntry entry) {
-        int base = ShopPriceClientCache.overrideBasePrice(index, entry.stack(), entry.price());
+    private Price priceOf(StoreItemWidget widget, ShopEntry entry) {
+        int base = ShopPriceClientCache.overrideBasePrice(widget.index, entry.stack(), entry.price());
         int effective = mc.player == null ? base : DynamicShopComponent.KEY.get(mc.player).effectivePrice(
                 BuiltInRegistries.ITEM.getKey(entry.stack().getItem()), base);
-        return new Price(base, effective);
+        var apple = AppleShopPriceDisplay.quote(widget, entry, base);
+        return apple == null ? new Price(base, effective, false)
+                : new Price(apple.normalPrice(), apple.price(), true);
     }
 
     public void renderTooltip(GuiGraphics g, int mouseX, int mouseY) {
@@ -160,7 +164,9 @@ public final class TicketShopRenderer {
         List<Component> lines = new ArrayList<>(Screen.getTooltipFromItem(mc, hoveredEntry.stack()));
         lines.add(Component.translatable("inventory.habitrain_core.ticket.shop.price", hoveredPrice.effective())
                 .withStyle(ChatFormatting.GOLD));
-        if (hoveredPrice.base() > 0 && hoveredPrice.effective() != hoveredPrice.base()) {
+        if (hoveredPrice.apple()) {
+            lines.add(AppleShopPriceDisplay.change(hoveredPrice.base(), hoveredPrice.effective()));
+        } else if (hoveredPrice.base() > 0 && hoveredPrice.effective() != hoveredPrice.base()) {
             boolean discounted = hoveredPrice.effective() < hoveredPrice.base();
             int percent = (int) ((double) hoveredPrice.effective() / hoveredPrice.base() * 100);
             lines.add(Component.translatable(discounted ? "gui.starrailexpress.shop.discount"
@@ -176,7 +182,7 @@ public final class TicketShopRenderer {
         return Math.min(preferred, available / Math.max(1, mc.font.width(text)));
     }
 
-    private record Price(int base, int effective) { }
+    private record Price(int base, int effective, boolean apple) { }
 
     public static final class PageButton extends Button {
         private final int direction;

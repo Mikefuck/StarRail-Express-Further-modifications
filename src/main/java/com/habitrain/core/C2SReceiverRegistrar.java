@@ -30,6 +30,9 @@ public final class C2SReceiverRegistrar {
     }
 
     public static void init() {
+        ServerPlayNetworking.registerGlobalReceiver(AppleShopBuyPayload.TYPE, (payload, context) ->
+                context.server().execute(() -> com.habitrain.core.game.sre.role.shop.AppleShopComponent.KEY
+                        .get(context.player()).buy(payload.index(), payload.revision(), payload.frame())));
         com.habitrain.core.config.ShaderRuleRevalidation.init();
         ServerPlayNetworking.registerGlobalReceiver(ConfigUpdatePayload.TYPE, (payload, context) ->
                 context.server().execute(() -> ConfigSubmissionService.handle(context.server(), context.player(), payload.getConfigJson())));

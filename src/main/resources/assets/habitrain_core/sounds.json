@@ -11,6 +11,12 @@
       "habitrain_core:mike_code_edit"
     ]
   },
+  "swift_wind_psycho": {
+    "subtitle": "subtitles.habitrain_core.swift_wind_psycho",
+    "sounds": [
+      "habitrain_core:swift_wind_psycho"
+    ]
+  },
   "look_my_eyes": {
     "subtitle": "对视",
     "sounds": [

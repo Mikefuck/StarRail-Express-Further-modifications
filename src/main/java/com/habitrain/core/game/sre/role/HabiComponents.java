@@ -31,6 +31,10 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
     @Override
     public void registerEntityComponentFactories(EntityComponentFactoryRegistry registry) {
         registry.registerForPlayers(
+                com.habitrain.core.game.sre.role.shop.AppleShopComponent.KEY,
+                com.habitrain.core.game.sre.role.shop.AppleShopComponent::new,
+                RespawnCopyStrategy.NEVER_COPY);
+        registry.registerForPlayers(
                 CrimeScapegoatComponent.KEY,
                 CrimeScapegoatComponent::new,
                 RespawnCopyStrategy.NEVER_COPY);
@@ -81,7 +85,7 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
                 HabiRolePlayerStateComponent.KEY,
                 HabiRolePlayerStateComponent::new,
                 RespawnCopyStrategy.ALWAYS_COPY);
-        HabiTrainCore.LOGGER.info("[HabiComponents] registered 12 player CCA keys (4 roles + 7 sins + role state)");
+        HabiTrainCore.LOGGER.info("[HabiComponents] registered 13 player CCA keys (4 roles + 7 sins + role state + apple shop)");
     }
 
     @Override
@@ -111,6 +115,7 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
 
     private static void clearRoundComponents(Player player, boolean includeFlowerGirl) {
         if (player == null) return;
+        try { com.habitrain.core.game.sre.role.shop.AppleShopComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         try { CrimeScapegoatComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         if (includeFlowerGirl) {
             try { FlowerGirlComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}

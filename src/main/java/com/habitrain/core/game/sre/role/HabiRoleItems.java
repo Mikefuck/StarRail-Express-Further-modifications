@@ -23,6 +23,7 @@ public final class HabiRoleItems {
     public static final String TAG_BOUQUET = "habitrain_bouquet";
     public static final String TAG_PEPPER_SPRAY = "habitrain_pepper_spray";
     public static final String TAG_LUST_INCENSE = "habitrain_lust_incense";
+    public static final String TAG_RED_APPLE = "habitrain_red_apple";
     public static final String TAG_MELEE_IMMUNE_UNTIL = "habitrain_melee_immune_until";
     /** 凶案替罪羊被动发放的假刀标记，回收时只删带此 tag 的刀。 */
     public static final String TAG_SCAPEGOAT_KNIFE = "habitrain_scapegoat_knife";
@@ -49,6 +50,19 @@ public final class HabiRoleItems {
         )));
         putFlag(stack, TAG_PEPPER_SPRAY, true);
         return stack;
+    }
+
+    public static ItemStack createRedApple() {
+        ItemStack stack = new ItemStack(Items.APPLE);
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.red_apple"));
+        stack.set(DataComponents.LORE, new ItemLore(List.of(
+                Component.translatable("item.habitrain_core.red_apple.desc"))));
+        putFlag(stack, TAG_RED_APPLE, true);
+        return stack;
+    }
+
+    public static boolean isRedApple(ItemStack stack) {
+        return stack != null && stack.is(Items.APPLE) && hasFlag(stack, TAG_RED_APPLE);
     }
 
     public static ItemStack createLustIncense() {

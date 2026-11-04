@@ -109,6 +109,7 @@ test {
     exclude("**/ReplacementRoleBootstrapTest.class")
     exclude("**/ApiRuntimeRegressionTest.class")
     exclude("**/ProviderConstructorFailureTest.class")
+    exclude("**/SnakeFruitRuntimeTest.class")
     dependsOn(tasks.named("stageTestRuntime"))
     // Gradle's Windows test worker corrupts non-ASCII classpath entries.
     // Stage classes and resolved jars under Gradle home before forking it.
@@ -150,6 +151,7 @@ tasks.register("apiRuntimeRegressionTest", Test) {
     classpath = tasks.named("test").get().classpath
     include("**/ApiRuntimeRegressionTest.class")
     include("**/ProviderConstructorFailureTest.class")
+    include("**/SnakeFruitRuntimeTest.class")
 }
 
 processResources {

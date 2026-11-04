@@ -45,7 +45,7 @@ import java.util.List;
 /**
  * Core's own v2 {@code role_extensions} provider.
  *
- * <p>Registers habitrain_core's five pack roles through the v2 {@code ADD}
+ * <p>Registers habitrain_core's six pack roles through the v2 {@code ADD}
  * model. Compiled instances are assigned back to {@link HabiRoles} fields so
  * existing event / CCA / shop wiring keeps working.
  */
@@ -179,6 +179,8 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
                 .build());
 
+        HabiRoles.SNAKE_FRUIT = registrar.add(snakeFruitDefinition());
+
         registerSins(registrar);
 
         // Managed behavior hooks for core's own roles (audit P1-1): they must
@@ -187,6 +189,17 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
         com.habitrain.core.game.sre.role.HabiRoleHooks.registerWith(registrar);
         com.habitrain.core.game.sre.role.sins.win.SevenSinV2Hooks.registerWith(registrar);
         com.habitrain.core.game.sre.role.sins.SevenSinV2BehaviorHooks.registerWith(registrar);
+    }
+
+    static RoleDefinition snakeFruitDefinition() {
+        return RoleDefinition.builder(HabiRoles.SNAKE_FRUIT_ID)
+                .presentation(RolePresentation.builder().color(rgb(180, 45, 55)).build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder().canSeeCoin().build())
+                .economy(RoleEconomyProfile.builder().live(HabiRoleShops::snakeFruitShop).build())
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime())
+                .build();
     }
 
     /**

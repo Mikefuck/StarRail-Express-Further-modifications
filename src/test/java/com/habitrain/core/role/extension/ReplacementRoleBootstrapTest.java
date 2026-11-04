@@ -86,6 +86,25 @@ class ReplacementRoleBootstrapTest {
     }
 
     @Test
+    void snakeFruitUsesRealV2AddAndKeepsItsOwnShop() {
+        var tx = registry.begin("habitrain_core");
+        var registrar = new ScopedRoleExtensionRegistrar(tx);
+        var role = registrar.add(CoreRoleExtensionProvider.snakeFruitDefinition());
+        tx.commit();
+        assertNotNull(role);
+        assertTrue(role.isInnocent());
+        assertFalse(role.canUseKiller());
+        assertFalse(role.isNeutrals());
+        assertTrue(role.canSeeCoin());
+        assertEquals("habitrain_core:snake_fruit", role.identifier().toString());
+        assertSame(role, TMMRoles.ROLES.get(role.identifier()));
+        var shop = role.getShopEntries();
+        assertEquals(1, shop.size());
+        assertEquals(150, shop.getFirst().price());
+        assertTrue(com.habitrain.core.game.sre.role.HabiRoleItems.isRedApple(shop.getFirst().stack()));
+    }
+
+    @Test
     void newIdReplacementAndSkillsResolveOnRemoteClientBeforeServerFreeze() {
         assertRemoteClientPublication(ReplacementIdentity.NEW_ID_WITH_ALIAS, REPLACEMENT);
     }

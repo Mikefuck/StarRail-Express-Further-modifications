@@ -1,11 +1,14 @@
 package com.habitrain.core.game.sre.mixin;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
 
 import java.util.Arrays;
 import java.util.List;
@@ -25,7 +28,8 @@ class RoleFixMixinCompatibilityTest {
             "WrathMeleeDamageMixin, net/minecraft/world/entity/player/Player",
             "WrathNunchuckHitMixin, io/wifi/starrailexpress/network/original/NunchuckHitPayload",
             "SwiftWindPsychoMixin, io/wifi/starrailexpress/cca/SREPlayerPsychoComponent",
-            "GenerateTaskMixin, io/wifi/starrailexpress/cca/SREPlayerTaskComponent"
+            "GenerateTaskMixin, io/wifi/starrailexpress/cca/SREPlayerTaskComponent",
+            "RoleShopHookMixin, io/wifi/starrailexpress/cca/SREPlayerShopComponent"
     })
     void injectionSignaturesMatchActualMinecraftAndSre(String mixinName, String targetName) throws Exception {
         ClassNode mixin = read("com/habitrain/core/game/sre/mixin/" + mixinName);
@@ -59,6 +63,46 @@ class RoleFixMixinCompatibilityTest {
             }
         }
         assertTrue(checked > 0, "No injections checked for " + mixinName);
+    }
+
+    @Test
+    void roleShopSuccessHookUsesTheSuccessfulPurchaseWrite() throws Exception {
+        String owner = "io/wifi/starrailexpress/cca/SREPlayerShopComponent";
+        ClassNode target = read(owner);
+        var tryBuy = target.methods.stream()
+                .filter(method -> "tryBuy".equals(method.name) && "(I)V".equals(method.desc))
+                .findFirst()
+                .orElseThrow();
+        long totalCostWrites = Arrays.stream(tryBuy.instructions.toArray())
+                .filter(instruction -> instruction instanceof FieldInsnNode field
+                        && field.getOpcode() == Opcodes.PUTFIELD
+                        && owner.equals(field.owner)
+                        && "total_cost".equals(field.name)
+                        && "I".equals(field.desc))
+                .count();
+        assertEquals(1, totalCostWrites, "tryBuy should have one success-path total_cost write");
+
+        ClassNode mixin = read("com/habitrain/core/game/sre/mixin/RoleShopHookMixin");
+        var handler = mixin.methods.stream()
+                .filter(method -> "habitrain$v2CapturePurchaseSuccess".equals(method.name))
+                .findFirst()
+                .orElseThrow();
+        AnnotationNode inject = handler.visibleAnnotations.stream()
+                .filter(annotation -> "Lorg/spongepowered/asm/mixin/injection/Inject;".equals(annotation.desc))
+                .findFirst()
+                .orElseThrow();
+        @SuppressWarnings("unchecked")
+        List<AnnotationNode> atValues = (List<AnnotationNode>) value(inject, "at");
+        assertNotNull(atValues);
+        assertEquals(1, atValues.size());
+        AnnotationNode at = atValues.getFirst();
+        assertEquals("FIELD", value(at, "value"));
+        assertEquals("L" + owner + ";total_cost:I", value(at, "target"));
+        assertEquals(Opcodes.PUTFIELD, value(at, "opcode"));
+        assertEquals(1, value(inject, "require"));
+        Object shift = value(at, "shift");
+        assertInstanceOf(String[].class, shift);
+        assertEquals("AFTER", ((String[]) shift)[1]);
     }
 
     private static Object value(AnnotationNode annotation, String name) {

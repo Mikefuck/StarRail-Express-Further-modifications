@@ -1,10 +1,13 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.component.SwiftWindComponent;
 import io.wifi.starrailexpress.api.SRERole;
 import io.wifi.starrailexpress.cca.SREAbilityPlayerComponent;
 import io.wifi.starrailexpress.cca.SREPlayerPsychoComponent;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -38,6 +41,10 @@ public abstract class SwiftWindPsychoMixin {
         if (cir.getReturnValueZ() && HabiRoles.isHabiRole(player, HabiRoles.SWIFT_WIND)) {
             SREAbilityPlayerComponent.KEY.get(player).resetAllCooldowns();
             SwiftWindComponent.refreshPsychoKnifeCooldown(player);
+            if (player instanceof ServerPlayer self) {
+                self.serverLevel().playSound(null, self.blockPosition(),
+                        HabiTrainCore.SWIFT_WIND_PSYCHO_SOUND, SoundSource.PLAYERS, 1.0f, 1.0f);
+            }
         }
     }
 

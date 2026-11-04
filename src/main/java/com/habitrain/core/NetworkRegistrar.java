@@ -15,6 +15,7 @@ public final class NetworkRegistrar {
         TaskConfigPayload.register(); count++;
         ActiveTaskPayload.register(); count++;
         ConfigUpdatePayload.register(); count++;
+        AppleShopBuyPayload.register(); count++;
         ConfigResultPayload.register(); count++;
         ShaderReportRequestPayload.register(); count++;
         ShaderConfigPayload.register(); count++;

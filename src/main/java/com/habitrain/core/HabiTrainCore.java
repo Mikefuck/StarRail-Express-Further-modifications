@@ -41,13 +41,15 @@ public class HabiTrainCore implements ModInitializer {
 
     // ===== 音效事件常量 =====
     // look_my_eyes 复用原版 minecraft:entity.player.levelup（见 assets/habitrain_core/sounds.json），
-    // 并没有随包分发 .ogg；只有 backpack_search / mike_code_edit 是自带音频文件。
+    // 并没有随包分发 .ogg；backpack_search / mike_code_edit / swift_wind_psycho 自带音频文件。
     public static final ResourceLocation LOOK_MY_EYES_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "look_my_eyes");
     public static final SoundEvent LOOK_MY_EYES_SOUND = SoundEvent.createVariableRangeEvent(LOOK_MY_EYES_ID);
     public static final ResourceLocation BACKPACK_SEARCH_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "backpack_search");
     public static final SoundEvent BACKPACK_SEARCH_SOUND = SoundEvent.createVariableRangeEvent(BACKPACK_SEARCH_ID);
     public static final ResourceLocation MIKE_CODE_EDIT_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "mike_code_edit");
     public static final SoundEvent MIKE_CODE_EDIT_SOUND = SoundEvent.createVariableRangeEvent(MIKE_CODE_EDIT_ID);
+    public static final ResourceLocation SWIFT_WIND_PSYCHO_ID = ResourceLocation.fromNamespaceAndPath(MOD_ID, "swift_wind_psycho");
+    public static final SoundEvent SWIFT_WIND_PSYCHO_SOUND = SoundEvent.createVariableRangeEvent(SWIFT_WIND_PSYCHO_ID);
 
     // ===== 任务 ID 常量（全限定字符串，供 mixin/追踪器按 getFullId() 匹配） =====
     public static final String TASK_EAT = MOD_ID + ":eat";
@@ -249,7 +251,8 @@ public class HabiTrainCore implements ModInitializer {
         Registry.register(BuiltInRegistries.SOUND_EVENT, LOOK_MY_EYES_ID, LOOK_MY_EYES_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, BACKPACK_SEARCH_ID, BACKPACK_SEARCH_SOUND);
         Registry.register(BuiltInRegistries.SOUND_EVENT, MIKE_CODE_EDIT_ID, MIKE_CODE_EDIT_SOUND);
-        LOGGER.info("已注册自定义音效: look_my_eyes, backpack_search, mike_code_edit");
+        Registry.register(BuiltInRegistries.SOUND_EVENT, SWIFT_WIND_PSYCHO_ID, SWIFT_WIND_PSYCHO_SOUND);
+        LOGGER.info("已注册自定义音效: look_my_eyes, backpack_search, mike_code_edit, swift_wind_psycho");
     }
 
     private void initBackpackSystem() {

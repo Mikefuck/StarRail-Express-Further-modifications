@@ -11,6 +11,11 @@ import com.habitrain.core.api.role.v2.behavior.RoleCombatHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleHookContext;
 import com.habitrain.core.api.role.v2.behavior.RoleHooks;
 import com.habitrain.core.api.role.v2.behavior.RoleLifecycleHooks;
+import com.habitrain.core.api.role.v2.behavior.RoleInteractionHooks;
+import com.habitrain.core.game.sre.role.shop.SnakeFruitService;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import com.habitrain.core.game.sre.role.component.CrimeScapegoatComponent;
 import com.habitrain.core.game.sre.role.component.FlowerGirlComponent;
 import com.habitrain.core.game.sre.role.component.MimeKillerComponent;
@@ -51,6 +56,23 @@ public final class HabiRoleHooks {
         registrar.hooks(RoleKey.of(HabiRoles.FLOWER_GIRL_ID), flowerGirl());
         registrar.hooks(RoleKey.of(HabiRoles.SWIFT_WIND_ID), swiftWind());
         registrar.hooks(RoleKey.of(HabiRoles.MIME_KILLER_ID), mimeKiller());
+        registrar.hooks(RoleKey.of(HabiRoles.SNAKE_FRUIT_ID), snakeFruit());
+    }
+
+    static RoleHooks snakeFruit() {
+        return RoleHooks.builder().interaction(new RoleInteractionHooks() {
+            @Override
+            public InteractionResult useEntity(ServerPlayer player, @Nullable Entity target,
+                                                InteractionHand hand, RoleHookContext ctx) {
+                return SnakeFruitService.use(player, target, hand);
+            }
+
+            @Override
+            public InteractionResult useItem(ServerPlayer player, ItemStack stack,
+                                              InteractionHand hand, RoleHookContext ctx) {
+                return HabiRoleItems.isRedApple(stack) ? InteractionResult.FAIL : InteractionResult.PASS;
+            }
+        }).build();
     }
 
     private static RoleHooks crimeScapegoat() {

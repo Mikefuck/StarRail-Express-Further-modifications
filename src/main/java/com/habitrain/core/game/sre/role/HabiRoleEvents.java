@@ -27,6 +27,7 @@ public final class HabiRoleEvents {
     public static void init() {
         if (registered) return;
         registered = true;
+        com.habitrain.core.game.sre.role.shop.SnakeFruitService.init();
 
         // Role-scoped hooks moved into CoreRoleExtensionProvider.registerWith
         // (audit P1-1): no process-global registrar writes.
