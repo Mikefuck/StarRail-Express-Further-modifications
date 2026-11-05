@@ -29,6 +29,7 @@ public final class SevenSinEvents {
     public static void init() {
         if (registered) return;
         registered = true;
+        com.habitrain.core.game.sre.role.sins.component.LustRestrictionService.init();
 
         // The selected victim can hold any role, so this adapter is shared like induced sleep.
         io.wifi.starrailexpress.event.OnPlayerDeath.EVENT.register((victim, reason) ->

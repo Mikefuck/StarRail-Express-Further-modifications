@@ -160,6 +160,11 @@ public final class EliminatedRestAreaService {
         return player != null && RESTING_MATCH_LEVELS.containsKey(player.getUUID());
     }
 
+    /** The physical spectator-to-adventure transition while entering rest is not a revival. */
+    public static boolean isEnteringRest(ServerPlayer player) {
+        return player != null && ENTERING_REST_PLAYERS.contains(player.getUUID());
+    }
+
     /**
      * Disconnect drops rest occupancy and prompt/cooldown state. {@link #ELIMINATED_PLAYERS}
      * and {@link #ELIMINATED_MATCH_LEVELS} are kept so the same still-running round still

@@ -1,9 +1,11 @@
 package com.habitrain.core.mixin.rest;
 
 import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
+import com.habitrain.core.game.sre.role.sins.component.LustRestrictionService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.GameType;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -14,6 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(ServerPlayer.class)
 public abstract class RestAreaServerPlayerMixin {
+    @Unique private boolean habitrain$wasPhysicalSpectator;
+    @Unique private boolean habitrain$wasResting;
 
     @Inject(method = "isSpectator", at = @At("HEAD"), cancellable = true)
     private void habitrain$keepRestingPlayersEliminated(CallbackInfoReturnable<Boolean> cir) {
@@ -25,6 +29,8 @@ public abstract class RestAreaServerPlayerMixin {
     @Inject(method = "setGameMode", at = @At("HEAD"))
     private void habitrain$restoreMatchWorldBeforeUpstreamRevival(GameType gameType,
             CallbackInfoReturnable<Boolean> cir) {
+        habitrain$wasPhysicalSpectator = ((ServerPlayer) (Object) this).gameMode.getGameModeForPlayer() == GameType.SPECTATOR;
+        habitrain$wasResting = EliminatedRestAreaService.isResting((ServerPlayer) (Object) this);
         if (gameType == GameType.ADVENTURE) {
             EliminatedRestAreaService.prepareUpstreamRevival((ServerPlayer) (Object) this);
         }
@@ -36,6 +42,12 @@ public abstract class RestAreaServerPlayerMixin {
     private void habitrain$completeUpstreamRevival(GameType gameType, CallbackInfoReturnable<Boolean> cir) {
         if (gameType == GameType.ADVENTURE) {
             EliminatedRestAreaService.finishUpstreamRevival((ServerPlayer) (Object) this);
+        }
+        ServerPlayer player = (ServerPlayer) (Object) this;
+        if ((habitrain$wasPhysicalSpectator || habitrain$wasResting)
+                && (gameType == GameType.ADVENTURE || gameType == GameType.SURVIVAL)
+                && player.isAlive() && !EliminatedRestAreaService.isEnteringRest(player)) {
+            LustRestrictionService.onRevival(player);
         }
     }
 }

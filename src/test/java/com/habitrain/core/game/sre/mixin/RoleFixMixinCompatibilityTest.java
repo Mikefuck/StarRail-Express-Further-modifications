@@ -29,7 +29,10 @@ class RoleFixMixinCompatibilityTest {
             "WrathNunchuckHitMixin, io/wifi/starrailexpress/network/original/NunchuckHitPayload",
             "SwiftWindPsychoMixin, io/wifi/starrailexpress/cca/SREPlayerPsychoComponent",
             "GenerateTaskMixin, io/wifi/starrailexpress/cca/SREPlayerTaskComponent",
-            "RoleShopHookMixin, io/wifi/starrailexpress/cca/SREPlayerShopComponent"
+            "RoleShopHookMixin, io/wifi/starrailexpress/cca/SREPlayerShopComponent",
+            "LustDeathEventsMixin, org/agmas/noellesroles/init/events/NRDeathEvents",
+            "LustDeathPenaltyMixin, org/agmas/noellesroles/component/DeathPenaltyComponent",
+            "LustRevivalMixin, io/wifi/starrailexpress/game/GameUtils"
     })
     void injectionSignaturesMatchActualMinecraftAndSre(String mixinName, String targetName) throws Exception {
         ClassNode mixin = read("com/habitrain/core/game/sre/mixin/" + mixinName);

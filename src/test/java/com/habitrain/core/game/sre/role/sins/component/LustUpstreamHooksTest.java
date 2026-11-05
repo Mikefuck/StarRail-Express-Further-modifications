@@ -51,4 +51,47 @@ class LustUpstreamHooksTest {
         assertTrue(events.methods.stream().anyMatch(m -> m.name.equals("handleDeathPenalty")
                 && m.desc.equals("(Lnet/minecraft/world/level/Level;Ljava/util/List;ZZ)V")));
     }
+
+    @Test void commandAdaptersStillTargetOnlyTheSuccessfulStopHandler() throws IOException {
+        var command = read("io/wifi/starrailexpress/content/command/SetDeathPenaltyCommand");
+        var stop = command.methods.stream().filter(m -> m.name.equals("lambda$register$3")).findFirst().orElseThrow();
+        assertEquals("(Lcom/mojang/brigadier/context/CommandContext;)I", stop.desc);
+        assertTrue((stop.access & Opcodes.ACC_STATIC) != 0);
+        assertEquals(1, calls(stop, "org/agmas/noellesroles/component/DeathPenaltyComponent", "init", "()V"));
+        assertEquals(1, calls(stop, "net/minecraft/commands/CommandSourceStack", "sendSuccess", "(Ljava/util/function/Supplier;Z)V"));
+        assertTrue(calls(stop, "net/minecraft/commands/CommandSourceStack", "getPlayer", "()Lnet/minecraft/server/level/ServerPlayer;") > 0);
+    }
+
+    @Test void upstreamAutoCleanupGatesAreIsolatedFromTheLustFlag() throws IOException {
+        var node = read("org/agmas/noellesroles/component/DeathPenaltyComponent");
+        for (String name : java.util.List.of("check", "serverTick")) {
+            var method = node.methods.stream().filter(m -> m.name.equals(name)).findFirst().orElseThrow();
+            assertEquals(1, calls(method, node.name, "hasPenalty", "()Z"), name);
+        }
+    }
+
+    @Test void lustCodeNeverWritesAnUpstreamPenaltyTimerOrResetsOtherSources() throws IOException {
+        for (String type : java.util.List.of("com/habitrain/core/game/sre/role/sins/component/LustRestrictionService",
+                "com/habitrain/core/game/sre/mixin/LustDeathPenaltyMixin")) {
+            for (var method : read(type).methods) {
+                for (var instruction : method.instructions) {
+                    if (instruction instanceof MethodInsnNode call && call.owner.equals("org/agmas/noellesroles/component/DeathPenaltyComponent")) {
+                        assertFalse(java.util.Set.of("init", "clear", "clearAll", "setPenalty", "setPenaltyWithCameraLimit", "setPenaltyWithPositionLimit").contains(call.name), type);
+                    }
+                    if (instruction instanceof org.objectweb.asm.tree.FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD) {
+                        assertNotEquals("org/agmas/noellesroles/component/DeathPenaltyComponent", field.owner);
+                    }
+                }
+            }
+        }
+    }
+
+    private static long calls(MethodNode method, String owner, String name, String descriptor) {
+        long count = 0;
+        for (var instruction : method.instructions) {
+            if (instruction instanceof MethodInsnNode call && call.owner.equals(owner)
+                    && call.name.equals(name) && call.desc.equals(descriptor)) count++;
+        }
+        return count;
+    }
 }

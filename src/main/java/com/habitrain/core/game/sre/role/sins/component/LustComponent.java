@@ -21,7 +21,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.noellesroles.init.ModEffects;
@@ -99,9 +98,10 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     }
 
     public static boolean isAliveParticipant(Player player) {
-        return player != null && !player.isRemoved()
+        return player != null && player.isAlive() && !player.isRemoved()
+                && !LustRestrictionService.isConfirmedDead(player)
                 && SREGameWorldComponent.KEY.get(player.level()).getRole(player) != null
-                && GameUtils.isPlayerAliveAndSurvival(player);
+                && GameUtils.isPlayerAliveAndSurvival(player) && !GameUtils.isPlayerEliminated(player);
     }
 
     public static boolean isCharmed(Player player) {
@@ -279,21 +279,6 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
                 state.roster = nextRoster;
                 KEY.sync(viewer);
             }
-        }
-        if (!owners.isEmpty()) applyDeathRestrictions(level, players);
-    }
-
-    /** Also handles existing spectators when Lust is revived or assigned during a round. */
-    public static void applyDeathRestrictions(Level level, List<? extends Player> victims) {
-        if (level.isClientSide() || !SREGameWorldComponent.KEY.get(level).isRunning()
-                || level.players().stream().noneMatch(p -> HabiRoles.isHabiRole(p, SevenSins.LUST)
-                && isAliveParticipant(p))) return;
-        for (Player victim : victims) {
-            if (isAliveParticipant(victim) || !victim.isSpectator()) continue;
-            var penalty = org.agmas.noellesroles.component.DeathPenaltyComponent.KEY.get(victim);
-            if (penalty.limitCameraUUID != null || penalty.limitPos != null || penalty.penaltyExpiry == -1) continue;
-            penalty.setPenalty(-1, true);
-            victim.sendSystemMessage(Component.translatable("message.habitrain_core.sin_lust.death_hidden"));
         }
     }
 

@@ -706,5 +706,9 @@
     "screen.habitrain_core.sin_lust.revive_time": "%s seconds remaining",
     "screen.habitrain_core.sin_lust.revive_accept": "Sacrifice and revive",
     "screen.habitrain_core.sin_lust.revive_decline": "Decline",
-    "screen.habitrain_core.sin_lust.offline": "Offline"
+    "screen.habitrain_core.sin_lust.offline": "Offline",
+    "message.habitrain_core.sin_lust.death_unhidden": "§aLust's identity restriction has ended.",
+    "message.habitrain_core.sin_lust.admin_exempt": "Lust's identity restriction is waived for this death, including after reconnecting.",
+    "message.habitrain_core.sin_lust.admin_other_restrictions": "Lust's restriction is waived for this death; death penalties from other sources remain active.",
+    "message.habitrain_core.sin_lust.admin_not_eliminated": "You are not eliminated in an active match; no Lust exemption is needed."
 }
