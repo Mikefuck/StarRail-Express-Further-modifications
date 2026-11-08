@@ -147,23 +147,28 @@ public final class SceneVisibilityAdvisor {
         double end;
         if (profile.getLoop().isEnabled()) {
             double distance = SceneMotionMath.effectiveLoopDistance(
-                    profile.getSourceBounds(), direction, profile.getLoop());
+                    profile.getSourceBounds(), profile.getRotationDegrees(), direction, profile.getLoop());
             start = -distance;
             end = distance;
+            // In looping mode, at least one copy always passes through the base origin pose,
+            // so the scene's own maxDistanceBlocks only needs to cover the base origin rather
+            // than the far end of an entire [-distance, +distance] loop span.
+            cullCenters.include(origin[0] + fixedCenter[0],
+                    origin[1] + fixedCenter[1],
+                    origin[2] + fixedCenter[2]);
         } else {
             start = profile.getPhaseOffsetBlocks();
             double radius = modelRadius(profile.getSourceBounds());
             double travel = profile.getSpeedBlocksPerSecond() > EPSILON
                     ? profile.getRender().getMaxDistanceBlocks() + radius : 0.0;
             end = start + travel;
+            cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * start,
+                    origin[1] + fixedCenter[1] + direction[1] * start,
+                    origin[2] + fixedCenter[2] + direction[2] * start);
+            cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * end,
+                    origin[1] + fixedCenter[1] + direction[1] * end,
+                    origin[2] + fixedCenter[2] + direction[2] * end);
         }
-
-        cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * start,
-                origin[1] + fixedCenter[1] + direction[1] * start,
-                origin[2] + fixedCenter[2] + direction[2] * start);
-        cullCenters.include(origin[0] + fixedCenter[0] + direction[0] * end,
-                origin[1] + fixedCenter[1] + direction[1] * end,
-                origin[2] + fixedCenter[2] + direction[2] * end);
 
         forEachFixedCorner(profile, corner -> {
             geometry.include(origin[0] + corner[0] + direction[0] * start,

@@ -155,6 +155,18 @@ public final class SceneAssetWritePipeline {
                       String fingerprint, MessageDigest seedDigest,
                       Runnable onReady, Consumer<String> onFailed) {
         if (entry == null || dataFile == null) return;
+        if (!ScenePartialStore.isValidSha256(entry.sha256())) {
+            if (onFailed != null) onFailed.accept("非法资产哈希");
+            return;
+        }
+        if (partialStore != null && partialStore.directory() != null) {
+            Path root = partialStore.directory().toAbsolutePath().normalize();
+            Path normalized = dataFile.toAbsolutePath().normalize();
+            if (!normalized.startsWith(root)) {
+                if (onFailed != null) onFailed.accept("部分文件路径越界");
+                return;
+            }
+        }
         if (startOffset < 0L || startOffset > entry.totalSize()) {
             if (onFailed != null) onFailed.accept("续传偏移越界");
             return;

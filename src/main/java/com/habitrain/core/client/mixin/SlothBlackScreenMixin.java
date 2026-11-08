@@ -19,7 +19,10 @@ public abstract class SlothBlackScreenMixin {
         if (client.screen instanceof com.habitrain.core.client.gui.GameEndTransitionScreen
                 || client.screen instanceof com.habitrain.core.client.gui.VoteLaunchTransitionScreen) return;
         GuiGraphics graphics = new GuiGraphics(client, client.renderBuffers().bufferSource());
-        graphics.fill(0, 0, graphics.guiWidth(), graphics.guiHeight(), 0xFF000000);
-        graphics.flush();
+        try (var state = com.habitrain.core.client.render.ClientRenderState.capture()) {
+            com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+            graphics.fill(0, 0, graphics.guiWidth(), graphics.guiHeight(), 0xFF000000);
+            graphics.flush();
+        }
     }
 }

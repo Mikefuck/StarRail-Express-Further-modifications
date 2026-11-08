@@ -14,21 +14,24 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
+import net.minecraft.Util;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * 地图预览图缓存：把服务端下发的预览图字节懒解码为 GPU 纹理。
  *
- * <p>所有解码/注册/释放都在渲染线程（屏幕 render 本就在渲染线程；接收 profile 包时
- * 只存 {@code byte[]}，不做 IO）。首次按 mapId 命中缓存时才解码一次，之后直接复用。
+ * <p>PNG 解码在有界后台队列执行；GL 注册/释放只在渲染线程执行。首次访问先返回占位图，
+ * 完成后按请求身份安装纹理，失效或断线后的结果只释放，不回填缓存。
  * 跨局/换世界时由 {@link com.habitrain.core.client.ClientLifecycleHandler#resetState()}
  * 调用 {@link #clearAll()} 释放全部动态纹理。</p>
  *
  * <p>解码失败的 mapId 进入负缓存（{@link #FAILED_IDS}），避免档案卡每帧重复
- * IO 解码 + 刷 WARN（审查 S3）；纹理注册名经 {@link #sanitizePathSegment(String)}
- * 清洗，mapId 含大写/中文/冒号等非法字符时不再抛 IllegalArgumentException。</p>
+ * IO 解码 + 刷 WARN；显式纹理 ID 不依赖外部地图名。</p>
  *
  * <p>占位图是模组静态资源贴图，走 {@code getTexture()}，不创建/不释放 DynamicTexture。</p>
  */
@@ -45,14 +48,22 @@ public final class MapVotePreviewCache {
     private static final Map<String, Decoded> CACHE =
             new LinkedHashMap<>(16, 0.75f, true);
 
-    /**
-     * 被逐出但尚未释放的纹理：OptionVoteScreen 交叉淡入（约 200ms）期间旧图仍可能
-     * 在绘制，立即 close 会释放仍在使用的 GL id（审查 L26）。延迟约 20 帧（> 淡入
-     * 时长）后统一释放；clearAll 时立即释放。
-     */
-    private static final List<Decoded> PENDING_CLOSE = new ArrayList<>();
-    private static int deferCounter = 0;
-    private static final int CLOSE_DEFER_FRAMES = 20;
+    // Entries stay alive through deferred GUI batches and preview fades. Maintenance runs
+    // once per client tick, never once per getOrDecode call/card.
+    private static final List<PendingClose> PENDING_CLOSE = new ArrayList<>();
+    private static final long CLOSE_GRACE_MS = 500L;
+    private record PendingClose(Decoded decoded, long closeAfter) {}
+    private static final Map<String, Object> IN_FLIGHT = new LinkedHashMap<>();
+    private static final ThreadPoolExecutor DECODER = new ThreadPoolExecutor(1, 1, 0L,
+            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_ENTRIES), task -> {
+        Thread thread = new Thread(task, "HabiTrain-PreviewDecode");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private static long textureSequence;
+    private static final Object HANDOFF_LOCK = new Object();
+    private static final Set<NativeImage> AWAITING_UPLOAD = new HashSet<>();
+    private static boolean stopping;
 
     private MapVotePreviewCache() {}
 
@@ -65,7 +76,6 @@ public final class MapVotePreviewCache {
         if (mapId == null || mapId.isBlank()) {
             return null;
         }
-        flushPendingCloses();
         Decoded cached = CACHE.get(mapId);
         if (cached != null) {
             return cached;
@@ -76,21 +86,78 @@ public final class MapVotePreviewCache {
         if (bytes == null || bytes.length == 0) {
             return null;
         }
-        Decoded decoded = decode(mapId, bytes);
-        if (decoded == null) {
+        if (IN_FLIGHT.containsKey(mapId)) return null;
+        if (!PreviewImageLimits.accepts(bytes)) {
             FAILED_IDS.add(mapId);
             return null;
         }
-        CACHE.put(mapId, decoded);
-        if (CACHE.size() > MAX_ENTRIES) {
-            var it = CACHE.entrySet().iterator();
-            if (it.hasNext()) {
-                Decoded evicted = it.next().getValue();
-                PENDING_CLOSE.add(evicted);
+        Object ticket = new Object();
+        IN_FLIGHT.put(mapId, ticket);
+        byte[] snapshot = bytes.clone();
+        try {
+            DECODER.execute(() -> {
+                NativeImage decoded = null;
+                try {
+                    decoded = NativeImage.read(new ByteArrayInputStream(snapshot));
+                    NativeImage image = decoded;
+                    synchronized (HANDOFF_LOCK) {
+                        if (stopping) return; // finally closes the untransferred native image
+                        AWAITING_UPLOAD.add(image);
+                        Minecraft.getInstance().execute(() -> {
+                            synchronized (HANDOFF_LOCK) {
+                                if (!AWAITING_UPLOAD.remove(image)) return;
+                            }
+                            install(mapId, ticket, image);
+                        });
+                        decoded = null;
+                    }
+                } catch (Exception failure) {
+                    HabiTrainCore.LOGGER.warn("Failed to decode map preview '{}'", mapId, failure);
+                    Minecraft.getInstance().execute(() -> {
+                        if (IN_FLIGHT.remove(mapId, ticket)) FAILED_IDS.add(mapId);
+                    });
+                } finally {
+                    if (decoded != null) decoded.close();
+                }
+            });
+        } catch (RejectedExecutionException busy) {
+            IN_FLIGHT.remove(mapId, ticket); // retry on a later frame
+        }
+        return null;
+    }
+
+    private static void install(String mapId, Object ticket, NativeImage image) {
+        if (!IN_FLIGHT.remove(mapId, ticket)) {
+            image.close();
+            return;
+        }
+        DynamicTexture texture = null;
+        ResourceLocation id = HabiTrainCore.id("map_vote_preview/" + Long.toUnsignedString(++textureSequence));
+        try {
+            int width = image.getWidth(), height = image.getHeight();
+            texture = new DynamicTexture(image);
+            image = null;
+            // Explicit IDs avoid TextureManager's unbounded dynamic-prefix counters.
+            Minecraft.getInstance().getTextureManager().register(id, texture);
+            CACHE.put(mapId, new Decoded(id, texture, width, height));
+            texture = null;
+            if (CACHE.size() > MAX_ENTRIES) {
+                var it = CACHE.entrySet().iterator();
+                retire(it.next().getValue());
                 it.remove();
             }
+        } catch (Exception failure) {
+            FAILED_IDS.add(mapId);
+            Minecraft.getInstance().getTextureManager().release(id);
+            HabiTrainCore.LOGGER.warn("Failed to upload map preview '{}'", mapId, failure);
+        } finally {
+            if (texture != null) texture.close();
+            if (image != null) image.close();
         }
-        return decoded;
+    }
+
+    private static void retire(Decoded decoded) {
+        PENDING_CLOSE.add(new PendingClose(decoded, Util.getMillis() + CLOSE_GRACE_MS));
     }
 
     /** 占位贴图（模组静态资源，不随缓存释放）。 */
@@ -105,69 +172,50 @@ public final class MapVotePreviewCache {
         if (mapId == null || mapId.isBlank()) {
             return;
         }
+        IN_FLIGHT.remove(mapId);
         FAILED_IDS.remove(mapId);
         Decoded old = CACHE.remove(mapId);
         if (old != null) {
-            PENDING_CLOSE.add(old);
+            retire(old);
         }
     }
 
     /** 释放全部动态纹理（跨局/换世界）。 */
     public static void clearAll() {
+        IN_FLIGHT.clear();
+        DECODER.getQueue().clear();
+        synchronized (HANDOFF_LOCK) {
+            for (NativeImage image : AWAITING_UPLOAD) image.close();
+            AWAITING_UPLOAD.clear();
+        }
         for (Decoded entry : CACHE.values()) {
             entry.close();
         }
         CACHE.clear();
-        for (Decoded entry : PENDING_CLOSE) {
-            entry.close();
+        for (PendingClose entry : PENDING_CLOSE) {
+            entry.decoded.close();
         }
         PENDING_CLOSE.clear();
-        deferCounter = 0;
         FAILED_IDS.clear();
     }
 
-    /** 每帧推进延迟释放计数；超过延迟帧数后释放被逐出的纹理。 */
-    private static void flushPendingCloses() {
-        if (PENDING_CLOSE.isEmpty()) {
-            return;
-        }
-        if (++deferCounter >= CLOSE_DEFER_FRAMES) {
-            for (Decoded entry : PENDING_CLOSE) {
-                entry.close();
+    /** Run on the render thread even when no preview is visible. */
+    public static void tick() {
+        long now = Util.getMillis();
+        var it = PENDING_CLOSE.iterator();
+        while (it.hasNext()) {
+            PendingClose entry = it.next();
+            if (now >= entry.closeAfter()) {
+                entry.decoded().close();
+                it.remove();
             }
-            PENDING_CLOSE.clear();
-            deferCounter = 0;
         }
     }
 
-    /**
-     * 把 mapId 清洗成合法的 ResourceLocation 路径段：小写化、非法字符（含
-     * {@code :}、大写、中文、空格）替换为下划线，并追加原 id 的 hash 后缀防
-     * 清洗后碰撞。
-     */
-    private static String sanitizePathSegment(String mapId) {
-        String cleaned = mapId.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_");
-        return cleaned + "_" + Integer.toHexString(mapId.hashCode());
-    }
-
-    @Nullable
-    private static Decoded decode(String mapId, byte[] bytes) {
-        DynamicTexture texture = null;
-        try {
-            NativeImage image = NativeImage.read(new ByteArrayInputStream(bytes));
-            int width = image.getWidth();
-            int height = image.getHeight();
-            texture = new DynamicTexture(image);
-            ResourceLocation id = Minecraft.getInstance().getTextureManager()
-                    .register("map_vote_preview/" + sanitizePathSegment(mapId), texture);
-            return new Decoded(id, texture, width, height);
-        } catch (Exception e) {
-            if (texture != null) {
-                texture.close();
-            }
-            HabiTrainCore.LOGGER.warn("[MapVotePreviewCache] failed to decode preview for '{}'", mapId, e);
-            return null;
-        }
+    public static void shutdown() {
+        synchronized (HANDOFF_LOCK) { stopping = true; }
+        clearAll();
+        DECODER.shutdownNow();
     }
 
     /** 解码后的纹理及其原始像素尺寸（绘制 UV 需要）。 */
@@ -176,7 +224,9 @@ public final class MapVotePreviewCache {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null && texture != null) {
                 try {
+                    // TextureManager.release removes the registration and closes the AbstractTexture.
                     mc.getTextureManager().release(texture);
+                    return;
                 } catch (Exception ignored) {
                 }
             }

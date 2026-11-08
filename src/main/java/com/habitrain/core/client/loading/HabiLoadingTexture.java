@@ -21,10 +21,26 @@ import java.io.InputStream;
 public class HabiLoadingTexture extends SimpleTexture {
 
     private final String classpathResource;
+    private boolean loaded;
 
     public HabiLoadingTexture(ResourceLocation location, String classpathResource) {
         super(location);
         this.classpathResource = classpathResource;
+    }
+
+    @Override
+    public void load(ResourceManager resourceManager) throws IOException {
+        if (this.loaded && this.id != -1) {
+            return;
+        }
+        super.load(resourceManager);
+        this.loaded = true;
+    }
+
+    @Override
+    public void close() {
+        this.loaded = false;
+        super.close();
     }
 
     private InputStream openStream() {

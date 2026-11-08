@@ -77,4 +77,16 @@ class TicketUiGeometryTest {
         }
         assertEquals(1, TicketUiGeometry.pages(0, 0));
     }
+
+    @Test
+    void backpackAndSkinManagementStampsDoNotRequireOpPermissions() {
+        var backpackLabel = net.minecraft.network.chat.Component.translatable("screen.limited_inventory.menu.backpack");
+        var skinLabel = net.minecraft.network.chat.Component.translatable("screen.limited_inventory.menu.skin_manage");
+        assertFalse(TicketInventoryLayer.isRestricted(backpackLabel));
+        assertFalse(TicketInventoryLayer.isRestricted(skinLabel));
+        assertFalse(TicketInventoryLayer.isLocked(TicketInventoryLayer.keyOf(backpackLabel),
+                TicketInventoryLayer.isRestricted(backpackLabel)));
+        assertFalse(TicketInventoryLayer.isLocked(TicketInventoryLayer.keyOf(skinLabel),
+                TicketInventoryLayer.isRestricted(skinLabel)));
+    }
 }

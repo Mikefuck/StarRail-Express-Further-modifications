@@ -69,13 +69,17 @@ public final class SceneLoopSettings {
 
     public static SceneLoopSettings fromJson(JsonObject json) {
         if (json == null) return createDefault();
-        boolean enabled = !json.has("enabled") || json.get("enabled").getAsBoolean();
-        SceneLoopDistanceMode mode = json.has("distanceMode")
+        boolean enabled = !isPrimitive(json, "enabled") || json.get("enabled").getAsBoolean();
+        SceneLoopDistanceMode mode = isPrimitive(json, "distanceMode")
                 ? SceneLoopDistanceMode.fromSerialized(json.get("distanceMode").getAsString())
                 : SceneLoopDistanceMode.CUSTOM;
-        double distance = json.has("distanceBlocks") ? json.get("distanceBlocks").getAsDouble() : DEFAULT_DISTANCE;
-        int copies = json.has("copies") ? json.get("copies").getAsInt() : DEFAULT_COPIES;
+        double distance = isPrimitive(json, "distanceBlocks") ? json.get("distanceBlocks").getAsDouble() : DEFAULT_DISTANCE;
+        int copies = isPrimitive(json, "copies") ? json.get("copies").getAsInt() : DEFAULT_COPIES;
         return new SceneLoopSettings(enabled, mode, distance, copies);
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        return json.has(key) && json.get(key).isJsonPrimitive();
     }
 
     @Override

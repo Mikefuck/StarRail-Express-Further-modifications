@@ -106,6 +106,12 @@ public final class SceneOriginPlacementController {
         this.active = true;
     }
 
+    /** Opening another screen or putting away the tool abandons the placement session. */
+    public void tick(Minecraft client) {
+        if (isActive() && (client.level == null || client.player == null
+                || client.screen != null || !isHoldingTool())) reset();
+    }
+
     public synchronized boolean isActive() {
         return active;
     }
@@ -115,7 +121,7 @@ public final class SceneOriginPlacementController {
     }
 
     public synchronized double[] getDisplayOrigin() {
-        return displayOrigin;
+        return displayOrigin.clone();
     }
 
     public synchronized com.habitrain.core.api.scene.model.SceneOrbitAxis getOrbitAxis() {
@@ -145,6 +151,7 @@ public final class SceneOriginPlacementController {
     public synchronized int sizeZ() { return sizeZ; }
 
     public synchronized void reset() {
+        boolean wasActive = active;
         active = false;
         returnPage = null;
         returnScreen = null;
@@ -152,6 +159,10 @@ public final class SceneOriginPlacementController {
         sizeY = 0;
         sizeZ = 0;
         targetType = TargetType.PLACE_ORIGIN;
+        if (wasActive) {
+            com.habitrain.core.scene.client.SceneClientRuntime.stopPreview();
+            com.habitrain.core.config.ConfigManager.getInstance().endClientEditing();
+        }
     }
 
     private boolean isHoldingTool() {
@@ -175,25 +186,29 @@ public final class SceneOriginPlacementController {
         }
 
         Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            com.habitrain.core.config.ConfigManager.getInstance().endClientEditing();
+            return;
+        }
         if (type == TargetType.PLACE_ORIGIN) {
             if (page != null) page.applyPlacedOrigin(targetPos);
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.translatable(
-                        "hud.habitrain_core.scene_tool.origin_confirmed",
-                        targetPos.getX(), targetPos.getY(), targetPos.getZ())
-                        .withStyle(ChatFormatting.GREEN), true);
-            }
+            mc.player.displayClientMessage(Component.translatable(
+                    "hud.habitrain_core.scene_tool.origin_confirmed",
+                    targetPos.getX(), targetPos.getY(), targetPos.getZ())
+                    .withStyle(ChatFormatting.GREEN), true);
         } else {
             double cx = targetPos.getX() + 0.5;
             double cy = targetPos.getY() + 0.5;
             double cz = targetPos.getZ() + 0.5;
             if (page != null) page.applyPlacedOrbitCenter(cx, cy, cz);
-            if (mc.player != null) {
-                mc.player.displayClientMessage(Component.translatable(
-                        "hud.habitrain_core.scene_tool.center_confirmed", cx, cy, cz)
-                        .withStyle(ChatFormatting.GREEN), true);
-            }
+            mc.player.displayClientMessage(Component.translatable(
+                    "hud.habitrain_core.scene_tool.center_confirmed", cx, cy, cz)
+                    .withStyle(ChatFormatting.GREEN), true);
         }
-        if (screen != null) mc.setScreen(screen);
+        if (screen != null) {
+            mc.setScreen(screen);
+        } else {
+            com.habitrain.core.config.ConfigManager.getInstance().endClientEditing();
+        }
     }
 }

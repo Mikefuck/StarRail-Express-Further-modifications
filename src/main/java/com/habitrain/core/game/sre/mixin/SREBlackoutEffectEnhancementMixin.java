@@ -2,10 +2,14 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.config.ConfigManager;
 import io.wifi.starrailexpress.cca.SREWorldBlackoutComponent;
+import net.minecraft.core.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Mixin - 停电黑暗时长增强（可逆，默认关闭）。
@@ -33,12 +37,27 @@ public abstract class SREBlackoutEffectEnhancementMixin {
     @Shadow
     public int blackOutRemainingTicks;
 
+    /** 记录最近一次 triggerBlackout 请求的 duration，兜底无灯方块地图（blackOutRemainingTicks==0）时仍能区分普通停电与忍者关灯。 */
+    @Unique
+    private int habitrain$lastRequestedDuration = 0;
+
     /** 普通停电阈值：超过 200 tick 视为普通/永久停电；恰 200 tick 视为忍者关灯。 */
     private static final int NINJA_BLACKOUT_TICKS = 200;
     /** 普通停电增强后的黑暗+失明时长（20 秒）。 */
     private static final int NORMAL_BLACKOUT_EFFECT_TICKS = 400;
     /** 忍者关灯保持原版 10 秒黑暗。 */
     private static final int NINJA_BLACKOUT_EFFECT_TICKS = 200;
+
+    @Inject(method = "triggerBlackout(ZI)Z", at = @At("HEAD"), remap = false)
+    private void habitrain$captureDurationGlobal(boolean haveSound, int duration, CallbackInfoReturnable<Boolean> cir) {
+        this.habitrain$lastRequestedDuration = duration;
+    }
+
+    @Inject(method = "triggerBlackout(Lnet/minecraft/core/BlockPos;IZI)Z", at = @At("HEAD"))
+    private void habitrain$captureDurationRanged(BlockPos center, int distance, boolean haveSound, int duration,
+                                                 CallbackInfoReturnable<Boolean> cir) {
+        this.habitrain$lastRequestedDuration = duration;
+    }
 
     @ModifyArg(
             method = "playBlackoutSound",
@@ -66,7 +85,8 @@ public abstract class SREBlackoutEffectEnhancementMixin {
         if (!ConfigManager.getInstance().isBlackoutEffectEnhancementEnabled()) {
             return original;
         }
-        if (blackOutRemainingTicks > NINJA_BLACKOUT_TICKS) {
+        int effectiveDuration = Math.max(blackOutRemainingTicks, habitrain$lastRequestedDuration);
+        if (effectiveDuration > NINJA_BLACKOUT_TICKS) {
             return NORMAL_BLACKOUT_EFFECT_TICKS;
         }
         return NINJA_BLACKOUT_EFFECT_TICKS;

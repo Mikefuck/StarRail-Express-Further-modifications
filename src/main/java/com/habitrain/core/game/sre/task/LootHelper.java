@@ -28,6 +28,11 @@ public class LootHelper {
      *                    Inventory.add() 消耗 stack 后再打标打到空栈上。
      */
     public static ItemStack giveRandomBackpackItem(ServerPlayer player, String grantTaskId) {
+        return giveRandomBackpackItem(player, grantTaskId, null);
+    }
+
+    public static ItemStack giveRandomBackpackItem(ServerPlayer player, String grantTaskId,
+                                                    com.habitrain.core.api.TaskInstance task) {
         try {
             var gameWorld = SREGameWorldComponent.KEY.get(player.level());
             var roles = gameWorld.getRoles();
@@ -81,7 +86,11 @@ public class LootHelper {
             if (item != Items.AIR) {
                 ItemStack stack = new ItemStack(item, 1);
                 if (grantTaskId != null && !grantTaskId.isBlank()) {
-                    com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(stack, grantTaskId);
+                    if (task != null) {
+                        com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(stack, player, task);
+                    } else {
+                        com.habitrain.core.api.ItemReclaimHelper.tagGrantedItem(stack, grantTaskId, player.getUUID());
+                    }
                 }
                 if (!player.getInventory().add(stack)) {
                     player.drop(stack, false);

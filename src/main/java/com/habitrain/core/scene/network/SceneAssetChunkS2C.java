@@ -7,6 +7,8 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
+import java.util.Locale;
+
 /**
  * S2C 网络包 - 场景资产分片数据下发（携带分片偏移、总大小、数据与 CRC32）。
  *
@@ -31,7 +33,7 @@ public final class SceneAssetChunkS2C implements CustomPacketPayload {
 
     public SceneAssetChunkS2C(String sha256, long transferId, long requestId, long chunkOffset,
                               long totalSize, byte[] data, long crc32) {
-        this.sha256 = sha256 != null ? sha256.trim().toLowerCase() : "";
+        this.sha256 = sha256 != null ? sha256.trim().toLowerCase(Locale.ROOT) : "";
         this.transferId = transferId;
         this.requestId = Math.max(0L, requestId);
         this.chunkOffset = chunkOffset;
@@ -57,7 +59,7 @@ public final class SceneAssetChunkS2C implements CustomPacketPayload {
             long offset = buf.readLong();
             long total = buf.readLong();
             int len = buf.readInt();
-            if (len < 0 || len > MAX_CHUNK_BYTES) {
+            if (len < 0 || len > MAX_CHUNK_BYTES || len > buf.readableBytes()) {
                 throw new DecoderException("Invalid chunk length: " + len);
             }
             byte[] bytes = new byte[len];

@@ -23,6 +23,7 @@ import net.fabricmc.loader.impl.metadata.BuiltinModMetadata;
 import net.minecraft.SharedConstants;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.Bootstrap;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class ReplacementRoleBootstrapTest {
     private RoleExtensionRegistry.RegistrationSnapshot before;
     @TempDir
     static Path configDirectory;
+    private static Object previousConfigDir;
+    private static Object previousSreContainer;
+    private static boolean hadSreContainer;
 
     @BeforeAll
     @SuppressWarnings("unchecked")
@@ -53,6 +57,7 @@ class ReplacementRoleBootstrapTest {
         var loader = FabricLoader.getInstance();
         var configDir = loader.getClass().getDeclaredField("configDir");
         configDir.setAccessible(true);
+        previousConfigDir = configDir.get(loader);
         configDir.set(loader, configDirectory);
         var metadata = new BuiltinModMetadata.Builder("starrailexpress", "4.3.0").build();
         var container = (ModContainer) Proxy.newProxyInstance(ModContainer.class.getClassLoader(),
@@ -60,11 +65,32 @@ class ReplacementRoleBootstrapTest {
                     if (method.getName().equals("getMetadata")) return metadata;
                     throw new AssertionError("Unexpected loader query: " + method.getName());
                 });
-        var modMap = loader.getClass().getDeclaredField("modMap");
-        modMap.setAccessible(true);
-        ((Map<String, Object>) modMap.get(loader)).put("starrailexpress", container);
+        var modMapField = loader.getClass().getDeclaredField("modMap");
+        modMapField.setAccessible(true);
+        Map<String, Object> modMap = (Map<String, Object>) modMapField.get(loader);
+        hadSreContainer = modMap.containsKey("starrailexpress");
+        previousSreContainer = modMap.put("starrailexpress", container);
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+    }
+
+    @AfterAll
+    @SuppressWarnings("unchecked")
+    static void restoreFabricLoaderState() throws ReflectiveOperationException {
+        TMMRoles.ROLES.remove(TARGET);
+        TMMRoles.ROLES.remove(REPLACEMENT);
+        var loader = FabricLoader.getInstance();
+        var configDir = loader.getClass().getDeclaredField("configDir");
+        configDir.setAccessible(true);
+        configDir.set(loader, previousConfigDir);
+        var modMapField = loader.getClass().getDeclaredField("modMap");
+        modMapField.setAccessible(true);
+        Map<String, Object> modMap = (Map<String, Object>) modMapField.get(loader);
+        if (hadSreContainer) {
+            modMap.put("starrailexpress", previousSreContainer);
+        } else {
+            modMap.remove("starrailexpress");
+        }
     }
 
     @BeforeEach

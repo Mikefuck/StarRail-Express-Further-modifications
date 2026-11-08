@@ -48,12 +48,7 @@ public abstract class LightningDraftStateRoleExtensionMixin implements RoleRotat
     public Map<UUID, List<RoleInstance>> roundCandidates;
 
     @Redirect(
-            method = {
-                    "initializeRolePool",
-                    "startNextRound",
-                    "selectRandomRole",
-                    "adjustRoles"
-            },
+            method = "*",
             at = @At(
                     value = "FIELD",
                     target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
@@ -65,22 +60,21 @@ public abstract class LightningDraftStateRoleExtensionMixin implements RoleRotat
     }
 
     @Redirect(
-            method = {
-                    "lambda$initializeRolePool$1",
-                    "lambda$initializeRolePool$2",
-                    "lambda$initializeRolePool$3",
-                    "lambda$initializeRolePool$4",
-                    "lambda$initializeRolePool$5"
-            },
+            method = "initializeRolePool",
             at = @At(
-                    value = "FIELD",
-                    target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
+                    value = "INVOKE",
+                    target = "Lorg/agmas/harpymodloader/commands/RoleCountManager;getVigilanteCount(I)I"
             ),
-            require = 0,
+            require = 1,
             remap = false
     )
-    private static SRERole habitrain$resolveCivilianInLambda() {
-        return SreRoleResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
+    private static int habitrain$resolveVigilanteCount(int playerCount) {
+        int forced = org.agmas.harpymodloader.commands.RoleCountManager.forcedVigilanteCount;
+        if (forced >= 0) {
+            return Math.min(forced, playerCount);
+        }
+        int divisor = Math.max(1, com.habitrain.core.config.ConfigManager.getInstance().getSheriffCountDivisor());
+        return playerCount / divisor;
     }
 
     @Override

@@ -133,7 +133,8 @@ public final class SceneAmbientSoundController {
 
         SceneSoundSettings current = activeSettings.get(trackKey);
         MovingSceneLoopSound playing = sounds.get(trackKey);
-        if (playing != null && settings.equals(current)) {
+        if (playing != null && !playing.isStopped() && !playing.fadingOut
+                && mc.getSoundManager().isActive(playing) && settings.equals(current)) {
             return;
         }
 
@@ -203,6 +204,7 @@ public final class SceneAmbientSoundController {
 
     /** 某音轨是否正在播放。 */
     public synchronized boolean isPlaying(String key) {
-        return sounds.containsKey(Objects.requireNonNullElse(key, PRIMARY_KEY));
+        MovingSceneLoopSound sound = sounds.get(Objects.requireNonNullElse(key, PRIMARY_KEY));
+        return sound != null && !sound.isStopped();
     }
 }

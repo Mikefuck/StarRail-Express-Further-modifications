@@ -53,9 +53,64 @@ public class GreedPouchDropMixin {
         ServerPlayer self = (ServerPlayer) (Object) this;
         if (!GreedPouchItem.isBoundPouchOf(self, stack)) return;
         cir.setReturnValue(null);
-        // Safety net: if caller already removed the stack from inv, restore it.
-        if (!GreedPouchItem.playerHasOwnPouch(self) && !stack.isEmpty()) {
-            if (self.getInventory().add(stack.copy())) {
+        int stillInSlot = -1;
+        boolean hasOtherOwnPouch = false;
+        for (int i = 0; i < self.getInventory().getContainerSize(); i++) {
+            ItemStack s = self.getInventory().getItem(i);
+            if (s == stack) {
+                stillInSlot = i;
+            } else if (GreedPouchItem.isBoundPouchOf(self, s)) {
+                hasOtherOwnPouch = true;
+            }
+        }
+        // Safety net: if caller already removed the stack from inv, or is about to clear
+        // stillInSlot immediately after drop() returns (e.g. GameMode.killPlayer / dropAll), restore it.
+        if (!hasOtherOwnPouch && !stack.isEmpty()) {
+            ItemStack copy = stack.copy();
+            int preferredSlot = stillInSlot >= 0 ? stillInSlot : 0;
+            if (stillInSlot >= 0) {
+                boolean rescued = false;
+                // 1. Prefer an empty slot before stillInSlot (already visited by 0..N loops, never cleared again).
+                for (int j = 0; j < stillInSlot; j++) {
+                    if (self.getInventory().getItem(j).isEmpty()) {
+                        self.getInventory().setItem(j, copy);
+                        rescued = true;
+                        break;
+                    }
+                }
+                // 2. If stillInSlot == 0 (default slot) or 0..stillInSlot-1 are full, park in a slot > stillInSlot.
+                //    If caller only clears stillInSlot, copy stays in j; if caller loops to j after clearing
+                //    stillInSlot, step 1 will move copy back into stillInSlot (which is then empty and < j).
+                if (!rescued) {
+                    for (int j = stillInSlot + 1; j < self.getInventory().items.size(); j++) {
+                        if (self.getInventory().items.get(j).isEmpty()) {
+                            self.getInventory().items.set(j, copy);
+                            rescued = true;
+                            break;
+                        }
+                    }
+                }
+                if (!rescued && self.getInventory().offhand.get(0).isEmpty() && stillInSlot != 40) {
+                    self.getInventory().offhand.set(0, copy);
+                    rescued = true;
+                }
+                // 3. If all slots are occupied (e.g. stillInSlot == 0 and slots 1..35 + offhand are full),
+                //    displace slot 1 so at i = 1 the pouch bounces back into slot 0.
+                if (!rescued && self.getInventory().items.size() > 1) {
+                    int targetSlot = stillInSlot == 0 ? 1 : 0;
+                    ItemStack displaced = self.getInventory().items.get(targetSlot);
+                    if (!displaced.isEmpty()) {
+                        self.drop(displaced, throwRandomly, retainOwnership);
+                    }
+                    self.getInventory().items.set(targetSlot, copy);
+                }
+                if (self.getServer() != null) {
+                    self.getServer().tell(new net.minecraft.server.TickTask(
+                            self.getServer().getTickCount(),
+                            () -> com.habitrain.core.game.sre.role.sins.component.GreedComponent
+                                    .ensureSingleBoundPouch(self, copy, preferredSlot)));
+                }
+            } else if (self.getInventory().add(copy)) {
                 stack.setCount(0);
             } else {
                 // Inventory full: force the pouch back into slot 0 and preserve
@@ -65,7 +120,7 @@ public class GreedPouchDropMixin {
                 if (!displaced.isEmpty()) {
                     self.drop(displaced, false, false);
                 }
-                self.getInventory().setItem(0, stack.copy());
+                self.getInventory().setItem(0, copy);
                 stack.setCount(0);
             }
         }

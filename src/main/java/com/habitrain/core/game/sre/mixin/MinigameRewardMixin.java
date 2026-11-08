@@ -34,24 +34,22 @@ public class MinigameRewardMixin {
             if (entry == null) return;
 
             if (entry.hasGoldReward) {
-                var shop = SREPlayerShopComponent.KEY.get(player);
-                if (shop != null) {
+                SREPlayerShopComponent.KEY.maybeGet(player).ifPresent(shop -> {
                     shop.addToBalance(entry.goldReward);
                     LOGGER.info("[MinigameReward] 自定义金币奖励: {} 给 {} (小游戏={})",
                             entry.goldReward, player.getName().getString(), minigameId);
-                }
+                });
             }
             if (entry.hasEmotionReward) {
-                var mood = SREPlayerMoodComponent.KEY.get(player);
-                if (mood != null) {
+                SREPlayerMoodComponent.KEY.maybeGet(player).ifPresent(mood -> {
                     mood.addMood(entry.emotionReward);
                     LOGGER.info("[MinigameReward] 自定义情绪奖励: {} 给 {} (小游戏={})",
                             String.format("%.2f", entry.emotionReward),
                             player.getName().getString(), minigameId);
-                }
+                });
             }
-        } catch (Throwable t) {
-            LOGGER.warn("[MinigameReward] 发放自定义奖励失败", t);
+        } catch (Exception e) {
+            LOGGER.warn("[MinigameReward] 发放自定义奖励失败", e);
         }
     }
 }

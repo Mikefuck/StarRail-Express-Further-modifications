@@ -78,8 +78,10 @@ public final class CoreLifecycle {
         try {
             var ownSource = CoreLifecycle.class.getProtectionDomain().getCodeSource();
             var callerSource = owner.getProtectionDomain().getCodeSource();
-            return owner.getClassLoader() == CoreLifecycle.class.getClassLoader()
+            return owner.getClassLoader() != null
+                    && owner.getClassLoader() == CoreLifecycle.class.getClassLoader()
                     && ownSource != null && callerSource != null
+                    && ownSource.getLocation() != null && callerSource.getLocation() != null
                     && ownSource.getLocation().toURI().normalize().equals(callerSource.getLocation().toURI().normalize());
         } catch (Exception failure) {
             return false;

@@ -119,7 +119,7 @@ public final class RoleSnapshot {
         java.util.Set<ResourceLocation> seen = new java.util.HashSet<>();
         while (cur != null && aliases.containsKey(cur)) {
             if (!seen.add(cur)) {
-                break;
+                return RoleKey.of(id);
             }
             cur = aliases.get(cur);
         }

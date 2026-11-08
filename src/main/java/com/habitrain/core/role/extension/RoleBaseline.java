@@ -54,6 +54,7 @@ public final class RoleBaseline {
     private final Set<SRERole> opposingRoles;
     private final Set<SRERole> relatedRoles;
     private final List<RoleSkill.Definition> skills;
+    private final org.agmas.noellesroles.config.SpawnInfoConfig.SpawnInfo spawnInfo;
 
     RoleBaseline(SRERole role,
                  int defaultMaxCount, int defaultEnableChance,
@@ -73,6 +74,7 @@ public final class RoleBaseline {
                  Set<SRERole> relatedRoles,
                  List<RoleSkill.Definition> skills) {
         this.role = role;
+        this.spawnInfo = copySpawnInfo(role.spawnInfo);
         this.defaultMaxCount = defaultMaxCount;
         this.defaultEnableChance = defaultEnableChance;
         this.defaultEnableNeedPlayerCount = defaultEnableNeedPlayerCount;
@@ -139,6 +141,19 @@ public final class RoleBaseline {
     public Set<SRERole> opposingRoles() { return opposingRoles; }
     public Set<SRERole> relatedRoles() { return relatedRoles; }
     public List<RoleSkill.Definition> skills() { return skills; }
+
+    /** A fresh copy of the configured spawn values actually read upstream. */
+    public org.agmas.noellesroles.config.SpawnInfoConfig.SpawnInfo spawnInfo() {
+        return copySpawnInfo(spawnInfo);
+    }
+
+    private static org.agmas.noellesroles.config.SpawnInfoConfig.SpawnInfo copySpawnInfo(
+            org.agmas.noellesroles.config.SpawnInfoConfig.SpawnInfo source) {
+        if (source == null) return null;
+        return new org.agmas.noellesroles.config.SpawnInfoConfig.SpawnInfo(
+                source.minEnabledPlayer, source.maxEnabledPlayer, source.enableChance,
+                source.maxSpawn, new java.util.ArrayList<>(source.map));
+    }
 
     /** Converts captured upstream skills into their stable v2 representation. */
     public List<RoleSkillSpec> skillSpecs() {

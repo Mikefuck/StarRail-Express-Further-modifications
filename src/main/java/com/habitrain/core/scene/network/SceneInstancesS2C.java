@@ -79,13 +79,13 @@ public record SceneInstancesS2C(List<SceneInstance> upserts, List<String> remova
             boolean clear = buf.readBoolean();
 
             int removalCount = readCount(buf, MAX_ENTRIES_PER_PACKET, "removals");
-            List<String> removals = new ArrayList<>(removalCount);
+            List<String> removals = new ArrayList<>(Math.min(removalCount, 64));
             for (int i = 0; i < removalCount; i++) {
                 removals.add(ScenePacketIo.readId(buf));
             }
 
             int upsertCount = readCount(buf, MAX_ENTRIES_PER_PACKET, "upserts");
-            List<SceneInstance> upserts = new ArrayList<>(upsertCount);
+            List<SceneInstance> upserts = new ArrayList<>(Math.min(upsertCount, 64));
             for (int i = 0; i < upsertCount; i++) {
                 upserts.add(readInstance(buf));
             }
@@ -130,6 +130,9 @@ public record SceneInstancesS2C(List<SceneInstance> upserts, List<String> remova
         buf.writeLong(spec.durationTicks());
 
         Set<String> tags = instance.tags();
+        if (tags.size() > MAX_TAGS) {
+            throw new EncoderException("Scene instance has too many tags: " + tags.size());
+        }
         buf.writeInt(tags.size());
         for (String tag : tags) {
             ScenePacketIo.writeId(buf, tag);
@@ -141,6 +144,9 @@ public record SceneInstancesS2C(List<SceneInstance> upserts, List<String> remova
         if (instance.visibleToAll() || visibleTo.isEmpty()) {
             buf.writeInt(0);
         } else {
+            if (visibleTo.size() > MAX_VISIBILITY_ENTRIES) {
+                throw new EncoderException("Scene instance has too many visibility entries: " + visibleTo.size());
+            }
             buf.writeInt(visibleTo.size());
             for (UUID uuid : visibleTo) {
                 buf.writeLong(uuid.getMostSignificantBits());
@@ -252,17 +258,20 @@ public record SceneInstancesS2C(List<SceneInstance> upserts, List<String> remova
 
     private static SceneProfile readProfile(ByteBuf buf) {
         int length = buf.readInt();
-        if (length <= 0) return SceneProfile.createDefault();
-        if (length > MAX_PROFILE_JSON_BYTES) {
+        if (length < 0) {
+            throw new DecoderException("Negative scene profile JSON length: " + length);
+        }
+        if (length == 0) return SceneProfile.createDefault();
+        if (length > MAX_PROFILE_JSON_BYTES || length > buf.readableBytes()) {
             throw new DecoderException("Scene profile JSON too large: " + length);
         }
         byte[] bytes = new byte[length];
         buf.readBytes(bytes);
         try {
             return SceneProfile.fromJson(JsonParser.parseString(
-                    new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject());
-        } catch (RuntimeException ignored) {
-            return SceneProfile.createDefault();
+                    com.habitrain.core.config.JsonInputLimits.check(new String(bytes, StandardCharsets.UTF_8))).getAsJsonObject());
+        } catch (RuntimeException error) {
+            throw new DecoderException("Invalid scene profile JSON", error);
         }
     }
 

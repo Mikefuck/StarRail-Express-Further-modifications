@@ -88,7 +88,20 @@ public final class RoleSpi {
     }
 
     public static void installActionClient(RoleActionClientBridge bridge) {
+        Objects.requireNonNull(bridge, "bridge");
         ACTION_CLIENT.install(() -> bridge);
+    }
+
+    /** API-TV-06：服务端角色扩展核心槽位是否已全部装配。 */
+    public static boolean isInstalled() {
+        return CATALOG.isInstalled()
+                && CHANGE.isInstalled()
+                && DIAGNOSTICS.isInstalled()
+                && EXTENSION.isInstalled()
+                && FORCE.isInstalled()
+                && ACTION.isInstalled()
+                && CAPABILITY.isInstalled()
+                && STATE.isInstalled();
     }
 
     public static void installStateClient(Supplier<Object> supplier) { STATE_CLIENT.install(supplier); }
@@ -158,6 +171,7 @@ public final class RoleSpi {
         private final String name;
         private volatile Supplier<T> supplier;
         private volatile T instance;
+        private boolean resolving;
 
         Slot(String name) {
             this.name = name;
@@ -171,9 +185,9 @@ public final class RoleSpi {
          * 真实原因（重复装配）被掩盖；{@code CoreSpi} 那边恰好是相反顺序，
          * 两个装配入口对同一场景给出不同诊断。现在统一为与 {@code CoreSpi} 相同的信息优先级。
          */
-        void install(Supplier<T> newSupplier) {
+        synchronized void install(Supplier<T> newSupplier) {
             Objects.requireNonNull(newSupplier, "supplier");
-            if (supplier != null) {
+            if (supplier != null || resolving) {
                 throw new IllegalStateException("RoleSpi." + name + " is already installed");
             }
             if (!CoreLifecycle.isActive()) {
@@ -181,6 +195,10 @@ public final class RoleSpi {
                         "RoleSpi.install" + name + " is only allowed inside the habitrain_core lifecycle scope");
             }
             supplier = newSupplier;
+        }
+
+        boolean isInstalled() {
+            return supplier != null;
         }
 
         T get() {
@@ -204,9 +222,15 @@ public final class RoleSpi {
                 throw new IllegalStateException(
                         "RoleSpi." + name + " is not installed: habitrain_core did not initialise");
             }
-            T created = Objects.requireNonNull(current.get(), "RoleSpi." + name + " supplier returned null");
-            instance = created;
-            return created;
+            if (resolving) throw new IllegalStateException("Recursive RoleSpi factory: " + name);
+            resolving = true;
+            try {
+                T created = Objects.requireNonNull(current.get(), "RoleSpi." + name + " supplier returned null");
+                instance = created;
+                return created;
+            } finally {
+                resolving = false;
+            }
         }
     }
 }

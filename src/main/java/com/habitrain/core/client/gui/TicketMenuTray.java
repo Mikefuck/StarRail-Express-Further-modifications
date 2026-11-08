@@ -113,6 +113,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
     }
 
     public void sync(List<? extends Button> buttons) {
+        buttons = buttons.stream().filter(java.util.Objects::nonNull).toList();
         boolean changed = buttons.size() + 2 != entries.size();
         for (int i = 0; !changed && i < buttons.size(); i++) {
             Button source = buttons.get(i);
@@ -164,8 +165,12 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         if (active && open && pending != null && Util.getMillis() >= pendingAt) {
             Entry entry = pending;
             pending = null;
-            if (!TicketInventoryLayer.isLockedKey(entry.key)) entry.source.onPress();
+            if (!isEntryLocked(entry)) entry.source.onPress();
         }
+    }
+
+    private boolean isEntryLocked(Entry e) {
+        return TicketInventoryLayer.isLocked(e.key, e.restricted);
     }
 
     public void setLightweight(boolean lightweight) {
@@ -188,6 +193,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         int selected = player == null ? -1 : player.getInventory().selected;
         long now = Util.getMillis();
         g.pose().pushPose();
+        try {
         g.pose().translate(x, y, 0.0f);
         GuiGeo geo = GuiGeo.begin(g);
         geo.convexV(RailArt.chamfer(0, 0, STRIP_W, STRIP_H, 4.0f), 0, STRIP_H, p.paperTop(), p.paperBottom());
@@ -221,7 +227,9 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             glow.softGlow(16.0f + selected * 18.0f, 16.0f, 15.0f, 15.0f, RailArt.BRASS_LIGHT, Math.round(44 * breathe));
             glow.end();
         }
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     // ==================== 邮票册 ====================
@@ -351,13 +359,14 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         if (e.face == null) {
             e.face = buildFace(font, e);
         }
-        boolean locked = TicketInventoryLayer.isLockedKey(e.key);
+        boolean locked = isEntryLocked(e);
         if (locked != e.face.locked()) e.face = e.face.withLocked(locked);
         StampArt.Face face = e.face;
         float alpha = TransitionFx.clamp01(e.progress * 3.0f);
         float tilt = lightweight ? 0 : ((e.number & 1) == 0 ? 1.2f : -1.2f) * (1.0f - e.hover);
         float scale = lightweight ? 1 : 1.0f + 0.04f * e.hover;
         g.pose().pushPose();
+        try {
         g.pose().translate(e.gx + STAMP_W * k / 2.0f, e.gy + STAMP_H * k / 2.0f, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(tilt));
         g.pose().scale(k * scale, k * scale, 1.0f);
@@ -372,7 +381,9 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
                 TicketArt.inkSplash(g, STAMP_W * 0.62f, STAMP_H / 2.0f, 13.0f, StampArt.POSTMARK, slam, e.number * 3);
             }
         }
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 邮票册：深红皮面、黄铜包角、缝线，册口露出几枚邮票的齿边。 */
@@ -380,6 +391,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         float lift = lightweight ? 0 : bookHover * 1.5f;
         float time = lightweight ? 0 : now / 1000.0f;
         g.pose().pushPose();
+        try {
         g.pose().translate(x, y - lift * k, 0.0f);
         g.pose().scale(k, k, 1.0f);
         GuiGeo geo = GuiGeo.begin(g);
@@ -437,26 +449,15 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             TicketArt.drawTrackedLeft(g, font, sub, left + font.width(title) * s + 3.0f, ty + 8.0f * s - 8.0f * subScale,
                     subScale, RailArt.a(RailArt.BRASS_LIGHT, 0.8f));
         }
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     private StampArt.Face buildFace(Font font, Entry e) {
-        float avail = StampArt.landscapeLabelWidth(STAMP_W, STAMP_H);
-        String plain = e.label.getString();
-        Component display = Component.literal(plain);
-        float[][] tries = {{1.0f, 1}, {0.75f, 1}, {1.0f, 2}, {0.75f, 2}, {0.5f, 1}, {0.5f, 2}};
-        for (float[] attempt : tries) {
-            float scale = StampArt.crispDu(plain, attempt[0], k);
-            List<FormattedCharSequence> split = font.split(display, Math.max(1, Math.round(avail / scale)));
-            if (split.size() <= attempt[1] && (attempt[1] == 1 || (8.0f * scale + 1.0f) * split.size() <= STAMP_H - 8.0f)) {
-                e.truncated = false;
-                return new StampArt.Face(split, scale, e.icon, e.ink, e.number, false, e.restricted);
-            }
-        }
-        float scale = StampArt.crispDu(plain, 0.5f, k);
-        List<FormattedCharSequence> split = font.split(display, Math.max(1, Math.round(avail / scale)));
-        e.truncated = split.size() > 2;
-        return new StampArt.Face(new ArrayList<>(split.subList(0, Math.min(2, split.size()))), scale, e.icon, e.ink,
+        var layout = StampLabelLayout.fit(font, e.label, StampArt.landscapeLabelWidth(STAMP_W, STAMP_H), k, STAMP_H - 8.0f);
+        e.truncated = layout.truncated();
+        return new StampArt.Face(layout.lines(), layout.scale(), e.icon, e.ink,
                 e.number, false, e.restricted);
     }
 
@@ -478,7 +479,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         if (e.truncated) {
             lines.add(e.label);
         }
-        if (TicketInventoryLayer.isLockedKey(e.key)) {
+        if (isEntryLocked(e)) {
             lines.add(texts.lockedHint());
         }
         if (!lines.isEmpty()) {
@@ -499,6 +500,14 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             }
         }
         return -1;
+    }
+
+    private boolean hasAnimatedEntryAt(double mx, double my) {
+        for (Entry entry : entries) {
+            if (entry.progress > 0.02f && TicketUiGeometry.contains(mx, my, entry.gx, entry.gy,
+                    STAMP_W * k, STAMP_H * k, 1.1f, 0)) return true;
+        }
+        return false;
     }
 
     private boolean bookAt(double mx, double my) {
@@ -529,7 +538,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         }
         int index = open ? entryAt(mouseX, mouseY) : -1;
         if (index < 0) {
-            return false;
+            return hasAnimatedEntryAt(mouseX, mouseY);
         }
         Entry e = entries.get(index);
         return clickEntry(e, now);
@@ -539,7 +548,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
         if (pending != null) {
             return true;
         }
-        if (TicketInventoryLayer.isLockedKey(e.key)) {
+        if (isEntryLocked(e)) {
             e.deniedAt = now;
             TicketSounds.denied();
             MenuPermissions.showDeniedMessage();
@@ -569,7 +578,10 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             focused = true;
             return true;
         }
-        if (key == GLFW.GLFW_KEY_TAB || focused && (key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN
+        if (key == GLFW.GLFW_KEY_TAB && (!focused || !open
+                || (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 && keyboardIndex <= -1
+                || (modifiers & GLFW.GLFW_MOD_SHIFT) == 0 && keyboardIndex >= entries.size() - 1)) return false;
+        if (focused && key == GLFW.GLFW_KEY_TAB || focused && (key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN
                 || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT)) {
             int direction = (key == GLFW.GLFW_KEY_TAB && (modifiers & GLFW.GLFW_MOD_SHIFT) != 0)
                     || key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_LEFT ? -1 : 1;
@@ -595,12 +607,16 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
 
     @Override
     public boolean isMouseOver(double mouseX, double mouseY) {
-        return active && (bookAt(mouseX, mouseY) || pagerAt(mouseX, mouseY) || open && entryAt(mouseX, mouseY) >= 0);
+        return active && (bookAt(mouseX, mouseY) || pagerAt(mouseX, mouseY) || hasAnimatedEntryAt(mouseX, mouseY));
     }
 
     @Override
     public void setFocused(boolean focused) {
         this.focused = focused;
+        if (focused && keyboardIndex < -1) keyboardIndex = -1;
+        if (!focused) {
+            this.keyboardIndex = -2;
+        }
     }
 
     @Override
@@ -659,7 +675,7 @@ public final class TicketMenuTray implements GuiEventListener, NarratableEntry {
             this.label = source.getMessage();
             this.key = source instanceof TicketPerformanceButton ? TicketPerformanceButton.KEY
                     : source instanceof TicketShopStyleButton ? TicketShopStyleButton.KEY
-                    : TicketInventoryLayer.keyOf(label);
+                    : TicketInventoryLayer.keyOf(source);
             this.icon = source instanceof TicketShopStyleButton ? WireModels.Icon.CARDS : TicketInventoryLayer.iconFor(key);
             this.ink = source instanceof TicketShopStyleButton ? StampArt.SAPPHIRE : TicketInventoryLayer.inkFor(key, number);
             this.number = number;

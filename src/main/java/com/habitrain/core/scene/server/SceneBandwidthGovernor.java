@@ -1,6 +1,8 @@
 package com.habitrain.core.scene.server;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.LongSupplier;
@@ -27,6 +29,8 @@ public final class SceneBandwidthGovernor {
     private final Map<UUID, Long> nextPlayerSendNanos = new HashMap<>();
     /** 全局下一个可发送时刻，所有玩家共享。 */
     private long nextGlobalSendNanos;
+    private record Reservation(long start, long end) {}
+    private final List<Reservation> reservations = new ArrayList<>();
 
     public SceneBandwidthGovernor(LongSupplier clockNanos, long globalBytesPerSecond) {
         this.clockNanos = clockNanos != null ? clockNanos : System::nanoTime;
@@ -43,13 +47,31 @@ public final class SceneBandwidthGovernor {
         long now = clockNanos.getAsLong();
         long size = Math.max(0L, bytes);
         long playerRate = Math.max(1L, bytesPerSecond);
-        long playerCursor = playerId != null ? nextPlayerSendNanos.getOrDefault(playerId, now) : now;
-        long start = Math.max(now, Math.max(playerCursor, nextGlobalSendNanos));
+        Long playerCursor = playerId != null ? nextPlayerSendNanos.get(playerId) : null;
+        long start = now;
+        if (playerCursor != null && playerCursor - start > 0L) {
+            start = playerCursor;
+        }
+        // A slow player's future reservations leave gaps that other players can use.
+        // Comparing differences also works with negative nanoTime and long wraparound.
+        reservations.removeIf(slot -> slot.end() - now <= 0L);
+        long cost = nanosFor(size, globalBytesPerSecond);
+        int insertion = 0;
+        for (Reservation slot : reservations) {
+            if (slot.start() - start >= cost) break;
+            if (slot.end() - start > 0L) start = slot.end();
+            insertion++;
+        }
 
         if (playerId != null) {
             nextPlayerSendNanos.put(playerId, start + nanosFor(size, playerRate));
         }
-        nextGlobalSendNanos = start + nanosFor(size, globalBytesPerSecond);
+        if (cost > 0L) reservations.add(insertion, new Reservation(start, start + cost));
+        nextGlobalSendNanos = now;
+        for (Reservation slot : reservations) {
+            if (slot.start() - nextGlobalSendNanos > 0L) break;
+            if (slot.end() - nextGlobalSendNanos > 0L) nextGlobalSendNanos = slot.end();
+        }
         return start;
     }
 
@@ -61,6 +83,7 @@ public final class SceneBandwidthGovernor {
     public synchronized void reset() {
         nextPlayerSendNanos.clear();
         nextGlobalSendNanos = 0L;
+        reservations.clear();
     }
 
     /**

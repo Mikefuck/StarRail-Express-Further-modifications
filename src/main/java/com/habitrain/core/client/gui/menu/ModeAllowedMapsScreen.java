@@ -84,6 +84,7 @@ public class ModeAllowedMapsScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        ConfigManager.getInstance().beginClientEditing();
         backBtn = Button.builder(Component.literal("§7← 返回"), b -> onClose())
                 .bounds(PAD, 4, 70, 18).build();
         addRenderableWidget(backBtn);
@@ -104,6 +105,12 @@ public class ModeAllowedMapsScreen extends Screen {
             clearBtn.active = false;
             saveBtn.active = false;
         }
+    }
+
+    @Override
+    public void removed() {
+        ConfigManager.getInstance().endClientEditing();
+        super.removed();
     }
 
     private boolean commitSave() {
@@ -128,39 +135,41 @@ public class ModeAllowedMapsScreen extends Screen {
 
         int contentTop = HEADER_H;
         int contentBot = height - FOOTER_H;
-        int contentH = contentBot - contentTop;
+        int contentH = Math.max(1, contentBot - contentTop);
         int scrollW = width - PAD * 2;
 
         rowHits.clear();
         g.enableScissor(PAD, contentTop, PAD + scrollW, contentBot);
-
-        int y = contentTop + 4 - (int) scrollOffset;
-        if (mapIds.isEmpty()) {
-            g.drawString(font, Minecraft.getInstance().level != null ? "§7暂无地图配置条目" : "§7暂无地图条目（需在世界中配置）", PAD + 4, y + 4, MenuTheme.TEXT_SECONDARY, false);
-            y += ROW_H;
-        } else {
-            for (String id : mapIds) {
-                boolean on = selected.contains(id);
-                boolean hover = MenuTheme.inBounds(mx, my, PAD, y, scrollW - 8, ROW_H);
-                MenuTheme.row(g, PAD, y, scrollW - 8, ROW_H - 2, hover, false);
-                g.fill(PAD + 4, y + 4, PAD + 16, y + 16, on ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-                if (on) {
-                    g.drawString(font, "§a✓", PAD + 5, y + 5, 0xFFFFFFFF, false);
-                }
-                MapVoteEntry me = settings().maps.get(id);
-                String dn = (me != null && me.displayName != null && !me.displayName.isBlank())
-                        ? me.displayName : SREIntegration.getMapDisplayName(id);
-                String label = (dn != null && !dn.isBlank() && !dn.equals(id))
-                        ? dn + " §8(" + id + ")"
-                        : id;
-                g.drawString(font, label, PAD + 22, y + 5, MenuTheme.TEXT_PRIMARY, false);
-                rowHits.add(new RowHit(id, PAD, y, scrollW - 8, ROW_H - 2));
+        try {
+            int y = contentTop + 4 - (int) scrollOffset;
+            if (mapIds.isEmpty()) {
+                g.drawString(font, Minecraft.getInstance().level != null ? "§7暂无地图配置条目" : "§7暂无地图条目（需在世界中配置）", PAD + 4, y + 4, MenuTheme.TEXT_SECONDARY, false);
                 y += ROW_H;
+            } else {
+                for (String id : mapIds) {
+                    boolean on = selected.contains(id);
+                    boolean hover = MenuTheme.inBounds(mx, my, PAD, y, scrollW - 8, ROW_H);
+                    MenuTheme.row(g, PAD, y, scrollW - 8, ROW_H - 2, hover, false);
+                    g.fill(PAD + 4, y + 4, PAD + 16, y + 16, on ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+                    if (on) {
+                        g.drawString(font, "§a✓", PAD + 5, y + 5, 0xFFFFFFFF, false);
+                    }
+                    MapVoteEntry me = settings().maps.get(id);
+                    String dn = (me != null && me.displayName != null && !me.displayName.isBlank())
+                            ? me.displayName : SREIntegration.getMapDisplayName(id);
+                    String label = (dn != null && !dn.isBlank() && !dn.equals(id))
+                            ? dn + " §8(" + id + ")"
+                            : id;
+                    g.drawString(font, label, PAD + 22, y + 5, MenuTheme.TEXT_PRIMARY, false);
+                    rowHits.add(new RowHit(id, PAD, y, scrollW - 8, ROW_H - 2));
+                    y += ROW_H;
+                }
             }
-        }
 
-        contentHeight = y - contentTop + (int) scrollOffset;
-        g.disableScissor();
+            contentHeight = y - contentTop + (int) scrollOffset;
+        } finally {
+            g.disableScissor();
+        }
 
         int maxScroll = Math.max(0, contentHeight - contentH);
         scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
@@ -189,7 +198,7 @@ public class ModeAllowedMapsScreen extends Screen {
     public boolean mouseClicked(double mx, double my, int btn) {
         if (super.mouseClicked(mx, my, btn)) return true;
         int contentTop = HEADER_H;
-        int contentBot = height - 34;
+        int contentBot = height - FOOTER_H;
         if (my >= contentTop && my < contentBot) {
             for (RowHit hit : rowHits) {
                 if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
@@ -216,10 +225,18 @@ public class ModeAllowedMapsScreen extends Screen {
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy) {
         if (draggingScroll) {
             int contentTop = HEADER_H;
-            int contentBot = height - 34;
-            int contentH = contentBot - contentTop;
+            int contentBot = height - FOOTER_H;
+            int contentH = Math.max(1, contentBot - contentTop);
             int maxScroll = Math.max(0, contentHeight - contentH);
-            scrollOffset = Mth.clamp(dragStartOff + (my - dragStartY), 0, maxScroll);
+            if (maxScroll > 0) {
+                int total = Math.max(contentH, contentHeight);
+                int thumbH = Math.max(16, (int) ((double) contentH * contentH / total));
+                double trackRange = Math.max(1.0, contentH - thumbH);
+                double delta = (my - dragStartY) * (maxScroll / trackRange);
+                scrollOffset = Mth.clamp(dragStartOff + delta, 0, maxScroll);
+            } else {
+                scrollOffset = 0;
+            }
             return true;
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
@@ -234,8 +251,8 @@ public class ModeAllowedMapsScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
         int contentTop = HEADER_H;
-        int contentBot = height - 34;
-        int contentH = contentBot - contentTop;
+        int contentBot = height - FOOTER_H;
+        int contentH = Math.max(1, contentBot - contentTop);
         int maxScroll = Math.max(0, contentHeight - contentH);
         scrollOffset = Mth.clamp(scrollOffset - sy * 18, 0, maxScroll);
         return true;
@@ -243,9 +260,6 @@ public class ModeAllowedMapsScreen extends Screen {
 
     @Override
     public void onClose() {
-        if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
-            commitSave();
-        }
         Minecraft.getInstance().setScreen(parent);
     }
 }

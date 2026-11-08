@@ -44,8 +44,12 @@ public final class LegacyRoleScan {
         if (!capturing || id == null) {
             return;
         }
+        if (source != null && source.startsWith("com.habitrain.core.role.extension.")) {
+            return;
+        }
         if (RoleExtensionRegistry.INSTANCE.isAdded(id)
-                || RoleExtensionRegistry.INSTANCE.getCompiledReplacements().containsKey(id)) {
+                || RoleExtensionRegistry.INSTANCE.getCompiledReplacements().containsKey(id)
+                || RoleExtensionRegistry.INSTANCE.isNewIdReplacementRoleId(id)) {
             return;
         }
         hits.putIfAbsent(id, new LegacyHit(RoleKey.of(id), source == null ? "unknown" : source));
@@ -70,7 +74,7 @@ public final class LegacyRoleScan {
 
     public synchronized void clear() {
         hits.clear();
-        capturing = false;
+        capturing = true;
     }
 
     public record LegacyHit(RoleKey key, String source) {}

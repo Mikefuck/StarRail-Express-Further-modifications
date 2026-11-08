@@ -13,11 +13,14 @@ import java.util.List;
  * 存储在 {@code config/habitrain_core.json} 的 {@code "minigames"} 段。</p>
  */
 public class MinigameConfigEntry {
+    public static final int DEFAULT_INSTINCT_COLOR = 0xB4C8C8C8;
+
     public boolean enabled = true;
     public List<String> enabledMaps = new ArrayList<>();
     public int mapFilterMode = 0;
 
-    public int instinctColor = 0xB4C8C8C8;
+    public int instinctColor = DEFAULT_INSTINCT_COLOR;
+    public boolean hasInstinctColor = false;
     public float outlineWidth = 4.0f;
 
     public int goldReward = 0;
@@ -42,6 +45,7 @@ public class MinigameConfigEntry {
         json.add("enabledMaps", enabledList);
 
         json.addProperty("mapFilterMode", mapFilterMode);
+        json.addProperty("hasInstinctColor", hasInstinctColor);
         json.addProperty("instinctColor", instinctColor);
         json.addProperty("outlineWidth", outlineWidth);
         if (hasGoldReward) json.addProperty("goldReward", goldReward);
@@ -64,10 +68,15 @@ public class MinigameConfigEntry {
         }
         // 缺 mapFilterMode 时默认 0，不再隐式升级为白名单（同 TaskConfigEntry）。
         if (json.has("instinctColor")) entry.instinctColor = json.get("instinctColor").getAsInt();
+        if (json.has("hasInstinctColor")) {
+            entry.hasInstinctColor = json.get("hasInstinctColor").getAsBoolean();
+        } else if (json.has("instinctColor")) {
+            entry.hasInstinctColor = entry.instinctColor != DEFAULT_INSTINCT_COLOR;
+        }
         if (json.has("outlineWidth")) entry.outlineWidth = json.get("outlineWidth").getAsFloat();
         if (json.has("goldReward")) {
             entry.hasGoldReward = true;
-            entry.goldReward = json.get("goldReward").getAsInt();
+            entry.goldReward = ConfigValidation.integer(json.get("goldReward").getAsString(), "金币奖励");
         }
         if (json.has("emotionReward")) {
             entry.hasEmotionReward = true;
@@ -80,22 +89,50 @@ public class MinigameConfigEntry {
         return entry;
     }
 
-    /** 判断该小游戏在指定地图名下是否允许分配。 */
+    /** 判断该小游戏在指定地图名下是否允许分配（忽略大小写；mode=1 白名单空列表时返回 false）。 */
     public boolean isAllowedOnMap(String mapName) {
         if (mapName == null || mapName.isEmpty()) return true;
         if (mapFilterMode == 0) return true;
-        if (enabledMaps == null || enabledMaps.isEmpty()) return true;
+        boolean listEmpty = enabledMaps == null || enabledMaps.isEmpty();
         if (mapFilterMode == 1) {
-            for (String m : enabledMaps) if (m.equalsIgnoreCase(mapName)) return true;
+            if (listEmpty) return false;
+            for (String m : enabledMaps) if (m != null && m.equalsIgnoreCase(mapName)) return true;
             return false;
         }
         // 2 = 黑名单
-        for (String m : enabledMaps) if (m.equalsIgnoreCase(mapName)) return false;
+        if (listEmpty) return true;
+        for (String m : enabledMaps) if (m != null && m.equalsIgnoreCase(mapName)) return false;
         return true;
     }
 
     public int getColor() {
         return instinctColor;
+    }
+
+    public float getOutlineWidth() {
+        return outlineWidth;
+    }
+
+    public float getRefreshWeight() {
+        return hasRefreshWeight ? refreshWeight : 1.0f;
+    }
+
+    public MinigameConfigEntry copy() {
+        MinigameConfigEntry c = new MinigameConfigEntry(this.enabled);
+        if (this.enabledMaps != null) {
+            c.enabledMaps = new ArrayList<>(this.enabledMaps);
+        }
+        c.mapFilterMode = this.mapFilterMode;
+        c.instinctColor = this.instinctColor;
+        c.hasInstinctColor = this.hasInstinctColor;
+        c.outlineWidth = this.outlineWidth;
+        c.goldReward = this.goldReward;
+        c.hasGoldReward = this.hasGoldReward;
+        c.emotionReward = this.emotionReward;
+        c.hasEmotionReward = this.hasEmotionReward;
+        c.refreshWeight = this.refreshWeight;
+        c.hasRefreshWeight = this.hasRefreshWeight;
+        return c;
     }
 
     public static MinigameConfigEntry createDefault() {

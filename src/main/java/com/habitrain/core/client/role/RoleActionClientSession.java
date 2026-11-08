@@ -196,8 +196,9 @@ public final class RoleActionClientSession implements RoleActionClientApi {
     }
 
     private static void sendViaFabric(ResourceLocation actionId, int sequence, byte[] payload) {
-        if (Minecraft.getInstance().getConnection() == null) {
-            return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.getConnection() == null) {
+            throw new IllegalStateException("Client network connection is not active");
         }
         ClientPlayNetworking.send(new RoleActionC2SPayload(actionId, sequence, payload));
     }

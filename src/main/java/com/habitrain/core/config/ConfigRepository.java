@@ -4,6 +4,8 @@ import com.habitrain.core.api.scene.SceneMotionSettings;
 
 import org.jetbrains.annotations.Nullable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ConfigRepository {
     public ConfigRepository copy() {
@@ -16,11 +18,17 @@ public class ConfigRepository {
     public void copyFrom(ConfigRepository source) {
         if (source == this) return;
         taskConfigs.clear();
-        source.taskConfigs.forEach((key, value) -> taskConfigs.put(key, TaskConfigEntry.fromJson(value.toJson())));
+        source.taskConfigs.forEach((key, value) -> {
+            if (key != null && value != null) taskConfigs.put(key, value.copy());
+        });
         gameModeConfigs.clear();
-        source.gameModeConfigs.forEach((key, value) -> gameModeConfigs.put(key, GameModeConfigScope.fromJson(key, value.toJson())));
+        source.gameModeConfigs.forEach((key, value) -> {
+            if (key != null && value != null) gameModeConfigs.put(key, value.copy());
+        });
         minigameConfigs.clear();
-        source.minigameConfigs.forEach((key, value) -> minigameConfigs.put(key, MinigameConfigEntry.fromJson(value.toJson())));
+        source.minigameConfigs.forEach((key, value) -> {
+            if (key != null && value != null) minigameConfigs.put(key, value.copy());
+        });
         setShaderWhitelistConfig(source.shaderWhitelistEnabled, new ArrayList<>(source.shaderWhitelist));
         dlcProbabilityTarget = source.dlcProbabilityTarget;
         sheriffCountDivisor = source.sheriffCountDivisor;
@@ -33,28 +41,28 @@ public class ConfigRepository {
         environment = EnvironmentSettings.fromJson(source.getEnvironment().toJson());
         sceneMotion = SceneMotionSettings.fromJson(source.getSceneMotion().toJson());
     }
-    private final Map<String, TaskConfigEntry> taskConfigs = new HashMap<>();
-    private final Map<String, GameModeConfigScope> gameModeConfigs = new HashMap<>();
-    private final Map<String, MinigameConfigEntry> minigameConfigs = new HashMap<>();
-    private final List<String> shaderWhitelist = new ArrayList<>();
-    private float dlcProbabilityTarget = 0.5f;
-    private int sheriffCountDivisor = 6;
-    private boolean minigameGlobalEnabled = true;
-    private boolean shaderWhitelistEnabled = false;
-    private boolean knifeDurabilityEnabled = false;
-    private boolean lobbyVoiceGroupEnabled = true;
+    private final Map<String, TaskConfigEntry> taskConfigs = new ConcurrentHashMap<>();
+    private final Map<String, GameModeConfigScope> gameModeConfigs = new ConcurrentHashMap<>();
+    private final Map<String, MinigameConfigEntry> minigameConfigs = new ConcurrentHashMap<>();
+    private final List<String> shaderWhitelist = new CopyOnWriteArrayList<>();
+    private volatile float dlcProbabilityTarget = 0.5f;
+    private volatile int sheriffCountDivisor = 6;
+    private volatile boolean minigameGlobalEnabled = true;
+    private volatile boolean shaderWhitelistEnabled = false;
+    private volatile boolean knifeDurabilityEnabled = false;
+    private volatile boolean lobbyVoiceGroupEnabled = true;
     /** SRE 停电成功后施加给全体玩家的通用物品冷却；0 表示不传播通用冷却。 */
-    private int blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.DEFAULT_SECONDS;
+    private volatile int blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.DEFAULT_SECONDS;
     /** 停电黑暗时长增强：普通停电 20 秒黑暗+失明，忍者 10 秒（默认关闭，关闭时保持 SRE 原版 10 秒）。 */
-    private boolean blackoutEffectEnhancementEnabled = false;
-    private ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
-    private EnvironmentSettings environment = EnvironmentSettings.createDefault();
-    private SceneMotionSettings sceneMotion = SceneMotionSettings.createDefault();
-    @Nullable private Runnable onSaveCallback = null;
-    private boolean suppressCallback = false;
+    private volatile boolean blackoutEffectEnhancementEnabled = false;
+    private volatile ModeMapVoteSettings modeMapVote = ModeMapVoteSettings.createDefault();
+    private volatile EnvironmentSettings environment = EnvironmentSettings.createDefault();
+    private volatile SceneMotionSettings sceneMotion = SceneMotionSettings.createDefault();
+    @Nullable private volatile Runnable onSaveCallback = null;
+    private volatile boolean suppressCallback = false;
 
     public TaskConfigEntry getTaskConfig(String fullId) {
-        return taskConfigs.get(fullId);
+        return fullId == null ? null : taskConfigs.get(fullId);
     }
 
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
@@ -62,7 +70,9 @@ public class ConfigRepository {
     }
 
     public void putTaskConfig(String fullId, TaskConfigEntry entry) {
-        taskConfigs.put(fullId, entry);
+        if (fullId == null) return;
+        if (entry == null) taskConfigs.remove(fullId);
+        else taskConfigs.put(fullId, entry);
     }
 
     public Map<String, TaskConfigEntry> getAllConfigs() {
@@ -70,7 +80,7 @@ public class ConfigRepository {
     }
 
     public void setAllConfigs(Map<String, TaskConfigEntry> entries) {
-        taskConfigs.putAll(entries);
+        if (entries != null) taskConfigs.putAll(entries);
     }
 
     Map<String, TaskConfigEntry> getMutableTaskConfigs() {
@@ -78,7 +88,20 @@ public class ConfigRepository {
     }
 
     public GameModeConfigScope getGameModeConfig(String gameModeId) {
+        if (gameModeId == null) return null;
+        GameModeConfigScope existing = gameModeConfigs.get(gameModeId);
+        return existing != null ? existing : new GameModeConfigScope(gameModeId);
+    }
+
+    public GameModeConfigScope getOrCreateGameModeConfig(String gameModeId) {
+        if (gameModeId == null) return null;
         return gameModeConfigs.computeIfAbsent(gameModeId, GameModeConfigScope::new);
+    }
+
+    public void setGameModeConfig(String gameModeId, GameModeConfigScope scope) {
+        if (gameModeId == null) return;
+        if (scope == null) gameModeConfigs.remove(gameModeId);
+        else gameModeConfigs.put(gameModeId, scope);
     }
 
     public Map<String, GameModeConfigScope> getAllGameModeConfigs() {
@@ -93,7 +116,7 @@ public class ConfigRepository {
 
     public void setDlcProbabilityTarget(float target) {
         if (!Float.isFinite(target)) throw new IllegalArgumentException("DLC probability must be finite");
-        this.dlcProbabilityTarget = Math.max(0.0f, Math.min(1.0f, target));
+        this.dlcProbabilityTarget = Math.max(0.1f, Math.min(0.8f, target));
     }
 
     public int getSheriffCountDivisor() { return sheriffCountDivisor; }
@@ -134,7 +157,7 @@ public class ConfigRepository {
     }
 
     public List<String> getShaderWhitelist() {
-        return Collections.unmodifiableList(shaderWhitelist);
+        return List.copyOf(shaderWhitelist);
     }
 
     /** Package-private mutable view for ConfigStore / ConfigSync loaders. */
@@ -144,33 +167,48 @@ public class ConfigRepository {
 
     public void setShaderWhitelist(List<String> list) {
         shaderWhitelist.clear();
-        shaderWhitelist.addAll(list);
+        if (list != null) {
+            for (String s : list) {
+                if (s != null) shaderWhitelist.add(s);
+            }
+        }
     }
 
     public void setShaderWhitelistConfig(boolean enabled, List<String> list) {
         this.shaderWhitelistEnabled = enabled;
-        shaderWhitelist.clear();
-        shaderWhitelist.addAll(list);
+        setShaderWhitelist(list);
     }
 
     public MinigameConfigEntry getMinigameConfig(String minigameId) {
-        return minigameConfigs.get(minigameId);
+        return minigameId == null ? null : minigameConfigs.get(minigameId);
     }
 
     public MinigameConfigEntry getOrCreateMinigameConfig(String minigameId) {
+        if (minigameId == null) return MinigameConfigEntry.createDefault();
         return minigameConfigs.computeIfAbsent(minigameId, k -> MinigameConfigEntry.createDefault());
     }
 
     public void setMinigameConfig(String minigameId, MinigameConfigEntry entry) {
-        minigameConfigs.put(minigameId, entry);
+        putMinigameConfig(minigameId, entry);
     }
 
     public void putMinigameConfig(String minigameId, MinigameConfigEntry entry) {
-        minigameConfigs.put(minigameId, entry);
+        if (minigameId == null) return;
+        if (entry == null) minigameConfigs.remove(minigameId);
+        else minigameConfigs.put(minigameId, entry);
     }
 
     public Map<String, MinigameConfigEntry> getAllMinigameConfigs() {
         return Collections.unmodifiableMap(minigameConfigs);
+    }
+
+    public void setMinigames(Map<String, MinigameConfigEntry> entries) {
+        minigameConfigs.clear();
+        if (entries != null) {
+            entries.forEach((k, v) -> {
+                if (k != null && v != null) minigameConfigs.put(k, v.copy());
+            });
+        }
     }
 
     Map<String, MinigameConfigEntry> getMutableMinigameConfigs() {

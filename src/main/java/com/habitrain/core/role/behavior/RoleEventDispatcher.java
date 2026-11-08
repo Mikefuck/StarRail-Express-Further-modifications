@@ -236,6 +236,18 @@ public final class RoleEventDispatcher {
                     ? !e.role().equals(currentRole(dead)) : !inScope(e, level))) {
                 continue;
             }
+            if ((e.scope() == RoleScope.HOLDER || e.scope() == RoleScope.ANY_ACTIVE_HOLDER)
+                    && hookGates instanceof RuntimeHookGates rtg && level != null) {
+                List<ServerPlayer> allHolders = rtg.holders(e.role(), level);
+                if (!allHolders.isEmpty()) {
+                    for (ServerPlayer h : allHolders) {
+                        RoleHookContext ctx = ctxCombat(e.role(), h, null, dead, null);
+                        invoke(e, "onAnyDeath",
+                                () -> ((RoleCombatHooks) e.callback()).onAnyDeath(dead, deathReason, ctx));
+                    }
+                    continue;
+                }
+            }
             RoleHookContext ctx = ctxCombat(e.role(), e.scope() == RoleScope.VICTIM ? dead : scopedHolder(e, level), null, dead, null);
             invoke(e, "onAnyDeath",
                     () -> ((RoleCombatHooks) e.callback()).onAnyDeath(dead, deathReason, ctx));
@@ -865,12 +877,28 @@ public final class RoleEventDispatcher {
                 dispatchOnRolesConfirmAll(level, roleAssignments));
 
         OnGameEnd.EVENT.register((level, gameWorldComponent) -> {
-            dispatchOnGameEndAll(level);
-            // Settlement is read-only and must see state before ROUND_END reset.
-            dispatchAfterWinnersFinalized(level, readWinOutcome(level));
-            resetState(null, null, ResetCause.ROUND_END);
-            com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.endRound();
-            com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.scheduleActivatePendingNextTick();
+            WinPatch pendingWin = lastAppliedWinPatch;
+            lastAppliedWinPatch = null;
+            if (pendingWin != null && pendingWin.op() != WinPatchOp.NO_CHANGE
+                    && pendingWin.op() != WinPatchOp.DECLARE_FACTION_WIN) {
+                applyCustomWinners(level, pendingWin);
+            }
+        });
+
+        com.habitrain.core.game.sre.match.MatchEventBridge.WINNERS_FINALIZED.register((level, settlement) -> {
+            // Use the same immutable winners that addons consume, after recordWinStats.
+            WinOutcome metadata = readWinOutcome(level);
+            dispatchAfterWinnersFinalized(level, new WinOutcome(metadata.status(),
+                    List.copyOf(settlement.winners()), metadata.reason()));
+        });
+        com.habitrain.core.game.sre.match.MatchEventBridge.CLEANUP.register((level, settlement) -> {
+            try {
+                dispatchOnGameEndAll(level);
+            } finally {
+                resetState(null, null, ResetCause.ROUND_END);
+                RoleSnapshotManager.INSTANCE.endRound();
+                RoleSnapshotManager.INSTANCE.scheduleActivatePendingNextTick();
+            }
         });
 
         // Sole habitrain AllowGameEnd listener. RolePatch overlay is input to
@@ -1067,6 +1095,8 @@ public final class RoleEventDispatcher {
                 holder, null, null, null, Map.of(), proposed, loose, outcome);
     }
 
+    private static volatile @Nullable WinPatch lastAppliedWinPatch;
+
     /**
      * Translates a folded {@link WinPatch} into an upstream {@link GameUtils.WinStatus}.
      * Writes custom winners onto the round-end component when the patch is custom,
@@ -1081,6 +1111,10 @@ public final class RoleEventDispatcher {
             case DECLARE_CUSTOM, REPLACE_WINNERS, ADD_WINNER, REMOVE_WINNER -> {
                 if (!applyCustomWinners(level, patch)) {
                     yield GameUtils.WinStatus.NONE;
+                }
+                lastAppliedWinPatch = patch;
+                if (patch.op() == WinPatchOp.ADD_WINNER || patch.op() == WinPatchOp.REMOVE_WINNER) {
+                    yield GameUtils.WinStatus.NOT_MODIFY;
                 }
                 yield GameUtils.WinStatus.CUSTOM;
             }
@@ -1121,22 +1155,48 @@ public final class RoleEventDispatcher {
             }
             if (roundEnd.CustomWinnerPlayers == null) {
                 roundEnd.CustomWinnerPlayers = new ArrayList<>();
-            } else {
-                roundEnd.CustomWinnerPlayers.clear();
             }
-            roundEnd.CustomWinnerPlayers.addAll(patch.winners());
+            switch (patch.op()) {
+                case DECLARE_CUSTOM, REPLACE_WINNERS -> {
+                    roundEnd.CustomWinnerPlayers.clear();
+                    roundEnd.CustomWinnerPlayers.addAll(patch.winners());
+                    for (UUID id : patch.winners()) {
+                        if (id != null) {
+                            roundEnd.setPlayerWin(id, true);
+                        }
+                    }
+                }
+                case ADD_WINNER -> {
+                    for (UUID id : patch.winners()) {
+                        if (id != null) {
+                            if (!roundEnd.CustomWinnerPlayers.contains(id)) {
+                                roundEnd.CustomWinnerPlayers.add(id);
+                            }
+                            roundEnd.setPlayerWin(id, true);
+                        }
+                    }
+                }
+                case REMOVE_WINNER -> {
+                    for (UUID id : patch.winners()) {
+                        if (id != null) {
+                            roundEnd.CustomWinnerPlayers.remove(id);
+                            roundEnd.setPlayerWin(id, false);
+                        }
+                    }
+                }
+                default -> {
+                }
+            }
             if (patch.customId() != null && !patch.customId().isBlank()) {
-                roundEnd.CustomWinnerID = patch.customId();
+                ResourceLocation parsedId = ResourceLocation.tryParse(patch.customId());
+                roundEnd.CustomWinnerID = (parsedId != null && patch.customId().indexOf(':') >= 0)
+                        ? parsedId.getPath() : patch.customId();
             }
             if (patch.reason() != null && !patch.reason().isBlank()) {
                 roundEnd.CustomWinnerSubtitle = Component.literal(patch.reason());
             }
-            for (UUID id : patch.winners()) {
-                if (id != null) {
-                    roundEnd.setPlayerWin(id, true);
-                }
-            }
             applySreCustomWinnerHelper(level, roundEnd, patch);
+            roundEnd.sync();
             return true;
         } catch (Throwable t) {
             LOGGER.warn("failed to apply custom winners from WinPatch", t);
@@ -1146,7 +1206,7 @@ public final class RoleEventDispatcher {
 
     /**
      * Applies {@code RoleUtils.customWinnerWin}
-     * plus restoring the full role identifier as {@code CustomWinnerID}. Only runs
+     * plus restoring the role path as {@code CustomWinnerID}. Only runs
      * when {@code customId} resolves to a TMM role (declarative RolePatch overlay). v2
      * sin ids such as {@code sin_pride} are left to {@code CustomWinnerRole.win()}.
      */
@@ -1165,7 +1225,7 @@ public final class RoleEventDispatcher {
                 return;
             }
             RoleUtils.customWinnerWin(level, role.identifier().getPath(), role.getColor());
-            roundEnd.CustomWinnerID = role.identifier().toString();
+            roundEnd.CustomWinnerID = role.identifier().getPath();
         } catch (Throwable t) {
             LOGGER.warn("failed to invoke RoleUtils.customWinnerWin for {}", id, t);
         }
@@ -1277,7 +1337,7 @@ public final class RoleEventDispatcher {
         refreshCircuits();
         HookCircuit circuit = circuit(e);
         if (circuit.isBroken()) {
-            return fallback;
+            return Decision.PASS;
         }
         long start = System.nanoTime();
         try {

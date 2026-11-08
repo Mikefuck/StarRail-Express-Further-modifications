@@ -4,9 +4,8 @@ package com.habitrain.core.client;
 /**
  * Decides which client session caches may be wiped at JOIN / DISCONNECT / game end.
  *
- * <p>{@link com.habitrain.core.game.sre.task.CustomTaskBlockCache} is a static table shared
- * with the integrated server. Clearing it on JOIN races the scan snapshot and deletes
- * ESP indexes for the host.
+ * <p>Client indexes are independent of the server index. INIT clears the old
+ * connection before snapshots arrive; JOIN must preserve those snapshots.
  */
 public final class ClientSessionResetPolicy {
 

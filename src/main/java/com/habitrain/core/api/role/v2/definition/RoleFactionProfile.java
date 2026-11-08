@@ -1,11 +1,9 @@
 package com.habitrain.core.api.role.v2.definition;
 
-import java.util.Objects;
-
 /**
  * Immutable faction/alignment profile of a role.
  *
- * <p>{@link role.extension.ManagedSRERole} constructs the
+ * <p>The runtime compiler constructs the
  * upstream object through {@code NormalRole}'s constructor, which already
  * derives {@code passiveIncome = canUseKiller} and
  * {@code neutral = !innocent && !canUseKiller}. The profile only
@@ -26,11 +24,7 @@ public record RoleFactionProfile(boolean innocent, boolean canUseKiller,
                                  boolean mafiaTeamExplicit) {
 
     public RoleFactionProfile {
-        Objects.requireNonNull(neutralExplicit, "neutralExplicit");
-        Objects.requireNonNull(vigilanteTeamExplicit, "vigilanteTeamExplicit");
-        Objects.requireNonNull(neutralForKillerExplicit, "neutralForKillerExplicit");
-        Objects.requireNonNull(neutralForInnocentExplicit, "neutralForInnocentExplicit");
-        Objects.requireNonNull(mafiaTeamExplicit, "mafiaTeamExplicit");
+        // Primitive boolean fields cannot be null; no Objects.requireNonNull boxing needed (ROLE-API-22).
     }
 
     public static Builder builder() {
@@ -52,13 +46,18 @@ public record RoleFactionProfile(boolean innocent, boolean canUseKiller,
         private boolean mafiaTeamExplicit;
 
         public Builder innocent() { this.innocent = true; return this; }
+        public Builder innocent(boolean value) { this.innocent = value; return this; }
+
         public Builder killer() { this.canUseKiller = true; return this; }
+        public Builder killer(boolean value) { this.canUseKiller = value; return this; }
 
         public Builder neutral() { this.neutral = true; this.neutralExplicit = true; return this; }
         public Builder notNeutral() { this.neutral = false; this.neutralExplicit = true; return this; }
+        public Builder neutral(boolean value) { this.neutral = value; this.neutralExplicit = true; return this; }
 
         public Builder vigilanteTeam() { this.vigilanteTeam = true; this.vigilanteTeamExplicit = true; return this; }
         public Builder notVigilanteTeam() { this.vigilanteTeam = false; this.vigilanteTeamExplicit = true; return this; }
+        public Builder vigilanteTeam(boolean value) { this.vigilanteTeam = value; this.vigilanteTeamExplicit = true; return this; }
 
         public Builder neutralForKiller() {
             this.neutralForKiller = true;
@@ -68,6 +67,12 @@ public record RoleFactionProfile(boolean innocent, boolean canUseKiller,
 
         public Builder notNeutralForKiller() {
             this.neutralForKiller = false;
+            this.neutralForKillerExplicit = true;
+            return this;
+        }
+
+        public Builder neutralForKiller(boolean value) {
+            this.neutralForKiller = value;
             this.neutralForKillerExplicit = true;
             return this;
         }
@@ -84,6 +89,12 @@ public record RoleFactionProfile(boolean innocent, boolean canUseKiller,
             return this;
         }
 
+        public Builder neutralForInnocent(boolean value) {
+            this.neutralForInnocent = value;
+            this.neutralForInnocentExplicit = true;
+            return this;
+        }
+
         public Builder mafiaTeam() {
             this.mafiaTeam = true;
             this.mafiaTeamExplicit = true;
@@ -92,6 +103,12 @@ public record RoleFactionProfile(boolean innocent, boolean canUseKiller,
 
         public Builder notMafiaTeam() {
             this.mafiaTeam = false;
+            this.mafiaTeamExplicit = true;
+            return this;
+        }
+
+        public Builder mafiaTeam(boolean value) {
+            this.mafiaTeam = value;
             this.mafiaTeamExplicit = true;
             return this;
         }

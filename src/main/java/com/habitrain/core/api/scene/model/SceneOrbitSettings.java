@@ -1,9 +1,11 @@
 package com.habitrain.core.api.scene.model;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -125,10 +127,7 @@ public final class SceneOrbitSettings {
     }
 
     public void setStartAngleDegrees(double angle) {
-        double val = validateFinite(angle, 0.0);
-        val = val % 360.0;
-        if (val < 0.0) val += 360.0;
-        this.startAngleDegrees = val;
+        this.startAngleDegrees = SceneOrbitMath.normalizeAngle(validateFinite(angle, 0.0));
     }
 
     public double getSweepDegrees() {
@@ -248,57 +247,94 @@ public final class SceneOrbitSettings {
         SceneOrbitSettings s = new SceneOrbitSettings();
         if (json == null) return s;
 
-        if (json.has("centerMode")) {
+        if (isPrimitive(json, "centerMode")) {
             try {
-                s.setCenterMode(SceneOrbitCenterMode.valueOf(json.get("centerMode").getAsString().trim().toUpperCase()));
-            } catch (IllegalArgumentException ignored) {
+                s.setCenterMode(SceneOrbitCenterMode.valueOf(
+                        json.get("centerMode").getAsString().trim().toUpperCase(Locale.ROOT)));
+            } catch (Exception ignored) {
                 s.setCenterMode(SceneOrbitCenterMode.WORLD_BLOCK);
             }
         }
         if (json.has("centerWorld") && json.get("centerWorld").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("centerWorld");
             if (arr.size() >= 3) {
-                s.setCenterWorld(arr.get(0).getAsDouble(), arr.get(1).getAsDouble(), arr.get(2).getAsDouble());
+                s.setCenterWorld(
+                        asDouble(arr.get(0), 0.0),
+                        asDouble(arr.get(1), 0.0),
+                        asDouble(arr.get(2), 0.0));
             }
         }
-        if (json.has("axis")) {
+        if (isPrimitive(json, "axis")) {
             try {
-                s.setAxis(SceneOrbitAxis.valueOf(json.get("axis").getAsString().trim().toUpperCase()));
-            } catch (IllegalArgumentException ignored) {
+                s.setAxis(SceneOrbitAxis.valueOf(
+                        json.get("axis").getAsString().trim().toUpperCase(Locale.ROOT)));
+            } catch (Exception ignored) {
                 s.setAxis(SceneOrbitAxis.Y);
             }
         }
-        if (json.has("startAngleDegrees")) {
-            s.setStartAngleDegrees(json.get("startAngleDegrees").getAsDouble());
+        if (isPrimitive(json, "startAngleDegrees")) {
+            s.setStartAngleDegrees(asDouble(json.get("startAngleDegrees"), 0.0));
         }
-        if (json.has("sweepDegrees")) {
-            s.setSweepDegrees(json.get("sweepDegrees").getAsDouble());
+        if (isPrimitive(json, "sweepDegrees")) {
+            s.setSweepDegrees(asDouble(json.get("sweepDegrees"), DEFAULT_SWEEP));
         }
-        if (json.has("clockwise")) {
-            s.setClockwise(json.get("clockwise").getAsBoolean());
+        if (isPrimitive(json, "clockwise")) {
+            s.setClockwise(asBoolean(json.get("clockwise"), true));
         }
-        if (json.has("angularSpeedDegreesPerSecond")) {
-            s.setAngularSpeedDegreesPerSecond(json.get("angularSpeedDegreesPerSecond").getAsDouble());
+        if (isPrimitive(json, "angularSpeedDegreesPerSecond")) {
+            s.setAngularSpeedDegreesPerSecond(asDouble(json.get("angularSpeedDegreesPerSecond"), DEFAULT_SPEED));
         }
-        if (json.has("verticalBobAmplitudeBlocks")) {
-            s.setVerticalBobAmplitudeBlocks(json.get("verticalBobAmplitudeBlocks").getAsDouble());
+        if (isPrimitive(json, "verticalBobAmplitudeBlocks")) {
+            s.setVerticalBobAmplitudeBlocks(asDouble(json.get("verticalBobAmplitudeBlocks"), 0.0));
         }
-        if (json.has("radialBobAmplitudeBlocks")) {
-            s.setRadialBobAmplitudeBlocks(json.get("radialBobAmplitudeBlocks").getAsDouble());
+        if (isPrimitive(json, "radialBobAmplitudeBlocks")) {
+            s.setRadialBobAmplitudeBlocks(asDouble(json.get("radialBobAmplitudeBlocks"), 0.0));
         }
-        if (json.has("bobCyclesPerSecond")) {
-            s.setBobCyclesPerSecond(json.get("bobCyclesPerSecond").getAsDouble());
+        if (isPrimitive(json, "bobCyclesPerSecond")) {
+            s.setBobCyclesPerSecond(asDouble(json.get("bobCyclesPerSecond"), 0.0));
         }
-        if (json.has("instanceCount")) {
-            s.setInstanceCount(json.get("instanceCount").getAsInt());
+        if (isPrimitive(json, "instanceCount")) {
+            s.setInstanceCount(asInt(json.get("instanceCount"), 1));
         }
-        if (json.has("instanceSpreadDegrees")) {
-            s.setInstanceSpreadDegrees(json.get("instanceSpreadDegrees").getAsDouble());
+        if (isPrimitive(json, "instanceSpreadDegrees")) {
+            s.setInstanceSpreadDegrees(asDouble(json.get("instanceSpreadDegrees"), DEFAULT_SPREAD));
         }
-        if (json.has("rotateModelWithOrbit")) {
-            s.setRotateModelWithOrbit(json.get("rotateModelWithOrbit").getAsBoolean());
+        if (isPrimitive(json, "rotateModelWithOrbit")) {
+            s.setRotateModelWithOrbit(asBoolean(json.get("rotateModelWithOrbit"), true));
         }
         return s;
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        JsonElement el = json.get(key);
+        return el != null && el.isJsonPrimitive();
+    }
+
+    private static double asDouble(JsonElement el, double fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsDouble();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static int asInt(JsonElement el, int fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsInt();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static boolean asBoolean(JsonElement el, boolean fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsBoolean();
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     @Override

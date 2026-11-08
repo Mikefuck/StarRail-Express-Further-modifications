@@ -16,9 +16,17 @@ import org.spongepowered.asm.mixin.injection.Redirect;
         "org.agmas.noellesroles.game.roles.innocence.accountant.AccountantPlayerComponent"
 }, remap = false)
 public abstract class GreedDirectIncomeMixin {
-    @Redirect(method = "*", at = @At(value = "FIELD", opcode = 181,
-            target = "Lio/wifi/starrailexpress/cca/SREPlayerShopComponent;balance:I"))
+    @Redirect(method = {
+            "sellItem",
+            "handleKilledVictim",
+            "serverTick",
+            "collapseBackWorld",
+            "executeAccountant",
+            "givePassiveIncome"
+    }, at = @At(value = "FIELD", opcode = 181,
+            target = "Lio/wifi/starrailexpress/cca/SREPlayerShopComponent;balance:I"), require = 0)
     private static void habitrain$shareDirectReward(SREPlayerShopComponent shop, int amount) {
+        if (shop == null) return;
         shop.balance = shop.getPlayer() instanceof ServerPlayer player
                 ? GreedEconomy.interceptIncome(player, shop.balance, amount) : amount;
     }

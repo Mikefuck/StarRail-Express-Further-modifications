@@ -130,12 +130,11 @@ public final class VoteLaunchTransitionScreen extends Screen {
     /** @param skipEnter true=车票直接铺满，不播飘落入场 */
     private VoteLaunchTransitionScreen(Screen destination, String winningMapId, boolean skipEnter) {
         super(OptionVoteTexts.transitionTitle());
-        this.coveredScreen = destination;
-        this.destination = unwrapVoteScreen(destination);
+        this.destination = OptionVoteScreen.sanitizeReturnScreen(destination);
+        this.coveredScreen = (destination instanceof OptionVoteScreen) ? destination : this.destination;
         this.winningMapId = winningMapId == null ? "" : winningMapId;
         this.skipEnterAnimation = skipEnter;
         this.serial = 100_000 + Math.floorMod(this.winningMapId.hashCode() * 31 + (int) (startedAtMillis / 1000L), 900_000);
-        VoteLaunchOverlayState.setActive(true);
         pullFromSession();
     }
 
@@ -156,6 +155,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        VoteLaunchOverlayState.setActive(true);
         if (destination != null) {
             destination.resize(minecraft, width, height);
         }
@@ -163,6 +163,15 @@ public final class VoteLaunchTransitionScreen extends Screen {
             coveredScreen.resize(minecraft, width, height);
         }
         layoutTickets();
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        if (!completed) {
+            VoteLaunchOverlayState.setActive(false);
+            VoteLaunchOverlayState.scheduleGrace(0L);
+        }
     }
 
     /** 服务端加载进度更新（MapVoteProgressPayload / Session）。 */
@@ -289,11 +298,13 @@ public final class VoteLaunchTransitionScreen extends Screen {
      */
     private void layoutTickets() {
         pile.clear();
-        Rng rng = new Rng(0x5EED_1234L + width * 31L + height * 17L);
-        int cols = width > height * 2.1f ? 4 : 3;
+        int safeW = Math.max(1, width);
+        int safeH = Math.max(1, height);
+        Rng rng = new Rng(0x5EED_1234L + safeW * 31L + safeH * 17L);
+        int cols = safeW > safeH * 2.1f ? 4 : 3;
         int rows = 4;
-        float cellW = width / (float) cols;
-        float cellH = height / (float) rows;
+        float cellW = safeW / (float) cols;
+        float cellH = safeH / (float) rows;
         float th = cellH * 1.75f;
         float tw = Math.max(cellW * 1.45f, th * 1.9f);
         List<String> names = pileNames();
@@ -316,8 +327,8 @@ public final class VoteLaunchTransitionScreen extends Screen {
         }
         pile.addAll(grid);
         for (int i = 0; i < 4; i++) {
-            float tx = width * rng.range(0.12f, 0.88f);
-            float ty = height * (i < 2 ? rng.range(0.1f, 0.35f) : rng.range(0.65f, 0.9f));
+            float tx = safeW * rng.range(0.12f, 0.88f);
+            float ty = safeH * (i < 2 ? rng.range(0.1f, 0.35f) : rng.range(0.65f, 0.9f));
             pile.add(flyTicket(rng, tx, ty, rng.range(14.0f, 26.0f) * (rng.nextBoolean() ? 1 : -1),
                     tw * 0.9f, th * 0.9f, names, nameIndex++));
         }
@@ -328,9 +339,9 @@ public final class VoteLaunchTransitionScreen extends Screen {
             delay += TICKET_STAGGER;
         }
         // 退场：离中心越远越早被吹走
-        float cx = width / 2.0f;
-        float cy = height / 2.0f;
-        float maxDist = Mth.sqrt(cx * cx + cy * cy);
+        float cx = safeW / 2.0f;
+        float cy = safeH / 2.0f;
+        float maxDist = Math.max(1.0f, Mth.sqrt(cx * cx + cy * cy));
         for (int i = 0; i < pile.size(); i++) {
             FlyTicket t = pile.get(i);
             float dist = Mth.sqrt((t.tx - cx) * (t.tx - cx) + (t.ty - cy) * (t.ty - cy));
@@ -338,26 +349,28 @@ public final class VoteLaunchTransitionScreen extends Screen {
             pile.set(i, t.withExitDelay(exitDelay));
         }
 
-        float heroW = Math.min(Math.min(width * 0.74f, 470.0f), height * 0.8f * 2.05f);
-        float heroH = heroW / 2.05f;
+        float heroW = Math.max(60.0f, Math.min(Math.min(safeW * 0.74f, 470.0f), safeH * 0.8f * 2.05f));
+        float heroH = Math.max(30.0f, heroW / 2.05f);
         heroShape = TicketArt.Shape.of(heroW, heroH, 0.78f);
-        float diag = Mth.sqrt(width * width + height * height);
-        hero = new FlyTicket(width / 2.0f, height / 2.0f + 2.0f, 0.0f, heroW, heroH, TicketArt.IVORY,
-                -width * 0.25f, height + heroH, -24.0f, width * 0.18f, height * 0.62f,
+        float diag = Math.max(1.0f, Mth.sqrt(safeW * safeW + safeH * safeH));
+        hero = new FlyTicket(safeW / 2.0f, safeH / 2.0f + 2.0f, 0.0f, heroW, heroH, TicketArt.IVORY,
+                -safeW * 0.25f, safeH + heroH, -24.0f, safeW * 0.18f, safeH * 0.62f,
                 1.1f, 0.6f, 7, "", HERO_DELAY, HERO_FLIGHT, 0.0f, -1.0f, 0.0f, 0L);
         hero = hero.withStartDistance(diag);
     }
 
     private FlyTicket flyTicket(Rng rng, float tx, float ty, float rot, float w, float h, List<String> names, int index) {
-        float cx = width / 2.0f;
-        float cy = height / 2.0f;
+        int safeW = Math.max(1, width);
+        int safeH = Math.max(1, height);
+        float cx = safeW / 2.0f;
+        float cy = safeH / 2.0f;
         float dx = tx - cx;
         float dy = ty - cy;
         float len = Mth.sqrt(dx * dx + dy * dy);
         if (len < 1.0f) {
             dx = rng.range(-1.0f, 1.0f);
             dy = -1.0f;
-            len = Mth.sqrt(dx * dx + dy * dy);
+            len = Math.max(1.0e-4f, Mth.sqrt(dx * dx + dy * dy));
         }
         dx /= len;
         dy /= len;
@@ -365,10 +378,10 @@ public final class VoteLaunchTransitionScreen extends Screen {
         float ang = (float) Math.atan2(dy, dx) + rng.range(-0.7f, 0.7f);
         float ox = Mth.cos(ang);
         float oy = Mth.sin(ang) - 0.45f;
-        float ol = Mth.sqrt(ox * ox + oy * oy);
+        float ol = Math.max(1.0e-4f, Mth.sqrt(ox * ox + oy * oy));
         ox /= ol;
         oy /= ol;
-        float diag = Mth.sqrt(width * width + height * height);
+        float diag = Math.max(1.0f, Mth.sqrt(safeW * safeW + safeH * safeH));
         float distance = diag * rng.range(0.62f, 0.82f) + Math.max(w, h) * 0.5f;
         float sx = tx + ox * distance;
         float sy = ty + oy * distance;
@@ -428,35 +441,44 @@ public final class VoteLaunchTransitionScreen extends Screen {
         float landAge = now - heroLandedAtMillis();
         float shake = landAge >= 0.0f && landAge < 200.0f ? (1.0f - landAge / 200.0f) * 1.6f : 0.0f;
         g.pose().pushPose();
-        g.pose().translate(shake * Mth.sin(landAge * 0.11f), shake * Mth.cos(landAge * 0.13f) * 0.6f, LAYER_Z);
+        try {
+            g.pose().translate(shake * Mth.sin(landAge * 0.11f), shake * Mth.cos(landAge * 0.13f) * 0.6f, LAYER_Z);
 
-        renderBackdrop(g, cover);
-        for (int i = 0; i < pile.size(); i++) {
+            renderBackdrop(g, cover);
+            for (int i = 0; i < pile.size(); i++) {
+                g.pose().pushPose();
+                try {
+                    g.pose().translate(0.0f, 0.0f, i * 2.0f);
+                    renderPileTicket(g, pile.get(i), clock, exitClock);
+                } finally {
+                    g.pose().popPose();
+                }
+            }
+
+            // 车票铺满后压暗四周，把视线收向登车凭证
+            float focus = TransitionFx.easeOutCubic((clock - HERO_DELAY - HERO_FLIGHT * 0.6f) / 600.0f);
+            if (exitClock >= 0.0f) {
+                focus *= 1.0f - TransitionFx.clamp01(exitClock / 400.0f);
+            }
+            if (focus > 0.01f) {
+                GuiGeo dim = GuiGeo.begin(g);
+                dim.rect(0, 0, width, height, RailArt.a(VOID, 0.42f * focus));
+                dim.end();
+                GuiGeo glow = GuiGeo.glow(g);
+                glow.softGlow(hero.tx, hero.ty, hero.w * 0.85f, hero.h * 1.1f, GOLD_DARK, Math.round(60 * focus));
+                glow.end();
+            }
+
             g.pose().pushPose();
-            g.pose().translate(0.0f, 0.0f, i * 2.0f);
-            renderPileTicket(g, pile.get(i), clock, exitClock);
+            try {
+                g.pose().translate(0.0f, 0.0f, pile.size() * 2.0f + 6.0f);
+                renderHero(g, clock, exitClock, now);
+            } finally {
+                g.pose().popPose();
+            }
+        } finally {
             g.pose().popPose();
         }
-
-        // 车票铺满后压暗四周，把视线收向登车凭证
-        float focus = TransitionFx.easeOutCubic((clock - HERO_DELAY - HERO_FLIGHT * 0.6f) / 600.0f);
-        if (exitClock >= 0.0f) {
-            focus *= 1.0f - TransitionFx.clamp01(exitClock / 400.0f);
-        }
-        if (focus > 0.01f) {
-            GuiGeo dim = GuiGeo.begin(g);
-            dim.rect(0, 0, width, height, RailArt.a(VOID, 0.42f * focus));
-            dim.end();
-            GuiGeo glow = GuiGeo.glow(g);
-            glow.softGlow(hero.tx, hero.ty, hero.w * 0.85f, hero.h * 1.1f, GOLD_DARK, Math.round(60 * focus));
-            glow.end();
-        }
-
-        g.pose().pushPose();
-        g.pose().translate(0.0f, 0.0f, pile.size() * 2.0f + 6.0f);
-        renderHero(g, clock, exitClock, now);
-        g.pose().popPose();
-        g.pose().popPose();
 
     }
 
@@ -541,6 +563,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         TicketArt.Shape shape = TicketArt.Shape.of(t.w, t.h, 0.76f);
         drawShadow(g, shape, x, y, rot, scale * flipX, scale * flipY, lift);
         g.pose().pushPose();
+        try {
         g.pose().translate(x, y, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(rot));
         g.pose().scale(scale * flipX, scale * flipY, 1.0f);
@@ -548,7 +571,9 @@ public final class VoteLaunchTransitionScreen extends Screen {
         TicketArt.paper(g, shape, t.palette, TicketArt.Part.WHOLE, 1.0f);
         TicketArt.details(g, shape, t.palette, TicketArt.Part.WHOLE, 1.0f, t.seed, true);
         renderPileFace(g, shape, t);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     private void drawShadow(GuiGraphics g, TicketArt.Shape shape, float x, float y, float rot,
@@ -559,12 +584,15 @@ public final class VoteLaunchTransitionScreen extends Screen {
     private void drawShadow(GuiGraphics g, TicketArt.Shape shape, TicketArt.Part part, float x, float y, float rot,
                             float sx, float sy, float lift) {
         g.pose().pushPose();
+        try {
         g.pose().translate(x + 2.0f + 16.0f * lift, y + 3.0f + 22.0f * lift, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(rot));
         g.pose().scale(sx, sy, 1.0f);
         g.pose().translate(-shape.w() / 2.0f, -shape.h() / 2.0f, 0.0f);
         TicketArt.shadow(g, shape, part, 2.5f + 9.0f * lift, 0.62f - 0.32f * lift);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 票堆车票的票面：线路名、终点站（落选地图）、座位与编号、竖排「ADMIT ONE」与条码。 */
@@ -602,10 +630,13 @@ public final class VoteLaunchTransitionScreen extends Screen {
                 stubCx, b + 4.0f, label, p.serial());
         float admit = TicketArt.crispAscii(Math.max(0.5f, s.h() / 200.0f));
         g.pose().pushPose();
+        try {
         g.pose().translate(stubCx - 4.0f * admit, b + 6.0f + 10.0f * label, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(90.0f));
         TicketArt.drawTrackedLeft(g, font, "ADMIT ONE", 0.0f, -8.0f * admit, admit, fadeTo(p.ink(), 0.8f));
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         GuiGeo code = GuiGeo.begin(g);
         float codeH = Math.max(5.0f, s.h() * 0.16f);
         TicketArt.barcode(code, stubL + 1.0f, s.h() - in - 3.0f - codeH, stubR - stubL - 2.0f, codeH, t.seed,
@@ -666,6 +697,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         if (!torn) {
             drawShadow(g, s, x, y, rot, scale * flipX, scale, Math.max(air, bodyLift));
             g.pose().pushPose();
+            try {
             g.pose().translate(x, y, 0.0f);
             g.pose().mulPose(Axis.ZP.rotationDegrees(rot));
             g.pose().scale(scale * flipX, scale, 1.0f);
@@ -673,15 +705,20 @@ public final class VoteLaunchTransitionScreen extends Screen {
             if (stubDx != 0.0f) {
                 renderHeroPart(g, s, TicketArt.Part.BODY, now, clock);
                 g.pose().pushPose();
+                try {
                 g.pose().translate(s.stubX() + stubDx, s.h(), 0.0f);
                 g.pose().mulPose(Axis.ZP.rotationDegrees(stubRot));
                 g.pose().translate(-s.stubX(), -s.h(), 0.0f);
                 renderHeroPart(g, s, TicketArt.Part.STUB, now, clock);
-                g.pose().popPose();
+                } finally {
+                    g.pose().popPose();
+                }
             } else {
                 renderHeroPart(g, s, TicketArt.Part.WHOLE, now, clock);
             }
-            g.pose().popPose();
+            } finally {
+                g.pose().popPose();
+            }
             return;
         }
 
@@ -690,27 +727,36 @@ public final class VoteLaunchTransitionScreen extends Screen {
         float stubCy = y + stubDy;
         float stubLift = TransitionFx.clamp01(stubDy / (height * 0.3f));
         g.pose().pushPose();
+        try {
         g.pose().translate(stubCx + 2.0f + 10.0f * stubLift, stubCy + 3.0f + 14.0f * stubLift, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(stubRot));
         g.pose().translate(-(s.stubX() + s.w()) / 2.0f, -s.h() / 2.0f, 0.0f);
         TicketArt.shadow(g, s, TicketArt.Part.STUB, 2.5f + 6.0f * stubLift, 0.55f - 0.25f * stubLift);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         g.pose().pushPose();
+        try {
         g.pose().translate(stubCx, stubCy, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(stubRot));
         g.pose().translate(-(s.stubX() + s.w()) / 2.0f, -s.h() / 2.0f, 0.0f);
         renderHeroPart(g, s, TicketArt.Part.STUB, now, clock);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
 
         float bodyScale = 1.0f + 0.08f * bodyLift;
         drawShadow(g, s, TicketArt.Part.BODY, x + bodyDx, y + bodyDy, bodyRot, bodyScale, bodyScale, bodyLift);
         g.pose().pushPose();
+        try {
         g.pose().translate(x + bodyDx, y + bodyDy, 2.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(bodyRot));
         g.pose().scale(bodyScale, bodyScale, 1.0f);
         g.pose().translate(-s.w() / 2.0f, -s.h() / 2.0f, 0.0f);
         renderHeroPart(g, s, TicketArt.Part.BODY, now, clock);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 登车凭证的一部分（票纸 + 票面内容），在票面局部坐标系中绘制。 */
@@ -774,7 +820,7 @@ public final class VoteLaunchTransitionScreen extends Screen {
         float nameScale = TicketArt.crisp(2.0f * unit);
         Component winner = winnerLabel().copy().withStyle(ChatFormatting.BOLD);
         while (nameScale > TicketArt.crisp(1.0f) && font.width(winner) * nameScale > span * 0.92f) {
-            nameScale = TicketArt.crisp(nameScale - 0.5f);
+            nameScale = TicketArt.smallerCrisp(nameScale);
         }
         Component fittedName = TicketArt.fit(font, winner, span / nameScale);
         float nameY = TicketArt.snap(labelY + 8.0f * small + 3.0f);
@@ -1003,6 +1049,11 @@ public final class VoteLaunchTransitionScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F2
+                || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F3
+                || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F11) {
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
         return true;
     }
 

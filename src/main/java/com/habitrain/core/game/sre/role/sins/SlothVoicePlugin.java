@@ -32,10 +32,12 @@ public final class SlothVoicePlugin implements VoicechatPlugin {
             if (sender == null) return;
             de.maxhenkel.voicechat.api.ServerPlayer vcPlayer = sender.getPlayer();
             if (vcPlayer == null) return;
-            Object entity = vcPlayer.getPlayer();
-            if (!(entity instanceof ServerPlayer sp)) return;
-            if (SlothComponent.isSleepingSloth(sp)
-                    || com.habitrain.core.game.sre.role.component.MimeKillerComponent.isMuted(sp)) {
+            java.util.UUID uuid = vcPlayer.getUuid();
+            if (uuid == null && vcPlayer.getPlayer() instanceof ServerPlayer sp) {
+                uuid = sp.getUUID();
+            }
+            if (uuid != null && (SlothComponent.isSleepingSloth(uuid)
+                    || com.habitrain.core.game.sre.role.component.MimeKillerComponent.isMuted(uuid))) {
                 event.cancel();
             }
         } catch (Throwable ignored) {

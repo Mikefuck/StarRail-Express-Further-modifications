@@ -67,7 +67,7 @@ public final class SceneDeltaBuilder {
             LOGGER.info("已生成场景增量补丁: mapKey={}, {} → 整份 {} 字节 / 补丁 {} 字节（省 {}%）",
                     mapKey, SceneAssetDelta.describe(delta), targetBytes, patchBytes.length,
                     (int) Math.round(100.0 * (targetBytes - patchBytes.length) / targetBytes));
-            return new SceneDeltaStore.PatchBlob(previous.sha256(), patchSha256, patchBytes);
+            return new SceneDeltaStore.PatchBlob(previous.sha256(), targetSha256, patchSha256, patchBytes);
         } catch (Exception e) {
             LOGGER.warn("生成场景增量补丁失败，本次按全量发布: mapKey=" + mapKey, e);
             return null;

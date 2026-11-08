@@ -17,53 +17,94 @@ public final class MenuGateApi {
 
     /**
      * {@code true} when the player must be denied menu/config writes.
-     * Null player, non-dedicated server, or a server that cannot be resolved
-     * from the player → not blocked.
      *
-     * <p>本方法直接委托实现层的完整判定（含 {@code player.level().getServer()} 兜底）。
-     * 审核 M-20：旧实现在 {@code player.getServer() == null} 的瞬间会 fail-open，
-     * 比内部实现更宽松。
+     * <p>API-TV-02：当 {@code CoreSpi.isMenuGateInstalled()} 为 {@code false} 或底层桥接抛异常时，
+     * 在专用服务端（或无法确认服务端非专用服）上保守返回 {@code true}（fail-closed）。</p>
      */
     public static boolean isBlocked(@Nullable ServerPlayer player) {
         if (player == null) {
             return false;
         }
-        return CoreSpi.menuGate().isBlocked(player);
+        MinecraftServer server = resolveServer(player);
+        if (server == null) return true;
+        if (!server.isDedicatedServer()) return false;
+        if (!CoreSpi.isMenuGateInstalled()) return true;
+        try {
+            return CoreSpi.menuGate().isBlocked(player)
+                    || CoreSpi.menuGate().isEnabled() && !CoreSpi.menuGate().isAllowed(player);
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     /**
      * {@code true} when the player must be denied menu/config writes on this server.
+     *
+     * <p>API-TV-02：若调用方传入 {@code server == null}，会主动尝试从 {@code player} 解析
+     * {@code MinecraftServer}，并直接使用已解析的 {@code server.isDedicatedServer()} 结合
+     * 桥接状态判定。</p>
      */
     public static boolean isBlocked(@Nullable ServerPlayer player, @Nullable MinecraftServer server) {
-        if (server == null || !server.isDedicatedServer()) {
-            return false;
-        }
         if (player == null) {
             return false;
         }
-        return CoreSpi.menuGate().isBlocked(player);
+        MinecraftServer actual = resolveServer(player);
+        if (server != null && actual != null && server != actual) return true;
+        MinecraftServer resolved = actual != null ? actual : server;
+        if (resolved == null) {
+            return isBlocked(player);
+        }
+        if (!resolved.isDedicatedServer()) {
+            return false;
+        }
+        if (!CoreSpi.isMenuGateInstalled()) {
+            return true;
+        }
+        try {
+            return CoreSpi.menuGate().isBlocked(player)
+                    || (CoreSpi.menuGate().isEnabled() && !CoreSpi.menuGate().isAllowed(player));
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     /**
      * 门控总开关是否打开。
-     *
-     * <p>它与「本服务器是否启用门控」无关：非专用服务器（单机 / 局域网）上即使本方法返回
-     * {@code true}，{@link #isBlocked} 也永远返回 {@code false}。
      */
     public static boolean isEnabled() {
-        return CoreSpi.menuGate().isEnabled();
+        if (!CoreSpi.isMenuGateInstalled()) return true;
+        try {
+            return CoreSpi.menuGate().isEnabled();
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     /**
      * 名单查询：该玩家是否位于允许访问名单里。
      *
-     * <p><b>这不是门禁判定</b>（审核 B20）：它<b>不</b>等于 {@link #isBlocked} 的取反。
-     * 在专用服务器 + 门控已关闭时，未授权玩家会同时得到
-     * {@code isBlocked() == false} 与 {@code isAllowed() == false}；{@code null} 玩家同样
-     * 「既不拦截也不允许」。把本方法当门禁谓词用（{@code if (isAllowed(p)) 放行 else 拒绝}）
-     * 会拒绝所有人——门禁判定请只用 {@link #isBlocked}。
+     * <p><b>这不是门禁判定</b>（审核 B20）：门禁判定请只用 {@link #isBlocked}。</p>
      */
     public static boolean isAllowed(@Nullable ServerPlayer player) {
-        return CoreSpi.menuGate().isAllowed(player);
+        if (player == null) {
+            return false;
+        }
+        try {
+            return CoreSpi.menuGate().isAllowed(player);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static @Nullable MinecraftServer resolveServer(ServerPlayer player) {
+        try {
+            MinecraftServer s = player.getServer();
+            if (s != null) {
+                return s;
+            }
+            return player.level() != null ? player.level().getServer() : null;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 }

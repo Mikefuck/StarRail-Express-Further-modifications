@@ -126,7 +126,7 @@ public abstract class GenerateTaskMixin {
         // Never replace an existing sleep task: that would reset the time already slept.
         // SlothComponent replaces existing tasks immediately and maintains this lock until completion.
         cir.setReturnValue(tasks.isEmpty()
-                ? new SREPlayerTaskComponent.SleepTask(io.wifi.starrailexpress.game.GameConstants.SLEEP_TASK_DURATION)
+                ? createTaskInstance(SREPlayerTaskComponent.Task.SLEEP)
                 : null);
         return true;
     }

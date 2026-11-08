@@ -98,7 +98,7 @@ class SnakeFruitRuntimeTest {
         AppleShopStateCodec.write(state, size, outgoing, registries);
         assertEquals(incoming.getString("role"), outgoing.getString("role"));
         assertEquals(1200, outgoing.getLong("settles"));
-        assertEquals(42, outgoing.getLong("seed"));
+        assertEquals(0, outgoing.getLong("seed"), "settled quotes retain prices without exposing the RNG seed");
         assertEquals(99, outgoing.getLong("revision"));
         assertTrue(outgoing.getBoolean("settled"));
         var result = outgoing.getList("prices", 10);

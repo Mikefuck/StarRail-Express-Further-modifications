@@ -68,8 +68,19 @@ public final class EnvironmentController {
         try {
             GameUtils.WinStatus status = null;
             try {
-                if (game != null) status = game.getLastWinStatus();
+                if (level != null) {
+                    io.wifi.starrailexpress.cca.SREGameRoundEndComponent roundEnd =
+                            io.wifi.starrailexpress.cca.SREGameRoundEndComponent.KEY.get(level);
+                    if (roundEnd != null) {
+                        status = roundEnd.getWinStatus();
+                    }
+                }
             } catch (Throwable ignored) {}
+            if (status == null || status == GameUtils.WinStatus.NONE || status == GameUtils.WinStatus.NOT_MODIFY) {
+                try {
+                    if (game != null) status = game.getLastWinStatus();
+                } catch (Throwable ignored) {}
+            }
             applyPostMatch(level, status);
         } catch (Throwable t) {
             LOGGER.error("onGameEnd env apply failed", t);

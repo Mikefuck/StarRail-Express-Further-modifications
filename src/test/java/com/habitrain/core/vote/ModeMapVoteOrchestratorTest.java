@@ -31,6 +31,17 @@ class ModeMapVoteOrchestratorTest {
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId(null));
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId(""));
         assertFalse(ModeMapVoteOrchestrator.isRepairModeId("repair_kit"));
+        assertFalse(ModeMapVoteOrchestrator.isRepairModeId("example:sre:repair_preview"));
+        assertFalse(ModeMapVoteOrchestrator.isRepairModeId("example:custom_repair_escape_preview"));
+    }
+
+    @Test
+    void thirdPartyIdsContainingBuiltinNamesNeverOpenSreLoadingScreen() {
+        assertTrue(ModeMapVoteOrchestrator.usesSreLoadCoordinator("habitrain_core:sre:murder"));
+        assertTrue(ModeMapVoteOrchestrator.usesSreLoadCoordinator("sre:repair"));
+        assertFalse(ModeMapVoteOrchestrator.usesSreLoadCoordinator("example:sre:murder_preview"));
+        assertFalse(ModeMapVoteOrchestrator.usesSreLoadCoordinator("example:custom_repair_escape_preview"));
+        assertFalse(ModeMapVoteOrchestrator.usesSreLoadCoordinator(null));
     }
 
     @Test

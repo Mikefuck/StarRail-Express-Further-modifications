@@ -15,7 +15,7 @@ public abstract class SlothSleepHitboxMixin {
     @Inject(method = "getDefaultDimensions", at = @At("RETURN"), cancellable = true)
     private void habitrain$sleepingBody(Pose pose, CallbackInfoReturnable<EntityDimensions> cir) {
         if (pose == Pose.SLEEPING && SlothComponent.isSleepingSloth((Player) (Object) this)) {
-            cir.setReturnValue(EntityDimensions.scalable(1.8F, 0.6F).withEyeHeight(0.2F));
+            cir.setReturnValue(EntityDimensions.scalable(0.6F, 0.6F).withEyeHeight(0.4F));
         }
     }
 }

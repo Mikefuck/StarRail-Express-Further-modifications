@@ -29,7 +29,7 @@ public record RoleActionS2CPayload(
     public static final Type<RoleActionS2CPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_action_s2c"));
 
-    private static final int MAX_PAYLOAD_BYTES = 65536;
+    private static final int MAX_PAYLOAD_BYTES = com.habitrain.core.api.role.v2.action.RoleActionSpec.MAX_PAYLOAD_BYTES;
 
     public static final StreamCodec<FriendlyByteBuf, RoleActionS2CPayload> CODEC =
             StreamCodec.ofMember(RoleActionS2CPayload::write, RoleActionS2CPayload::new);
@@ -45,8 +45,8 @@ public record RoleActionS2CPayload(
 
     private static byte[] readBoundedByteArray(FriendlyByteBuf buf, int maxBytes) {
         int len = buf.readVarInt();
-        if (len < 0 || len > maxBytes) {
-            throw new DecoderException("RoleActionS2C payload too large: " + len + " > " + maxBytes);
+        if (len < 0 || len > maxBytes || len > buf.readableBytes()) {
+            throw new DecoderException("RoleActionS2C payload too large or truncated: " + len + " > " + maxBytes);
         }
         byte[] data = new byte[len];
         buf.readBytes(data);
@@ -54,11 +54,15 @@ public record RoleActionS2CPayload(
     }
 
     private void write(FriendlyByteBuf buf) {
+        byte[] bytes = payload == null ? new byte[0] : payload;
+        if (bytes.length > MAX_PAYLOAD_BYTES) {
+            throw new io.netty.handler.codec.EncoderException("RoleActionS2C payload too large: " + bytes.length + " > " + MAX_PAYLOAD_BYTES);
+        }
         buf.writeResourceLocation(actionId);
         buf.writeVarInt(sequence);
         buf.writeBoolean(ok);
         buf.writeUtf(reasonKey == null ? "" : reasonKey, 128);
-        buf.writeByteArray(payload == null ? new byte[0] : payload);
+        buf.writeByteArray(bytes);
         buf.writeBoolean(push);
     }
 

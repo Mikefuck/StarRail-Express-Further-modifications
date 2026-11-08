@@ -47,13 +47,38 @@ public record RoleSkillPatch(ListOp op, List<RoleSkillSpec> skills) {
                 var remove = ids(skills);
                 yield baseline.stream().filter(s -> !remove.contains(s.id())).toList();
             }
-            case REPLACE_ALL -> List.copyOf(skills);
+            case REPLACE_ALL -> {
+                java.util.LinkedHashMap<net.minecraft.resources.ResourceLocation, RoleSkillSpec> unique =
+                        new java.util.LinkedHashMap<>();
+                for (RoleSkillSpec spec : skills) {
+                    if (unique.put(spec.id(), spec) != null) {
+                        throw new IllegalStateException("Duplicate skill id in REPLACE_ALL: " + spec.id());
+                    }
+                }
+                yield List.copyOf(unique.values());
+            }
             case REPLACE_MATCHING_IDS -> {
-                var replace = ids(skills);
-                List<RoleSkillSpec> kept = baseline.stream()
-                        .filter(s -> !replace.contains(s.id()))
-                        .toList();
-                yield concatUnique(kept, skills);
+                // ROLE-CMP-05：原位替换命中 id 的技能槽，未命中的补丁技能按顺序追加在末尾，保持槽位稳定。
+                java.util.LinkedHashMap<net.minecraft.resources.ResourceLocation, RoleSkillSpec> replacements =
+                        new java.util.LinkedHashMap<>();
+                for (RoleSkillSpec spec : skills) {
+                    if (replacements.put(spec.id(), spec) != null) {
+                        throw new IllegalStateException("Duplicate skill id in REPLACE_MATCHING_IDS: " + spec.id());
+                    }
+                }
+                java.util.LinkedHashMap<net.minecraft.resources.ResourceLocation, RoleSkillSpec> out =
+                        new java.util.LinkedHashMap<>();
+                for (RoleSkillSpec spec : baseline) {
+                    RoleSkillSpec rep = replacements.remove(spec.id());
+                    RoleSkillSpec chosen = rep != null ? rep : spec;
+                    if (out.put(chosen.id(), chosen) != null) {
+                        throw new IllegalStateException("Duplicate skill id in baseline: " + chosen.id());
+                    }
+                }
+                for (RoleSkillSpec remaining : replacements.values()) {
+                    out.put(remaining.id(), remaining);
+                }
+                yield List.copyOf(out.values());
             }
         };
     }

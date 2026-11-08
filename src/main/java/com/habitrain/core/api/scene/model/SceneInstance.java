@@ -63,10 +63,10 @@ public final class SceneInstance implements com.habitrain.core.api.scene.SceneIn
      * 却会在下一次任意同步时被顺带序列化上线，行为不可预测。</p>
      */
     @Override
-    public SceneProfile profile() { return spec.profile().copy(); }
+    public SceneProfile profile() { return spec.profile(); }
 
     /** 内部热路径用：直接引用（只读，禁止改写）。 */
-    public SceneProfile profileRaw() { return spec.profile(); }
+    public SceneProfile profileRaw() { return spec.profileRaw(); }
     public SceneInstanceAnchor anchor() { return spec.anchor(); }
     public long startGameTime() { return spec.startGameTime(); }
     public double timeScale() { return spec.timeScale(); }
@@ -122,14 +122,19 @@ public final class SceneInstance implements com.habitrain.core.api.scene.SceneIn
      * @param partialTick 帧内插值 tick 分量；暂停时不参与
      */
     public double elapsedSeconds(long gameTime, float partialTick) {
+        double scale = spec.timeScale();
+        if (scale <= 0.0) {
+            if (pausedAtGameTime >= 0L && pausedAtGameTime > startGameTime()) {
+                return ((double) pausedAtGameTime - startGameTime()) / 20.0;
+            }
+            return 0.0;
+        }
         long now = paused() && pausedAtGameTime >= 0L ? pausedAtGameTime : gameTime;
-        double ticks = (double) (now - startGameTime());
-        if (!paused()) {
+        double ticks = (double) now - startGameTime();
+        if (!paused() && Float.isFinite(partialTick)) {
             ticks += partialTick;
         }
         if (ticks < 0.0) ticks = 0.0;
-        double scale = spec.timeScale();
-        if (scale <= 0.0) return 0.0;
         return ticks * scale / 20.0;
     }
 

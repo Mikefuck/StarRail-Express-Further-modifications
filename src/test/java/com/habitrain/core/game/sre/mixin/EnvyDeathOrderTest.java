@@ -1,13 +1,18 @@
 package com.habitrain.core.game.sre.mixin;
 
+import com.habitrain.core.game.sre.role.sins.EnvyDeathLoot;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Verify the real dependency's death order, which is why inventory-only loot misses weapons. */
+/** Verify the real dependency's death order and EnvyDeathLootMixin's bytecode contract. */
 class EnvyDeathOrderTest {
     @Test
     void confirmedKillFollowsSpectatorTransitionAndDeathDrops() throws Exception {
@@ -25,6 +30,59 @@ class EnvyDeathOrderTest {
         ClassNode sword = read("org/agmas/noellesroles/content/item/ScarletPerceptionSwordItem");
         assertTrue(sword.interfaces.contains(
                 "io/wifi/starrailexpress/content/item/api/SREItemProperties$DropRevolverWhenDead"));
+    }
+
+    @Test
+    void envyDeathLootMixinWrapsKillPlayerAndDelegatesToEnvyDeathLoot() throws Exception {
+        assertNotNull(EnvyDeathLootMixin.class);
+        assertNotNull(EnvyDeathLoot.class);
+        ClassNode mixin = read("com/habitrain/core/game/sre/mixin/EnvyDeathLootMixin");
+        ClassNode gameMode = read("io/wifi/starrailexpress/api/GameMode");
+        var killPlayer = gameMode.methods.stream()
+                .filter(m -> "killPlayer".equals(m.name))
+                .findFirst()
+                .orElseThrow();
+
+        var handler = mixin.methods.stream()
+                .filter(m -> "habitrain$preserveDeathLoot".equals(m.name))
+                .findFirst()
+                .orElseThrow();
+        assertNotNull(handler.visibleAnnotations, "habitrain$preserveDeathLoot must have visible annotations");
+        AnnotationNode wrapMethod = handler.visibleAnnotations.stream()
+                .filter(a -> "Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;".equals(a.desc))
+                .findFirst()
+                .orElseThrow();
+        @SuppressWarnings("unchecked")
+        List<String> targets = (List<String>) annotationValue(wrapMethod, "method");
+        assertEquals(List.of("killPlayer"), targets);
+
+        Type[] expectedParams = Type.getArgumentTypes(killPlayer.desc);
+        Type[] actualParams = Type.getArgumentTypes(handler.desc);
+        assertEquals(expectedParams.length + 1, actualParams.length);
+        for (int i = 0; i < expectedParams.length; i++) {
+            assertEquals(expectedParams[i], actualParams[i]);
+        }
+        assertEquals("com.llamalad7.mixinextras.injector.wrapoperation.Operation",
+                actualParams[actualParams.length - 1].getClassName());
+
+        boolean callsDuringKill = false;
+        for (int i = 0; i < handler.instructions.size(); i++) {
+            if (handler.instructions.get(i) instanceof MethodInsnNode call
+                    && "com/habitrain/core/game/sre/role/sins/EnvyDeathLoot".equals(call.owner)
+                    && "duringKill".equals(call.name)) {
+                callsDuringKill = true;
+                break;
+            }
+        }
+        assertTrue(callsDuringKill, "EnvyDeathLootMixin must invoke EnvyDeathLoot.duringKill");
+    }
+
+    private static Object annotationValue(AnnotationNode annotation, String key) {
+        if (annotation.values == null) return null;
+        for (int i = 0; i < annotation.values.size(); i += 2) {
+            if (key.equals(annotation.values.get(i))) return annotation.values.get(i + 1);
+        }
+        return null;
     }
 
     private static ClassNode read(String name) throws Exception {

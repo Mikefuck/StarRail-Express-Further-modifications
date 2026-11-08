@@ -55,7 +55,9 @@ public record SceneAssetPrefetchS2C(long sessionId, String mapKey,
 
     private static String readString(ByteBuf buf, int maxLength) {
         int length = buf.readInt();
-        if (length < 0 || length > maxLength) throw new DecoderException("Invalid string length: " + length);
+        if (length < 0 || length > maxLength || length > buf.readableBytes()) {
+            throw new DecoderException("Invalid string length: " + length);
+        }
         if (length == 0) return "";
         byte[] bytes = new byte[length];
         buf.readBytes(bytes);

@@ -43,10 +43,14 @@ public final class PayloadSenders {
         var client = Minecraft.getInstance();
         if (client.getConnection() == null) return;
         var manager = com.habitrain.core.config.ConfigManager.getInstance();
-        manager.beginClientEditing();
-        manager.loadFromJsonString(configJson);
         com.habitrain.core.client.gui.menu.ConfigUpdateContext.setCurrentScope(scope);
-        com.habitrain.core.client.config.ClientConfigSubmission.show(manager.save());
+        try {
+            manager.beginClientEditing();
+            manager.loadFromJsonString(configJson);
+            com.habitrain.core.client.config.ClientConfigSubmission.show(manager.save());
+        } finally {
+            com.habitrain.core.client.gui.menu.ConfigUpdateContext.reset();
+        }
     }
 
     /**

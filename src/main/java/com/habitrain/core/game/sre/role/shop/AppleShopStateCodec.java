@@ -15,7 +15,9 @@ public final class AppleShopStateCodec {
                              CompoundTag tag, HolderLookup.Provider registries) {
         tag.putString("role", state.role());
         tag.putLong("settles", state.settlesAt());
-        tag.putLong("seed", state.seed());
+        // Never send the raw server scramble seed; only send the one-time current frame token.
+        tag.putLong("seed", state.clientSeed());
+        tag.putInt("frame", state.syncedFrame());
         tag.putLong("revision", state.revision());
         tag.putBoolean("settled", state.settled());
         tag.putInt("size", shopSize);
@@ -44,8 +46,9 @@ public final class AppleShopStateCodec {
             prices.put(index, new ApplePriceState.Quote<>(AppleShopSignature.load(price, registries),
                     price.getInt("normal"), value));
         }
+        int syncedFrame = tag.contains("frame", Tag.TAG_INT) ? tag.getInt("frame") : -1;
         state.apply(tag.getString("role"), tag.getLong("settles"), tag.getLong("seed"),
-                tag.getLong("revision"), tag.getBoolean("settled"), prices);
+                syncedFrame, tag.getLong("revision"), tag.getBoolean("settled"), prices);
         return shopSize;
     }
 }

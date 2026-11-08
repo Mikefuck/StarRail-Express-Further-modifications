@@ -46,9 +46,9 @@ public record SceneAdditionalRuntimeStatesS2C(List<SceneRuntimeState> states)
                 String assetHash = readString(buf);
                 SceneProfile profile;
                 try {
-                    profile = SceneProfile.fromJson(JsonParser.parseString(readString(buf)).getAsJsonObject());
-                } catch (RuntimeException ignored) {
-                    profile = SceneProfile.createDefault();
+                    profile = SceneProfile.fromJson(JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(readString(buf))).getAsJsonObject());
+                } catch (RuntimeException error) {
+                    throw new DecoderException("Invalid additional scene profile JSON", error);
                 }
                 states.add(new SceneRuntimeState(active, startTime, revision, assetKey, assetHash, profile));
             }
@@ -71,7 +71,9 @@ public record SceneAdditionalRuntimeStatesS2C(List<SceneRuntimeState> states)
 
     private static String readString(ByteBuf buf) {
         int length = buf.readInt();
-        if (length < 0 || length > MAX_STRING_LENGTH) throw new DecoderException("Invalid string length: " + length);
+        if (length < 0 || length > MAX_STRING_LENGTH || length > buf.readableBytes()) {
+            throw new DecoderException("Invalid string length: " + length);
+        }
         byte[] bytes = new byte[length];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

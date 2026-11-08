@@ -139,13 +139,72 @@ public final class TaskOverlayDrawer {
         if (context == null || blockPos == null || color == null) {
             return false;
         }
-        if (!isInOverlayRange(context, blockPos, SURVIVAL_OVERLAY_DISTANCE_SQ)) {
+        Level world = context.world();
+        double maxDistSq = (io.wifi.starrailexpress.client.SREClient.isPlayerSpectatingOrCreative()
+                || isGlobalUpstreamOverlay(world, blockPos))
+                ? SPECTATOR_SPARSE_OVERLAY_DISTANCE_SQ
+                : SURVIVAL_OVERLAY_DISTANCE_SQ;
+        if (!isInOverlayRange(context, blockPos, maxDistSq)) {
             return true;
         }
-        int alphaByte = Math.round(Math.max(0.0f, Math.min(1.0f, alpha)) * 255.0f);
-        Color queuedColor = new Color(color.getRed(), color.getGreen(), color.getBlue(), alphaByte);
-        OVERLAY_QUEUE.enqueue(new QueuedOverlay(blockPos, queuedColor, normalizeLineWidth(lineWidth)));
+        float effectiveLineWidth = lineWidth;
+        Color effectiveColor = color;
+        float effectiveAlpha = alpha;
+        if (world != null && world.getBlockEntity(blockPos)
+                instanceof io.wifi.starrailexpress.content.block_entity.MinigameQuestBlockEntity questBe) {
+            String minigameId = questBe.getMinigameId();
+            if (minigameId != null && !minigameId.isEmpty()) {
+                com.habitrain.core.config.MinigameConfigEntry mgCfg =
+                        com.habitrain.core.config.ConfigManager.getInstance().getMinigameConfig(minigameId);
+                if (mgCfg != null) {
+                    if (mgCfg.getOutlineWidth() > 0.0f) {
+                        effectiveLineWidth = mgCfg.getOutlineWidth();
+                    }
+                    if (!questBe.isSabotageTrigger() && mgCfg.hasInstinctColor) {
+                        int argb = mgCfg.getColor();
+                        effectiveColor = new Color((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+                        effectiveAlpha = ((argb >>> 24) & 0xFF) / 255.0f;
+                    }
+                }
+            }
+        } else {
+            Integer taskType = org.agmas.noellesroles.client.NoellesrolesClient.taskBlocks.get(blockPos);
+            if (taskType != null) {
+                effectiveLineWidth = com.habitrain.core.client.InstinctColorHelper.getOverrideOutlineWidth(
+                        taskType, effectiveLineWidth);
+                Color override = com.habitrain.core.client.InstinctColorHelper.getOverrideColors().get(taskType);
+                if (override != null && effectiveColor.getRGB() == override.getRGB()) {
+                    effectiveAlpha = override.getAlpha() / 255.0f;
+                }
+            }
+        }
+        int alphaByte = Math.round(Math.max(0.0f, Math.min(1.0f, effectiveAlpha)) * 255.0f);
+        Color queuedColor = new Color(
+                effectiveColor.getRed(), effectiveColor.getGreen(), effectiveColor.getBlue(), alphaByte);
+        OVERLAY_QUEUE.enqueue(new QueuedOverlay(blockPos, queuedColor, normalizeLineWidth(effectiveLineWidth)));
         return true;
+    }
+
+    private static boolean isGlobalUpstreamOverlay(Level world, BlockPos blockPos) {
+        Integer type = org.agmas.noellesroles.client.NoellesrolesClient.taskBlocks.get(blockPos);
+        if (type != null && (type == 13 || type == 24)) {
+            return true;
+        }
+        if (world == null || !world.hasChunkAt(blockPos)) {
+            return false;
+        }
+        BlockState state = world.getBlockState(blockPos);
+        var block = state.getBlock();
+        if (block instanceof org.agmas.noellesroles.content.block.scene.ReactorBlock
+                || block instanceof org.agmas.noellesroles.content.block.scene.WaterValveBlock
+                || block instanceof org.agmas.noellesroles.content.block.scene.DebrisPileBlock) {
+            return true;
+        }
+        if (world.getBlockEntity(blockPos)
+                instanceof io.wifi.starrailexpress.content.block_entity.MinigameQuestBlockEntity questBe) {
+            return questBe.isSabotageTrigger();
+        }
+        return false;
     }
 
     private static float normalizeLineWidth(float lineWidth) {
@@ -153,6 +212,7 @@ public final class TaskOverlayDrawer {
     }
 
     private static void flushOverlayFrame(WorldRenderContext context) {
+        try (var stateGuard = com.habitrain.core.client.render.ClientRenderState.capture()) {
         List<QueuedOverlay> overlays = OVERLAY_QUEUE.drain();
         if (overlays.isEmpty() || context == null || context.camera() == null) {
             return;
@@ -185,6 +245,9 @@ public final class TaskOverlayDrawer {
             // RenderType normally restores this itself. Keep the final guard because LAST callbacks
             // must not leak GL state into held-item or GUI rendering if a draw throws midway.
             ThroughWallDepthFunction.restore(RenderSystem::depthFunc);
+            RenderSystem.lineWidth(1.0f);
+        }
+    
         }
     }
 

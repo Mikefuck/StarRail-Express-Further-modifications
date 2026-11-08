@@ -165,7 +165,9 @@ public final class RoleDiagnosticsImpl implements RoleDiagnostics {
     }
 
     private Set<String> providers() {
-        return new LinkedHashSet<>(RoleExtensionRegistry.INSTANCE.getProviders());
+        Set<String> out = new LinkedHashSet<>(RoleExtensionRegistry.INSTANCE.providerIds());
+        out.addAll(RoleExtensionRegistry.INSTANCE.getProviders());
+        return out;
     }
 
     private static boolean aliasTargetExists(RoleKey to) {

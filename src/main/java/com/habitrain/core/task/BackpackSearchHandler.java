@@ -2,27 +2,31 @@ package com.habitrain.core.task;
 
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.api.MatchRestStateApi;
 import com.habitrain.core.api.TaskInstance;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.HitResult;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 背包翻找交互处理器
@@ -32,22 +36,28 @@ import java.util.UUID;
  */
 public class BackpackSearchHandler {
     /** 活跃的翻找记录 (玩家UUID -> 翻找状态) */
-    private static final Map<UUID, SearchState> activeSearches = new HashMap<>();
+    private static final Map<UUID, SearchState> activeSearches = new ConcurrentHashMap<>();
     private static final int SEARCH_TICKS_DEFAULT = 120; // 6秒 — 谋杀模式
+    /** API-TV-15：超时宽限 tick，避免因 1~2 tick 调度抖动在读条即将满时将任务永久标为 FAILED */
+    private static final int TIMEOUT_GRACE_TICKS = 40;
+    private static final double MAX_INTERACT_DISTANCE_SQR = 6.0 * 6.0;
+    private static final double MAX_HOLD_DISTANCE_SQR = 7.0 * 7.0;
 
     private static final String BACKPACK_BLOCK_ID = "decocraft:backpack_red";
     private static final String TASK_SEARCH_BACKPACK = "habitrain_core:search_backpack";
 
-    private static Block backpackBlock = null;
-    private static boolean blockChecked = false;
+    private static volatile Block backpackBlock = null;
+    private static volatile boolean blockChecked = false;
+    private static boolean registered = false;
 
     public static void register() {
+        // API-TV-15：幂等守卫，防止重复注册监听器
+        if (registered) return;
+        registered = true;
         ClearableHandlerRegistry.register(BackpackSearchHandler::clearAllSearches);
         UseBlockCallback.EVENT.register(BackpackSearchHandler::onUseBlock);
 
-        // 注册END_SERVER_TICK重新施加缓慢效果
-        // betel-nut-mod 每tick会清除 MOVEMENT_SLOWDOWN，
-        // 必须在 END_SERVER_TICK（实体同步前）重新施加，确保客户端能看到效果
+        // 注册END_SERVER_TICK重新施加缓慢效果并检查翻找状态
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (activeSearches.isEmpty()) return;
 
@@ -60,64 +70,63 @@ public class BackpackSearchHandler {
                 UUID uuid = entry.getKey();
                 SearchState state = entry.getValue();
                 ServerPlayer player = server.getPlayerList().getPlayer(uuid);
-
-                // 离线/死亡/旁观状态异常检查：玩家已失效则立即清理
-                if (player == null || player.isRemoved() || player.isDeadOrDying() || player.isSpectator()) {
-                    if (player != null && !player.isRemoved()) {
-                        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    }
-                    SlownessReapplyManager.unregisterAllLevels(uuid);
+                TaskInstance assigned = TaskManager.getInstance().getActiveTask(uuid);
+                if (assigned == null || !assigned.getInstanceId().equals(state.taskInstanceId())
+                        || assigned.isFulfilled()) {
                     it.remove();
+                    SlownessReapplyManager.unregisterAllLevels(uuid, player);
+                    continue;
+                }
+
+                // 离线/死亡/旁观/休息区状态检查：玩家已失效则立即清理
+                if (player == null || player.isRemoved() || player.isDeadOrDying()
+                        || player.isSpectator() || MatchRestStateApi.isPlayerResting(player)) {
+                    it.remove();
+                    SlownessReapplyManager.unregisterAllLevels(uuid, player);
 
                     TaskManager mgr = TaskManager.getInstance();
                     TaskInstance stuckTask = mgr.getActiveTask(uuid);
                     if (stuckTask != null
-                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
+                            && TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
                             && !stuckTask.isFulfilled()) {
-                        if (player != null) {
-                            com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(player, stuckTask);
-                            try {
-                                stuckTask.getDefinition().onRemove(player, stuckTask);
-                            } catch (Exception ex) {
-                                HabiTrainCore.LOGGER.error("search_backpack 离线/失效清理 onRemove 失败", ex);
-                            }
-                            com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
-                        }
                         stuckTask.markFailed();
-                        mgr.removeActiveTask(uuid);
+                        if (player != null) {
+                            // API-TV-14：统一走 cancelTrackedTask（带实例比对删除 + stripSreWrapper + syncActiveTask）
+                            mgr.cancelTrackedTask(player, stuckTask);
+                        } else {
+                            mgr.removeActiveTask(uuid, stuckTask);
+                        }
                     }
                     continue;
                 }
 
-                // 超时清理：移除追踪并主动清除缓慢效果（不依赖外部 mod 每 tick 清除）
-                if (tick - state.startTick() >= state.durationTicks()) {
-                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                    SlownessReapplyManager.unregisterAllLevels(uuid);
+                // API-TV-15：若玩家被传送离开背包所在维度或超出距离，中断本次读条并归零进度，
+                // 但不将任务永久标记为 FAILED，允许玩家回到背包旁重新翻找。
+                if (!player.serverLevel().dimension().equals(state.dimension())
+                        || player.getEyePosition().distanceToSqr(Vec3.atCenterOf(state.pos())) > MAX_HOLD_DISTANCE_SQR
+                        || !player.serverLevel().hasChunkAt(state.pos())
+                        || !isBackpackBlock(player.serverLevel().getBlockState(state.pos()).getBlock())
+                        || !canSeeBackpack(player, state.pos())) {
                     it.remove();
-                    // 同步清理任务实例：玩家可能因断线/切世界错过最后一 tick，
-                    // 导致任务 progress 卡在 < max，本局再也无法获得新 DLC 任务。
-                    // 这里主动标记失败并移除活跃任务，避免玩家被永久卡住。
+                    SlownessReapplyManager.unregisterAllLevels(uuid, player);
+                    TaskInstance active = TaskManager.getInstance().getActiveTask(uuid);
+                    if (active != null && TASK_SEARCH_BACKPACK.equals(active.getFullId()) && !active.isFulfilled()) {
+                        active.setProgress(0);
+                    }
+                    continue;
+                }
+
+                // 超时兜底清理（含宽限期）：移除追踪并恢复进度，不锁死玩家任务槽
+                if (tick - state.startTick() >= state.durationTicks() + TIMEOUT_GRACE_TICKS) {
+                    it.remove();
+                    SlownessReapplyManager.unregisterAllLevels(uuid, player);
                     TaskManager mgr = TaskManager.getInstance();
                     TaskInstance stuckTask = mgr.getActiveTask(uuid);
                     if (stuckTask != null
-                            && (TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId()))
+                            && TASK_SEARCH_BACKPACK.equals(stuckTask.getFullId())
                             && !stuckTask.isFulfilled()) {
-                        // 任务超时前回收发放的道具（虽然翻背包通常 onComplete 才发放，
-                        // 但若任务以某种方式提前发放了道具，这里回收保证安全）
-                        com.habitrain.core.api.ItemReclaimHelper.reclaimForTask(player, stuckTask);
-                        // 走标准 onRemove（与 PerPlayerTaskTicker.handleMainTaskDone 失败分支一致），
-                        // 让任务定义有机会做自身清理。
-                        try {
-                            stuckTask.getDefinition().onRemove(player, stuckTask);
-                        } catch (Exception ex) {
-                            HabiTrainCore.LOGGER.error("search_backpack 超时 onRemove 失败", ex);
-                        }
-                        stuckTask.markFailed();
-                        mgr.removeActiveTask(uuid);
-                        // 通知客户端清除活动任务 HUD/方块高亮，避免陈旧活动任务残留到下局
-                        com.habitrain.core.network.ActiveTaskPayload.clearForPlayer(player);
+                        stuckTask.setProgress(0);
                     }
-                    continue;
                 }
             }
         });
@@ -127,41 +136,64 @@ public class BackpackSearchHandler {
      * 检查玩家是否正在翻找背包
      */
     public static boolean isSearching(UUID uuid) {
-        return activeSearches.containsKey(uuid);
+        return uuid != null && activeSearches.containsKey(uuid);
     }
 
     /**
-     * 停止玩家的翻找状态（任务完成时调用）
+     * 停止玩家的翻找状态（任务完成/移除时调用）
      */
     public static void stopSearching(UUID uuid) {
+        if (uuid == null) return;
         activeSearches.remove(uuid);
         SlownessReapplyManager.unregisterAllLevels(uuid);
+    }
+
+    /**
+     * 停止玩家的翻找状态并按所有权安全移除缓慢效果
+     */
+    public static void stopSearching(ServerPlayer player) {
+        if (player == null) return;
+        UUID uuid = player.getUUID();
+        activeSearches.remove(uuid);
+        SlownessReapplyManager.unregisterAllLevels(uuid, player);
     }
 
     /**
      * 清除所有翻找状态（游戏结束时调用）
      */
     public static void clearAllSearches() {
+        for (UUID uuid : activeSearches.keySet()) {
+            SlownessReapplyManager.unregisterAllLevels(uuid);
+        }
         activeSearches.clear();
-        // 缓慢表由 GameLifecycleHandler 统一 clear
     }
 
     private static int getSearchTicks(String taskKey) {
-
         return SEARCH_TICKS_DEFAULT;
     }
 
     private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand,
                                                 BlockHitResult hitResult) {
         if (world.isClientSide()) return InteractionResult.PASS;
+        if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
         if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
+        // API-TV-15：排除旁观者、死亡玩家与淘汰休息区玩家，防止隐身旁观者触发全场翻找音效
+        if (!serverPlayer.isAlive() || serverPlayer.isSpectator() || MatchRestStateApi.isPlayerResting(serverPlayer)) {
+            return InteractionResult.PASS;
+        }
+        if (hitResult == null) return InteractionResult.PASS;
 
         BlockPos pos = hitResult.getBlockPos();
+        if (serverPlayer.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > MAX_INTERACT_DISTANCE_SQR) {
+            return InteractionResult.PASS;
+        }
+        if (!world.hasChunkAt(pos)) return InteractionResult.PASS;
         BlockState state = world.getBlockState(pos);
         Block block = state.getBlock();
 
         // 检查是否是背包方块
         if (!isBackpackBlock(block)) return InteractionResult.PASS;
+        if (!canSeeBackpack(serverPlayer, pos)) return InteractionResult.PASS;
 
         UUID uuid = player.getUUID();
 
@@ -181,7 +213,7 @@ public class BackpackSearchHandler {
             return InteractionResult.FAIL;
         }
 
-        // 给予缓慢3效果（6秒，+10 tick缓冲）；到期自动 unregister
+        // 登记效果所有权并给予缓慢3效果（6秒，+10 tick缓冲）；到期自动 unregister
         int slowDuration = searchTicks + 10;
         SlownessReapplyManager.register(serverPlayer.serverLevel(), serverPlayer.getUUID(),
                 2, slowDuration, ResourceLocation.parse(taskKey));
@@ -194,7 +226,8 @@ public class BackpackSearchHandler {
         } else {
             startTick = world.getGameTime();
         }
-        activeSearches.put(uuid, new SearchState(startTick, searchTicks));
+        activeSearches.put(uuid, new SearchState(startTick, searchTicks, serverPlayer.serverLevel().dimension(),
+                pos.immutable(), task.getInstanceId()));
 
         serverPlayer.serverLevel().playSound(
                 null,
@@ -208,22 +241,50 @@ public class BackpackSearchHandler {
         return InteractionResult.FAIL;
     }
 
+    public static boolean isBackpackBlockRegistered() {
+        ensureBackpackBlockChecked();
+        return backpackBlock != null;
+    }
+
+    private static boolean canSeeBackpack(ServerPlayer player, BlockPos pos) {
+        BlockHitResult hit = player.level().clip(new ClipContext(player.getEyePosition(),
+                Vec3.atCenterOf(pos), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+        return hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(pos);
+    }
+
     private static boolean isBackpackBlock(Block block) {
-        if (!blockChecked) {
-            try {
-                backpackBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(BACKPACK_BLOCK_ID));
-                if (backpackBlock == null || backpackBlock == Blocks.AIR) {
-                    HabiTrainCore.LOGGER.warn("背包方块未找到: {}", BACKPACK_BLOCK_ID);
-                    backpackBlock = null;
-                }
-            } catch (Exception e) {
-                HabiTrainCore.LOGGER.error("查找背包方块时出错: {}", BACKPACK_BLOCK_ID, e);
-                backpackBlock = null;
-            }
-            blockChecked = true;
-        }
+        ensureBackpackBlockChecked();
         return backpackBlock != null && block == backpackBlock;
     }
 
-    private record SearchState(long startTick, int durationTicks) {}
+    private static void ensureBackpackBlockChecked() {
+        if (!blockChecked) {
+            synchronized (BackpackSearchHandler.class) {
+                if (!blockChecked) {
+                    try {
+                        ResourceLocation id = ResourceLocation.parse(BACKPACK_BLOCK_ID);
+                        if (BuiltInRegistries.BLOCK.containsKey(id)) {
+                            Block resolved = BuiltInRegistries.BLOCK.get(id);
+                            if (resolved != null && resolved != Blocks.AIR) {
+                                backpackBlock = resolved;
+                            } else {
+                                HabiTrainCore.LOGGER.warn("背包方块未找到: {}", BACKPACK_BLOCK_ID);
+                                backpackBlock = null;
+                            }
+                        } else {
+                            HabiTrainCore.LOGGER.warn("背包方块未注册: {}", BACKPACK_BLOCK_ID);
+                            backpackBlock = null;
+                        }
+                    } catch (Exception e) {
+                        HabiTrainCore.LOGGER.error("查找背包方块时出错: {}", BACKPACK_BLOCK_ID, e);
+                        backpackBlock = null;
+                    }
+                    blockChecked = true;
+                }
+            }
+        }
+    }
+
+    private record SearchState(long startTick, int durationTicks, ResourceKey<Level> dimension, BlockPos pos,
+                               UUID taskInstanceId) {}
 }

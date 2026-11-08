@@ -26,15 +26,18 @@ public final class RoleForceServiceImpl implements RoleForceApi {
 
     @Override
     public boolean queueExact(ServerPlayer player, RoleKey role) {
-        if (player == null || role == null) {
+        if (!isOnline(player) || role == null) {
             return false;
         }
+        pruneOffline(player.getServer());
         SRERole sre = resolve(role);
         if (sre == null) {
             LOGGER.error("RoleForceApi.queueExact: catalog has no live role for {}", role);
             return false;
         }
+        if (sre.isOtherModeRole() || !hasOnlineCapacity(sre, player)) return false;
         try {
+            clear(player.getUUID());
             Harpymodloader.addToForcedRoles(sre, player);
             int type = sre.getRoleType();
             if (type > 0) {
@@ -64,10 +67,12 @@ public final class RoleForceServiceImpl implements RoleForceApi {
 
     @Override
     public boolean queueRoleType(ServerPlayer player, int roleTypeId) {
-        if (player == null || roleTypeId < 1 || roleTypeId > 5) {
+        if (!isOnline(player) || roleTypeId < 1 || roleTypeId > 5) {
             return false;
         }
+        pruneOffline(player.getServer());
         try {
+            clear(player.getUUID());
             PlayerRoleWeightManager.ForcePlayerTeam.put(player.getUUID(), roleTypeId);
             queued.add(player.getUUID());
             return true;
@@ -122,13 +127,17 @@ public final class RoleForceServiceImpl implements RoleForceApi {
         } catch (RuntimeException ignored) {
         }
         try {
-            SRERole forced = Harpymodloader.FORCED_MODDED_ROLE_FLIP.remove(player);
-            if (forced != null && Harpymodloader.FORCED_MODDED_ROLE != null) {
-                var holders = Harpymodloader.FORCED_MODDED_ROLE.get(forced);
-                if (holders != null) {
-                    holders.remove(player);
-                    if (holders.isEmpty()) {
-                        Harpymodloader.FORCED_MODDED_ROLE.remove(forced);
+            Harpymodloader.FORCED_MODDED_ROLE_FLIP.remove(player);
+            if (Harpymodloader.FORCED_MODDED_ROLE != null) {
+                var it = Harpymodloader.FORCED_MODDED_ROLE.entrySet().iterator();
+                while (it.hasNext()) {
+                    var entry = it.next();
+                    var holders = entry.getValue();
+                    if (holders != null) {
+                        holders.remove(player);
+                        if (holders.isEmpty()) {
+                            it.remove();
+                        }
                     }
                 }
             }
@@ -146,5 +155,27 @@ public final class RoleForceServiceImpl implements RoleForceApi {
             LOGGER.error("catalog find failed for {}", role, e);
             return null;
         }
+    }
+
+    private static boolean isOnline(@Nullable ServerPlayer player) {
+        return player != null && player.getServer() != null
+                && player.getServer().getPlayerList().getPlayer(player.getUUID()) == player;
+    }
+
+    private void pruneOffline(net.minecraft.server.MinecraftServer server) {
+        for (UUID id : Set.copyOf(queued)) {
+            if (server.getPlayerList().getPlayer(id) == null) clear(id);
+        }
+    }
+
+    private static boolean hasOnlineCapacity(SRERole role, ServerPlayer player) {
+        int maximum = role.spawnInfo == null ? role.defaultMaxCount : role.spawnInfo.maxSpawn;
+        if (maximum < 0) return true;
+        Set<UUID> holders = new java.util.HashSet<>();
+        var existing = Harpymodloader.FORCED_MODDED_ROLE.get(role);
+        if (existing != null) for (UUID id : existing) {
+            if (!id.equals(player.getUUID()) && player.getServer().getPlayerList().getPlayer(id) != null) holders.add(id);
+        }
+        return holders.size() < maximum;
     }
 }

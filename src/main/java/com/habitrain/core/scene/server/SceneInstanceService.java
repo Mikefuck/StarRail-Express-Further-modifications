@@ -82,6 +82,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     private final Map<UUID, String> lastDimensionByPlayer = new ConcurrentHashMap<>();
     /** 已成功发送的镜像受众；受众缩小时必须显式撤销这些玩家的旧镜像。 */
     private final Map<String, Set<UUID>> sentRecipients = new ConcurrentHashMap<>();
+    private final Object writeLock = new Object();
     private final RuntimeAccess runtime;
 
     private volatile MinecraftServer server;
@@ -346,28 +347,31 @@ public final class SceneInstanceService implements SceneInstanceBridge {
             return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC, spec.id(), error.get());
         }
 
-        SceneInstance previous = instances.get(spec.id());
-        if (previous != null && !allowReplace) {
-            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.ALREADY_EXISTS, spec.id(),
-                    "实例已存在；请用 upsert 或先 despawn");
-        }
-        // 全局关闭时不再接受"新"实例；但已经登记过的实例允许继续改参数（只是不下发），
-        // 这样重新打开开关后它们能按最新参数回来，而不是被冻在关闭前的旧参数。
-        if (!isGlobalEnabled() && previous == null) {
-            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.GLOBAL_DISABLED, spec.id(),
-                    "sceneMotion.enabled=false，移动场景全局关闭");
-        }
-
+        SceneInstance previous;
         SceneInstance instance;
-        try {
-            instance = materialize(now, spec, previous, dimension);
-        } catch (RuntimeException errorDuringPreparation) {
-            LOGGER.warn("场景实例构造失败，保留旧实例: id={}", spec.id(), errorDuringPreparation);
-            return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC,
-                    spec.id(), "实例构造失败: " + errorDuringPreparation.getMessage());
+        synchronized (writeLock) {
+            previous = instances.get(spec.id());
+            if (previous != null && !allowReplace) {
+                return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.ALREADY_EXISTS, spec.id(),
+                        "实例已存在；请用 upsert 或先 despawn");
+            }
+            // 全局关闭时不再接受"新"实例；但已经登记过的实例允许继续改参数（只是不下发），
+            // 这样重新打开开关后它们能按最新参数回来，而不是被冻在关闭前的旧参数。
+            if (!isGlobalEnabled() && previous == null) {
+                return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.GLOBAL_DISABLED, spec.id(),
+                        "sceneMotion.enabled=false，移动场景全局关闭");
+            }
+
+            try {
+                instance = materialize(now, spec, previous, dimension);
+            } catch (RuntimeException errorDuringPreparation) {
+                LOGGER.warn("场景实例构造失败，保留旧实例: id={}", spec.id(), errorDuringPreparation);
+                return SceneSpawnResult.failure(SceneSpawnResult.SceneSpawnStatus.INVALID_SPEC,
+                        spec.id(), "实例构造失败: " + errorDuringPreparation.getMessage());
+            }
+            instances.put(instance.id(), instance);
+            broadcastUpsert(instance);
         }
-        instances.put(instance.id(), instance);
-        broadcastUpsert(instance);
 
         SceneInstanceView view = instance;
         if (previous == null) {
@@ -421,30 +425,36 @@ public final class SceneInstanceService implements SceneInstanceBridge {
 
     /** 事务式迁移；保留运动相位、暂停状态和剩余存活时长。失败不改变实例或发送通知。 */
     public boolean moveToDimension(String instanceId, String dimensionKey) {
-        SceneInstance current = instances.get(instanceId);
-        if (current == null || dimensionKey == null || dimensionKey.isBlank()) return false;
-        if (Objects.equals(current.dimensionKey(), dimensionKey)) return true;
-        Long targetNow = runtime.gameTime(dimensionKey);
-        Long sourceNow = runtime.gameTime(current.dimensionKey());
-        if (targetNow == null || sourceNow == null) return false;
+        if (dimensionKey == null || dimensionKey.isBlank()) return false;
+        SceneInstance current;
         SceneInstance replacement;
-        try {
-            long phaseNow = current.paused() && current.pausedAtGameTime() >= 0L
-                    ? current.pausedAtGameTime() : sourceNow;
-            SceneInstanceSpec spec = current.spec().toBuilder().dimension(dimensionKey)
-                    .startGameTime(targetNow - (phaseNow - current.startGameTime())).build();
-            if (spec.validationError().isPresent()) return false;
-            replacement = new SceneInstance(spec, runtime.assetHash(spec.assetKey()),
-                    current.revision() + 1,
-                    current.expireAtGameTime() >= 0L
-                            ? targetNow + Math.max(0L, current.expireAtGameTime() - sourceNow) : -1L,
-                    current.paused() ? targetNow : -1L, current.createdAtMillis());
-        } catch (RuntimeException preparationFailure) {
-            LOGGER.warn("场景实例迁移构造失败，保留旧实例: id={}", instanceId, preparationFailure);
-            return false;
+        synchronized (writeLock) {
+            current = instances.get(instanceId);
+            if (current == null) return false;
+            if (Objects.equals(current.dimensionKey(), dimensionKey)) return true;
+            Long targetNow = runtime.gameTime(dimensionKey);
+            Long sourceNow = runtime.gameTime(current.dimensionKey());
+            if (targetNow == null || sourceNow == null) return false;
+            try {
+                boolean frozen = current.paused() || current.timeScale() <= 0.0;
+                long phaseNow = frozen && current.pausedAtGameTime() >= 0L
+                        ? current.pausedAtGameTime() : sourceNow;
+                SceneInstanceSpec spec = current.spec().toBuilder().dimension(dimensionKey)
+                        .startGameTime(targetNow - (phaseNow - current.startGameTime())).build();
+                if (spec.validationError().isPresent()) return false;
+                replacement = new SceneInstance(spec, runtime.assetHash(spec.assetKey()),
+                        current.revision() + 1,
+                        current.expireAtGameTime() >= 0L
+                                ? targetNow + Math.max(0L, current.expireAtGameTime() - sourceNow) : -1L,
+                        frozen && current.pausedAtGameTime() >= 0L ? targetNow : -1L,
+                        current.createdAtMillis());
+            } catch (RuntimeException preparationFailure) {
+                LOGGER.warn("场景实例迁移构造失败，保留旧实例: id={}", instanceId, preparationFailure);
+                return false;
+            }
+            instances.put(instanceId, replacement);
+            broadcastUpsert(replacement);
         }
-        instances.put(instanceId, replacement);
-        broadcastUpsert(replacement);
         // 保留公开的 dimension_changed 回调契约；只有提交成功后通知旧维度释放与新视图更新。
         fire(listener -> listener.onInstanceRemoved(current, "dimension_changed"));
         fire(listener -> listener.onInstanceUpdated(replacement));
@@ -501,24 +511,37 @@ public final class SceneInstanceService implements SceneInstanceBridge {
      * @return 是否成功（实例不存在、描述非法或维度丢失都会返回 false）
      */
     public boolean mutate(String instanceId, Consumer<SceneInstanceSpec.Builder> mutation) {
-        SceneInstance current = instances.get(instanceId);
-        if (current == null || mutation == null) return false;
-        SceneInstanceSpec.Builder builder = current.spec().toBuilder();
-        try {
-            mutation.accept(builder);
-        } catch (RuntimeException e) {
-            LOGGER.warn("场景实例修改回调抛异常: id={}", instanceId, e);
-            return false;
+        if (instanceId == null || mutation == null) return false;
+        SceneInstance updatedInstance;
+        synchronized (writeLock) {
+            SceneInstance current = instances.get(instanceId);
+            if (current == null) return false;
+            SceneInstanceSpec.Builder builder = current.spec().toBuilder();
+            try {
+                mutation.accept(builder);
+            } catch (RuntimeException e) {
+                LOGGER.warn("场景实例修改回调抛异常: id={}", instanceId, e);
+                return false;
+            }
+            try {
+                SceneInstanceSpec updated = builder.build();
+                if (updated.validationError().isPresent()) return false;
+                Long now = runtime.gameTime(current.dimensionKey());
+                if (now == null) return false;
+                updatedInstance = materialize(now, updated, current, current.dimensionKey());
+            } catch (RuntimeException preparationFailure) {
+                LOGGER.warn("场景实例修改构造失败，保留旧实例: id={}", instanceId, preparationFailure);
+                return false;
+            }
+            instances.put(updatedInstance.id(), updatedInstance);
+            broadcastUpsert(updatedInstance);
         }
-        try {
-            SceneInstanceSpec updated = builder.build();
-            Long now = runtime.gameTime(current.dimensionKey());
-            if (now == null) return false;
-            return spawn(current.dimensionKey(), now, updated, true).isSuccess();
-        } catch (RuntimeException preparationFailure) {
-            LOGGER.warn("场景实例修改构造失败，保留旧实例: id={}", instanceId, preparationFailure);
-            return false;
-        }
+        SceneInstanceView view = updatedInstance;
+        LOGGER.info("API 移动场景实例更新: id={}, asset={}, hash={}, rev={}",
+                updatedInstance.id(), updatedInstance.assetKey(),
+                shortHash(updatedInstance.assetHash()), updatedInstance.revision());
+        fire(listener -> listener.onInstanceUpdated(view));
+        return true;
     }
 
     private SceneInstance materialize(long now, SceneInstanceSpec spec,
@@ -541,14 +564,38 @@ public final class SceneInstanceService implements SceneInstanceBridge {
             resolvedStart += Math.max(0L, now - previous.pausedAtGameTime());
         }
 
+        // 处理运行中修改 timeScale（含 timeScale=0 冻结与从 0 恢复），保证已推进相位连续不跳变
+        boolean inheritedClock = previous != null
+                && spec.startGameTime() == previous.startGameTime()
+                && Double.compare(spec.headStartSeconds(), 0.0) == 0;
+        if (spec.timeScale() <= 0.0) {
+            if (inheritedClock) {
+                long frozenTicks = Math.max(0L, Math.round(previous.elapsedSeconds(now, 0.0f) * 20.0));
+                resolvedStart = now - frozenTicks;
+                pausedAt = now;
+            } else if (headStartTicks > 0L) {
+                pausedAt = base;
+            }
+        } else if (inheritedClock && Double.compare(previous.timeScale(), spec.timeScale()) != 0) {
+            double prevElapsedSeconds = previous.elapsedSeconds(now, 0.0f);
+            long phaseNow = spec.paused() && pausedAt >= 0L ? pausedAt : now;
+            long scaledTicks = Math.max(0L, Math.round((prevElapsedSeconds * 20.0) / spec.timeScale()));
+            resolvedStart = phaseNow - scaledTicks;
+        }
+
         SceneInstanceSpec normalized = spec.toBuilder()
                 .dimension(dimensionKey)
                 .startGameTime(resolvedStart)
+                .headStartSeconds(0.0)
                 .build();
 
         String hash = runtime.assetHash(normalized.assetKey());
 
-        long expireAt = normalized.durationTicks() > 0L ? now + normalized.durationTicks() : -1L;
+        long expireAt = -1L;
+        if (normalized.durationTicks() > 0L) {
+            long sum = now + normalized.durationTicks();
+            expireAt = sum < now ? Long.MAX_VALUE : sum;
+        }
         int revision = previous != null ? previous.revision() + 1 : 1;
         long createdAt = previous != null ? previous.createdAtMillis() : System.currentTimeMillis();
         return new SceneInstance(normalized, hash, revision, expireAt, pausedAt, createdAt);
@@ -556,9 +603,12 @@ public final class SceneInstanceService implements SceneInstanceBridge {
 
     private boolean removeInstance(String instanceId, String reason) {
         if (instanceId == null) return false;
-        SceneInstance removed = instances.remove(instanceId);
-        if (removed == null) return false;
-        broadcastRemoval(removed.id());
+        SceneInstance removed;
+        synchronized (writeLock) {
+            removed = instances.remove(instanceId);
+            if (removed == null) return false;
+            broadcastRemoval(removed.id());
+        }
         fire(listener -> listener.onInstanceRemoved(removed, reason));
         LOGGER.info("API 移动场景实例回收: id={}, reason={}, 剩余={}", removed.id(), reason, instances.size());
         return true;
@@ -662,7 +712,11 @@ public final class SceneInstanceService implements SceneInstanceBridge {
             runtime.manifest(player, instance);
             if (runtime.send(player, SceneInstancesS2C.upsert(instance))) delivered.add(player);
         }
-        sentRecipients.put(instance.id(), delivered);
+        if (delivered.isEmpty()) {
+            sentRecipients.remove(instance.id());
+        } else {
+            sentRecipients.put(instance.id(), delivered);
+        }
     }
 
     private void broadcastRemoval(String instanceId) {
@@ -674,7 +728,11 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     }
 
     private void forgetRecipient(UUID player) {
-        sentRecipients.values().forEach(recipients -> recipients.remove(player));
+        sentRecipients.entrySet().removeIf(entry -> {
+            Set<UUID> recipients = entry.getValue();
+            recipients.remove(player);
+            return recipients.isEmpty();
+        });
     }
 
     private void sendManifest(ServerPlayer player, SceneInstance instance) {
@@ -682,7 +740,7 @@ public final class SceneInstanceService implements SceneInstanceBridge {
         SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(instance.assetKey());
         if (descriptor == null || !descriptor.isValid()) return;
         if (!Objects.equals(descriptor.sha256(), instance.assetHash())) return;
-        SceneTransferService.getInstance().authorizeAsset(player, instance.assetKey(), descriptor);
+        SceneTransferService.getInstance().authorizeInstanceAsset(player, instance, descriptor);
         ServerPlayNetworking.send(player, new SceneAssetManifestS2C(instance.assetKey(), descriptor));
     }
 
@@ -715,18 +773,22 @@ public final class SceneInstanceService implements SceneInstanceBridge {
     public void onAssetPublished(String assetKey, SceneAssetDescriptor descriptor) {
         if (assetKey == null || descriptor == null || !descriptor.isValid()) return;
         fire(listener -> listener.onAssetPublished(assetKey, descriptor));
-        int touched = 0;
-        for (SceneInstance instance : instances.values()) {
-            if (!assetKey.equals(instance.assetKey())) continue;
-            if (Objects.equals(descriptor.sha256(), instance.assetHash())) continue;
-            SceneInstance refreshed = instance.withAssetHash(descriptor.sha256());
-            instances.put(refreshed.id(), refreshed);
-            broadcastUpsert(refreshed);
-            fire(listener -> listener.onInstanceUpdated(refreshed));
-            touched++;
+        List<SceneInstance> updatedList = new ArrayList<>();
+        synchronized (writeLock) {
+            for (SceneInstance instance : instances.values()) {
+                if (!assetKey.equals(instance.assetKey())) continue;
+                if (Objects.equals(descriptor.sha256(), instance.assetHash())) continue;
+                SceneInstance refreshed = instance.withAssetHash(descriptor.sha256());
+                instances.put(refreshed.id(), refreshed);
+                broadcastUpsert(refreshed);
+                updatedList.add(refreshed);
+            }
         }
-        if (touched > 0) {
-            LOGGER.info("资产 {} 热更新已推送到 {} 个 API 场景实例", assetKey, touched);
+        for (SceneInstance refreshed : updatedList) {
+            fire(listener -> listener.onInstanceUpdated(refreshed));
+        }
+        if (!updatedList.isEmpty()) {
+            LOGGER.info("资产 {} 热更新已推送到 {} 个 API 场景实例", assetKey, updatedList.size());
         }
     }
 

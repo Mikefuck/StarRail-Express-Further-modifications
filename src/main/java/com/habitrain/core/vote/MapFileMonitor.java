@@ -25,9 +25,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 /**
@@ -43,10 +46,10 @@ public final class MapFileMonitor {
      */
     public static final String INTRO_MERGE_MARKER = "__habitrain_map_merge__";
 
-    private static final Map<String, FileStamp> PREVIOUS_STAMPS = new HashMap<>();
-    private static boolean initialized = false;
+    private static final Map<String, FileStamp> PREVIOUS_STAMPS = new ConcurrentHashMap<>();
+    private static volatile boolean initialized = false;
     private static volatile boolean scanInFlight = false;
-    private static int epoch = 0;
+    private static final AtomicInteger EPOCH = new AtomicInteger(0);
 
     private record FileStamp(long lastModified, long size) {}
 
@@ -63,7 +66,7 @@ public final class MapFileMonitor {
         Path worldRoot = server.getWorldPath(LevelResource.ROOT);
         Path trainMapsDir = worldRoot.resolve("train_maps").toAbsolutePath().normalize();
         Path voteMapsJson = worldRoot.resolve("train_vote_maps.json").toAbsolutePath().normalize();
-        int scanEpoch = epoch;
+        int scanEpoch = EPOCH.get();
         scanInFlight = true;
         Util.backgroundExecutor().execute(() -> {
             Map<String, FileStamp> currentStamps = null;
@@ -75,14 +78,14 @@ public final class MapFileMonitor {
             Map<String, FileStamp> stamps = currentStamps;
             server.execute(() -> {
                 try {
-                    if (scanEpoch != epoch) {
+                    if (scanEpoch != EPOCH.get()) {
                         return;
                     }
                     if (stamps != null) {
                         applyScanResult(server, stamps);
                     }
                 } finally {
-                    if (scanEpoch == epoch) {
+                    if (scanEpoch == EPOCH.get()) {
                         scanInFlight = false;
                     }
                 }
@@ -113,10 +116,11 @@ public final class MapFileMonitor {
      * 重置状态（服务器关闭/重启时）。
      */
     public static void reset() {
-        epoch++;
+        EPOCH.incrementAndGet();
         PREVIOUS_STAMPS.clear();
         initialized = false;
         scanInFlight = false;
+        MapVoteProfileStore.clearCache();
     }
 
     /**
@@ -141,6 +145,20 @@ public final class MapFileMonitor {
                 MapVoteProfileStore.ensureProfiles(overworld, configMaps.keySet(), configMaps);
 
                 SREIntegration.syncToSREServerMapConfig(server, ConfigManager.getInstance().getModeMapVoteSettings());
+
+                // API-TV-21：自身同步写回 train_vote_maps.json 后立即刷新该文件戳，避免 5 秒后自触发二次全服广播
+                Path voteMapsJson = server.getWorldPath(LevelResource.ROOT)
+                        .resolve("train_vote_maps.json")
+                        .toAbsolutePath()
+                        .normalize();
+                if (Files.isRegularFile(voteMapsJson)) {
+                    try {
+                        PREVIOUS_STAMPS.put("train_vote_maps.json", new FileStamp(
+                                Files.getLastModifiedTime(voteMapsJson).toMillis(),
+                                Files.size(voteMapsJson)));
+                    } catch (IOException ignored) {
+                    }
+                }
 
                 MapIntroSyncPayload introPayload = buildMapIntroPayload(server, dirtyMapIds);
 
@@ -243,11 +261,16 @@ public final class MapFileMonitor {
             try (Stream<Path> stream = Files.walk(trainMapsDir, 5)) {
                 stream.filter(Files::isRegularFile).forEach(p -> {
                     String name = p.getFileName().toString();
-                    if (!name.endsWith(".json") && !name.endsWith(".JSON")) {
+                    if (!name.toLowerCase(Locale.ROOT).endsWith(".json")) {
                         return;
                     }
                     try {
                         String rel = trainMapsDir.relativize(p).toString().replace('\\', '/');
+                        // API-TV-21：跳过 map_vote/ 内部档案目录，避免 ensureProfiles 写回 maps.json 自触发二次广播
+                        if (rel.equals(MapVoteProfileStore.MAP_VOTE_PREFIX)
+                                || rel.startsWith(MapVoteProfileStore.MAP_VOTE_PREFIX + "/")) {
+                            return;
+                        }
                         stamps.put(rel, new FileStamp(
                                 Files.getLastModifiedTime(p).toMillis(),
                                 Files.size(p)));
@@ -279,21 +302,23 @@ public final class MapFileMonitor {
     }
 
     private static boolean isJsonStampKey(String key) {
-        return key != null && (key.endsWith(".json") || key.endsWith(".JSON"));
+        return key != null && key.toLowerCase(Locale.ROOT).endsWith(".json");
     }
 
-    private static @Nullable String mapIdFromRelPath(String rel) {
+    /**
+     * API-TV-21：保留相对子路径前缀（仅剥除末尾 {@code .json}），避免不同子目录下同名地图发生 ID 冲突。
+     */
+    static @Nullable String mapIdFromRelPath(String rel) {
         if (rel == null || rel.isBlank()) {
             return null;
         }
-        String name = rel;
-        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
-        if (slash >= 0) {
-            name = name.substring(slash + 1);
+        String normalized = rel.replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
         }
-        if (name.length() <= 5) {
+        if (normalized.length() <= 5 || !normalized.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return null;
         }
-        return name.substring(0, name.length() - 5);
+        return normalized.substring(0, normalized.length() - 5);
     }
 }

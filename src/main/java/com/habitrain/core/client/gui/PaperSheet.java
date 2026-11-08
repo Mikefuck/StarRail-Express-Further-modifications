@@ -118,6 +118,10 @@ final class PaperSheet {
      * @param w  票面宽
      */
     void layout(float screenW, float screenH, float x0, float y0, float w, float h, Pose pose, Lift lift, int seed) {
+        screenW = Float.isFinite(screenW) ? Math.max(1, screenW) : 1;
+        screenH = Float.isFinite(screenH) ? Math.max(1, screenH) : 1;
+        w = Float.isFinite(w) ? Math.max(1, w) : 1;
+        h = Float.isFinite(h) ? Math.max(1, h) : 1;
         float focal = Math.max(screenW, screenH) * FOCAL;
         float halfW = screenW / 2.0f;
         float halfH = screenH / 2.0f;
@@ -372,24 +376,35 @@ final class PaperSheet {
                 GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         RenderSystem.disableDepthTest();
         RenderSystem.disableCull();
-        Matrix4f matrix = g.pose().last().pose();
-        boolean encoded = shader != null;
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-        for (int j = 0; j < NY; j++) {
-            for (int i = 0; i < NX; i++) {
-                this.emit(buffer, matrix, i, j, alpha, encoded);
-                this.emit(buffer, matrix, i, j + 1, alpha, encoded);
-                this.emit(buffer, matrix, i + 1, j + 1, alpha, encoded);
-                this.emit(buffer, matrix, i + 1, j, alpha, encoded);
+        try {
+            Matrix4f matrix = g.pose().last().pose();
+            boolean encoded = shader != null;
+            BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+            MeshData mesh = null;
+            try {
+                for (int j = 0; j < NY; j++) {
+                    for (int i = 0; i < NX; i++) {
+                        this.emit(buffer, matrix, i, j, alpha, encoded);
+                        this.emit(buffer, matrix, i, j + 1, alpha, encoded);
+                        this.emit(buffer, matrix, i + 1, j + 1, alpha, encoded);
+                        this.emit(buffer, matrix, i + 1, j, alpha, encoded);
+                    }
+                }
+                mesh = buffer.build();
+                if (mesh != null) {
+                    BufferUploader.drawWithShader(mesh);
+                    mesh = null;
+                }
+            } finally {
+                if (mesh != null) {
+                    mesh.close();
+                }
             }
+        } finally {
+            RenderSystem.enableCull();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
         }
-        MeshData mesh = buffer.build();
-        if (mesh != null) {
-            BufferUploader.drawWithShader(mesh);
-        }
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
     }
 
     private void emit(BufferBuilder buffer, Matrix4f matrix, int i, int j, float alpha, boolean encoded) {

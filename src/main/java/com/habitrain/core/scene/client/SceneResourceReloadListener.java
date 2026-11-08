@@ -4,11 +4,15 @@ import com.habitrain.core.api.client.scene.compat.SceneMaterialKey;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.resource.ResourceReloadListenerKeys;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 客户端资源包重载监听器。
@@ -19,10 +23,19 @@ import org.slf4j.LoggerFactory;
 public final class SceneResourceReloadListener implements SimpleSynchronousResourceReloadListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(SceneResourceReloadListener.class.getSimpleName());
     private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("habitrain_core", "scene_mesh_reload");
+    private static final Collection<ResourceLocation> DEPENDENCIES = List.of(
+            ResourceReloadListenerKeys.MODELS,
+            ResourceReloadListenerKeys.TEXTURES
+    );
 
     @Override
     public ResourceLocation getFabricId() {
         return ID;
+    }
+
+    @Override
+    public Collection<ResourceLocation> getFabricDependencies() {
+        return DEPENDENCIES;
     }
 
     @Override

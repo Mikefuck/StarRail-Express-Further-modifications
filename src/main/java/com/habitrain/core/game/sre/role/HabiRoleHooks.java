@@ -89,7 +89,7 @@ public final class HabiRoleHooks {
                     @Override
                     public Decision allowDeathByKiller(ServerPlayer victim, ServerPlayer killer,
                                                        ResourceLocation deathReason, RoleHookContext ctx) {
-                        if (victim == null) {
+                        if (victim == null || killer == null || killer == victim) {
                             return Decision.PASS;
                         }
                         CrimeScapegoatComponent c = CrimeScapegoatComponent.KEY.get(victim);
@@ -107,7 +107,7 @@ public final class HabiRoleHooks {
                         }
                         victim.setHealth(victim.getMaxHealth());
                         victim.displayClientMessage(
-                                Component.literal("§c[凶案替罪羊] 你在刀下倒下，却以杀手之身站起……"),
+                                Component.translatable("message.habitrain_core.scapegoat.transformed"),
                                 true);
                         return Decision.DENY;
                     }
@@ -115,6 +115,9 @@ public final class HabiRoleHooks {
                     @Override
                     public void onAnyDeath(ServerPlayer dead, ResourceLocation deathReason, RoleHookContext ctx) {
                         if (dead == null || !(dead.level() instanceof ServerLevel level)) {
+                            return;
+                        }
+                        if (deathReason != null && "disconnected".equals(deathReason.getPath())) {
                             return;
                         }
                         triggerNearbyScapegoats(level, dead);
@@ -236,14 +239,8 @@ public final class HabiRoleHooks {
             String path = deathReason.getPath();
             throwing = full.contains("throwing_knife")
                     || path.contains("throwing_knife")
+                    || path.contains("thrown_knife")
                     || path.contains("throwing");
-        }
-        ItemStack main = killer.getMainHandItem();
-        if (!main.isEmpty()) {
-            ResourceLocation key = BuiltInRegistries.ITEM.getKey(main.getItem());
-            if (key != null && key.getPath().contains("throwing_knife")) {
-                throwing = true;
-            }
         }
         if (throwing) {
             c.onThrowingKnifeKill(killer);

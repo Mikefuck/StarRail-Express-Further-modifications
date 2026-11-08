@@ -33,9 +33,9 @@ class RoleClientExtensionTransactionTest {
     void duplicateHudIdInSameBatchLeavesNoResidual() {
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("example", store);
         registrar.hud(RoleHudSpec.of("example", "same").entryKey("armed").role(CIVILIAN).build());
-        registrar.hud(RoleHudSpec.of("example", "same").entryKey("armed").role(CIVILIAN).build());
+        assertThrows(IllegalArgumentException.class, () -> registrar.hud(RoleHudSpec.of("example", "same").entryKey("armed").role(CIVILIAN).build()));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertTrue(store.huds().isEmpty(), "duplicate staged HUD id must leave the provider batch empty");
     }
 
@@ -44,10 +44,10 @@ class RoleClientExtensionTransactionTest {
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("example", store);
         registrar.instinct(RoleInstinctRule.of("example", "mark")
                 .entryKey("mark").viewerRole(CIVILIAN).color(0xFF0000).build());
-        registrar.instinct(RoleInstinctRule.of("example", "mark")
-                .entryKey("mark").viewerRole(CIVILIAN).color(0x00FF00).build());
+        assertThrows(IllegalArgumentException.class, () -> registrar.instinct(RoleInstinctRule.of("example", "mark")
+                .entryKey("mark").viewerRole(CIVILIAN).color(0x00FF00).build()));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertTrue(store.instincts().isEmpty(), "duplicate staged instinct id must leave no residual");
     }
 
@@ -58,11 +58,11 @@ class RoleClientExtensionTransactionTest {
         registrar.skin(RoleSkinSpec.of("example", "dup")
                 .role(CIVILIAN).kind(RoleSkinKind.NORMAL)
                 .texture(ResourceLocation.parse("example:textures/entity/civilian.png")).build());
-        registrar.skin(RoleSkinSpec.of("example", "dup")
+        assertThrows(IllegalArgumentException.class, () -> registrar.skin(RoleSkinSpec.of("example", "dup")
                 .role(CIVILIAN).kind(RoleSkinKind.NORMAL)
-                .texture(ResourceLocation.parse("example:textures/entity/civilian.png")).build());
+                .texture(ResourceLocation.parse("example:textures/entity/civilian.png")).build()));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertTrue(store.huds().isEmpty(), "valid HUD before a failing skin must not remain committed");
         assertTrue(store.skins().isEmpty(), "duplicate skin must not remain committed");
     }
@@ -71,9 +71,9 @@ class RoleClientExtensionTransactionTest {
     void namespaceNotOwnedByProviderRollsBackWholeBatch() {
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("example", store);
         registrar.hud(RoleHudSpec.of("example", "valid").entryKey("armed").role(CIVILIAN).build());
-        registrar.hud(RoleHudSpec.of("other", "forged").role(CIVILIAN).build());
+        assertThrows(IllegalArgumentException.class, () -> registrar.hud(RoleHudSpec.of("other", "forged").role(CIVILIAN).build()));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertTrue(store.huds().isEmpty(), "namespace violation must roll the whole batch back");
     }
 
@@ -82,10 +82,10 @@ class RoleClientExtensionTransactionTest {
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("example", store);
         registrar.hudWidget(ResourceLocation.parse("example:civilian_status"), "armed", CIVILIAN,
                 (w, h, t) -> { });
-        registrar.hudWidget(ResourceLocation.parse("example:civilian_status"), "armed", CIVILIAN,
-                (w, h, t) -> { });
+        assertThrows(IllegalArgumentException.class, () -> registrar.hudWidget(ResourceLocation.parse("example:civilian_status"), "armed", CIVILIAN,
+                (w, h, t) -> { }));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertTrue(store.hudWidgetsFor(CIVILIAN).isEmpty(), "duplicate widget id must leave no residual");
     }
 
@@ -137,9 +137,9 @@ class RoleClientExtensionTransactionTest {
         seed.commit();
         ScopedRoleClientExtensionRegistrar registrar = new ScopedRoleClientExtensionRegistrar("habitrain_core", store);
         registrar.hud(RoleHudSpec.of("habitrain_core", "new").entryKey("new").role(CIVILIAN).build());
-        registrar.hud(RoleHudSpec.of("habitrain_core", "existing").role(CIVILIAN).build());
+        assertThrows(IllegalArgumentException.class, () -> registrar.hud(RoleHudSpec.of("habitrain_core", "existing").role(CIVILIAN).build()));
 
-        assertThrows(IllegalArgumentException.class, registrar::commit);
+        registrar.rollback();
         assertEquals(1, store.huds().size(),
                 "pre-existing HUD must remain, staged batch must not leak new entries");
     }

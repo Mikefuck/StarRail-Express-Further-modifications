@@ -100,35 +100,53 @@ public final class HabiModifiers {
      */
     private static void registerVirtueMutex() {
         ModifierAssigned.EVENT.register((player, mod) -> {
-            if (!VirtueGroup.isVirtue(mod)) {
+            if (player == null || !VirtueGroup.isVirtue(mod)) {
                 return;
             }
             WorldModifierComponent wmc = WorldModifierComponent.getInstance(player);
             if (wmc == null) {
                 return;
             }
+            if (mod == MERCY && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
+                    && !SinRoleRules.isGoodAligned(serverPlayer.serverLevel(), serverPlayer)) {
+                // 在 WorldModifierComponent.sync() 首次下发前即移除非好人阵营的宽容，避免向全服客户端暴露阵营信息
+                wmc.removeModifier(player, MERCY);
+                HabiTrainCore.LOGGER.info("[Mercy] blocked assignment on non-good role {}",
+                        player.getScoreboardName());
+                return;
+            }
             HashSet<SREModifier> held = wmc.getModifiers(player);
             if (held == null || held.isEmpty()) {
                 return;
             }
+            boolean removed = false;
             for (SREModifier other : new HashSet<>(held)) {
                 if (other == mod || !VirtueGroup.isVirtue(other)) {
                     continue;
                 }
                 // one-virtue rule always removes other virtues (hard exclusive pair is a subset)
-                wmc.removeModifier(player, other);
+                wmc.removeModifier(player.getUUID(), other, false);
+                removed = true;
+            }
+            if (removed) {
+                wmc.sync();
             }
         });
         OnGameTrueStarted.EVENT.register(level -> {
             WorldModifierComponent modifiers = WorldModifierComponent.getInstance(level);
             if (modifiers == null || MERCY == null) return;
+            boolean removedAny = false;
             for (net.minecraft.server.level.ServerPlayer player : level.players()) {
                 if (modifiers.isModifier(player, MERCY)
                         && !SinRoleRules.isGoodAligned(level, player)) {
-                    modifiers.removeModifier(player, MERCY);
+                    modifiers.removeModifier(player.getUUID(), MERCY, false);
+                    removedAny = true;
                     HabiTrainCore.LOGGER.info("[Mercy] removed from non-good role {}",
                             player.getGameProfile().getName());
                 }
+            }
+            if (removedAny) {
+                modifiers.sync();
             }
         });
     }

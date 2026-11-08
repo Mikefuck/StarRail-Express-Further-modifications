@@ -117,12 +117,12 @@ public final class CoreApi {
         }
         return switch (capability) {
             case "role.v2",
-                 "role.v2.override",
-                 "match.settlement",
+                 "role.v2.override" -> isRoleV2Installed();
+            case "match.settlement",
                  "match.events",
-                 "match.state",
                  "task.registry",
                  "gamemode.registry" -> true;
+            case "match.state" -> isSreRuntimeInstalled();
             case "menu.gate" -> isMenuGateInstalled();
             case "vote.option", "vote.mode_map" -> isVoteInstalled();
             case "scene.motion" -> isSceneMotionInstalled();
@@ -191,6 +191,22 @@ public final class CoreApi {
     // Throwable，因此每个访问点都必须包 try/catch。本处的能力查询也不例外——
     // 查询失败按「该能力不可用」处理（fail-closed），这与 supports() 的文档一致。
 
+    private static boolean isRoleV2Installed() {
+        try {
+            return com.habitrain.core.api.spi.RoleSpi.isInstalled();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean isSreRuntimeInstalled() {
+        try {
+            return CoreSpi.isSreRuntimeInstalled();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static boolean isMenuGateInstalled() {
         try {
             return CoreSpi.isMenuGateInstalled();
@@ -209,7 +225,7 @@ public final class CoreApi {
 
     private static boolean isSceneInstancesInstalled() {
         try {
-            return CoreSpi.isSceneFullyInstalled();
+            return CoreSpi.isSceneInstancesInstalled();
         } catch (Throwable t) {
             return false;
         }
@@ -217,7 +233,7 @@ public final class CoreApi {
 
     private static boolean isSceneMotionInstalled() {
         try {
-            return CoreSpi.isSceneFullyInstalled();
+            return CoreSpi.isSceneMotionInstalled();
         } catch (Throwable t) {
             return false;
         }

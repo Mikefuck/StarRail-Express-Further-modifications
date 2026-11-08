@@ -192,29 +192,40 @@ public final class RoleChangeTransaction<A> {
             last = Stage.UPDATE_MODE;
             throwIf(last);
             backend.updateMode(actor, newRole, recordTimeline, addStats);
-            last = Stage.INIT_NEW;
-            throwIf(last);
-            backend.initNew(actor, canonical);
-            // All remaining stages are externally visible (events, history,
-            // stats/replay and network sync). Preflight their fault-injection
-            // seam before running even one of them, so an injected late-stage
-            // failure cannot leave an irreversible partial transition behind.
-            last = Stage.COMMIT_OLD;
-            throwIf(last);
-            last = Stage.WRITE_HISTORY;
-            throwIf(last);
-            last = Stage.AFTER_ASSIGNED;
-            throwIf(last);
-            last = Stage.SYNC_CLIENT;
-            throwIf(last);
-
-            // Once the reversible SRE/mode mutation succeeded, post-commit
-            // notifications must not turn a completed role change into a
-            // reported failure. Providers are isolated by the backend; any
-            // unexpected listener/sync exception is logged and the canonical
-            // committed state remains authoritative.
-            if (current != null) {
+            boolean sameRoleReinit = current != null && current.equals(canonical);
+            if (sameRoleReinit) {
+                last = Stage.COMMIT_OLD;
+                throwIf(last);
+                last = Stage.INIT_NEW;
+                throwIf(last);
+                last = Stage.WRITE_HISTORY;
+                throwIf(last);
+                last = Stage.AFTER_ASSIGNED;
+                throwIf(last);
+                last = Stage.SYNC_CLIENT;
+                throwIf(last);
                 postCommit(Stage.COMMIT_OLD, () -> backend.commitOld(actor, current));
+                backend.initNew(actor, canonical);
+            } else {
+                last = Stage.INIT_NEW;
+                throwIf(last);
+                backend.initNew(actor, canonical);
+                // All remaining stages are externally visible (events, history,
+                // stats/replay and network sync). Preflight their fault-injection
+                // seam before running even one of them, so an injected late-stage
+                // failure cannot leave an irreversible partial transition behind.
+                last = Stage.COMMIT_OLD;
+                throwIf(last);
+                last = Stage.WRITE_HISTORY;
+                throwIf(last);
+                last = Stage.AFTER_ASSIGNED;
+                throwIf(last);
+                last = Stage.SYNC_CLIENT;
+                throwIf(last);
+
+                if (current != null) {
+                    postCommit(Stage.COMMIT_OLD, () -> backend.commitOld(actor, current));
+                }
             }
             if (recordTimeline) {
                 postCommit(Stage.WRITE_HISTORY, () -> backend.writeHistory(actor, canonical, cause));
@@ -296,6 +307,7 @@ public final class RoleChangeTransaction<A> {
         try {
             backend.rollback(actor, captured, attempted);
         } catch (Throwable rb) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(rb);
             LOGGER.error("role change rollback failed for {}", actor, rb);
         }
     }
@@ -305,6 +317,7 @@ public final class RoleChangeTransaction<A> {
         try {
             operation.run();
         } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
             LOGGER.warn("role change post-commit {} failed; committed role state is retained", stage, t);
         }
     }

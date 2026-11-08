@@ -1,8 +1,10 @@
 package com.habitrain.core.api.scene;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -124,11 +126,13 @@ public final class SceneInstanceAnchor {
 
     public static SceneInstanceAnchor fromJson(JsonObject json) {
         if (json == null) return WORLD;
-        Mode parsed;
-        try {
-            parsed = json.has("mode") ? Mode.valueOf(json.get("mode").getAsString().trim().toUpperCase()) : Mode.WORLD;
-        } catch (IllegalArgumentException ignored) {
-            parsed = Mode.WORLD;
+        Mode parsed = Mode.WORLD;
+        if (json.has("mode") && json.get("mode").isJsonPrimitive()) {
+            try {
+                parsed = Mode.valueOf(json.get("mode").getAsString().trim().toUpperCase(Locale.ROOT));
+            } catch (Exception ignored) {
+                parsed = Mode.WORLD;
+            }
         }
         double ox = 0.0;
         double oy = 0.0;
@@ -136,21 +140,31 @@ public final class SceneInstanceAnchor {
         if (json.has("offset") && json.get("offset").isJsonArray()) {
             JsonArray offset = json.getAsJsonArray("offset");
             if (offset.size() >= 3) {
-                ox = offset.get(0).getAsDouble();
-                oy = offset.get(1).getAsDouble();
-                oz = offset.get(2).getAsDouble();
+                ox = asDouble(offset.get(0), 0.0);
+                oy = asDouble(offset.get(1), 0.0);
+                oz = asDouble(offset.get(2), 0.0);
             }
         }
         UUID player = null;
-        if (json.has("playerId")) {
+        if (json.has("playerId") && json.get("playerId").isJsonPrimitive()) {
             try {
                 player = UUID.fromString(json.get("playerId").getAsString());
-            } catch (IllegalArgumentException ignored) {
+            } catch (Exception ignored) {
                 player = null;
             }
         }
-        int entity = json.has("entityId") ? json.get("entityId").getAsInt() : -1;
+        int entity = json.has("entityId") && json.get("entityId").isJsonPrimitive()
+                ? json.get("entityId").getAsInt() : -1;
         return new SceneInstanceAnchor(parsed, player, entity, ox, oy, oz);
+    }
+
+    private static double asDouble(JsonElement el, double fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsDouble();
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     private static double finiteOrZero(double value) {

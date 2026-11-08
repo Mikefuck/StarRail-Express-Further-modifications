@@ -26,7 +26,10 @@ public final class HabiRoleWorldStateComponent implements Component, StateSlotBa
                     HabiRoleWorldStateComponent.class);
 
     private final Level level;
-    private final Map<String, StoredState> slots = new HashMap<>();
+    private final Map<String, StoredState> slots = new java.util.concurrent.ConcurrentHashMap<>();
+    private CompoundTag unknownRoot = new CompoundTag();
+    private net.minecraft.nbt.Tag opaqueSlots;
+    private final Map<String, net.minecraft.nbt.Tag> preservedMalformed = new java.util.concurrent.ConcurrentHashMap<>();
 
     public HabiRoleWorldStateComponent(Level level) {
         this.level = level;
@@ -52,12 +55,15 @@ public final class HabiRoleWorldStateComponent implements Component, StateSlotBa
     public void remove(String slotKey) {
         if (slotKey != null) {
             slots.remove(slotKey);
+            preservedMalformed.remove(slotKey);
         }
     }
 
     @Override
     public void clear() {
+        opaqueSlots = null;
         slots.clear();
+        preservedMalformed.clear();
     }
 
     @Override
@@ -67,14 +73,25 @@ public final class HabiRoleWorldStateComponent implements Component, StateSlotBa
 
     @Override
     public void writeToNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
-        tag.put("Slots", RoleStateNbtUtil.toTag(slots));
+
+        for (String key : unknownRoot.getAllKeys()) tag.put(key, unknownRoot.get(key).copy());
+        tag.put("Slots", opaqueSlots != null && slots.isEmpty() && preservedMalformed.isEmpty()
+                ? opaqueSlots.copy() : RoleStateNbtUtil.toTag(slots, preservedMalformed));
     }
 
     @Override
     public void readFromNbt(@NotNull CompoundTag tag, HolderLookup.Provider registryLookup) {
         slots.clear();
-        if (tag.contains("Slots")) {
-            RoleStateNbtUtil.fromTag(tag.getCompound("Slots"), slots);
+        preservedMalformed.clear();
+
+        unknownRoot = tag.copy();
+        unknownRoot.remove("Slots");
+        opaqueSlots = null;
+        net.minecraft.nbt.Tag rawSlots = tag.get("Slots");
+        if (rawSlots instanceof CompoundTag compound) {
+            RoleStateNbtUtil.fromTag(compound, slots, preservedMalformed);
+        } else if (rawSlots != null) {
+            opaqueSlots = rawSlots.copy();
         }
     }
 }

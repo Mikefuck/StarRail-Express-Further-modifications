@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -19,6 +20,9 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.channels.FileChannel;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Same-directory atomic replace for config/world JSON (and other small files).
@@ -36,8 +40,18 @@ public final class AtomicJsonFiles {
     public enum SourceState { ABSENT, INVALID_TYPE, UNREADABLE, INVALID_CONTENT, VALID, NOT_CHECKED }
     private record Candidate<T>(T value, SourceState state) {}
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|AtomicJsonFiles");
+    private static final ConcurrentMap<Path, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+    private static final Set<Path> UNQUARANTINED_BAD_PRIMARY = ConcurrentHashMap.newKeySet();
 
     private AtomicJsonFiles() {
+    }
+
+    private static Path normalizeKey(Path target) {
+        return target.toAbsolutePath().normalize();
+    }
+
+    private static Object lockFor(Path target) {
+        return FILE_LOCKS.computeIfAbsent(normalizeKey(target), k -> new Object());
     }
 
     public static Path bakPath(Path target) {
@@ -49,8 +63,22 @@ public final class AtomicJsonFiles {
     }
 
     public static boolean writeJson(Path target, Object value, Gson gson, boolean fsync, boolean backup) {
+        return writeJsonValidated(target, value, gson, fsync, backup, candidate -> {});
+    }
+
+    /** Revalidate the live primary against its owning schema before rotating the backup. */
+    public static boolean writeJsonValidated(Path target, Object value, Gson gson, boolean fsync, boolean backup,
+            java.util.function.Consumer<com.google.gson.JsonElement> primaryValidator) {
         if (target == null || value == null || gson == null) {
             return false;
+        }
+        synchronized (lockFor(target)) {
+        // A caller may save without loading first, or the file may have changed since load.
+        // Never rotate invalid JSON into the last known-good backup.
+        if (backup && Files.isRegularFile(target) && !UNQUARANTINED_BAD_PRIMARY.contains(normalizeKey(target))) {
+            Candidate<com.google.gson.JsonElement> existing = readCandidate(target,
+                    com.google.gson.JsonElement.class, gson, primaryValidator);
+            if (existing.state != SourceState.VALID) UNQUARANTINED_BAD_PRIMARY.add(normalizeKey(target));
         }
         return write(target, out -> {
             // Do not close `out` here: the outer write() still fsyncs/flushes it.
@@ -58,6 +86,7 @@ public final class AtomicJsonFiles {
             gson.toJson(value, writer);
             writer.flush();
         }, fsync, backup);
+        }
     }
 
     public static boolean writeString(Path target, String text, Charset charset, boolean fsync, boolean backup) {
@@ -107,16 +136,35 @@ public final class AtomicJsonFiles {
         if (target == null) {
             return JsonLoad.missing();
         }
-        Path bak = bakPath(target);
-        Candidate<T> primary = readCandidate(target, type, gson, validator);
-        if (primary.value != null) return JsonLoad.ok(primary.value).withSources(primary.state, SourceState.NOT_CHECKED);
-        Path quarantined = primary.state == SourceState.INVALID_CONTENT ? quarantine(target) : null;
-        Candidate<T> backup = readCandidate(bak, type, gson, validator);
-        if (backup.value != null) return JsonLoad.fromBackup(backup.value, quarantined).withSources(primary.state, backup.state);
-        LOGGER.warn("JSON recovery failed for {}: primary={}, backup={}", target, primary.state, backup.state);
-        JsonLoad<T> result = primary.state == SourceState.ABSENT && backup.state == SourceState.ABSENT
-                ? JsonLoad.missing() : JsonLoad.corrupt(quarantined);
-        return result.withSources(primary.state, backup.state);
+        Path normKey = normalizeKey(target);
+        synchronized (lockFor(target)) {
+            Path bak = bakPath(target);
+            Candidate<T> primary = readCandidate(target, type, gson, validator);
+            if (primary.value != null) {
+                UNQUARANTINED_BAD_PRIMARY.remove(normKey);
+                return JsonLoad.ok(primary.value).withSources(primary.state, SourceState.NOT_CHECKED);
+            }
+            Path quarantined = primary.state == SourceState.INVALID_CONTENT ? quarantine(target) : null;
+            Candidate<T> backup = readCandidate(bak, type, gson, validator);
+            if (backup.value != null) {
+                if (quarantined == null && Files.isRegularFile(target)) {
+                    quarantined = quarantine(target);
+                }
+                if (Files.isRegularFile(target)) {
+                    UNQUARANTINED_BAD_PRIMARY.add(normKey);
+                } else {
+                    UNQUARANTINED_BAD_PRIMARY.remove(normKey);
+                }
+                return JsonLoad.fromBackup(backup.value, quarantined).withSources(primary.state, backup.state);
+            }
+            if (Files.isRegularFile(target) && primary.state != SourceState.ABSENT) {
+                UNQUARANTINED_BAD_PRIMARY.add(normKey);
+            }
+            LOGGER.warn("JSON recovery failed for {}: primary={}, backup={}", target, primary.state, backup.state);
+            JsonLoad<T> result = primary.state == SourceState.ABSENT && backup.state == SourceState.ABSENT
+                    ? JsonLoad.missing() : JsonLoad.corrupt(quarantined);
+            return result.withSources(primary.state, backup.state);
+        }
     }
 
     /**
@@ -155,6 +203,9 @@ public final class AtomicJsonFiles {
             T value = gson.fromJson(reader, type);
             if (value != null) validator.accept(value);
             return new Candidate<>(value, value == null ? SourceState.INVALID_CONTENT : SourceState.VALID);
+        } catch (CharacterCodingException e) {
+            LOGGER.warn("Failed decoding UTF-8 in {}: {}", file, e.toString());
+            return new Candidate<>(null, SourceState.INVALID_CONTENT);
         } catch (IOException | SecurityException e) {
             LOGGER.warn("Failed reading {}: {}", file, e.toString());
             return new Candidate<>(null, SourceState.UNREADABLE);
@@ -165,51 +216,78 @@ public final class AtomicJsonFiles {
     }
 
     private static boolean write(Path target, IoConsumer consumer, boolean fsync, boolean backup) {
-        Path parent = target.toAbsolutePath().getParent();
-        Path tmp = target.resolveSibling(target.getFileName().toString() + ".tmp");
-        try {
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.deleteIfExists(tmp);
-            try (OutputStream out = Files.newOutputStream(tmp,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
-                consumer.accept(out);
-                out.flush();
-            }
-            if (fsync) {
-                try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.WRITE)) {
-                    channel.force(true);
-                }
-            }
-            if (backup && Files.isRegularFile(target)) {
-                Path bak = bakPath(target);
-                try {
-                    // Windows Files.copy into an existing directory succeeds; treat a
-                    // non-file .bak as a failed backup so the live file is not replaced.
-                    if (Files.exists(bak) && !Files.isRegularFile(bak)) {
-                        throw new IOException(".bak is not a regular file: " + bak);
-                    }
-                    Files.copy(target, bak, StandardCopyOption.REPLACE_EXISTING);
-                } catch (Exception e) {
-                    LOGGER.error("Refusing to replace {} because .bak copy failed", target, e);
-                    Files.deleteIfExists(tmp);
-                    return false;
-                }
-            }
+        Path normKey = normalizeKey(target);
+        synchronized (lockFor(target)) {
+            Path parent = target.toAbsolutePath().getParent();
+            Path legacyTmp = target.resolveSibling(target.getFileName().toString() + ".tmp");
+            Path tmp = target.resolveSibling(
+                    target.getFileName().toString() + "." + Thread.currentThread().threadId() + "-" + System.nanoTime() + ".tmp");
             try {
-                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return true;
-        } catch (Exception e) {
-            LOGGER.error("Atomic write failed for {}", target, e);
-            try {
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+                Files.deleteIfExists(legacyTmp);
                 Files.deleteIfExists(tmp);
-            } catch (IOException ignored) {
+                try (OutputStream out = Files.newOutputStream(tmp,
+                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                    consumer.accept(out);
+                    out.flush();
+                }
+                if (fsync) {
+                    try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.WRITE)) {
+                        channel.force(true);
+                    }
+                }
+                if (backup && Files.isRegularFile(target)) {
+                    Path bak = bakPath(target);
+                    try {
+                        // Windows Files.copy into an existing directory succeeds; treat a
+                        // non-file .bak as a failed backup so the live file is not replaced.
+                        if (Files.exists(bak) && !Files.isRegularFile(bak)) {
+                            throw new IOException(".bak is not a regular file: " + bak);
+                        }
+                        if (UNQUARANTINED_BAD_PRIMARY.contains(normKey)) {
+                            LOGGER.warn("Skipping .bak overwrite for {} because live primary was marked corrupt/unreadable", target);
+                        } else {
+                            // Copy failure must leave an existing good .bak intact.
+                            Path bakTmp = Files.createTempFile(parent, target.getFileName() + ".bak-", ".tmp");
+                            try {
+                                Files.copy(target, bakTmp, StandardCopyOption.REPLACE_EXISTING);
+                                if (fsync) {
+                                    try (FileChannel channel = FileChannel.open(bakTmp, StandardOpenOption.WRITE)) {
+                                        channel.force(true);
+                                    }
+                                }
+                                try {
+                                    Files.move(bakTmp, bak, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                                } catch (AtomicMoveNotSupportedException unsupported) {
+                                    Files.move(bakTmp, bak, StandardCopyOption.REPLACE_EXISTING);
+                                }
+                            } finally {
+                                Files.deleteIfExists(bakTmp);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOGGER.error("Refusing to replace {} because .bak copy failed", target, e);
+                        Files.deleteIfExists(tmp);
+                        return false;
+                    }
+                }
+                try {
+                    Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                UNQUARANTINED_BAD_PRIMARY.remove(normKey);
+                return true;
+            } catch (Exception e) {
+                LOGGER.error("Atomic write failed for {}", target, e);
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                }
+                return false;
             }
-            return false;
         }
     }
 

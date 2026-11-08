@@ -1,7 +1,5 @@
 package com.habitrain.core.game.sre.mode;
 
-import de.maxhenkel.voicechat.api.Group;
-
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,10 +10,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Convergence target for: LOBBY_GROUP, pendingVoiceJoins, pendingGameEndGroupJoin,
  * builtinTasksRegistered, sreEventsRegistered.
+ * <p>
+ * {@code lobbyGroup} is stored as {@link Object} to avoid a strong field descriptor reference to
+ * optional {@code de.maxhenkel.voicechat.api.Group} when Simple Voice Chat is not installed.
  */
 public class SREGameModeState {
 
-    private Group lobbyGroup;
+    private Object lobbyGroup;
     private final Map<UUID, Integer> pendingVoiceJoins = new ConcurrentHashMap<>();
     private boolean pendingGameEndGroupJoin = false;
     private boolean builtinTasksRegistered = false;
@@ -23,11 +24,11 @@ public class SREGameModeState {
 
     // ========== Lobby Group ==========
 
-    public Group getLobbyGroup() {
+    public Object getLobbyGroup() {
         return lobbyGroup;
     }
 
-    public void setLobbyGroup(Group lobbyGroup) {
+    public void setLobbyGroup(Object lobbyGroup) {
         this.lobbyGroup = lobbyGroup;
     }
 
@@ -63,5 +64,11 @@ public class SREGameModeState {
 
     public void setSreEventsRegistered(boolean registered) {
         this.sreEventsRegistered = registered;
+    }
+
+    public void resetServerState() {
+        this.lobbyGroup = null;
+        this.pendingVoiceJoins.clear();
+        this.pendingGameEndGroupJoin = false;
     }
 }

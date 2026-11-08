@@ -27,6 +27,23 @@ public final class SreRuntimeBridgeImpl implements SreRuntimeBridge {
 
     private SreRuntimeBridgeImpl() {}
 
+    @Override public boolean reserveMatch(ServerLevel level) {
+        return com.habitrain.core.game.sre.match.ServerMatchContext.GATE.start(
+                com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
+    }
+    @Override public void releaseMatch(ServerLevel level) {
+        com.habitrain.core.game.sre.match.ServerMatchContext.release(level);
+    }
+    @Override public void matchStarted(ServerLevel level) {
+        // SRE modes still have a countdown; their native started event owns RUNNING.
+        var game = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
+        if (game.getGameStatus() == io.wifi.starrailexpress.cca.SREGameWorldComponent.GameStatus.INACTIVE) {
+            com.habitrain.core.game.sre.match.ServerMatchContext.GATE.transition(
+                    com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level),
+                    com.habitrain.core.game.sre.match.SingleMatchGate.Phase.RUNNING);
+        }
+    }
+
     @Override
     public boolean isSreGameBlocking(ServerLevel level) {
         return SREModeStartAdapter.isSreGameBlocking(level);

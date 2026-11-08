@@ -80,12 +80,15 @@ public final class OptionVoteState {
         // 隐藏偏好跨 mode→map 保留；新一轮投票（非 mode→map 衔接）或地图投票结束时清除。
         if (mapResolved) {
             uiHiddenByUser = false;
-        } else if (active && !wasActive) {
-            // 新投票开始：允许下一轮地图结算再次开屏
+        } else if (active && (!wasActive || voteIdChanged)) {
+            // 新投票开始：清理可能残留的上一轮开局加载会话，并允许下一轮地图结算再次开屏
+            VoteLaunchSession.clear();
             mapLaunchTransitionConsumed = false;
-            boolean modeToMapHandoff = "map".equals(newVoteId) && "mode".equals(oldVoteId);
-            if (!modeToMapHandoff) {
-                uiHiddenByUser = false;
+            if (!wasActive) {
+                boolean modeToMapHandoff = "map".equals(newVoteId) && "mode".equals(oldVoteId);
+                if (!modeToMapHandoff) {
+                    uiHiddenByUser = false;
+                }
             }
         }
 

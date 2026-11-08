@@ -60,6 +60,13 @@ public final class MatchRestStateApi {
         return CoreSpi.isPlayerResting(player);
     }
 
+    /**
+     * {@link #isResting(ServerPlayer)} 的兼容别名（API-TV-05）。
+     */
+    public static boolean isPlayerResting(@Nullable ServerPlayer player) {
+        return isResting(player);
+    }
+
     /** 休息区桥接是否已装配（诊断 / 能力判定用）。 */
     public static boolean isAvailable() {
         return CoreSpi.isRestAreaInstalled();

@@ -48,6 +48,16 @@ public final class GameEndTransitionCoordinator {
         try {
             SREGameRoundEndComponent roundEnd = (SREGameRoundEndComponent)SREGameRoundEndComponent.KEY.get((Object)level);
             if (roundEnd != null) {
+                if (roundEnd.CustomWinnerPlayers != null) {
+                    roundEnd.CustomWinnerPlayers.clear();
+                }
+                if (roundEnd.CustomWinnerExtraRoleIds != null) {
+                    roundEnd.CustomWinnerExtraRoleIds.clear();
+                }
+                roundEnd.CustomWinnerID = "";
+                roundEnd.CustomWinnerTitle = null;
+                roundEnd.CustomWinnerSubtitle = null;
+                roundEnd.CustomWinnerColor = 0;
                 roundEnd.setWinStatus(GameUtils.WinStatus.NONE);
             }
         }
@@ -65,26 +75,69 @@ public final class GameEndTransitionCoordinator {
             return;
         }
         try {
-            boolean customResult;
             SREGameRoundEndComponent roundEnd = (SREGameRoundEndComponent)SREGameRoundEndComponent.KEY.get((Object)level);
             ResultSnapshot result = GameEndTransitionCoordinator.snapshotResult(level, roundEnd);
             RESULTS.put(dimension, result);
             MVP_STATS.put(dimension, MvpScoreTracker.freeze(level));
-            LinkedHashSet<UUID> customWinners = new LinkedHashSet<UUID>();
-            customResult = result.winStatus() == GameUtils.WinStatus.CUSTOM || result.winStatus() == GameUtils.WinStatus.CUSTOM_COMPONENT;
-            if (customResult && roundEnd != null && roundEnd.CustomWinnerPlayers != null) {
-                for (UUID winner : roundEnd.CustomWinnerPlayers) {
-                    if (winner == null) continue;
-                    customWinners.add(winner);
-                }
-            }
-            CUSTOM_WINNERS.put(dimension, Set.copyOf(customWinners));
+            CUSTOM_WINNERS.put(dimension, GameEndTransitionCoordinator.collectInitialWinners(level, roundEnd, result));
             GameEndTransitionCoordinator.broadcast(level, false);
         }
         catch (Throwable t) {
             GameEndTransitionCoordinator.clearRoundState(dimension);
             LOGGER.warn("[GameEndTransition] initial broadcast failed dim={}", (Object)dimension.location(), (Object)t);
         }
+    }
+
+    /**
+     * Refresh winner snapshot right after {@code GameMode#recordWinStats} in {@code finalizeGame}
+     * before {@code CustomWinnerPlayers} and role maps are cleared.
+     */
+    public static void onWinStatsRecorded(ServerLevel level) {
+        if (level == null || !NOTIFIED.containsKey(level.dimension())) return;
+        try {
+            onWinStatsRecorded(level, MatchSettlementFactory.fromRecordedStats(level,
+                    SREGameWorldComponent.KEY.get(level)));
+        } catch (Throwable failure) {
+            LOGGER.warn("[GameEndTransition] could not read final statistics dim={}", level.dimension().location(), failure);
+        }
+    }
+
+    public static void onWinStatsRecorded(ServerLevel level, com.habitrain.core.api.match.MatchSettlement settlement) {
+        if (level == null) {
+            return;
+        }
+        ResourceKey<Level> dimension = level.dimension();
+        if (!NOTIFIED.containsKey(dimension)) {
+            return;
+        }
+        try {
+            SREGameRoundEndComponent roundEnd = (SREGameRoundEndComponent)SREGameRoundEndComponent.KEY.get((Object)level);
+            ResultSnapshot refreshed = GameEndTransitionCoordinator.snapshotResult(level, roundEnd);
+            RESULTS.put(dimension, refreshed);
+            CUSTOM_WINNERS.put(dimension, settlement == null ? Set.of() : settlement.winners());
+        } catch (Throwable t) {
+            LOGGER.debug("[GameEndTransition] failed to refresh winner snapshot dim={}: {}", dimension.location(), t.toString());
+        }
+    }
+
+    private static Set<UUID> collectInitialWinners(ServerLevel level, SREGameRoundEndComponent roundEnd, ResultSnapshot result) {
+        LinkedHashSet<UUID> winners = new LinkedHashSet<UUID>();
+        boolean customResult = result.winStatus() == GameUtils.WinStatus.CUSTOM
+                || result.winStatus() == GameUtils.WinStatus.CUSTOM_COMPONENT
+                || result.winStatus() == GameUtils.WinStatus.LOVERS;
+        if (customResult && roundEnd != null && roundEnd.CustomWinnerPlayers != null) {
+            for (UUID winner : roundEnd.CustomWinnerPlayers) {
+                if (winner == null) continue;
+                winners.add(winner);
+            }
+        }
+        try {
+            SREGameWorldComponent game = (SREGameWorldComponent)SREGameWorldComponent.KEY.get((Object)level);
+            winners.addAll(MatchSettlementFactory.fromEnd(level, game).winners());
+        } catch (Throwable t) {
+            LOGGER.debug("[GameEndTransition] fallback winner resolution failed: {}", t.toString());
+        }
+        return Set.copyOf(winners);
     }
 
     public static void onEnvironmentReady(ServerLevel level) {
@@ -232,27 +285,34 @@ public final class GameEndTransitionCoordinator {
         }
         LinkedHashMap<UUID, PlayerResultSnapshot> candidates = new LinkedHashMap<UUID, PlayerResultSnapshot>();
         for (PlayerResultSnapshot player : result.players()) {
-            if (!player.hasWin() || player.wasDead()) continue;
+            if (!player.hasWin()) continue;
             candidates.putIfAbsent(player.id(), player);
         }
         if (roundEnd != null) {
             for (Object data : roundEnd.players) {
                 PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer((SREGameRoundEndComponent.RoundEndData)data, result.roleTypes());
-                if (player == null || !player.hasWin() || player.wasDead()) continue;
+                if (player == null || !player.hasWin()) continue;
                 candidates.putIfAbsent(player.id(), player);
             }
         }
         if (!(customWinners = CUSTOM_WINNERS.getOrDefault(dimension, Set.of())).isEmpty()) {
             for (PlayerResultSnapshot player : result.players()) {
-                if (player.wasDead() || !customWinners.contains(player.id())) continue;
+                if (!customWinners.contains(player.id())) continue;
                 candidates.putIfAbsent(player.id(), player);
             }
             if (roundEnd != null) {
                 for (SREGameRoundEndComponent.RoundEndData data : roundEnd.players) {
                     PlayerResultSnapshot player = GameEndTransitionCoordinator.snapshotPlayer(data, result.roleTypes());
-                    if (player == null || player.wasDead() || !customWinners.contains(player.id())) continue;
+                    if (player == null || !customWinners.contains(player.id())) continue;
                     candidates.putIfAbsent(player.id(), player);
                 }
+            }
+            for (UUID winnerId : customWinners) {
+                if (winnerId == null || candidates.containsKey(winnerId)) continue;
+                MvpScoreTracker.ScoreSnapshot score = stats.get(winnerId);
+                if (score == null) continue;
+                int roleType = result.roleTypes().getOrDefault(winnerId, GameEndTransitionPayload.ROLE_TYPE_CIVILIAN);
+                candidates.put(winnerId, new PlayerResultSnapshot(winnerId, score.playerName(), false, true, roleType));
             }
         }
         ArrayList<GameEndTransitionPayload.MvpPlayer> ranked = new ArrayList<GameEndTransitionPayload.MvpPlayer>();

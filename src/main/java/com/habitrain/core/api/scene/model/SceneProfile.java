@@ -1,9 +1,11 @@
 package com.habitrain.core.api.scene.model;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -139,11 +141,19 @@ public final class SceneProfile {
         double dx = validateFinite(x, -1.0);
         double dy = validateFinite(y, 0.0);
         double dz = validateFinite(z, 0.0);
-        double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len < 1e-4) {
+        double maxAbs = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+        if (maxAbs < 1e-4) {
+            this.direction = new double[]{-1.0, 0.0, 0.0};
+            return;
+        }
+        double sx = dx / maxAbs;
+        double sy = dy / maxAbs;
+        double sz = dz / maxAbs;
+        double len = Math.sqrt(sx * sx + sy * sy + sz * sz);
+        if (len < 1e-4 || !Double.isFinite(len)) {
             this.direction = new double[]{-1.0, 0.0, 0.0};
         } else {
-            this.direction = new double[]{dx / len, dy / len, dz / len};
+            this.direction = new double[]{sx / len, sy / len, sz / len};
         }
     }
 
@@ -218,8 +228,8 @@ public final class SceneProfile {
         SceneProfile p = new SceneProfile();
         if (json == null) return p;
 
-        if (json.has("enabled")) p.enabled = json.get("enabled").getAsBoolean();
-        if (json.has("dimension")) p.setDimension(json.get("dimension").getAsString());
+        if (isPrimitive(json, "enabled")) p.enabled = asBoolean(json.get("enabled"), false);
+        if (isPrimitive(json, "dimension")) p.setDimension(asString(json.get("dimension"), DEFAULT_DIMENSION));
         if (json.has("sourceBounds") && json.get("sourceBounds").isJsonObject()) {
             p.sourceBounds = SceneBounds.fromJson(json.getAsJsonObject("sourceBounds"));
         }
@@ -227,38 +237,39 @@ public final class SceneProfile {
         if (json.has("displayOrigin") && json.get("displayOrigin").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("displayOrigin");
             if (arr.size() >= 3) {
-                p.setDisplayOrigin(arr.get(0).getAsDouble(), arr.get(1).getAsDouble(), arr.get(2).getAsDouble());
+                p.setDisplayOrigin(asDouble(arr.get(0), 0.0), asDouble(arr.get(1), 0.0), asDouble(arr.get(2), 0.0));
             }
         }
         if (json.has("pivotLocal") && json.get("pivotLocal").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("pivotLocal");
             if (arr.size() >= 3) {
-                p.setPivotLocal(arr.get(0).getAsDouble(), arr.get(1).getAsDouble(), arr.get(2).getAsDouble());
+                p.setPivotLocal(asDouble(arr.get(0), 0.0), asDouble(arr.get(1), 0.0), asDouble(arr.get(2), 0.0));
             }
         }
         if (json.has("direction") && json.get("direction").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("direction");
             if (arr.size() >= 3) {
-                p.setDirection(arr.get(0).getAsDouble(), arr.get(1).getAsDouble(), arr.get(2).getAsDouble());
+                p.setDirection(asDouble(arr.get(0), -1.0), asDouble(arr.get(1), 0.0), asDouble(arr.get(2), 0.0));
             }
         }
 
-        if (json.has("speedBlocksPerSecond")) {
-            p.setSpeedBlocksPerSecond(json.get("speedBlocksPerSecond").getAsDouble());
+        if (isPrimitive(json, "speedBlocksPerSecond")) {
+            p.setSpeedBlocksPerSecond(asDouble(json.get("speedBlocksPerSecond"), DEFAULT_SPEED));
         }
         if (json.has("rotationDegrees") && json.get("rotationDegrees").isJsonObject()) {
             p.rotationDegrees = SceneRotation.fromJson(json.getAsJsonObject("rotationDegrees"));
         }
-        if (json.has("phaseOffsetBlocks")) {
-            p.setPhaseOffsetBlocks(json.get("phaseOffsetBlocks").getAsDouble());
+        if (isPrimitive(json, "phaseOffsetBlocks")) {
+            p.setPhaseOffsetBlocks(asDouble(json.get("phaseOffsetBlocks"), 0.0));
         }
         if (json.has("loop") && json.get("loop").isJsonObject()) {
             p.loop = SceneLoopSettings.fromJson(json.getAsJsonObject("loop"));
         }
-        if (json.has("motionMode")) {
+        if (isPrimitive(json, "motionMode")) {
             try {
-                p.setMotionMode(SceneMotionMode.valueOf(json.get("motionMode").getAsString().trim().toUpperCase()));
-            } catch (IllegalArgumentException ignored) {
+                p.setMotionMode(SceneMotionMode.valueOf(
+                        json.get("motionMode").getAsString().trim().toUpperCase(Locale.ROOT)));
+            } catch (Exception ignored) {
                 p.setMotionMode(SceneMotionMode.LINEAR);
             }
         }
@@ -275,6 +286,38 @@ public final class SceneProfile {
             p.shake = SceneShakeSettings.fromJson(json.getAsJsonObject("shake"));
         }
         return p;
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        JsonElement el = json.get(key);
+        return el != null && el.isJsonPrimitive();
+    }
+
+    private static double asDouble(JsonElement el, double fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsDouble();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static boolean asBoolean(JsonElement el, boolean fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsBoolean();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static String asString(JsonElement el, String fallback) {
+        if (el == null || !el.isJsonPrimitive()) return fallback;
+        try {
+            return el.getAsString();
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     @Override

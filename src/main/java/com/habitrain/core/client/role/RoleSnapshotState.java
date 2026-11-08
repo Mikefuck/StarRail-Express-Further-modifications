@@ -67,6 +67,17 @@ public final class RoleSnapshotState {
         return last;
     }
 
+    public com.habitrain.core.api.role.v2.book.RoleBookView resolveBook(net.minecraft.resources.ResourceLocation role) {
+        RoleSnapshotPayload payload = last;
+        if (payload == null) return com.habitrain.core.role.book.RoleBookResolver.resolve(role);
+        Set<String> entries = new LinkedHashSet<>();
+        if (payload.gameplayEntryIds() != null) addNonBlank(entries, payload.gameplayEntryIds());
+        else for (var row : payload.entries()) {
+            if ("ACTIVE".equals(row.status())) entries.add(row.entryId());
+        }
+        return com.habitrain.core.role.book.RoleBookResolver.resolveForEntries(role, entries);
+    }
+
     public void reset() {
         this.last = null;
         ((RoleClientExtensionRegistry) RoleClientExtensionApi.instance()).setActiveProviders(null, null);

@@ -72,8 +72,8 @@ public abstract class RoleIntroduceScreenMixin implements RoleIntroduceScreenRef
     private void habitrain$applyRoleBookPages(CallbackInfo ci) {
         if (!(selectedRole instanceof SRERole role) || role.identifier() == null) return;
 
-        var v2 = com.habitrain.core.role.book.RoleBookResolver.resolve(role.identifier());
-        if (!v2.isEmpty()) {
+        var v2 = com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.resolveBook(role.identifier());
+        if (v2.replaceAll() || !v2.isEmpty()) {
             if (v2.replaceAll()) {
                 tabs.clear();
             }

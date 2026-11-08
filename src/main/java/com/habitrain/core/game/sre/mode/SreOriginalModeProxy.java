@@ -54,7 +54,7 @@ public final class SreOriginalModeProxy extends AbstractGameMode {
     public boolean isActive(ServerLevel level) {
         try {
             SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
-            if (gw == null || gw.getGameMode() == null || gw.getGameMode().identifier == null) {
+            if (gw == null || !gw.isRunning() || gw.getGameMode() == null || gw.getGameMode().identifier == null) {
                 return false;
             }
             return sreId.equals(gw.getGameMode().identifier);

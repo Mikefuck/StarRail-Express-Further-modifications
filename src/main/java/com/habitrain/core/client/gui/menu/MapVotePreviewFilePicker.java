@@ -22,6 +22,19 @@ import java.util.Iterator;
 
 /** Native PNG chooser plus bounded client-side resizing for network upload. */
 final class MapVotePreviewFilePicker {
+    // Native dialogs cannot be interrupted safely. Bound both concurrent dialogs and queued work.
+    private static final java.util.concurrent.ThreadPoolExecutor WORKER = new java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 30, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<>(1), task -> {
+                Thread thread = new Thread(task, "habitrain-map-preview-picker");
+                thread.setDaemon(true);
+                return thread;
+            }, new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+
+    static boolean submit(Runnable task) {
+        try { WORKER.execute(task); return true; }
+        catch (java.util.concurrent.RejectedExecutionException busy) { return false; }
+    }
+
     private static final long MAX_SOURCE_FILE_BYTES = 16L * 1024L * 1024L;
     private static final int MAX_SOURCE_DIMENSION = 8192;
     /** 最多 16M 原始像素（ARGB 约 64 MiB），解码前校验并降采样到预览规模。 */

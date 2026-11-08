@@ -62,6 +62,13 @@ public final class RoleSnapshotCompiler {
         Map<ResourceLocation, ResourceLocation> aliases = compileAliases(roles);
         Set<ResourceLocation> replacedTargets = compileReplacedTargets(roles);
         Set<RoleSnapshot.BehaviorEntry> behavior = new LinkedHashSet<>();
+        var rawIds = lookup.all().stream().filter(java.util.Objects::nonNull).map(SRERole::identifier)
+                .filter(java.util.Objects::nonNull).toList();
+        for (var entry : com.habitrain.core.role.extension.RoleConflictAnalyzer.analyze(rawIds)) {
+            if (entry.status() == com.habitrain.core.role.extension.EntryStatus.ACTIVE) {
+                behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId()));
+            }
+        }
         for (var byRole : RoleHookRegistry.INSTANCE.entryView().values()) {
             for (var entries : byRole.values()) {
                 for (var entry : entries) {
@@ -78,8 +85,23 @@ public final class RoleSnapshotCompiler {
                 behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId()));
             }
         }
-        return new RoleSnapshot(id, roles, aliases, replacedTargets, behavior,
+        for (var entry : ((com.habitrain.core.role.state.RoleStateServiceImpl)
+                com.habitrain.core.api.role.v2.state.RoleStateApi.instance()).snapshotForTransaction().specs()) {
+            if (RoleExtensionConfigService.INSTANCE.gateFor(entry.providerId(), entry.entryId())
+                    == RoleExtensionConfigService.EntryGate.ENABLED) {
+                behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId()));
+            }
+        }
+        var capabilities = ((com.habitrain.core.role.capability.RoleCapabilityServiceImpl)
+                com.habitrain.core.api.role.v2.capability.RoleCapabilityApi.instance()).snapshotForTransaction();
+        java.util.stream.Stream.concat(capabilities.voices().values().stream(), capabilities.chats().values().stream())
+                .filter(entry -> RoleExtensionConfigService.INSTANCE.gateFor(entry.providerId(), entry.entryId())
+                        == RoleExtensionConfigService.EntryGate.ENABLED)
+                .forEach(entry -> behavior.add(new RoleSnapshot.BehaviorEntry(entry.providerId(), entry.entryId())));
+        RoleSnapshot snapshot = new RoleSnapshot(id, roles, aliases, replacedTargets, behavior,
                 RoleExtensionConfigService.INSTANCE.isAllowGlobalHooks());
+        com.habitrain.core.role.book.RoleBookResolver.freeze(snapshot);
+        return snapshot;
     }
 
     /**
@@ -113,7 +135,7 @@ public final class RoleSnapshotCompiler {
             if (overlay != null) {
                 source = EffectiveRole.Source.MODIFIED;
             }
-            EffectiveRoleProfile profile = EffectiveRoleProfile.from(RoleKey.of(rid), role, source)
+            EffectiveRoleProfile profile = buildBaseProfile(RoleKey.of(rid), role, source)
                     .withOverlay(overlay);
             roles.put(rid, new EffectiveRole(profile, role, overlay));
         }
@@ -127,20 +149,31 @@ public final class RoleSnapshotCompiler {
                 continue;
             }
             ResourceLocation cid = surfaced.identifier();
-            java.util.List<com.habitrain.core.role.extension.ConfiguredPatch> patches = new java.util.ArrayList<>();
-            if (!repl.target().location().equals(cid)) {
-                patches.addAll(RoleExtensionRegistry.INSTANCE.configuredPatchesFor(repl.target().location()));
+            if (!repl.target().location().equals(cid) && isHiddenTarget(cid)) {
+                continue; // intermediate role in a REPLACE -> REPLACE chain stays hidden
             }
-            patches.addAll(RoleExtensionRegistry.INSTANCE.configuredPatchesFor(cid));
+            java.util.List<com.habitrain.core.role.extension.ConfiguredPatch> patches =
+                    RoleExtensionRegistry.INSTANCE.configuredPatchesForReplacement(
+                            repl.target().location(), cid);
             CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlayConfigured(
                     surfaced, patches, RoleBaselineStore.getOrCapture(surfaced));
-            EffectiveRoleProfile profile = EffectiveRoleProfile
-                    .from(RoleKey.of(cid), surfaced, EffectiveRole.Source.REPLACEMENT)
+            EffectiveRoleProfile profile = buildBaseProfile(
+                    RoleKey.of(cid), surfaced, EffectiveRole.Source.REPLACEMENT)
                     .withOverlay(overlay);
             roles.put(cid, new EffectiveRole(profile, surfaced, overlay));
         }
 
         return roles;
+    }
+
+    private static EffectiveRoleProfile buildBaseProfile(
+            RoleKey key, SRERole role, EffectiveRole.Source source) {
+        if (role instanceof com.habitrain.core.role.extension.ManagedSRERole mm) {
+            boolean twoWay = mm.relationProfile() == null || mm.relationProfile().opposingTwoWay();
+            java.util.List<com.habitrain.core.api.role.v2.skill.RoleSkillSpec> skills = mm.skills();
+            return EffectiveRoleProfile.from(key, role, source, twoWay, skills, !skills.isEmpty());
+        }
+        return EffectiveRoleProfile.from(key, role, source);
     }
 
     /**
@@ -181,9 +214,13 @@ public final class RoleSnapshotCompiler {
         }
         for (RoleReplacement repl : RoleExtensionRegistry.INSTANCE.activeReplacements()) {
             if (repl.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS) {
-                ResourceLocation cid = repl.replacement().key().location();
-                if (roles.containsKey(cid)) {
-                    aliases.put(repl.target().location(), cid);
+                ResourceLocation from = repl.target().location();
+                ResourceLocation canonical = RoleExtensionRegistry.INSTANCE.resolveAlias(from);
+                if (canonical == null) {
+                    canonical = repl.replacement().key().location();
+                }
+                if (roles.containsKey(canonical)) {
+                    aliases.put(from, canonical);
                 }
             }
         }

@@ -5,9 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,8 +70,10 @@ final class SceneSeedIndex {
                         if (!file.isFile() || file.length() <= 0
                                 || file.length() > SceneAssetCodec.MAX_COMPRESSED_BYTES) continue;
                         try {
-                            String hash = SceneAssetCodec.calculateSha256(Files.readAllBytes(file.toPath()));
-                            found.putIfAbsent(hash, file);
+                            String hash = calculateFileSha256(file.toPath(), SceneAssetCodec.MAX_COMPRESSED_BYTES);
+                            if (hash != null) {
+                                found.putIfAbsent(hash, file);
+                            }
                         } catch (Exception e) {
                             LOGGER.warn("预置场景资产读取失败，已跳过: {}", file.getName(), e);
                         }
@@ -91,18 +98,38 @@ final class SceneSeedIndex {
         return scanned;
     }
 
+    static String calculateFileSha256(Path path, long maxBytes) throws IOException {
+        MessageDigest digest = ScenePrefixHash.newSha256();
+        if (digest == null) return null;
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0L;
+        try (InputStream in = Files.newInputStream(path)) {
+            int read;
+            while ((read = in.read(buffer)) >= 0) {
+                total += read;
+                if (maxBytes > 0L && total > maxBytes) {
+                    return null;
+                }
+                digest.update(buffer, 0, read);
+            }
+        }
+        if (total <= 0L) return null;
+        return ScenePrefixHash.hex(digest.digest());
+    }
+
     /**
      * 按内容哈希找预置文件。调用方仍必须再校验一次内容（这里只保证"扫描时它是对的"）。
      */
     File find(String sha256) {
         if (!scanned || sha256 == null) return null;
-        File file = byHash.get(sha256.toLowerCase());
-        if (file == null || rejected.contains(sha256.toLowerCase())) return null;
+        String normalized = sha256.toLowerCase(Locale.ROOT);
+        File file = byHash.get(normalized);
+        if (file == null || rejected.contains(normalized)) return null;
         return file;
     }
 
     /** 内容与文件名不符的文件：记下来，避免每次加载都重新读一遍坏文件。 */
     void reject(String sha256) {
-        if (sha256 != null) rejected.add(sha256.toLowerCase());
+        if (sha256 != null) rejected.add(sha256.toLowerCase(Locale.ROOT));
     }
 }

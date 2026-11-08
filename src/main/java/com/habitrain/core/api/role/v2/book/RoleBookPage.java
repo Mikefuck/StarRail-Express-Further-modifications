@@ -15,12 +15,24 @@ import java.util.Objects;
 public record RoleBookPage(Component title, List<Component> paragraphs) {
     public RoleBookPage {
         Objects.requireNonNull(title, "title");
+        title = title.copy();
         Objects.requireNonNull(paragraphs, "paragraphs");
         paragraphs = List.copyOf(paragraphs);
         if (paragraphs.isEmpty()) {
             throw new IllegalArgumentException("Role book page requires at least one paragraph");
         }
         paragraphs.forEach(paragraph -> Objects.requireNonNull(paragraph, "paragraph"));
+        paragraphs = paragraphs.stream().map(Component::copy).map(c -> (Component) c).toList();
+    }
+
+    @Override
+    public Component title() {
+        return title.copy();
+    }
+
+    @Override
+    public List<Component> paragraphs() {
+        return paragraphs.stream().map(Component::copy).map(c -> (Component) c).toList();
     }
 
     public static RoleBookPage of(Component title, Component... paragraphs) {

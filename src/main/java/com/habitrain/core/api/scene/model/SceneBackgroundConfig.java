@@ -37,7 +37,7 @@ public final class SceneBackgroundConfig {
 
     public static SceneBackgroundConfig fromJson(JsonObject json) {
         if (json == null) return new SceneBackgroundConfig("动态背景", SceneProfile.createDefault());
-        String name = json.has("name") ? json.get("name").getAsString() : "动态背景";
+        String name = json.has("name") && json.get("name").isJsonPrimitive() ? json.get("name").getAsString() : "动态背景";
         SceneProfile profile = json.has("profile") && json.get("profile").isJsonObject()
                 ? SceneProfile.fromJson(json.getAsJsonObject("profile")) : SceneProfile.createDefault();
         return new SceneBackgroundConfig(name, profile);

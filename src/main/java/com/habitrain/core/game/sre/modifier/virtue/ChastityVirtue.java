@@ -75,14 +75,30 @@ public final class ChastityVirtue {
             Holder<MobEffect> effect = BuiltInRegistries.MOB_EFFECT.getHolder(id).orElse(null);
             if (effect != null && player.hasEffect(effect)) player.removeEffect(effect);
         }
+        clearSrePoisonComponent(player);
     }
 
     private static boolean blockPoisonDeath(ServerPlayer player, ResourceLocation reason) {
         if (!SinDeathReasons.isPoisonDeath(reason)) return false;
-        player.setHealth(player.getMaxHealth());
+        clearSrePoisonComponent(player);
+        if (player.getHealth() <= 0.0f) {
+            player.setHealth(1.0f);
+        }
         HabiTrainCore.LOGGER.debug("[Chastity] blocked poison death for {}",
                 player.getGameProfile().getName());
         return true;
+    }
+
+    private static void clearSrePoisonComponent(ServerPlayer player) {
+        try {
+            io.wifi.starrailexpress.cca.SREPlayerPoisonComponent poison =
+                    io.wifi.starrailexpress.cca.SREPlayerPoisonComponent.KEY.get(player);
+            if (poison != null && (poison.poisonTicks > 0 || poison.poisoner != null || poison.fakePoison)) {
+                poison.poisoner = null;
+                poison.init();
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private static ResourceLocation effectId(Holder<MobEffect> effect) {

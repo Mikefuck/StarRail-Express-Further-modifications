@@ -2,16 +2,34 @@ package com.habitrain.core.api.role.v2.client;
 
 import com.habitrain.core.api.spi.RoleSpi;
 import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceLocation;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** Public, physical-client entry point for registered stock role screens. */
-@Environment(EnvType.CLIENT)
+/**
+ * Public, physical-client entry point for registered stock role screens.
+ * Kept free of {@code @Environment(EnvType.CLIENT)} on the interface declaration
+ * so dedicated servers can class-load common references safely (ROLE-API-04).
+ */
 public interface RoleScreenClientApi {
     static RoleScreenClientApi instance() {
-        if (RoleSpi.screenClientOrNull() instanceof RoleScreenClientApi api) return api;
+        EnvType env = null;
+        try {
+            env = FabricLoader.getInstance().getEnvironmentType();
+        } catch (RuntimeException ignored) {
+        }
+        if (env != null && env != EnvType.CLIENT) {
+            throw new IllegalStateException(
+                    "RoleScreenClientApi.instance() may only be called on the physical client");
+        }
+        final Object raw;
+        try {
+            raw = RoleSpi.screenClientOrNull();
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to resolve RoleScreenClientApi", e);
+        }
+        if (raw instanceof RoleScreenClientApi api) return api;
         throw new IllegalStateException("RoleScreenClientApi is unavailable before client initialization");
     }
 

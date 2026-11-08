@@ -17,8 +17,10 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,13 +40,10 @@ public final class OptionVoteManager {
 
     private static final ConcurrentMap<ResourceKey<Level>, State> STATES = new ConcurrentHashMap<>();
 
-    static {
-        com.habitrain.core.task.ClearableHandlerRegistry.register(OptionVoteManager::resetAll);
-    }
-
     private OptionVoteManager() {}
 
     private static final class State {
+        @Nullable WeakReference<ServerLevel> levelRef;
         boolean active;
         String voteId = "";
         String title = "";
@@ -61,7 +60,9 @@ public final class OptionVoteManager {
     }
 
     private static State getOrCreate(ServerLevel level) {
-        return STATES.computeIfAbsent(level.dimension(), k -> new State());
+        State state = STATES.computeIfAbsent(level.dimension(), k -> new State());
+        state.levelRef = new WeakReference<>(level);
+        return state;
     }
 
     /** 网络层 {@code writeUtf/readUtf(64)} 的硬上限。 */
@@ -251,21 +252,53 @@ public final class OptionVoteManager {
         }
     }
 
+    /**
+     * API-TV-20：结算前剔除已掉线、切维、转旁观、进入维修模式或退出参战的无效选票，
+     * 并排除锁定地图，确保 {@link VoteResult#tallies()} 与最终胜者选举口径完全一致。
+     */
+    private static void pruneIneligibleVotes(ServerLevel level, State state) {
+        if (level == null || state == null || state.votesByVoter.isEmpty()) {
+            return;
+        }
+        MinecraftServer server = level.getServer();
+        for (Iterator<Map.Entry<UUID, String>> it = state.votesByVoter.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<UUID, String> entry = it.next();
+            UUID voterId = entry.getKey();
+            ServerPlayer voter = server != null && server.getPlayerList() != null
+                    ? server.getPlayerList().getPlayer(voterId)
+                    : null;
+            if (voter == null
+                    || voter.serverLevel() != level
+                    || voter.isSpectator()
+                    || RepairModeManager.isRepairer(voter)
+                    || !isParticipatingVoter(level, voterId)) {
+                it.remove();
+            }
+        }
+    }
+
     private static void resolve(ServerLevel level, State state) {
         state.active = false;
+        pruneIneligibleVotes(level, state);
 
-        Map<String, Integer> tallies = new HashMap<>();
-        for (VoteOption opt : state.options) {
-            tallies.put(opt.id(), 0);
-        }
-        for (String optionId : state.votesByVoter.values()) {
-            tallies.merge(optionId, 1, Integer::sum);
-        }
-
-        int totalVotes = state.votesByVoter.size();
         Predicate<String> blocked = isMapVoteId(state.voteId)
                 ? RepairModeManager::isMapLocked
                 : id -> false;
+
+        Map<String, Integer> tallies = new HashMap<>();
+        for (VoteOption opt : state.options) {
+            if (!blocked.test(opt.id())) {
+                tallies.put(opt.id(), 0);
+            }
+        }
+        int totalVotes = 0;
+        for (String optionId : state.votesByVoter.values()) {
+            if (optionId != null && tallies.containsKey(optionId)) {
+                tallies.merge(optionId, 1, Integer::sum);
+                totalVotes++;
+            }
+        }
+
         WinnerPick pick = pickWinner(
                 state.options,
                 state.votesByVoter,
@@ -474,51 +507,66 @@ public final class OptionVoteManager {
      * （在 {@code onResolved} 里广播结果）写的消费方状态机会永远悬挂。</p>
      */
     public static void cancel(ServerLevel level) {
+        if (level == null) return;
         State state = STATES.get(level.dimension());
         if (state == null || !state.active) return;
         state.active = false;
         state.resolvedOptionId = "";
         Consumer<VoteResult> callback = state.onResolved;
+        String voteId = state.voteId;
         state.onResolved = null;
         state.votesByVoter.clear();
         markChanged(state);
         broadcastState(level);
-        LOGGER.info("[OptionVote] cancelled voteId={}", state.voteId);
-        notifyCancelled(callback, state.voteId);
+        LOGGER.info("[OptionVote] cancelled voteId={}", voteId);
+        notifyCancelled(callback, voteId);
     }
 
-    /** 对局/维度清理：移除 state，并以 cancelled 结果回调。 */
+    /**
+     * API-TV-20：对局/维度清理时，若该维度存在 active 投票，先广播 {@code active=false} 关闭客户端面板，
+     * 并用 {@code STATES.remove(dim, state)} 精确移除旧 state 后再触发回调，防止误删回调内新发起的投票。
+     */
     public static void reset(ServerLevel level) {
         if (level == null) return;
-        State state = STATES.remove(level.dimension());
+        State state = STATES.get(level.dimension());
         if (state == null) return;
-        Consumer<VoteResult> callback = state.onResolved;
-        state.onResolved = null;
-        notifyCancelled(callback, state.voteId);
+        terminateAndRemoveState(level.dimension(), state, level);
     }
 
-    /** 全局/服务器关闭/对局结束清理：移除所有维度的投票 state，并逐个回调 cancelled。 */
+    /** 全局/服务器关闭清理：移除所有维度的投票 state，先广播关闭包再逐个回调 cancelled。 */
     public static void resetAll() {
-        for (State state : STATES.values()) {
-            Consumer<VoteResult> callback = state.onResolved;
-            state.onResolved = null;
-            state.active = false;
-            notifyCancelled(callback, state.voteId);
+        List<Map.Entry<ResourceKey<Level>, State>> snapshot = new ArrayList<>(STATES.entrySet());
+        for (Map.Entry<ResourceKey<Level>, State> entry : snapshot) {
+            State state = entry.getValue();
+            ServerLevel level = state.levelRef != null ? state.levelRef.get() : null;
+            terminateAndRemoveState(entry.getKey(), state, level);
         }
-        STATES.clear();
     }
 
     /** 全局取消所有维度的活动投票，并逐个回调 cancelled。 */
     public static void cancelAll() {
-        for (State state : STATES.values()) {
-            Consumer<VoteResult> callback = state.onResolved;
-            state.onResolved = null;
-            state.active = false;
-            state.resolvedOptionId = "";
-            state.votesByVoter.clear();
-            notifyCancelled(callback, state.voteId);
+        resetAll();
+    }
+
+    private static void terminateAndRemoveState(ResourceKey<Level> dimension, State state, @Nullable ServerLevel level) {
+        boolean wasActive = state.active;
+        String voteId = state.voteId;
+        Consumer<VoteResult> callback = state.onResolved;
+        state.onResolved = null;
+        state.active = false;
+        state.resolvedOptionId = "";
+        state.votesByVoter.clear();
+        if (wasActive && level != null) {
+            markChanged(state);
+            try {
+                broadcastState(level);
+            } catch (Throwable ignored) {
+            }
         }
-        STATES.clear();
+        STATES.remove(dimension, state);
+        if (wasActive) {
+            notifyCancelled(callback, voteId);
+        }
     }
 
     /**
@@ -537,6 +585,7 @@ public final class OptionVoteManager {
     }
 
     public static boolean isActive(ServerLevel level) {
+        if (level == null) return false;
         State state = STATES.get(level.dimension());
         return state != null && state.active;
     }
@@ -636,7 +685,9 @@ public final class OptionVoteManager {
             counts.put(opt.id(), 0);
         }
         for (String optionId : state.votesByVoter.values()) {
-            counts.merge(optionId, 1, Integer::sum);
+            if (counts.containsKey(optionId)) {
+                counts.merge(optionId, 1, Integer::sum);
+            }
         }
         List<OptionVotePayload.Entry> entries = new ArrayList<>(state.options.size());
         for (VoteOption opt : state.options) {

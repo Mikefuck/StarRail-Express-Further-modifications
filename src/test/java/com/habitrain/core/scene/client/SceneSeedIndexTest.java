@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,12 +35,14 @@ class SceneSeedIndexTest {
         assertTrue(Files.exists(file), "种子文件必须保留");
     }
 
-    private static void awaitReady(SceneSeedIndex index) throws InterruptedException {
-        index.ensureScannedAsync();
-        for (int i = 0; i < 100 && !index.isReady(); i++) {
-            Thread.sleep(10);
-        }
-        assertTrue(index.isReady(), "扫描应当很快结束");
+    private static void awaitReady(SceneSeedIndex index) throws ReflectiveOperationException {
+        Field scanStartedField = SceneSeedIndex.class.getDeclaredField("scanStarted");
+        scanStartedField.setAccessible(true);
+        ((AtomicBoolean) scanStartedField.get(index)).set(true);
+        Method scanMethod = SceneSeedIndex.class.getDeclaredMethod("scan");
+        scanMethod.setAccessible(true);
+        scanMethod.invoke(index);
+        assertTrue(index.isReady(), "扫描应当完成");
     }
 
     @Test

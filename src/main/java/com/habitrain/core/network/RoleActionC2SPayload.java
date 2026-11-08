@@ -22,10 +22,17 @@ public record RoleActionC2SPayload(ResourceLocation actionId, int sequence, byte
             StreamCodec.ofMember(RoleActionC2SPayload::write, RoleActionC2SPayload::new);
 
     /** Hard decode cap; the spec's {@code maxBytes} is checked after lookup. */
-    public static final int DECODE_MAX_BYTES = 65536;
+    public static final int DECODE_MAX_BYTES = com.habitrain.core.api.role.v2.action.RoleActionSpec.MAX_PAYLOAD_BYTES;
 
     private RoleActionC2SPayload(FriendlyByteBuf buf) {
-        this(buf.readResourceLocation(), buf.readVarInt(), buf.readByteArray(DECODE_MAX_BYTES));
+        this(buf.readResourceLocation(), buf.readVarInt(), readBytes(buf));
+    }
+
+    private static byte[] readBytes(FriendlyByteBuf buf) {
+        int length = buf.readVarInt();
+        if (length < 0 || length > DECODE_MAX_BYTES || length > buf.readableBytes())
+            throw new io.netty.handler.codec.DecoderException("Role action is oversized or truncated");
+        byte[] bytes = new byte[length]; buf.readBytes(bytes); return bytes;
     }
 
     private void write(FriendlyByteBuf buf) {

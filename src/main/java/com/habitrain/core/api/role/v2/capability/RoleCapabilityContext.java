@@ -50,9 +50,19 @@ public record RoleCapabilityContext(
                 speakerId, speakerRole, listenerId, listenerRole, speakerGroup, listenerGroup, distance);
     }
 
-    /** Whether the pair is within {@code max} blocks; unknown distance always passes. */
+    /**
+     * Whether the pair is within {@code max} blocks. Returns {@code true} when
+     * {@code distance} is unknown ({@code null}), and {@code false} if
+     * {@code distance} or {@code max} is non-finite or negative.
+     */
     public boolean withinDistance(double max) {
-        return distance == null || distance <= max;
+        if (!Double.isFinite(max) || max < 0) {
+            return false;
+        }
+        if (distance == null) {
+            return true;
+        }
+        return Double.isFinite(distance) && distance >= 0 && distance <= max;
     }
 
     public boolean sameGroup() {

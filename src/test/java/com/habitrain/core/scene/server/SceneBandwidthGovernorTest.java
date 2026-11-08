@@ -13,6 +13,26 @@ import static org.junit.jupiter.api.Assertions.*;
  * 有序性依据），以及跨玩家只共享全局预算、不共享单玩家预算。</p>
  */
 class SceneBandwidthGovernorTest {
+    @Test void negativeClockAndLongWrapStillProduceShortOrderedDelays() {
+        for (long origin : new long[]{-10_000_000_000L, Long.MAX_VALUE - 1000L, Long.MIN_VALUE + 1000L}) {
+            FakeClock clock = new FakeClock(); clock.nowNanos = origin;
+            var governor = governor(clock);
+            assertEquals(origin, governor.reserve(PLAYER_A, 65536, SLOW_PLAYER));
+            assertEquals(CHUNK_NANOS_AT_1MIB, governor.reserve(PLAYER_A, 65536, SLOW_PLAYER) - origin);
+            assertEquals(65536L * 1_000_000_000L / GLOBAL, governor.reserve(PLAYER_B, 65536, SLOW_PLAYER) - origin);
+            clock.nowNanos += CHUNK_NANOS_AT_1MIB * 4;
+            assertEquals(clock.nowNanos, governor.reserve(PLAYER_A, 65536, SLOW_PLAYER));
+            governor.reset();
+            assertEquals(clock.nowNanos, governor.reserve(PLAYER_B, 65536, SLOW_PLAYER));
+        }
+    }
+
+    @Test void aFullSlowPlayerWindowLeavesGlobalBudgetAvailableForOtherPlayers() {
+        FakeClock clock = new FakeClock(); var governor = governor(clock);
+        for (int i = 0; i < 8; i++) governor.reserve(PLAYER_A, 65536, SLOW_PLAYER);
+        assertEquals(65536L * 1_000_000_000L / GLOBAL,
+                governor.reserve(PLAYER_B, 65536, SLOW_PLAYER));
+    }
     private static final UUID PLAYER_A = UUID.fromString("00000000-0000-0000-0000-00000000000a");
     private static final UUID PLAYER_B = UUID.fromString("00000000-0000-0000-0000-00000000000b");
 

@@ -105,8 +105,29 @@ public class OptionVoteScreen extends Screen {
 
     public OptionVoteScreen(Screen parent) {
         super(OptionVoteTexts.titleFor(OptionVoteState.getVoteId()));
-        this.parent = parent;
+        this.parent = sanitizeReturnScreen(parent);
         this.handoff = Util.getMillis() - lastRenderedAtMillis < HANDOFF_WINDOW_MILLIS;
+    }
+
+    /**
+     * 过滤不可在大厅/转场结束后恢复的界面（如容器屏、背包屏、转场屏及嵌套投票屏），
+     * 防止关闭投票页或转场结束后恢复出服务端早已关闭的幽灵容器界面。
+     */
+    public static Screen sanitizeReturnScreen(Screen screen) {
+        Screen next = screen;
+        while (next instanceof OptionVoteScreen nested) {
+            next = nested.parent;
+        }
+        if (next == null) {
+            return null;
+        }
+        if (next instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>
+                || next instanceof io.wifi.starrailexpress.client.gui.screen.ingame.LimitedHandledScreen<?>
+                || next instanceof VoteLaunchTransitionScreen
+                || next instanceof GameEndTransitionScreen) {
+            return null;
+        }
+        return next;
     }
 
     @Override
@@ -301,41 +322,44 @@ public class OptionVoteScreen extends Screen {
         List<CardHitbox> hitboxes = new ArrayList<>();
         g.flush();
         g.enableScissor(clipLeft, Math.max(0, clipTop), clipRight, Math.max(1, clipBottom));
-        int step = layout.cardW() + OptionVoteLayout.GAP;
-        for (int i = 0; i < candidates.size(); i++) {
-            OptionVotePayload.Entry entry = candidates.get(i);
-            float cardX = layout.stripX() - scroll + i * step;
-            if (cardX + layout.cardW() < clipLeft - 2 || cardX > clipRight + 2) {
-                continue;
-            }
-            String id = entry.optionId();
-            Rect bounds = new Rect(Math.round(cardX), stripTop, layout.cardW(), layout.cardH());
-            boolean hovered = closingAtMillis == 0L && bounds.contains(mouseX, mouseY)
-                    && mouseX >= clipLeft && mouseX < clipRight;
-            boolean focused = i == focusedIndex;
-            boolean selected = OptionVoteState.isSelected(id);
-            float emphasis = approach(cardEmphasis, id, focused ? 1.0f : (hovered ? 0.55f : 0.0f), dt, 12.0f);
-            float selectedT = approach(cardSelected, id, selected ? 1.0f : 0.0f, dt, 9.0f);
-            float shareTarget = frameTotalVotes <= 0 ? 0.0f : entry.votes() / (float) frameTotalVotes;
-            float share = approach(cardShare, id, shareTarget, dt, 6.0f);
+        try {
+            int step = layout.cardW() + OptionVoteLayout.GAP;
+            for (int i = 0; i < candidates.size(); i++) {
+                OptionVotePayload.Entry entry = candidates.get(i);
+                float cardX = layout.stripX() - scroll + i * step;
+                if (cardX + layout.cardW() < clipLeft - 2 || cardX > clipRight + 2) {
+                    continue;
+                }
+                String id = entry.optionId();
+                Rect bounds = new Rect(Math.round(cardX), stripTop, layout.cardW(), layout.cardH());
+                boolean hovered = closingAtMillis == 0L && bounds.contains(mouseX, mouseY)
+                        && mouseX >= clipLeft && mouseX < clipRight;
+                boolean focused = i == focusedIndex;
+                boolean selected = OptionVoteState.isSelected(id);
+                float emphasis = approach(cardEmphasis, id, focused ? 1.0f : (hovered ? 0.55f : 0.0f), dt, 12.0f);
+                float selectedT = approach(cardSelected, id, selected ? 1.0f : 0.0f, dt, 9.0f);
+                float shareTarget = frameTotalVotes <= 0 ? 0.0f : entry.votes() / (float) frameTotalVotes;
+                float share = approach(cardShare, id, shareTarget, dt, 6.0f);
 
-            // 入场：车票自上缘逐张翻下（像翻牌器一样绕顶边展开）
-            int visibleOrder = Math.max(0, Math.round((cardX - clipLeft) / step));
-            long flipStart = (handoff ? 60L : CARD_FLIP_START) + visibleOrder * CARD_FLIP_STAGGER;
-            float flip = TransitionFx.clamp01((now - openedAtMillis - flipStart) / (float) CARD_FLIP_MILLIS);
-            if (flip <= 0.0f) {
-                continue;
+                // 入场：车票自上缘逐张翻下（像翻牌器一样绕顶边展开）
+                int visibleOrder = Math.max(0, Math.round((cardX - clipLeft) / step));
+                long flipStart = (handoff ? 60L : CARD_FLIP_START) + visibleOrder * CARD_FLIP_STAGGER;
+                float flip = TransitionFx.clamp01((now - openedAtMillis - flipStart) / (float) CARD_FLIP_MILLIS);
+                if (flip <= 0.0f) {
+                    continue;
+                }
+                renderCard(g, entry, i, cardX, stripTop, layout.cardW(), layout.cardH(),
+                        easeOutBack(flip, 1.6f), emphasis, selectedT, share, hovered, focused, mapPhase, now);
+                int hitLeft = Math.max(clipLeft, bounds.x());
+                int hitRight = Math.min(clipRight, bounds.right());
+                if (hitRight > hitLeft) {
+                    hitboxes.add(new CardHitbox(i, new Rect(hitLeft, bounds.y(), hitRight - hitLeft, bounds.height())));
+                }
             }
-            renderCard(g, entry, i, cardX, stripTop, layout.cardW(), layout.cardH(),
-                    easeOutBack(flip, 1.6f), emphasis, selectedT, share, hovered, focused, mapPhase, now);
-            int hitLeft = Math.max(clipLeft, bounds.x());
-            int hitRight = Math.min(clipRight, bounds.right());
-            if (hitRight > hitLeft) {
-                hitboxes.add(new CardHitbox(i, new Rect(hitLeft, bounds.y(), hitRight - hitLeft, bounds.height())));
-            }
+        } finally {
+            g.flush();
+            g.disableScissor();
         }
-        g.flush();
-        g.disableScissor();
         cardHitboxes = hitboxes;
 
         // 带首尾的柔和渐隐，提示还能继续滚动
@@ -371,6 +395,7 @@ public class OptionVoteScreen extends Screen {
         float lift = Math.round(emphasis * 2.0f);
 
         g.pose().pushPose();
+        try {
         g.pose().translate(x, y - lift, 0.0f);
         if (flip < 0.999f) {
             g.pose().scale(1.0f, Math.max(0.02f, flip), 1.0f);
@@ -382,9 +407,12 @@ public class OptionVoteScreen extends Screen {
             halo.end();
         }
         g.pose().pushPose();
+        try {
         g.pose().translate(1.5f, 2.5f + lift, 0.0f);
         TicketArt.shadow(g, shape, 2.0f, 0.5f);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
 
         TicketArt.paper(g, shape, palette, TicketArt.Part.WHOLE, 1.0f);
         TicketArt.details(g, shape, palette, TicketArt.Part.WHOLE, 1.0f, index * 7 + 3, false);
@@ -451,11 +479,14 @@ public class OptionVoteScreen extends Screen {
         float countY = shape.band() + (h - shape.band()) * 0.24f;
         int countColor = GuiGeo.lerpColor(palette.ink(), selectedT > 0.5f ? palette.serial() : GOLD_BRIGHT, bump);
         g.pose().pushPose();
+        try {
         g.pose().translate(stubCx, countY + 4.0f * countScale, 0.0f);
         float pop = 1.0f + 0.3f * bump * bump;
         g.pose().scale(pop, pop, 1.0f);
         TicketArt.drawCentered(g, font, countText, 0.0f, -4.0f * countScale, countScale, countColor);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         int percent = frameTotalVotes <= 0 ? 0 : Math.round(votes * 100.0f / frameTotalVotes);
         TicketArt.drawCentered(g, font, Component.literal(percent + "%"), stubCx,
                 countY + 8.0f * countScale + 2.0f, small, palette.inkSoft());
@@ -502,7 +533,9 @@ public class OptionVoteScreen extends Screen {
                     RailArt.a(GOLD_BRIGHT, 0.75f * fadeOut * fadeOut));
             flash.end();
         }
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 选中车票的「✓」检票章：圆环 + 对勾，略微倾斜。 */
@@ -511,6 +544,7 @@ public class OptionVoteScreen extends Screen {
             return;
         }
         g.pose().pushPose();
+        try {
         g.pose().translate(cx, cy, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(-14.0f));
         g.pose().scale(scale, scale, 1.0f);
@@ -520,7 +554,9 @@ public class OptionVoteScreen extends Screen {
         geo.line(-2.4f, 0.2f, -0.6f, 2.1f, 1.3f, ink);
         geo.line(-0.6f, 2.1f, 2.8f, -2.2f, 1.3f, ink);
         geo.end();
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 地图预览：懒解码缓存；以 cover 方式铺进车窗区域。无图时返回 false。 */
@@ -881,12 +917,7 @@ public class OptionVoteScreen extends Screen {
     @Override
     public void onClose() {
         Minecraft mc = Minecraft.getInstance();
-        // 避免模式→地图自动重建时把多个投票界面叠成 parent 链。
-        Screen next = parent;
-        while (next instanceof OptionVoteScreen nested) {
-            next = nested.parent;
-        }
-        mc.setScreen(next);
+        mc.setScreen(sanitizeReturnScreen(parent));
     }
 
     /** Parent screen for auto-open rebuild / close chain. */

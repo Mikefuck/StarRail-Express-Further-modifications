@@ -39,6 +39,33 @@ class RoleManifestDefinitionCollectorTest {
 
     private static final RoleKey ROLE = RoleKey.of("habitrain_core", "test_role");
 
+    @Test
+    void serverProviderAndEntryTogglesDoNotChangeTheStaticDeclarationHash() throws Exception {
+        var definition = com.habitrain.core.api.role.v2.definition.RoleDefinition.builder(ROLE)
+                .presentation(com.habitrain.core.api.role.v2.definition.RolePresentation.builder().build())
+                .faction(com.habitrain.core.api.role.v2.definition.RoleFactionProfile.builder().innocent().build())
+                .spawn(com.habitrain.core.api.role.v2.definition.RoleSpawnProfile.builder().build())
+                .compatibility(com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile.builder().build())
+                .maxSprintTime(20).build();
+        var managed = new LinkedHashMap<net.minecraft.resources.ResourceLocation, io.wifi.starrailexpress.api.SRERole>();
+        managed.put(ROLE.location(), com.habitrain.core.role.extension.ManagedSRERole.from(definition));
+        setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", managed);
+        assertEquals(com.habitrain.core.role.extension.EntryStatus.ACTIVE,
+                RoleExtensionRegistry.INSTANCE.v2Entries().getFirst().status());
+        String enabled = RoleManifestHashes.definitionHash();
+
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("habitrain_core", false);
+        assertEquals(com.habitrain.core.role.extension.EntryStatus.DISABLED,
+                RoleExtensionRegistry.INSTANCE.v2Entries().getFirst().status());
+        assertEquals(enabled, RoleManifestHashes.definitionHash());
+
+        RoleExtensionConfigService.INSTANCE.setProviderEnabled("habitrain_core", true);
+        RoleExtensionConfigService.INSTANCE.setEntryEnabled(ROLE.toString(), false);
+        assertEquals(com.habitrain.core.role.extension.EntryStatus.DISABLED,
+                RoleExtensionRegistry.INSTANCE.v2Entries().getFirst().status());
+        assertEquals(enabled, RoleManifestHashes.definitionHash());
+    }
+
     @BeforeEach
     void reset() throws Exception {
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", new LinkedHashMap<>());

@@ -66,6 +66,13 @@ class ConfigUpdateAccessPolicyTest {
     }
 
     @Test
+    void sceneAdminRequiresTheSameMenuGrantAsFullMenu() {
+        assertFalse(ConfigUpdateAccessPolicy.isAllowed(ConfigUpdateScope.ADMIN_SCENE_TOOL, true, true, true, false));
+        assertTrue(ConfigUpdateAccessPolicy.isAllowed(ConfigUpdateScope.ADMIN_SCENE_TOOL, true, true, true, true));
+        assertTrue(ConfigUpdateAccessPolicy.isAllowed(ConfigUpdateScope.ADMIN_SCENE_TOOL, true, false, true, false));
+    }
+
+    @Test
     void mapPreviewUploadRequiresOnlyOp2ForConfiguredMap() {
         assertEquals(ConfigUpdateAccessPolicy.MapPreviewUploadAccess.ALLOWED,
                 ConfigUpdateAccessPolicy.mapPreviewUploadAccess(

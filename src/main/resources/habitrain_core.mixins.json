@@ -1,5 +1,5 @@
 {
-    "required": false,
+    "required": true,
     "package": "com.habitrain.core.game.sre.mixin",
     "compatibilityLevel": "JAVA_21",
     "plugin": "com.habitrain.core.mixin.HabiMixinPlugin",
@@ -7,6 +7,8 @@
         "defaultRequire": 1
     },
     "mixins": [
+        "WorldModifierPrivacyMixin",
+        "CommandSourceStackAccessor",
         "EnvyDeathLootMixin",
         "EnvyGunDropMixin",
         "GreedIncomeMixin",

@@ -9,6 +9,7 @@ import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.NecromancerReviveSupport;
 import com.habitrain.core.game.sre.role.SreRolePoolFilter;
+import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.role.change.ForcedRandomRoleChangePolicy;
 import io.wifi.starrailexpress.SRE;
@@ -22,9 +23,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.item.ItemStack;
 import org.agmas.noellesroles.init.RoleInitialItems;
 import org.agmas.noellesroles.utils.RoleUtils;
 
@@ -49,11 +48,11 @@ public final class MikeCodeEditSkill {
 
         ServerPlayer target = resolveTarget(self, ctx.target());
         if (target == null || target.getUUID().equals(self.getUUID()) || target.isSpectator()) {
-            self.displayClientMessage(Component.literal("§c[代码修改] 未找到有效目标"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.no_target"), true);
             return false;
         }
         if (!GameUtils.isPlayerAliveAndSurvival(target)) {
-            self.displayClientMessage(Component.literal("§c[代码修改] 目标不可用"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.invalid_target"), true);
             return false;
         }
 
@@ -64,7 +63,7 @@ public final class MikeCodeEditSkill {
             shop = null;
         }
         if (shop == null || shop.balance < COST) {
-            self.displayClientMessage(Component.literal("§c[代码修改] 金币不足，需要 " + COST), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.cost", COST), true);
             return false;
         }
 
@@ -90,20 +89,23 @@ public final class MikeCodeEditSkill {
 
         List<SRERole> pool = buildPool(current);
         if (pool.isEmpty()) {
-            self.displayClientMessage(Component.literal("§c[代码修改] 无可用职业"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.no_role"), true);
             return false;
         }
 
         SRERole next = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
         if (next == null) {
-            self.displayClientMessage(Component.literal("§c[代码修改] 无可用职业"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.no_role"), true);
             return false;
         }
 
         // 校验通过后再扣费 / 改职
         shop.addToBalance(-COST);
-        // 不在转职前清包：reassignRole 失败时物品无法恢复（catch 块仅退款），
-        // 成功路径下方本就会再清一次并按新职业发初始物（review M4）。
+        // 先备份并清空旧职业背包与游标物品，避免 transform 内的 onAssigned 发放物被二次清空覆盖；
+        // 若 transform 失败则从快照完整回滚旧物品并退还金币（ROLE-SRE-14）。
+        List<ItemStack> invBackup = snapshotInventory(target);
+        ItemStack carriedBackup = snapshotCarried(target);
+        clearAllItems(target);
 
         RoleChangeResult changeResult;
         try {
@@ -115,14 +117,16 @@ public final class MikeCodeEditSkill {
                     new RoleChangeOptions(false, true, false));
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.error("[Mike] changeRole failed for {}", target.getName().getString(), t);
+            restoreInventory(target, invBackup, carriedBackup);
             // 尽量退款，避免吞金
             try {
                 shop.addToBalance(COST);
             } catch (Throwable ignored) {}
-            self.displayClientMessage(Component.literal("§c[代码修改] 转职失败"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.code_edit.failed"), true);
             return false;
         }
         if (!changeResult.success()) {
+            restoreInventory(target, invBackup, carriedBackup);
             try {
                 shop.addToBalance(COST);
             } catch (Throwable ignored) {}
@@ -142,8 +146,7 @@ public final class MikeCodeEditSkill {
             }
         }
 
-        // 统一后仅 RoleChangeApi 触发一次 ModdedRoleAssigned（组件 init）；此处再按目标角色发初始物。
-        clearAllItems(target);
+        // RoleChangeApi 已触发一次 ModdedRoleAssigned（组件 init）；此处补充按目标角色发初始物（不再清包以免抹掉 onAssigned 发放物）。
         try {
             RoleInitialItems.addInitialItemsForRole(target, next);
         } catch (Throwable t) {
@@ -157,12 +160,12 @@ public final class MikeCodeEditSkill {
         recordMikeCodeEditReplay(self, target, current, next);
         playCodeEditSoundToAll(self);
 
-        String nextName = roleDisplayName(next);
+        Component nextName = roleDisplayName(next);
         self.displayClientMessage(
-                Component.literal("§a[代码修改] 已将 " + target.getName().getString() + " 改为 " + nextName),
+                Component.translatable("message.habitrain_core.code_edit.changed_other", target.getName(), nextName),
                 true);
         target.displayClientMessage(
-                Component.literal("§e[代码修改] 你的职业被强制改写为 " + nextName),
+                Component.translatable("message.habitrain_core.code_edit.changed_self", nextName),
                 true);
         HabiTrainCore.LOGGER.info("[Mike] {} code-edited {} -> {}",
                 self.getName().getString(), target.getName().getString(), next.identifier());
@@ -242,12 +245,12 @@ public final class MikeCodeEditSkill {
         }
     }
 
-    private static String roleDisplayName(SRERole role) {
-        if (role == null || role.identifier() == null) return "?";
+    private static Component roleDisplayName(SRERole role) {
+        if (role == null || role.identifier() == null) return Component.literal("?");
         try {
-            return RoleUtils.getRoleName(role).getString();
+            return RoleUtils.getRoleName(role);
         } catch (Throwable ignored) {
-            return role.identifier().getPath();
+            return Component.literal(role.identifier().getPath());
         }
     }
 
@@ -265,39 +268,52 @@ public final class MikeCodeEditSkill {
         return pool;
     }
 
+    private static List<ItemStack> snapshotInventory(ServerPlayer target) {
+        int size = target.getInventory().getContainerSize();
+        List<ItemStack> backup = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            backup.add(target.getInventory().getItem(i).copy());
+        }
+        return backup;
+    }
+
+    private static ItemStack snapshotCarried(ServerPlayer target) {
+        try {
+            if (target.containerMenu != null) {
+                return target.containerMenu.getCarried().copy();
+            }
+        } catch (Throwable ignored) {}
+        return ItemStack.EMPTY;
+    }
+
+    private static void restoreInventory(ServerPlayer target, List<ItemStack> backup, ItemStack carriedBackup) {
+        try {
+            int size = Math.min(target.getInventory().getContainerSize(), backup.size());
+            for (int i = 0; i < size; i++) {
+                target.getInventory().setItem(i, backup.get(i));
+            }
+            if (target.containerMenu != null) {
+                target.containerMenu.setCarried(carriedBackup);
+            }
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[Mike] restoreInventory failed for {}", target.getName().getString(), t);
+        }
+    }
+
     private static void clearAllItems(ServerPlayer target) {
         if (target == null) return;
         try {
             target.getInventory().clearContent();
+            if (target.containerMenu != null) {
+                target.containerMenu.setCarried(ItemStack.EMPTY);
+            }
         } catch (Throwable t) {
             HabiTrainCore.LOGGER.warn("[Mike] clearContent failed for {}", target.getName().getString(), t);
         }
     }
 
-    /** 优先客户端上报 UUID；否则视线锥内最近玩家（对齐卖花女）。 */
+    /** 服务端权威校验：对客户端上报 UUID 与视线锥目标均执行距离、存活、非休息区、视线与夹角校验。 */
     private static ServerPlayer resolveTarget(ServerPlayer self, UUID targetId) {
-        if (targetId != null) {
-            Player p = self.level().getPlayerByUUID(targetId);
-            if (p instanceof ServerPlayer sp) return sp;
-        }
-        Vec3 eye = self.getEyePosition();
-        Vec3 look = self.getLookAngle();
-        double range = RANGE;
-        AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
-        ServerPlayer best = null;
-        double bestDist = range * range;
-        for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
-            if (p == self || p.isSpectator()) continue;
-            if (!(p instanceof ServerPlayer sp)) continue;
-            Vec3 to = p.getEyePosition().subtract(eye);
-            double proj = to.dot(look);
-            if (proj <= 0 || proj > range) continue;
-            double distSq = to.lengthSqr();
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = sp;
-            }
-        }
-        return best;
+        return ServerAimTargeting.resolve(self, targetId, RANGE);
     }
 }

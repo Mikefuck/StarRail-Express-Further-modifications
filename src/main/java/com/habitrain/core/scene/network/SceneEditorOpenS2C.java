@@ -12,6 +12,8 @@ import io.netty.handler.codec.EncoderException;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 
@@ -19,6 +21,8 @@ import java.nio.charset.StandardCharsets;
  * S2C 网络包 - 道具右键时向管理员下发当前地图配置、临时选区与资产状态以打开设置页。
  */
 public final class SceneEditorOpenS2C implements CustomPacketPayload {
+    private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|SceneEditorOpenS2C");
+
     public static final Type<SceneEditorOpenS2C> TYPE =
             new Type<>(HabiTrainCore.id("scene_editor_open"));
 
@@ -46,14 +50,14 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
                               String runtimeMapKey, String selectionMapKey,
                               int profileRevision, String profileJson,
                               SceneBounds sessionSelection, SceneAssetDescriptor assetDescriptor) {
-        this.editorMapKey = normalizeMapKey(editorMapKey, "__default__");
+        this.editorMapKey = normalizeMapKey(editorMapKey, com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY);
         this.editorBackgroundId = editorBackgroundId != null && !editorBackgroundId.isBlank()
                 ? com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeBackgroundId(editorBackgroundId)
                 : com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
         this.runtimeMapKey = normalizeMapKey(runtimeMapKey, "");
         this.selectionMapKey = normalizeMapKey(selectionMapKey, "");
         this.profileRevision = profileRevision;
-        this.profileJson = profileJson != null ? profileJson : "{}";
+        this.profileJson = profileJson != null && !profileJson.isBlank() ? profileJson : "{}";
         this.sessionSelection = sessionSelection != null ? sessionSelection : SceneBounds.EMPTY;
         this.assetDescriptor = assetDescriptor != null ? assetDescriptor : SceneAssetDescriptor.EMPTY;
     }
@@ -67,12 +71,18 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
     public SceneBounds sessionSelection() { return sessionSelection; }
     public SceneAssetDescriptor assetDescriptor() { return assetDescriptor; }
 
+    /**
+     * X-CUT-11：解析场景配置 JSON；若 JSON 损坏则记录错误并抛出异常（保留 cause），
+     * 绝不静默回退到空默认配置，防止用户随后点击“保存”将服务端原有场景配置抹掉。
+     */
     public SceneProfile parseProfile() {
         try {
-            JsonObject obj = JsonParser.parseString(profileJson).getAsJsonObject();
+            JsonObject obj = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(profileJson)).getAsJsonObject();
             return SceneProfile.fromJson(obj);
         } catch (Exception e) {
-            return SceneProfile.createDefault();
+            LOGGER.error("Failed to parse scene editor profile JSON for map '{}' (bg='{}', rev={})",
+                    editorMapKey, editorBackgroundId, profileRevision, e);
+            throw new IllegalStateException("Invalid scene editor profile JSON for map '" + editorMapKey + "'", e);
         }
     }
 
@@ -95,6 +105,17 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
             String selectionMapKey = readString(buf);
             int revision = buf.readInt();
             String json = readString(buf);
+            if (!json.isBlank()) {
+                try {
+                    if (!JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(json)).isJsonObject()) {
+                        throw new DecoderException("Scene editor profile JSON is not a JSON object");
+                    }
+                } catch (DecoderException e) {
+                    throw e;
+                } catch (RuntimeException e) {
+                    throw new DecoderException("Invalid scene editor profile JSON", e);
+                }
+            }
             int minX = buf.readInt();
             int minY = buf.readInt();
             int minZ = buf.readInt();
@@ -150,8 +171,11 @@ public final class SceneEditorOpenS2C implements CustomPacketPayload {
 
     private static String readString(ByteBuf buf) {
         int len = buf.readInt();
-        if (len <= 0) return "";
-        if (len > MAX_STRING_LENGTH) throw new DecoderException("String too long: " + len);
+        if (len < 0) throw new DecoderException("Negative string length: " + len);
+        if (len == 0) return "";
+        if (len > MAX_STRING_LENGTH || len > buf.readableBytes()) {
+            throw new DecoderException("String too long: " + len);
+        }
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

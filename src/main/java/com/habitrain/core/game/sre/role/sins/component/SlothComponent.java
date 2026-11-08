@@ -20,10 +20,13 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
-import org.agmas.noellesroles.game.roles.innocence.noise_maker.NoiseMakerPlayerComponent;
 import org.jetbrains.annotations.NotNull;
 import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
@@ -37,6 +40,7 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.WeakHashMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 懒惰·贝露菲格露重做版。
@@ -52,12 +56,13 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     public static final int REQUIRED_SLEEP_TASKS = 2;
     // The player CCA is cleared on reconnect/role initialization. Eligibility belongs to the round.
     private static final Map<ServerLevel, Set<UUID>> INDUCED_THIS_ROUND = new WeakHashMap<>();
+    private static final Set<UUID> SLEEPING_PLAYERS = ConcurrentHashMap.newKeySet();
 
     private final Player player;
 
     private boolean forceNextSleepTask;
     private int completedSleepTasks;
-    private boolean inducedSleeping;
+    private volatile boolean inducedSleeping;
     private boolean inducedThisRound;
     private UUID inducedBySloth;
     private boolean slothWinTriggered;
@@ -123,7 +128,10 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     public static void resetRound(ServerLevel level) {
         INDUCED_THIS_ROUND.remove(level);
-        for (ServerPlayer participant : level.players()) KEY.get(participant).clear();
+        for (ServerPlayer participant : level.players()) {
+            SLEEPING_PLAYERS.remove(participant.getUUID());
+            KEY.get(participant).clear();
+        }
     }
 
     public boolean isInducedSleeping() {
@@ -309,6 +317,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
         inducedThisRound = true;
         INDUCED_THIS_ROUND.computeIfAbsent(target.serverLevel(), ignored -> new HashSet<>()).add(target.getUUID());
         inducedSleeping = true;
+        SLEEPING_PLAYERS.add(target.getUUID());
         inducedBySloth = sloth.getUUID();
         target.closeContainer();
         target.stopUsingItem();
@@ -346,27 +355,47 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     private void wakeFromShieldBreak(ServerPlayer target) {
         inducedSleeping = false;
+        SLEEPING_PLAYERS.remove(target.getUUID());
         inducedBySloth = null;
         target.stopSleeping();
         sync();
         target.displayClientMessage(
                 Component.translatable("message.habitrain_core.sin_sloth.wake_anger"), true);
 
-        // Reuse the real upstream Noisemaker ability: sound, glow, shockwave, stun and voice range stay identical.
+        // Alert nearby players with sound and brief glowing without Noisemaker's shockwave knockback/stun.
         try {
-            NoiseMakerPlayerComponent.KEY.get(target).useAbility();
+            ServerLevel serverWorld = target.serverLevel();
+            target.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, false, false, true));
+            serverWorld.playSound(null, target.blockPosition(),
+                    SoundEvents.NOTE_BLOCK_HARP.value(), SoundSource.PLAYERS, 1.0F, 1.0F);
+            double alertRadiusSq = 15.0D * 15.0D;
+            for (ServerPlayer viewer : serverWorld.players()) {
+                if (viewer != target && viewer.distanceToSqr(target) <= alertRadiusSq) {
+                    viewer.displayClientMessage(
+                            Component.translatable("message.noellesroles.noisemaker.ability_active"), true);
+                    viewer.playNotifySound(SoundEvents.NOTE_BLOCK_HARP.value(), SoundSource.PLAYERS, 1.0F, 1.0F);
+                }
+            }
         } catch (Throwable t) {
-            HabiTrainCore.LOGGER.warn("[Sloth] failed to trigger Noisemaker wake-up ability for {}",
+            HabiTrainCore.LOGGER.warn("[Sloth] failed to trigger wake-up alert for {}",
                     target.getGameProfile().getName(), t);
         }
-        HabiTrainCore.LOGGER.info("[Sloth] {} woke after shield break and triggered Noisemaker ability",
+        HabiTrainCore.LOGGER.info("[Sloth] {} woke after shield break",
                 target.getGameProfile().getName());
+    }
+
+    /** Thread-safe check for audio thread (SVC MicrophonePacketEvent). */
+    public static boolean isSleepingSloth(UUID playerId) {
+        return playerId != null && SLEEPING_PLAYERS.contains(playerId);
     }
 
     /** Compatibility name retained for existing lock hooks; now means any induced sleeper. */
     public static boolean isSleepingSloth(Player target) {
         if (target == null) {
             return false;
+        }
+        if (SLEEPING_PLAYERS.contains(target.getUUID())) {
+            return true;
         }
         try {
             return KEY.get(target).inducedSleeping;
@@ -418,6 +447,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
     public void clear() {
         boolean wasSleeping = inducedSleeping;
         inducedSleeping = false;
+        SLEEPING_PLAYERS.remove(player.getUUID());
         if (wasSleeping && player.isSleeping()) {
             player.stopSleeping();
         }
@@ -497,6 +527,7 @@ public final class SlothComponent implements RoleComponent, ServerTickingCompone
 
     private void releaseWithoutWakeAbility(ServerPlayer self) {
         inducedSleeping = false;
+        SLEEPING_PLAYERS.remove(self.getUUID());
         inducedBySloth = null;
         if (self.isSleeping()) {
             self.stopSleeping();

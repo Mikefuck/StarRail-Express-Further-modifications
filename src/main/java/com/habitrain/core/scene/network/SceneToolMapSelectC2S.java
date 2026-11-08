@@ -31,7 +31,7 @@ public record SceneToolMapSelectC2S(String mapKey, String backgroundId) implemen
         @Override
         public SceneToolMapSelectC2S decode(ByteBuf buf) {
             int length = buf.readInt();
-            if (length < 0 || length > MAX_MAP_KEY_BYTES) {
+            if (length < 0 || length > MAX_MAP_KEY_BYTES || !buf.isReadable(length)) {
                 throw new DecoderException("Invalid scene map key length: " + length);
             }
             byte[] bytes = new byte[length];
@@ -39,14 +39,17 @@ public record SceneToolMapSelectC2S(String mapKey, String backgroundId) implemen
             String map = new String(bytes, StandardCharsets.UTF_8);
 
             String bgId = com.habitrain.core.api.scene.model.SceneBackgroundKey.DEFAULT_ID;
+            if (buf.isReadable() && !buf.isReadable(4)) throw new DecoderException("Truncated background field");
             if (buf.isReadable(4)) {
                 int bgLen = buf.readInt();
-                if (bgLen >= 0 && bgLen <= MAX_MAP_KEY_BYTES && buf.isReadable(bgLen)) {
-                    byte[] bgBytes = new byte[bgLen];
-                    buf.readBytes(bgBytes);
-                    bgId = new String(bgBytes, StandardCharsets.UTF_8);
+                if (bgLen < 0 || bgLen > MAX_MAP_KEY_BYTES || !buf.isReadable(bgLen)) {
+                    throw new DecoderException("Invalid scene background id length: " + bgLen);
                 }
+                byte[] bgBytes = new byte[bgLen];
+                buf.readBytes(bgBytes);
+                bgId = new String(bgBytes, StandardCharsets.UTF_8);
             }
+            if (buf.isReadable()) throw new DecoderException("Trailing scene tool bytes");
             return new SceneToolMapSelectC2S(map, bgId);
         }
 

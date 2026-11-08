@@ -67,7 +67,8 @@ public final class RoleFieldTrace {
         if (!any) {
             lines.add("  (no enabled patches set " + field + ")");
         }
-        CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlayConfigured(base, configured, null);
+        RoleBaseline bl = RoleBaselineStore.baseline(base);
+        CompiledModifyOverlay overlay = RoleExtensionCompiler.compileModifyOverlayConfigured(base, configured, bl);
         lines.add("final: " + (overlay == null ? baseline(base, field) : finalValue(overlay, field)));
         lines.add("status: " + statusLabel(id));
         lines.add("snapshot: " + (snap == null ? "none" : snap.id().toString()));
@@ -81,34 +82,36 @@ public final class RoleFieldTrace {
     private static String baseline(SRERole role, String field) {
         RoleBaseline bl = RoleBaselineStore.baseline(role);
         return switch (field) {
-            case RoleExtensionCompiler.FIELD_COLOR -> String.valueOf(role.getColor());
-            case RoleExtensionCompiler.FIELD_MOOD -> String.valueOf(role.getMoodType());
-            case RoleExtensionCompiler.FIELD_INNOCENT -> String.valueOf(role.isInnocent());
-            case RoleExtensionCompiler.FIELD_CAN_USE_KILLER -> String.valueOf(role.canUseKiller());
-            case RoleExtensionCompiler.FIELD_NEUTRAL -> String.valueOf(role.isNeutrals());
-            case RoleExtensionCompiler.FIELD_VIGILANTE_TEAM -> String.valueOf(role.isVigilanteTeam());
+            case RoleExtensionCompiler.FIELD_COLOR -> String.valueOf(bl != null ? bl.color() : role.getColor());
+            case RoleExtensionCompiler.FIELD_MOOD -> String.valueOf(bl != null ? bl.mood() : role.getMoodType());
+            case RoleExtensionCompiler.FIELD_INNOCENT -> String.valueOf(bl != null ? bl.innocent() : role.isInnocent());
+            case RoleExtensionCompiler.FIELD_CAN_USE_KILLER -> String.valueOf(bl != null ? bl.canUseKiller() : role.canUseKiller());
+            case RoleExtensionCompiler.FIELD_NEUTRAL -> String.valueOf(bl != null ? bl.neutral() : role.isNeutrals());
+            case RoleExtensionCompiler.FIELD_VIGILANTE_TEAM -> String.valueOf(bl != null ? bl.vigilanteTeam() : role.isVigilanteTeam());
             case RoleExtensionCompiler.FIELD_DEFAULT_MAX -> String.valueOf(bl != null ? bl.defaultMaxCount() : role.defaultMaxCount);
             case RoleExtensionCompiler.FIELD_ENABLE_CHANCE -> String.valueOf(bl != null ? bl.defaultEnableChance() : role.defaultEnableChance);
             case RoleExtensionCompiler.FIELD_NEED_PLAYER_COUNT -> String.valueOf(bl != null ? bl.defaultEnableNeedPlayerCount() : role.defaultEnableNeedPlayerCount);
             case RoleExtensionCompiler.FIELD_MAX_PLAYER_COUNT -> String.valueOf(bl != null ? bl.defaultEnableMaxPlayerCount() : role.defaultEnableMaxPlayerCount);
-            case RoleExtensionCompiler.FIELD_CAN_SEE_COIN -> String.valueOf(role.canSeeCoin());
-            case RoleExtensionCompiler.FIELD_CAN_PICKUP_REVOLVER -> String.valueOf(role.canPickUpRevolver());
-            case RoleExtensionCompiler.FIELD_CAN_BE_RANDOMED -> String.valueOf(role.canBeRandomedDefination());
-            case RoleExtensionCompiler.FIELD_MAX_SPRINT_TIME -> String.valueOf(role.getMaxSprintTime());
-            case RoleExtensionCompiler.FIELD_CAN_SEE_TIME -> String.valueOf(role.canSeeTime());
-            case RoleExtensionCompiler.FIELD_NEUTRAL_FOR_KILLER -> String.valueOf(role.isNeutralForKiller());
-            case RoleExtensionCompiler.FIELD_NEUTRAL_FOR_INNOCENT -> String.valueOf(role.isNeutralForInnocent());
-            case RoleExtensionCompiler.FIELD_MAFIA_TEAM -> String.valueOf(role.isMafiaTeam());
-            case RoleExtensionCompiler.FIELD_CAN_USE_INSTINCT -> String.valueOf(role.canUseInstinct());
-            case RoleExtensionCompiler.FIELD_INSTINCT_NIGHT_VISION -> String.valueOf(role.haveInstinctNightVision());
-            case RoleExtensionCompiler.FIELD_CAN_SEE_TEAMMATE_KILLER -> String.valueOf(role.canSeeTeammateKillerRole());
-            case RoleExtensionCompiler.FIELD_OTHER_MODE_ROLE -> String.valueOf(role.isOtherModeRole());
-            case RoleExtensionCompiler.FIELD_HIDDEN_FOR_ROTATION -> String.valueOf(role.getFlags().contains("inner.role_rotation.hidden"));
-            case RoleExtensionCompiler.FIELD_OCCUPIED_ROLE_COUNT -> String.valueOf(role.getOccupiedRoleCount());
-            case RoleExtensionCompiler.FIELD_SPECIAL_MAP_ROLE -> String.valueOf(role.getSpecialMapRole());
+            case RoleExtensionCompiler.FIELD_CAN_SEE_COIN -> String.valueOf(bl != null ? bl.canSeeCoin() : role.canSeeCoin());
+            case RoleExtensionCompiler.FIELD_CAN_PICKUP_REVOLVER -> String.valueOf(bl != null ? bl.canPickUpRevolver() : role.canPickUpRevolver());
+            case RoleExtensionCompiler.FIELD_CAN_BE_RANDOMED -> String.valueOf(bl != null ? bl.canBeRandomed() : role.canBeRandomedDefination());
+            case RoleExtensionCompiler.FIELD_MAX_SPRINT_TIME -> String.valueOf(bl != null ? bl.maxSprintTime() : role.getMaxSprintTime());
+            case RoleExtensionCompiler.FIELD_CAN_SEE_TIME -> String.valueOf(bl != null ? bl.canSeeTime() : role.canSeeTime());
+            case RoleExtensionCompiler.FIELD_NEUTRAL_FOR_KILLER -> String.valueOf(bl != null ? bl.neutralForKiller() : role.isNeutralForKiller());
+            case RoleExtensionCompiler.FIELD_NEUTRAL_FOR_INNOCENT -> String.valueOf(bl != null ? bl.neutralForInnocent() : role.isNeutralForInnocent());
+            case RoleExtensionCompiler.FIELD_MAFIA_TEAM -> String.valueOf(bl != null ? bl.mafiaTeam() : role.isMafiaTeam());
+            case RoleExtensionCompiler.FIELD_CAN_USE_INSTINCT -> String.valueOf(bl != null ? bl.canUseInstinct() : role.canUseInstinct());
+            case RoleExtensionCompiler.FIELD_INSTINCT_NIGHT_VISION -> String.valueOf(bl != null ? bl.instinctNightVision() : role.haveInstinctNightVision());
+            case RoleExtensionCompiler.FIELD_CAN_SEE_TEAMMATE_KILLER -> String.valueOf(bl != null ? bl.canSeeTeammateKiller() : role.canSeeTeammateKillerRole());
+            case RoleExtensionCompiler.FIELD_OTHER_MODE_ROLE -> String.valueOf(bl != null ? bl.otherModeRole() : role.isOtherModeRole());
+            case RoleExtensionCompiler.FIELD_HIDDEN_FOR_ROTATION -> String.valueOf(bl != null ? bl.flags().contains("inner.role_rotation.hidden") : role.getFlags().contains("inner.role_rotation.hidden"));
+            case RoleExtensionCompiler.FIELD_OCCUPIED_ROLE_COUNT -> String.valueOf(bl != null ? bl.occupiedRoleCount() : role.getOccupiedRoleCount());
+            case RoleExtensionCompiler.FIELD_SPECIAL_MAP_ROLE -> String.valueOf(bl != null ? bl.specialMapRole() : role.getSpecialMapRole());
             case RoleExtensionCompiler.FIELD_OCCUPATION -> String.valueOf(bl != null ? bl.occupationRoles().size() : role.occupationRoles.size());
             case RoleExtensionCompiler.FIELD_OPPOSING -> String.valueOf(bl != null ? bl.opposingRoles().size() : role.opposingRoles.size());
             case RoleExtensionCompiler.FIELD_RELATED -> String.valueOf(bl != null ? bl.relatedRoles().size() : role.relatedRoles.size());
+            case RoleExtensionCompiler.FIELD_SKILLS -> String.valueOf(bl != null ? bl.skills().size()
+                    : (role instanceof com.habitrain.core.role.extension.ManagedSRERole managed ? managed.skills().size() : 0));
             default -> "?";
         };
     }
@@ -143,6 +146,7 @@ public final class RoleFieldTrace {
             case RoleExtensionCompiler.FIELD_OCCUPATION -> String.valueOf(o.occupationKeys().size());
             case RoleExtensionCompiler.FIELD_OPPOSING -> String.valueOf(o.opposingKeys().size());
             case RoleExtensionCompiler.FIELD_RELATED -> String.valueOf(o.relatedKeys().size());
+            case RoleExtensionCompiler.FIELD_SKILLS -> String.valueOf(o.skills() == null ? 0 : o.skills().size());
             default -> "?";
         };
     }
@@ -150,17 +154,26 @@ public final class RoleFieldTrace {
     private static String patchOp(RolePatch patch, String field) {
         return switch (field) {
             case RoleExtensionCompiler.FIELD_COLOR ->
-                    patch.color() == null ? "?" : "SET #" + Integer.toHexString(patch.color().color());
+                    patch.color() != null ? "SET #" + Integer.toHexString(patch.color().color())
+                            : (patch.colorProvider() != null ? "FN colorProvider" : "?");
             case RoleExtensionCompiler.FIELD_MOOD ->
                     patch.mood() == null ? "?" : "SET " + patch.mood().mood();
             case RoleExtensionCompiler.FIELD_INNOCENT -> renderBool(patch.innocent());
             case RoleExtensionCompiler.FIELD_CAN_USE_KILLER -> renderBool(patch.canUseKiller());
             case RoleExtensionCompiler.FIELD_NEUTRAL -> renderBool(patch.neutral());
             case RoleExtensionCompiler.FIELD_VIGILANTE_TEAM -> renderBool(patch.vigilanteTeam());
-            case RoleExtensionCompiler.FIELD_DEFAULT_MAX -> renderInt(patch.defaultMax());
-            case RoleExtensionCompiler.FIELD_ENABLE_CHANCE -> renderInt(patch.enableChance());
-            case RoleExtensionCompiler.FIELD_NEED_PLAYER_COUNT -> renderInt(patch.needPlayerCount());
-            case RoleExtensionCompiler.FIELD_MAX_PLAYER_COUNT -> renderInt(patch.maxPlayerCount());
+            case RoleExtensionCompiler.FIELD_DEFAULT_MAX ->
+                    patch.defaultMax() != null ? renderInt(patch.defaultMax())
+                            : (patch.spawnInfoPatch() != null ? "FN spawnInfoPatch" : "?");
+            case RoleExtensionCompiler.FIELD_ENABLE_CHANCE ->
+                    patch.enableChance() != null ? renderInt(patch.enableChance())
+                            : (patch.spawnInfoPatch() != null ? "FN spawnInfoPatch" : "?");
+            case RoleExtensionCompiler.FIELD_NEED_PLAYER_COUNT ->
+                    patch.needPlayerCount() != null ? renderInt(patch.needPlayerCount())
+                            : (patch.spawnInfoPatch() != null ? "FN spawnInfoPatch" : "?");
+            case RoleExtensionCompiler.FIELD_MAX_PLAYER_COUNT ->
+                    patch.maxPlayerCount() != null ? renderInt(patch.maxPlayerCount())
+                            : (patch.spawnInfoPatch() != null ? "FN spawnInfoPatch" : "?");
             case RoleExtensionCompiler.FIELD_CAN_SEE_COIN -> renderBool(patch.canSeeCoin());
             case RoleExtensionCompiler.FIELD_CAN_PICKUP_REVOLVER -> renderBool(patch.canPickUpRevolver());
             case RoleExtensionCompiler.FIELD_CAN_BE_RANDOMED -> renderBool(patch.canBeRandomed());
@@ -173,13 +186,17 @@ public final class RoleFieldTrace {
             case RoleExtensionCompiler.FIELD_INSTINCT_NIGHT_VISION -> renderBool(patch.instinctNightVision());
             case RoleExtensionCompiler.FIELD_CAN_SEE_TEAMMATE_KILLER -> renderBool(patch.canSeeTeammateKiller());
             case RoleExtensionCompiler.FIELD_OTHER_MODE_ROLE -> renderBool(patch.otherModeRole());
-            case RoleExtensionCompiler.FIELD_HIDDEN_FOR_ROTATION -> renderBool(patch.hiddenForRotation());
+            case RoleExtensionCompiler.FIELD_HIDDEN_FOR_ROTATION ->
+                    patch.hiddenForRotation() != null ? renderBool(patch.hiddenForRotation())
+                            : (patch.flagsPatch() != null ? "FN flagsPatch" : "?");
             case RoleExtensionCompiler.FIELD_OCCUPIED_ROLE_COUNT -> renderInt(patch.occupiedRoleCount());
             case RoleExtensionCompiler.FIELD_SPECIAL_MAP_ROLE ->
                     patch.specialMapRole() == null ? "?" : "SET " + patch.specialMapRole().map();
             case RoleExtensionCompiler.FIELD_OCCUPATION -> renderList(patch.occupation());
             case RoleExtensionCompiler.FIELD_OPPOSING -> renderList(patch.opposing());
             case RoleExtensionCompiler.FIELD_RELATED -> renderList(patch.related());
+            case RoleExtensionCompiler.FIELD_SKILLS ->
+                    patch.skills() == null ? "?" : patch.skills().op() + " " + patch.skills().skills().size();
             default -> "?";
         };
     }

@@ -18,6 +18,23 @@ public final class SnakeFruitPricePolicy {
         return (int) Long.remainderUnsigned(value ^ (value >>> 31), MAX_PRICE + 1L);
     }
 
+    /** Derives a one-time per-frame token from the server's private salt via SHA-256 so future frames cannot be predicted. */
+    public static long frameSeed(long masterSeed, long secretSalt, int frame) {
+        if (secretSalt == 0L) return masterSeed;
+        try {
+            java.security.MessageDigest sha256 = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] input = new byte[20];
+            java.nio.ByteBuffer.wrap(input)
+                    .putLong(masterSeed)
+                    .putLong(secretSalt)
+                    .putInt(frame);
+            byte[] digest = sha256.digest(input);
+            return java.nio.ByteBuffer.wrap(digest, 0, 8).getLong();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError("SHA-256 unavailable", e);
+        }
+    }
+
     public enum Faction { GOOD, KILLER, NEUTRAL }
 
     private SnakeFruitPricePolicy() {}

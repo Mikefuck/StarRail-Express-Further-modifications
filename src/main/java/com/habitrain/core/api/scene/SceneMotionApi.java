@@ -39,7 +39,7 @@ public final class SceneMotionApi {
      */
     public void setProfile(String mapKey, SceneProfile profile) {
         Objects.requireNonNull(profile, "profile cannot be null");
-        String key = (mapKey != null && !mapKey.isBlank()) ? mapKey : "__default__";
+        String key = (mapKey != null && !mapKey.isBlank()) ? mapKey : com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY;
         getSettings().profiles.put(key, profile);
         CoreSpi.sceneConfig().markSceneMotionDirty();
     }

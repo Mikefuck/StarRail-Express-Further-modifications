@@ -11,33 +11,25 @@ package com.habitrain.core.api.role.v2;
  * initialization); {@link #apiVersion()} lets providers/manifests check the
  * supported API level during registration.
  *
- * <p><b>{@link #registrar()} is read-only (audit P1-1, review 2026-08-14):</b>
- * it is retained only for compatibility and introspection; every method on the
+ * <p><b>{@link #registrar()} is a disabled compatibility facade:</b>
+ * it is retained only for binary compatibility; every method on the
  * returned registrar throws. All declarations — ADD/MODIFY/REPLACE/ALIAS,
  * hooks, state, action, voice, chat — must go through the provider-scoped
  * registrar obtained from {@code habitrain:role_extensions}.
  */
 public interface RoleExtensionApi {
 
-    /** The process-wide platform instance. */
+    /** The process-wide platform instance (cached lazily inside {@code RoleSpi}). */
     static RoleExtensionApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    /** Lazily-bound default instance; avoids touching the role registry on class load. */
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleExtensionApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.extension();
+        return com.habitrain.core.api.spi.RoleSpi.extension();
     }
 
     /**
-     * Read-only registrar facade retained for compatibility (audit P1-1,
-     * review 2026-08-14). Every registration method on it throws: declarations
+     * Disabled registrar facade retained for binary compatibility.
+     * Every registration method on it throws: declarations
      * are only possible through the provider-scoped registrar handed to
-     * {@code habitrain:role_extensions} entrypoints. Use it only for
-     * introspection, never for registration.
+     * {@code habitrain:role_extensions} entrypoints. This facade has no query
+     * methods; use {@link RoleCatalogApi} and {@link RoleDiagnostics} for queries.
      */
     RoleExtensionRegistrar registrar();
 

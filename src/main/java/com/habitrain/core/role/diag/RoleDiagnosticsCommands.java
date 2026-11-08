@@ -113,7 +113,9 @@ public final class RoleDiagnosticsCommands {
                 + " replaced=" + info.replacedCount()
                 + " aliases=" + info.aliasCount());
         if (current != null) {
-            lines.add("  live=" + (RoleSnapshotManager.INSTANCE.round() != null ? "round" : "lobby"));
+            String slot = RoleSnapshotManager.INSTANCE.round() != null ? "round"
+                    : (RoleSnapshotManager.INSTANCE.lastEnded() != null ? "settlement" : "lobby");
+            lines.add("  live=" + slot);
         } else {
             lines.add("  live=none");
         }
@@ -151,19 +153,21 @@ public final class RoleDiagnosticsCommands {
             lines.add("  invalid role id");
             return lines;
         }
-        RoleHooks hooks = RoleHookRegistry.INSTANCE.get(key);
-        if (hooks == null) {
+        RoleKey canonical = com.habitrain.core.api.role.v2.RoleCatalogApi.instance().canonicalize(key.location());
+        if (!RoleHookRegistry.INSTANCE.hasHooks(canonical) && !RoleHookRegistry.INSTANCE.hasHooks(key)) {
             lines.add("  (none)");
             return lines;
         }
-        lines.add("  lifecycle=" + (hooks.lifecycle() != null));
-        lines.add("  combat=" + (hooks.combat() != null));
-        lines.add("  tick=" + (hooks.tick() != null));
-        lines.add("  interaction=" + (hooks.interaction() != null));
-        lines.add("  shop=" + (hooks.shop() != null));
-        lines.add("  task=" + (hooks.task() != null));
-        lines.add("  meeting=" + (hooks.meeting() != null));
-        lines.add("  win=" + (hooks.win() != null));
+        RoleKey targetKey = RoleHookRegistry.INSTANCE.hasHooks(canonical) ? canonical : key;
+        var diagnosticHooks = RoleHookRegistry.INSTANCE.get(targetKey);
+        lines.add("  lifecycle=" + (diagnosticHooks != null && diagnosticHooks.lifecycle() != null));
+        lines.add("  combat=" + (diagnosticHooks != null && diagnosticHooks.combat() != null));
+        lines.add("  tick=" + (diagnosticHooks != null && diagnosticHooks.tick() != null));
+        lines.add("  interaction=" + (diagnosticHooks != null && diagnosticHooks.interaction() != null));
+        lines.add("  shop=" + (diagnosticHooks != null && diagnosticHooks.shop() != null));
+        lines.add("  task=" + (diagnosticHooks != null && diagnosticHooks.task() != null));
+        lines.add("  meeting=" + (diagnosticHooks != null && diagnosticHooks.meeting() != null));
+        lines.add("  win=" + (diagnosticHooks != null && diagnosticHooks.win() != null));
         return lines;
     }
 

@@ -6,6 +6,8 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
+import java.util.Locale;
+
 /**
  * C2S 网络包 - 客户端本地缓存未命中时按分片偏移量向服务端请求数据。
  *
@@ -27,7 +29,7 @@ public final class SceneAssetChunkRequestC2S implements CustomPacketPayload {
 
     public SceneAssetChunkRequestC2S(String sha256, long transferId, long requestId,
                                      long chunkOffset, int chunkSize) {
-        this.sha256 = sha256 != null ? sha256.trim().toLowerCase() : "";
+        this.sha256 = sha256 != null ? sha256.trim().toLowerCase(Locale.ROOT) : "";
         this.transferId = transferId;
         this.requestId = Math.max(0L, requestId);
         this.chunkOffset = Math.max(0L, chunkOffset);

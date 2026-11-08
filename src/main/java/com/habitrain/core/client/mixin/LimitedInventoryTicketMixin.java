@@ -37,6 +37,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import org.agmas.noellesroles.client.widget.ExecutionerPlayerWidget;
+import org.agmas.noellesroles.client.widget.BodymakerDeathReasonWidget;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -220,7 +221,7 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     @Unique
     private boolean habitrain$hasDirectRoleWidget() {
         for (var child : this.children()) {
-            if (child instanceof ExecutionerPlayerWidget) return true;
+            if (child instanceof ExecutionerPlayerWidget || child instanceof BodymakerDeathReasonWidget) return true;
         }
         return false;
     }
@@ -244,7 +245,8 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         habitrain$directRoleWidgets.keySet().removeIf(widget -> !this.children().contains(widget));
         boolean overflow = false;
         for (var child : this.children()) {
-            if (child instanceof ExecutionerPlayerWidget widget) {
+            if (child instanceof ExecutionerPlayerWidget || child instanceof BodymakerDeathReasonWidget) {
+                Button widget = (Button) child;
                 habitrain$directRoleWidgets.putIfAbsent(widget, widget.getY());
                 overflow |= widget.getX() - 7 < 8 || widget.getX() + 23 > this.width - 8;
             }
@@ -322,8 +324,9 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
         }
         if (menuSelections != null) {
             for (Button button : menuSelections) {
-                button.visible = false;
-                button.active = false;
+                if (button != null) {
+                    button.visible = false;
+                }
             }
         }
     }
@@ -334,12 +337,15 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
             return;
         }
         for (Button button : waitingMenuButtons) {
-            button.visible = false;
-            button.active = false;
+            if (button != null) {
+                button.visible = false;
+            }
         }
         habitrain$hideButton(waitingPrevPageButton);
         habitrain$hideButton(waitingNextPageButton);
-        habitrain$hideButton(participationButton);
+        if (participationButton != null) {
+            participationButton.visible = false;
+        }
     }
 
     @Unique
@@ -424,13 +430,25 @@ public abstract class LimitedInventoryTicketMixin extends LimitedHandledScreen<I
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         habitrain$syncTicketState();
-        if (habitrain$ticketView() && habitrain$ticket.mouseClicked(mouseX, mouseY, button)) {
-            this.setFocused(habitrain$ticket);
-            return true;
+        if (habitrain$ticketView()) {
+            if (habitrain$ticket.mouseClicked(mouseX, mouseY, button)) {
+                this.setFocused(habitrain$ticket);
+                return true;
+            }
+            habitrain$ticket.setFocused(false);
+            if (this.getFocused() == habitrain$ticket) {
+                this.setFocused(null);
+            }
         }
-        if (habitrain$gameView() && habitrain$tray.mouseClicked(mouseX, mouseY, button)) {
-            this.setFocused(habitrain$tray);
-            return true;
+        if (habitrain$gameView()) {
+            if (habitrain$tray.mouseClicked(mouseX, mouseY, button)) {
+                this.setFocused(habitrain$tray);
+                return true;
+            }
+            habitrain$tray.setFocused(false);
+            if (this.getFocused() == habitrain$tray) {
+                this.setFocused(null);
+            }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }

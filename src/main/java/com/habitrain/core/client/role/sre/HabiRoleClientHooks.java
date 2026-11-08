@@ -45,7 +45,6 @@ public final class HabiRoleClientHooks {
         });
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {
             renderWrathHud(graphics);
-            renderInducedSleepOverlay(graphics);
         });
         HabiTrainCore.LOGGER.info("[HabiRoleClientHooks] sin highlights, Wrath HUD and induced-sleep overlay registered");
     }

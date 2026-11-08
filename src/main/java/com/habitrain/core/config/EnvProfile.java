@@ -54,7 +54,7 @@ public final class EnvProfile {
             p.time = EnvTimeSpec.fromJson(o.getAsJsonObject("time"));
         }
         if (o.has("weather")) {
-            try { p.weather = Weather.valueOf(o.get("weather").getAsString().trim().toUpperCase()); }
+            try { p.weather = Weather.valueOf(o.get("weather").getAsString().trim().toUpperCase(java.util.Locale.ROOT)); }
             catch (Exception ignored) { p.weather = Weather.CLEAR; }
         }
         if (o.has("snow")) p.snow = o.get("snow").getAsBoolean();

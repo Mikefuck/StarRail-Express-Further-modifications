@@ -57,14 +57,17 @@ public final class RoleBookTextTab implements RoleIntroduceScreen.DetailTab {
         scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
 
         graphics.enableScissor(x, y, x + width, y + height);
-        int drawY = y - scrollOffset;
-        for (Line line : cachedLines) {
-            if (drawY + font.lineHeight >= y && drawY <= y + height) {
-                graphics.drawString(font, line.text(), x, drawY, 0xFFFFFFFF);
+        try {
+            int drawY = y - scrollOffset;
+            for (Line line : cachedLines) {
+                if (drawY + font.lineHeight >= y && drawY <= y + height) {
+                    graphics.drawString(font, line.text(), x, drawY, 0xFFFFFFFF);
+                }
+                drawY += line.height();
             }
-            drawY += line.height();
+        } finally {
+            graphics.disableScissor();
         }
-        graphics.disableScissor();
     }
 
     private void prepareLines(int width) {

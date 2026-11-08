@@ -1,14 +1,24 @@
 package com.habitrain.core.game.sre.mode;
 
+import com.habitrain.core.game.sre.rest.EliminatedRestAreaService;
+import io.wifi.starrailexpress.cca.ExtraSlotComponent;
+import net.minecraft.resources.ResourceLocation;
+import java.util.Map;
 import com.habitrain.core.vote.OptionVoteManager;
 import io.wifi.starrailexpress.cca.ParticipationComponent;
+import io.wifi.starrailexpress.game.GameUtils;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
-import net.minecraft.resources.ResourceKey;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,16 +51,36 @@ public final class RepairModeManager {
      * （{@link #REFRESH_TO_ADVENTURE}=下一 tick 切冒险，{@link #REFRESH_TO_CREATIVE}=再下一 tick 切回创造）。
      */
     private static final ConcurrentMap<UUID, Integer> GAME_MODE_REFRESH = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<UUID, Boolean> REFRESH_WAS_FLYING = new ConcurrentHashMap<>();
+    /** 离线期间被移除维修状态、待下次上线清理创造背包并恢复游戏模式的玩家快照。 */
+    private static final ConcurrentMap<UUID, RepairEntry> PENDING_OFFLINE_EXIT_CLEANUP = new ConcurrentHashMap<>();
     private static final int REFRESH_TO_ADVENTURE = 2;
     private static final int REFRESH_TO_CREATIVE = 1;
+    private static volatile boolean eventsRegistered = false;
 
     private RepairModeManager() {}
 
-    /** 注册 SRE 对局开始/结束事件：维修员各切一次冒险再切回创造。 */
+    /** 注册 SRE 对局开始/结束事件与离线重连清理：维修员各切一次冒险再切回创造。 */
     public static void registerEvents() {
+        if (eventsRegistered) return;
+        eventsRegistered = true;
         try {
             io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(level -> scheduleGameModeRefresh());
             io.wifi.starrailexpress.event.OnGameEnd.EVENT.register((level, game) -> scheduleGameModeRefresh());
+            ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+                ServerPlayer player = handler.getPlayer();
+                if (player == null) return;
+                RepairEntry pending = PENDING_OFFLINE_EXIT_CLEANUP.remove(player.getUUID());
+                if (pending != null) {
+                    applyExitRestoreToPlayer(player, pending);
+                    LOGGER.info("[RepairMode] applied deferred offline exit cleanup for {}", player.getUUID());
+                }
+            });
+            ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+                GAME_MODE_REFRESH.clear();
+                REFRESH_WAS_FLYING.clear();
+                PENDING_OFFLINE_EXIT_CLEANUP.clear();
+            });
         } catch (Throwable t) {
             LOGGER.error("[RepairMode] failed to register game start/end events", t);
         }
@@ -72,18 +102,33 @@ public final class RepairModeManager {
             // 期间已退出维修模式或离线：exit 已恢复原模式，不再干预
             if (step == null || player == null || !isRepairer(uuid)) {
                 GAME_MODE_REFRESH.remove(uuid);
+                REFRESH_WAS_FLYING.remove(uuid);
                 continue;
             }
             try {
                 if (step == REFRESH_TO_ADVENTURE) {
+                    boolean wasFlying = player.getAbilities().flying;
+                    REFRESH_WAS_FLYING.put(uuid, wasFlying);
                     player.setGameMode(GameType.ADVENTURE);
+                    if (wasFlying) {
+                        player.getAbilities().mayfly = true;
+                        player.getAbilities().flying = true;
+                        player.onUpdateAbilities();
+                    }
                     GAME_MODE_REFRESH.put(uuid, REFRESH_TO_CREATIVE);
                 } else {
                     GAME_MODE_REFRESH.remove(uuid);
+                    boolean wasFlying = Boolean.TRUE.equals(REFRESH_WAS_FLYING.remove(uuid));
                     player.setGameMode(GameType.CREATIVE);
+                    if (wasFlying) {
+                        player.getAbilities().mayfly = true;
+                        player.getAbilities().flying = true;
+                        player.onUpdateAbilities();
+                    }
                 }
             } catch (Throwable t) {
                 GAME_MODE_REFRESH.remove(uuid);
+                REFRESH_WAS_FLYING.remove(uuid);
                 LOGGER.warn("[RepairMode] game mode refresh failed for {}", uuid, t);
                 try {
                     player.setGameMode(GameType.CREATIVE);
@@ -94,7 +139,7 @@ public final class RepairModeManager {
         }
     }
 
-    /** 单个维修记录：玩家名、锁定地图、进入前的参与状态与游戏模式。 */
+    /** 单个维修记录：玩家名、锁定地图、进入前的参与状态、游戏模式与背包快照。 */
     private static final class RepairEntry {
         final String playerName;
         final String mapId;
@@ -102,15 +147,135 @@ public final class RepairModeManager {
         final GameType priorGameType;
         final ResourceKey<Level> participationDimension;
         final long lockedAtMs;
+        final InventorySnapshot inventorySnapshot;
 
         RepairEntry(String playerName, String mapId, boolean priorParticipating, GameType priorGameType,
-                    ResourceKey<Level> participationDimension) {
+                    ResourceKey<Level> participationDimension, InventorySnapshot inventorySnapshot) {
             this.playerName = playerName;
             this.mapId = mapId;
             this.priorParticipating = priorParticipating;
             this.priorGameType = priorGameType;
             this.participationDimension = participationDimension;
             this.lockedAtMs = System.currentTimeMillis();
+            this.inventorySnapshot = inventorySnapshot;
+        }
+    }
+
+    private static final class InventorySnapshot {
+        final List<ItemStack> items;
+        final List<ItemStack> armor;
+        final List<ItemStack> offhand;
+        final Map<ResourceLocation, ItemStack> extraSlots;
+        final ItemStack carried;
+        final List<MobEffectInstance> effects;
+
+        private InventorySnapshot(List<ItemStack> items, List<ItemStack> armor, List<ItemStack> offhand,
+                                  Map<ResourceLocation, ItemStack> extraSlots, ItemStack carried, List<MobEffectInstance> effects) {
+            this.items = items;
+            this.armor = armor;
+            this.offhand = offhand;
+            this.extraSlots = extraSlots;
+            this.carried = carried;
+            this.effects = effects;
+        }
+
+        static InventorySnapshot captureAndClear(ServerPlayer player) {
+            Inventory inv = player.getInventory();
+            List<ItemStack> items = new ArrayList<>(inv.items.size());
+            for (ItemStack s : inv.items) {
+                items.add(s == null ? ItemStack.EMPTY : s.copy());
+            }
+            List<ItemStack> armor = new ArrayList<>(inv.armor.size());
+            for (ItemStack s : inv.armor) {
+                armor.add(s == null ? ItemStack.EMPTY : s.copy());
+            }
+            List<ItemStack> offhand = new ArrayList<>(inv.offhand.size());
+            for (ItemStack s : inv.offhand) {
+                offhand.add(s == null ? ItemStack.EMPTY : s.copy());
+            }
+            Map<ResourceLocation, ItemStack> extra = new java.util.LinkedHashMap<>();
+            ExtraSlotComponent extraComponent = ExtraSlotComponent.KEY.get(player);
+            extraComponent.SLOTS.forEach((key, stack) -> {
+                if (key != null && stack != null && !stack.isEmpty()) extra.put(key, stack.copy());
+            });
+            extraComponent.clear();
+            ItemStack carried = player.containerMenu != null && !player.containerMenu.getCarried().isEmpty()
+                    ? player.containerMenu.getCarried().copy()
+                    : ItemStack.EMPTY;
+            List<MobEffectInstance> effects = new ArrayList<>();
+            for (MobEffectInstance effect : player.getActiveEffects()) {
+                if (effect != null) {
+                    effects.add(new MobEffectInstance(effect));
+                }
+            }
+            if (player.containerMenu != null) {
+                player.containerMenu.setCarried(ItemStack.EMPTY);
+            }
+            inv.clearContent();
+            player.removeAllEffects();
+            player.inventoryMenu.broadcastChanges();
+            return new InventorySnapshot(items, armor, offhand, extra, carried, effects);
+        }
+
+        void restore(ServerPlayer player) {
+            clearPlayerInventoryAndEffects(player);
+            if (SREGameModeBase.isAnySreGameStartingOrRunning(player.getServer())) {
+                return;
+            }
+            Inventory inv = player.getInventory();
+            for (int i = 0; i < Math.min(items.size(), inv.items.size()); i++) {
+                inv.items.set(i, items.get(i).copy());
+            }
+            for (int i = 0; i < Math.min(armor.size(), inv.armor.size()); i++) {
+                inv.armor.set(i, armor.get(i).copy());
+            }
+            for (int i = 0; i < Math.min(offhand.size(), inv.offhand.size()); i++) {
+                inv.offhand.set(i, offhand.get(i).copy());
+            }
+            ExtraSlotComponent extraComponent = ExtraSlotComponent.KEY.get(player);
+            extraSlots.forEach((key, stack) -> extraComponent.setItem(key, stack.copy()));
+            if (player.containerMenu != null && !carried.isEmpty()) {
+                player.containerMenu.setCarried(carried.copy());
+            }
+            for (MobEffectInstance effect : effects) {
+                player.addEffect(new MobEffectInstance(effect));
+            }
+            player.inventoryMenu.broadcastChanges();
+        }
+    }
+
+    private static void clearPlayerInventoryAndEffects(ServerPlayer player) {
+        if (player == null) return;
+        try {
+            if (player.containerMenu != null) {
+                player.containerMenu.setCarried(ItemStack.EMPTY);
+            }
+            player.getInventory().clearContent();
+            ExtraSlotComponent.KEY.get(player).clear();
+            player.removeAllEffects();
+            player.inventoryMenu.broadcastChanges();
+        } catch (Throwable t) {
+            LOGGER.debug("[RepairMode] clearPlayerInventoryAndEffects failed for {}: {}", player.getUUID(), t.toString());
+        }
+    }
+
+    private static void applyExitRestoreToPlayer(ServerPlayer player, RepairEntry entry) {
+        if (player == null || entry == null) return;
+        try {
+            if (entry.inventorySnapshot != null) {
+                entry.inventorySnapshot.restore(player);
+            } else {
+                clearPlayerInventoryAndEffects(player);
+            }
+            GameType targetMode = (entry.priorGameType == null
+                    || entry.priorGameType == GameType.SPECTATOR
+                    || entry.priorGameType == GameType.CREATIVE)
+                    ? GameType.ADVENTURE
+                    : entry.priorGameType;
+            player.setGameMode(targetMode);
+            com.habitrain.core.network.RepairModeSyncPayload.sendToPlayer(player, false);
+        } catch (Throwable t) {
+            LOGGER.warn("[RepairMode] applyExitRestoreToPlayer failed for {}", player.getUUID(), t);
         }
     }
 
@@ -125,6 +290,18 @@ public final class RepairModeManager {
         if (REPAIRS.containsKey(uuid)) return false; // 已在维修模式
 
         ServerLevel level = player.serverLevel();
+        if (level == null) return false;
+
+        // 拒绝在对局进行中或处于已淘汰/观战/休息区状态时进入维修模式
+        if (SREModeStartAdapter.isSreGameBlocking(level)
+                || SREGameModeBase.isAnySreGameStartingOrRunning(player.getServer())
+                || EliminatedRestAreaService.isResting(player)
+                || player.isSpectator()
+                || isPlayerEliminatedSafe(player)) {
+            LOGGER.warn("[RepairMode] refused enter for {}: match active or player eliminated/spectating", uuid);
+            return false;
+        }
+
         boolean priorParticipating;
         try {
             ParticipationComponent participation = ParticipationComponent.KEY.get(level);
@@ -133,7 +310,12 @@ public final class RepairModeManager {
             LOGGER.error("[RepairMode] read prior participating failed for {}; refuse enter", uuid, t);
             return false;
         }
-        GameType priorGameType = player.gameMode.getGameModeForPlayer();
+        GameType rawPriorGameType = player.gameMode.getGameModeForPlayer();
+        GameType priorGameType = (rawPriorGameType == null
+                || rawPriorGameType == GameType.SPECTATOR
+                || rawPriorGameType == GameType.CREATIVE)
+                ? GameType.ADVENTURE
+                : rawPriorGameType;
 
         // 豁免：标记不参与对局（不计入人数/开局/任务/角色）
         try {
@@ -142,11 +324,18 @@ public final class RepairModeManager {
             LOGGER.error("[RepairMode] setParticipating(false) failed for {}; refuse enter", uuid, t);
             return false;
         }
-        // 创造模式便于修图；失败则恢复参与状态，不登记维修员
+
+        InventorySnapshot snapshot = InventorySnapshot.captureAndClear(player);
+
+        // 创造模式便于修图；失败则恢复参与状态与背包，不登记维修员
         try {
             player.setGameMode(GameType.CREATIVE);
         } catch (Throwable t) {
             LOGGER.error("[RepairMode] setGameMode(CREATIVE) failed for {}; abort enter", uuid, t);
+            try {
+                snapshot.restore(player);
+            } catch (Throwable ignored) {
+            }
             try {
                 ParticipationComponent.KEY.get(level).setParticipating(uuid, priorParticipating);
             } catch (Throwable restore) {
@@ -156,13 +345,22 @@ public final class RepairModeManager {
             return false;
         }
 
+        PENDING_OFFLINE_EXIT_CLEANUP.remove(uuid);
         REPAIRS.put(uuid, new RepairEntry(player.getGameProfile().getName(), mapId, priorParticipating,
-                priorGameType, level.dimension()));
+                priorGameType, level.dimension(), snapshot));
         LOGGER.info("[RepairMode] {} entered repair mode, locking map={}", uuid, mapId);
         dropRepairerVoteAndLockedMap(player, mapId);
         // 同步到本机客户端：屏蔽开局黑场/转场与结尾动画
         com.habitrain.core.network.RepairModeSyncPayload.sendToPlayer(player, true);
         return true;
+    }
+
+    private static boolean isPlayerEliminatedSafe(ServerPlayer player) {
+        try {
+            return GameUtils.isPlayerEliminated(player);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /** 进维修后已投票作废，并把被锁图从进行中的地图投票候选里拿掉。 */
@@ -204,10 +402,15 @@ public final class RepairModeManager {
                     uuid, entry.participationDimension.location());
             return false;
         }
-        // 恢复原游戏模式（仅当玩家在线）
+        // 恢复原游戏模式与背包（在线立即执行；离线登记待下次登录清理创造背包并恢复模式）
         ServerPlayer online = server != null ? server.getPlayerList().getPlayer(uuid) : null;
         if (online != null) {
             try {
+                if (entry.inventorySnapshot != null) {
+                    entry.inventorySnapshot.restore(online);
+                } else {
+                    clearPlayerInventoryAndEffects(online);
+                }
                 online.setGameMode(entry.priorGameType);
             } catch (Throwable t) {
                 LOGGER.warn("[RepairMode] restore gameMode failed for {}", uuid, t);
@@ -215,9 +418,12 @@ public final class RepairModeManager {
             }
             // 同步到本机客户端：恢复开局黑场/转场与结尾动画
             com.habitrain.core.network.RepairModeSyncPayload.sendToPlayer(online, false);
+        } else {
+            PENDING_OFFLINE_EXIT_CLEANUP.put(uuid, entry);
         }
         REPAIRS.remove(uuid, entry);
         GAME_MODE_REFRESH.remove(uuid);
+        REFRESH_WAS_FLYING.remove(uuid);
         LOGGER.info("[RepairMode] {} exited repair mode, released map={}", uuid, entry.mapId);
         return true;
     }
@@ -250,6 +456,7 @@ public final class RepairModeManager {
             exit(uuid, level);
         }
         GAME_MODE_REFRESH.clear();
+        REFRESH_WAS_FLYING.clear();
     }
 
     public static boolean isRepairer(UUID uuid) {

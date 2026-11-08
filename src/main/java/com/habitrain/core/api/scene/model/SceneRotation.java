@@ -54,9 +54,9 @@ public final class SceneRotation {
 
     public static SceneRotation fromJson(JsonObject json) {
         if (json == null) return ZERO;
-        float y = json.has("yaw") ? json.get("yaw").getAsFloat() : 0.0f;
-        float p = json.has("pitch") ? json.get("pitch").getAsFloat() : 0.0f;
-        float r = json.has("roll") ? json.get("roll").getAsFloat() : 0.0f;
+        float y = json.has("yaw") && json.get("yaw").isJsonPrimitive() ? json.get("yaw").getAsFloat() : 0.0f;
+        float p = json.has("pitch") && json.get("pitch").isJsonPrimitive() ? json.get("pitch").getAsFloat() : 0.0f;
+        float r = json.has("roll") && json.get("roll").isJsonPrimitive() ? json.get("roll").getAsFloat() : 0.0f;
         return new SceneRotation(y, p, r);
     }
 

@@ -15,14 +15,7 @@ import java.util.UUID;
 public interface RoleForceApi {
 
     static RoleForceApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleForceApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.force();
+        return com.habitrain.core.api.spi.RoleSpi.force();
     }
 
     /**
@@ -42,6 +35,11 @@ public interface RoleForceApi {
      * 4 killer, 5 vigilante).
      */
     boolean queueRoleType(ServerPlayer player, int roleTypeId);
+
+    /** Typed alternative to the upstream numeric assignment buckets. */
+    default boolean queueRoleType(ServerPlayer player, RoleAssignmentType roleType) {
+        return queueRoleType(player, java.util.Objects.requireNonNull(roleType, "roleType").id());
+    }
 
     boolean isQueued(@Nullable UUID player);
 

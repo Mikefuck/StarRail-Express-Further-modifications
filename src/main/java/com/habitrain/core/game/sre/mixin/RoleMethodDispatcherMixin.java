@@ -57,6 +57,7 @@ public class RoleMethodDispatcherMixin {
         try {
             return HabiRoles.isHabiRole(player, HabiRoles.MIME_KILLER);
         } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
             return false;
         }
     }
@@ -74,11 +75,13 @@ public class RoleMethodDispatcherMixin {
         try {
             RoleEventDispatcher.INSTANCE.notifyFinishQuest(player, quest, taskStreak, isParallelTask);
         } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
             LOGGER.debug("[Reward] v2 finish-quest hook failed", t);
         }
         try {
             SlothComponent.onAnyTaskFinished(player, quest);
         } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
             LOGGER.debug("[Sloth] finish-quest tracking failed", t);
         }
         if (!headTakeover) {
@@ -95,7 +98,7 @@ public class RoleMethodDispatcherMixin {
                         : config.emotionReward;
                 mood.addMood(actualReward);
                 LOGGER.info("[Reward] 发放配置情绪奖励: {} (并列={}) 给 {}",
-                        String.format("%.2f", actualReward), isParallelTask, player.getName().getString());
+                        String.format(java.util.Locale.ROOT, "%.2f", actualReward), isParallelTask, player.getName().getString());
             });
         } catch (Exception e) {
             LOGGER.error("[Reward] 发放自定义情绪奖励失败", e);
@@ -113,32 +116,17 @@ public class RoleMethodDispatcherMixin {
         if (player == null || player.level() == null || player.level().isClientSide) return;
 
         // 默剧杀手：可做任务但不加金币，并累计狂暴折扣
-        // 注意：CCA KEY.get() 在组件缺失时抛 NoSuchElementException，不会返回 null
         if (isMimeKiller(player)) {
-            var progressionOpt = SREPlayerProgressionComponent.KEY.maybeGet(player);
-            if (progressionOpt.isEmpty()) {
-                // 无 progression 时仍取消原逻辑发金，并尽量累计折扣
-                ci.cancel();
-                try {
-                    MimeKillerComponent.KEY.maybeGet(player).ifPresent(MimeKillerComponent::onTaskComplete);
-                } catch (Throwable ignored) {}
-                LOGGER.debug("[Reward] 默剧杀手无 player_progression，仍记 ProgressionDataManager: {}",
-                        player.getName().getString());
-                ProgressionDataManager.onRoundQuestFinished(player, quest);
-                habitrain$postQuestEffects(player, quest, taskStreak, isParallelTask, true);
-                return;
-            }
             try {
-                ci.cancel();
                 ProgressionDataManager.onRoundQuestFinished(player, quest);
-                progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
                 if (role != null) {
                     role.onFinishQuest(player, quest);
                 }
                 try {
                     MimeKillerComponent.KEY.maybeGet(player).ifPresent(MimeKillerComponent::onTaskComplete);
-                } catch (Throwable ignored) {}
+                } catch (Exception failure) { LOGGER.warn("Failed to apply Mime task completion discount", failure); }
+                ci.cancel();
                 LOGGER.info("[Reward] 默剧杀手任务无金币，狂暴折扣+50: {}", player.getName().getString());
             } catch (Exception e) {
                 LOGGER.error("[Reward] 默剧杀手任务处理失败", e);
@@ -153,32 +141,45 @@ public class RoleMethodDispatcherMixin {
 
         // 配置自定义金币优先（所有模式）
         if (config != null && config.hasGoldReward) {
-            // 先确认必要组件已附加，再 cancel 原 SRE 逻辑；否则放行原逻辑，
+            // 先确认必要组件已附加，再接管原 SRE 逻辑；否则放行原逻辑，
             // 避免 cancel 后既拿不到自定义奖励也拿不到 SRE 基础奖励。
-            // CCA KEY.get() 缺组件会抛异常，必须用 maybeGet。
             var progressionOpt = SREPlayerProgressionComponent.KEY.maybeGet(player);
             if (progressionOpt.isEmpty()) {
                 return;
             }
             try {
-                ci.cancel();
-                ProgressionDataManager.onRoundQuestFinished(player, quest);
-                progressionOpt.get().onRoundQuestFinished(quest);
                 SRERole role = getCurrentRole(player);
+                ProgressionDataManager.onRoundQuestFinished(player, quest);
 
                 if (role != null) {
-                    int actualReward = isParallelTask
-                            ? Math.max(1, config.goldReward / 2)
-                            : config.goldReward;
-
-                    SREPlayerShopComponent.KEY.maybeGet(player).ifPresent(shop -> {
-                        shop.addToBalance(actualReward);
-                        LOGGER.info("[Reward] 自定义金币奖励 (替换SRE基础): {} (并列={}) 给 {}",
-                                actualReward, isParallelTask, player.getName().getString());
-                    });
+                    int streakBonus = Math.min(taskStreak * io.wifi.starrailexpress.game.GameConstants.STREAK_BONUS_PER_LEVEL,
+                            io.wifi.starrailexpress.game.GameConstants.MAX_STREAK_BONUS);
+                    float rewardMultiplier = isParallelTask
+                            ? io.wifi.starrailexpress.game.GameConstants.PARALLEL_TASK_REWARD_MULTIPLIER
+                            : 1f;
+                    if (role.isInnocent() || role.isNeutrals()) {
+                        int actualReward = (int) ((config.goldReward + streakBonus) * rewardMultiplier);
+                        SREPlayerShopComponent.KEY.maybeGet(player).ifPresent(shop -> {
+                            shop.addToBalance(actualReward);
+                            LOGGER.info("[Reward] 自定义金币奖励 (替换SRE基础): {} (并列={}, 连击加成={}) 给 {}",
+                                    actualReward, isParallelTask, streakBonus, player.getName().getString());
+                        });
+                    } else if (role.isKiller() && !role.isNeutrals() && !role.isInnocent()) {
+                        // 对齐上游：杀手自身做伪装任务不拿基础任务金币，保持上游 killerTaskIncome 分支
+                        int killerGain = (int) (io.wifi.starrailexpress.SREConfig.instance().killerTaskIncome * rewardMultiplier);
+                        if (killerGain > 0) {
+                            player.level().players().forEach(a -> {
+                                SRERole aRole = getCurrentRole(a);
+                                if (aRole != null && aRole.canUseKiller() && !aRole.isNeutrals() && !aRole.isInnocent()) {
+                                    SREPlayerShopComponent.KEY.maybeGet(a).ifPresent(s -> s.addToBalance(killerGain));
+                                }
+                            });
+                        }
+                    }
 
                     role.onFinishQuest(player, quest);
                 }
+                ci.cancel();
             } catch (Exception e) {
                 LOGGER.error("[Reward] 发放自定义金币奖励失败", e);
             }

@@ -5,30 +5,25 @@ import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 休息区玩家不参与对局击杀判定。
+ * 休息区玩家的 SRE 存活/淘汰/击杀/复活语义守卫。
  *
- * <p>SRE 所有玩家击杀（刀/枪/棍/手雷/毒/出界等）统一经
- * {@code GameUtils.killPlayer} 进入 {@code GameMode.killPlayer}，那里会
- * 加时（误杀平民加时间）、广播击杀/友军击杀事件、统计与奖励，
- * 并可能触发仇杀客等技能。休息区（中场休息大厅）玩家互相打杀属于
- * 大厅内的娱乐行为，不应计入对局：
+ * <p>Mike 决策（MIXIN-SRV-02 / MIXIN-SRV-03 / MIXIN-SRV-04）：
  * <ul>
- *   <li>休息者作为击杀者发起击杀 → 不计入对局；</li>
- *   <li>休息者作为受害者被休息者/无对局参与者的来源击杀 → 不计入对局，
- *       并在休息区原地回满血（避免被 SRE 武器命中后留下半血/残留状态）；</li>
- *   <li>休息者被存活对局玩家主动击杀 → 仍计入（“对局内的事件主动影响休息者”，
- *       如复活、技能等，见 EliminatedRestAreaService 的复活语义）；</li>
- *   <li>{@code forceDeath}（指令/巫毒等强制击杀）→ 不拦截，保持对局主动影响休息者。</li>
+ *   <li>不再在 {@code RestAreaServerPlayerMixin} 中全局覆写原版 {@code ServerPlayer#isSpectator()}
+ *       （避免服务端 {@code noPhysics=true; onGround=false} 与客户端 {@code ADVENTURE} 物理碰撞失步）；</li>
+ *   <li>改为在 {@link GameUtils} 的 SRE 存活/淘汰/旁观判定点精确将休息区玩家视为已淘汰旁观者；</li>
+ *   <li>无条件拦截涉及休息区玩家的任何 {@code GameUtils.killPlayer} 调用（含 {@code forceDeath} 及存活杀手攻击），
+ *       彻底杜绝在休息区玩家身上刷取击杀数、金币、德林加子弹、角色击杀回调与尸体；</li>
+ *   <li>在 {@code revivePlayerToItsRoom} / {@code revivePlayer} 执行传送前先行将休息区玩家迁回对局维度并清理淘汰表。</li>
  * </ul>
- *
- * <p>与 {@link OutOfGameKillMixin}/{@link MeleeImmuneKillMixin} 同为对
- * {@code GameUtils.killPlayer} 的 HEAD 拦截。签名 miss 必须启动失败，不再静默跳过。
  */
 @Mixin(value = GameUtils.class, remap = false)
 public class RestAreaKillMixin {
@@ -42,21 +37,82 @@ public class RestAreaKillMixin {
     private static void habitrain$restAreaKillIsNotMatchJudgment(Player victim, boolean spawnBody, Player killer,
                                                                  ResourceLocation deathReason, boolean forceDeath,
                                                                  CallbackInfo ci) {
-        if (forceDeath || victim == null) {
+        if (victim == null) {
             return;
         }
 
         boolean victimResting = isResting(victim);
         boolean killerResting = isResting(killer);
 
-        // 休息者发起击杀，或休息者被"非存活对局参与者"（休息者/无来源 killer=null，
-        // 例如放逐投票/理智崩溃/sloth 爆炸）击杀：都属于休息区行为，不进入
-        // GameMode.killPlayer 的对局判定（review L16：killer 需判 null）。
-        if (killerResting || (victimResting && !(killer != null && GameUtils.isPlayerAliveAndSurvival(killer)))) {
+        if (victimResting || killerResting) {
             ci.cancel();
             if (victimResting && victim.getHealth() < victim.getMaxHealth()) {
                 victim.setHealth(victim.getMaxHealth());
             }
+        }
+    }
+
+    @Inject(method = "isPlayerEliminatedIgnoreShitSplit", at = @At("HEAD"), cancellable = true, remap = false)
+    private static void habitrain$restingIsEliminatedIgnoreSplit(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "isPlayerEliminated", at = @At("HEAD"), cancellable = true, remap = false)
+    private static void habitrain$restingIsEliminated(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "isPlayerSpectator", at = @At("HEAD"), cancellable = true, remap = false)
+    private static void habitrain$restingIsSpectator(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "isPlayerSpectatingOrCreativeIgnoreShitSplit", at = @At("HEAD"), cancellable = true, remap = false)
+    private static void habitrain$restingIsSpectatingOrCreative(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "isPlayerAliveAndSurvivalIgnoreShitSplit", at = @At("HEAD"), cancellable = true, remap = false)
+    private static void habitrain$restingIsNotAliveAndSurvivalIgnoreSplit(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(false);
+        }
+    }
+
+    @Inject(
+            method = "isPlayerAliveAndSurvival(Lnet/minecraft/world/entity/player/Player;Lorg/agmas/harpymodloader/component/WorldModifierComponent;)Z",
+            at = @At("HEAD"),
+            cancellable = true,
+            remap = false
+    )
+    private static void habitrain$restingIsNotAliveAndSurvival(Player player, WorldModifierComponent worldModifierComponent,
+                                                               CallbackInfoReturnable<Boolean> cir) {
+        if (isResting(player)) {
+            cir.setReturnValue(false);
+        }
+    }
+
+    @Inject(method = "revivePlayerToItsRoom", at = @At("HEAD"), remap = false)
+    private static void habitrain$prepareReviveToRoom(ServerPlayer player, CallbackInfo ci) {
+        if (player != null) {
+            EliminatedRestAreaService.prepareUpstreamRevival(player);
+            EliminatedRestAreaService.onExplicitUpstreamRevival(player);
+        }
+    }
+
+    @Inject(method = "revivePlayer", at = @At("HEAD"), remap = false)
+    private static void habitrain$prepareReviveAtPos(ServerPlayer player, double x, double y, double z, CallbackInfo ci) {
+        if (player != null) {
+            EliminatedRestAreaService.prepareUpstreamRevival(player);
+            EliminatedRestAreaService.onExplicitUpstreamRevival(player);
         }
     }
 

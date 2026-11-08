@@ -121,6 +121,9 @@ public final class GameEndTransitionScreen extends Screen {
     private String customWinnerId = "";
     private int customWinnerColor = 0;
     private String customTitleJson = "";
+    private String parsedTitleJson;
+    private RegistryAccess parsedTitleRegistry;
+    private MutableComponent parsedCustomTitle;
     private List<GameEndTransitionPayload.MvpPlayer> mvpPlayers = List.of();
     private long mvpAvailableAtMillis;
     private final Map<UUID, AbstractClientPlayer> previewPlayers = new LinkedHashMap<>();
@@ -128,7 +131,7 @@ public final class GameEndTransitionScreen extends Screen {
     private final Map<Integer, ItemStack> victoryWeaponTemplates = new LinkedHashMap<>();
 
     // ---- 纸面 ----
-    private final PaperCanvas ticketCanvas = new PaperCanvas();
+    private final PaperCanvas ticketCanvas = new PaperCanvas(false);
     private final PaperCanvas ghostCanvas = new PaperCanvas();
     private final PaperSheet sheet = new PaperSheet();
     private final TicketFire fire = new TicketFire(this.fireSeed);
@@ -232,6 +235,9 @@ public final class GameEndTransitionScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (this.width <= 0 || this.height <= 0) {
+            return;
+        }
         long now = Util.getMillis();
         long elapsed = now - this.startedAtMillis;
         long mvpElapsed = this.mvpPlayers.isEmpty() ? NO_MVP : now - this.mvpStageStartMillis();
@@ -244,8 +250,8 @@ public final class GameEndTransitionScreen extends Screen {
         float exposure = this.exposure(elapsed, mvpElapsed);
 
         float margin = Mth.clamp(Math.min(this.width, this.height) * 0.035f, 6.0f, 18.0f);
-        float tw = this.width - margin * 2.0f;
-        float th = this.height - margin * 2.0f;
+        float tw = Math.max(1.0f, this.width - margin * 2.0f);
+        float th = Math.max(1.0f, this.height - margin * 2.0f);
         TicketArt.Shape shape = TicketArt.Shape.of(tw, th, 0.8f);
         this.ticketX = TicketArt.snap(margin);
         this.ticketY = TicketArt.snap(margin);
@@ -256,10 +262,13 @@ public final class GameEndTransitionScreen extends Screen {
         this.ticketCanvas.begin(g);
         try {
             g.pose().pushPose();
-            g.pose().translate(this.ticketX, this.ticketY, 0.0f);
-            this.renderTicket(g, shape, elapsed, mvpElapsed);
-            this.sealPaper(g, shape);
-            g.pose().popPose();
+            try {
+                g.pose().translate(this.ticketX, this.ticketY, 0.0f);
+                this.renderTicket(g, shape, elapsed, mvpElapsed);
+                this.sealPaper(g, shape);
+            } finally {
+                g.pose().popPose();
+            }
         } finally {
             this.ticketCanvas.end(g);
         }
@@ -272,6 +281,7 @@ public final class GameEndTransitionScreen extends Screen {
             cover *= 1.0f - TransitionFx.easeInOutCubic((burn - 0.08f) / 0.72f);
         }
         g.pose().pushPose();
+        try {
         g.pose().translate(0.0f, 0.0f, LAYER_Z);
         if (cover > 0.005f) {
             GuiGeo veil = GuiGeo.begin(g);
@@ -330,7 +340,9 @@ public final class GameEndTransitionScreen extends Screen {
         this.fire.update(dt, burn, this.exitStarted && shader != null, this.sheet, aspect, th / 400.0f);
         float embers = 1.0f - TransitionFx.clamp01((exitElapsed - (EXIT_MILLIS - EMBER_FADE_MILLIS)) / (float) EMBER_FADE_MILLIS);
         this.fire.render(g, Mth.sin(Mth.clamp(burn, 0.0f, 1.0f) * Mth.PI) * 0.6f + 0.4f, embers);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /**
@@ -554,8 +566,12 @@ public final class GameEndTransitionScreen extends Screen {
     private void sealPaper(GuiGraphics g, TicketArt.Shape s) {
         g.flush();
         RenderSystem.colorMask(false, false, false, true);
-        TicketArt.paper(g, s, TicketArt.MIDNIGHT, TicketArt.Part.WHOLE, 1.0f);
-        RenderSystem.colorMask(true, true, true, true);
+        try {
+            TicketArt.paper(g, s, TicketArt.MIDNIGHT, TicketArt.Part.WHOLE, 1.0f);
+            g.flush();
+        } finally {
+            RenderSystem.colorMask(true, true, true, true);
+        }
     }
 
     /** 纪念车票：票纸 → 防伪底纹 → 票头 → 左下角的黑暗与人影 → 胜方印章与 MVP 数据 → 票根。 */
@@ -641,7 +657,7 @@ public final class GameEndTransitionScreen extends Screen {
         float textScale = TicketArt.crisp((large ? 3.0f : 2.0f) * unit);
         float limit = maxWidth - 30.0f;
         while (textScale > TicketArt.crisp(1.0f) && this.font.width(winText) * textScale > limit) {
-            textScale = TicketArt.crisp(textScale - 0.5f);
+            textScale = TicketArt.smallerCrisp(textScale);
         }
         if (this.font.width(winText) * textScale > limit) {
             winText = TicketArt.fit(this.font, winText, limit / textScale);
@@ -771,11 +787,14 @@ public final class GameEndTransitionScreen extends Screen {
         float span = s.bodyRight() - in;
         g.enableScissor(Math.round(this.ticketX + in), Math.round(this.ticketY + b + 1.2f),
                 Math.round(this.ticketX + s.bodyRight()), Math.round(this.ticketY + s.h() - in));
-        GuiGeo dark = GuiGeo.begin(g);
-        dark.disc(in, s.h() - in, span * 0.7f * (0.4f + 0.6f * pool), area * 1.25f * (0.4f + 0.6f * pool),
-                RailArt.a(VOID, 0.97f * pool), RailArt.a(VOID, 0.0f));
-        dark.end();
-        g.disableScissor();
+        try {
+            GuiGeo dark = GuiGeo.begin(g);
+            dark.disc(in, s.h() - in, span * 0.7f * (0.4f + 0.6f * pool), area * 1.25f * (0.4f + 0.6f * pool),
+                    RailArt.a(VOID, 0.97f * pool), RailArt.a(VOID, 0.0f));
+            dark.end();
+        } finally {
+            g.disableScissor();
+        }
         if (!this.ghostReady) {
             return;
         }
@@ -844,9 +863,12 @@ public final class GameEndTransitionScreen extends Screen {
         this.ghostCanvas.begin(g);
         try {
             g.pose().pushPose();
-            g.pose().translate(this.ticketX, this.ticketY, 0.0f);
-            this.drawModel(g, player, frame.figureX(), feetY, scale, this.victoryWeapon(entry.roleType()));
-            g.pose().popPose();
+            try {
+                g.pose().translate(this.ticketX, this.ticketY, 0.0f);
+                this.drawModel(g, player, frame.figureX(), feetY, scale, this.victoryWeapon(entry.roleType()));
+            } finally {
+                g.pose().popPose();
+            }
         } finally {
             this.ghostCanvas.end(g);
         }
@@ -858,58 +880,111 @@ public final class GameEndTransitionScreen extends Screen {
      * 因此直接调用底层渲染并自己设置朝向。身体侧过一点，头由 {@link MvpStillPose} 转回来正对镜头。
      */
     private void drawModel(GuiGraphics g, AbstractClientPlayer player, float centerX, float feetY, float scale,
+
                            ItemStack held) {
+
         if (player == null || scale < 2.0f) {
+
             return;
+
         }
+
         ItemStack oldMain = player.getMainHandItem().copy();
+
         Pose oldPose = player.getPose();
+
         boolean oldInvisible = player.isInvisible();
+
         float oldBody = player.yBodyRot;
+
         float oldYRot = player.getYRot();
+
         float oldXRot = player.getXRot();
+
         float oldHeadO = player.yHeadRotO;
+
         float oldHead = player.yHeadRot;
+
         boolean pushed = false;
+
         try {
+
             player.setInvisible(false);
+
             player.setPose(Pose.STANDING);
+
             player.stopUsingItem();
+
             player.setItemSlot(EquipmentSlot.MAINHAND, held == null ? ItemStack.EMPTY : held.copy());
+
             player.walkAnimation.setSpeed(0.0f);
+
             float turn = MvpStillPose.BODY_TURN_DEGREES;
+
             Quaternionf pose = new Quaternionf().rotateZ((float) Math.PI);
+
             Quaternionf camera = new Quaternionf().rotateX(-3.0f * Mth.DEG_TO_RAD);
+
             pose.mul(camera);
+
             player.yBodyRot = 180.0f + turn;
+
             player.setYRot(180.0f + turn);
+
             player.setXRot(0.0f);
+
             player.yHeadRot = player.getYRot();
+
             player.yHeadRotO = player.getYRot();
+
             float entityScale = player.getScale();
+
             float offset = player.getBbHeight() / 2.0f + 0.0625f * entityScale;
+
             float renderScale = scale / entityScale;
+
             g.pose().pushPose();
+
             pushed = true;
+
             g.pose().translate(0.0f, 0.0f, 150.0f);
+
             InventoryScreen.renderEntityInInventory(g, centerX, feetY - offset * renderScale, renderScale,
+
                     new Vector3f(0.0f, offset, 0.0f), pose, camera, player);
+
         } catch (Throwable ignored) {
+
             // 预览模型渲染失败不影响结算转场本身
+
         } finally {
+
             if (pushed) {
+
                 g.pose().popPose();
+
             }
+
             player.stopUsingItem();
+
             player.setItemSlot(EquipmentSlot.MAINHAND, oldMain);
+
             player.setPose(oldPose);
+
             player.setInvisible(oldInvisible);
+
             player.yBodyRot = oldBody;
+
             player.setYRot(oldYRot);
+
             player.setXRot(oldXRot);
+
             player.yHeadRotO = oldHeadO;
+
             player.yHeadRot = oldHead;
+
         }
+
     }
 
     // ==================== 票根 ====================
@@ -1023,12 +1098,15 @@ public final class GameEndTransitionScreen extends Screen {
                 RegistryAccess access = Minecraft.getInstance().level != null
                         ? Minecraft.getInstance().level.registryAccess()
                         : RegistryAccess.EMPTY;
-                MutableComponent parsed = Component.Serializer.fromJson(this.customTitleJson, (HolderLookup.Provider) access);
-                if (parsed != null && !parsed.getString().isBlank()) {
-                    return parsed;
+                if (!this.customTitleJson.equals(parsedTitleJson) || parsedTitleRegistry != access) {
+                    parsedTitleJson = this.customTitleJson;
+                    parsedTitleRegistry = access;
+                    parsedCustomTitle = null;
+                    parsedCustomTitle = Component.Serializer.fromJson(this.customTitleJson, (HolderLookup.Provider) access);
                 }
-            } catch (Throwable ignored) {
-                // 自定义标题解析失败时回落到 winnerId / 上游胜方文案
+                if (parsedCustomTitle != null && !parsedCustomTitle.getString().isBlank()) return parsedCustomTitle;
+            } catch (RuntimeException failure) {
+                com.habitrain.core.HabiTrainCore.LOGGER.warn("Invalid custom settlement title; using winner label", failure);
             }
         }
         if (customWin && !this.customWinnerId.isBlank()) {

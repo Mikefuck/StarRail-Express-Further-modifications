@@ -17,7 +17,7 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
     public RoleBookPatch {
         Objects.requireNonNull(op, "op");
         pages = List.copyOf(Objects.requireNonNull(pages, "pages"));
-        if (op != ListOp.REMOVE && pages.isEmpty()) {
+        if (pages.isEmpty() && op != ListOp.REPLACE_ALL) {
             throw new IllegalArgumentException("RoleBookPatch requires at least one page");
         }
     }
@@ -32,6 +32,10 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
 
     public static RoleBookPatch replaceAll(RoleBookPage... pages) {
         return new RoleBookPatch(ListOp.REPLACE_ALL, List.of(pages));
+    }
+
+    public static RoleBookPatch replaceMatchingTitles(RoleBookPage... pages) {
+        return new RoleBookPatch(ListOp.REPLACE_MATCHING_IDS, List.of(pages));
     }
 
     /**
@@ -57,15 +61,19 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
                         .toList();
             }
             case REPLACE_ALL -> List.copyOf(pages);
-            // 与 RoleSkillPatch 同语义：剔除命中项后追加全部 patch 页（review M14——
-            // 此前实现与 REPLACE_ALL 完全相同，会丢弃全部基线页）。
             case REPLACE_MATCHING_IDS -> {
-                Set<String> replace = titles(pages);
-                List<RoleBookPage> kept = baseline.stream()
-                        .filter(page -> !replace.contains(titleOf(page)))
-                        .toList();
-                List<RoleBookPage> next = new ArrayList<>(kept);
-                next.addAll(pages);
+                var replacements = new java.util.LinkedHashMap<String, RoleBookPage>();
+                for (RoleBookPage page : pages) {
+                    if (replacements.put(titleOf(page), page) != null) {
+                        throw new IllegalArgumentException("Duplicate replacement page title: " + titleOf(page));
+                    }
+                }
+                List<RoleBookPage> next = new ArrayList<>();
+                for (RoleBookPage page : baseline) {
+                    RoleBookPage replacement = replacements.remove(titleOf(page));
+                    next.add(replacement == null ? page : replacement);
+                }
+                next.addAll(replacements.values());
                 yield List.copyOf(next);
             }
         };
@@ -80,6 +88,8 @@ public record RoleBookPatch(ListOp op, List<RoleBookPage> pages) {
     }
 
     private static String titleOf(RoleBookPage page) {
-        return page.title() == null ? "" : page.title().getString();
+        // Component contents retain translation keys; getString() depends on
+        // the machine's current language and can collapse distinct keys.
+        return page.title().getContents().toString();
     }
 }

@@ -2,10 +2,16 @@ package com.habitrain.core.network;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 /**
- * Legacy source-compatible policy. Historical JSON content is always reevaluated;
- * request identity, revision conflicts and rate limits live in ConfigSubmissionService.
+ * Legacy duplicate-suppression helpers. The live protocol uses
+ * {@link ConfigSubmissionService}'s per-connection request/result cache, including
+ * exact request-content verification; these helpers are not an authorization gate.
+ *
+ * @deprecated Use the acknowledged submission protocol. Retained for binary compatibility.
  */
+@Deprecated(forRemoval = false)
 public final class ConfigUpdateAdmitPolicy {
 
     private ConfigUpdateAdmitPolicy() {}
@@ -16,13 +22,30 @@ public final class ConfigUpdateAdmitPolicy {
     }
 
     public static Result admit(
+            @Nullable String requestId,
+            @Nullable String lastRequestId,
+            long baseRevision,
+            long lastBaseRevision,
+            int payloadHash,
+            int lastPayloadHash) {
+        if (requestId != null && !requestId.isBlank() && requestId.equals(lastRequestId)) {
+            return Result.SKIP_DUPLICATE;
+        }
+        return Result.APPLY;
+    }
+
+    public static Result admit(
             String filteredJson,
             @Nullable String lastAppliedJson,
             long nowMs,
             long lastApplyMs,
             long cooldownMs) {
-        // Historical content is not request identity: A/X, B/Y, A/X is a valid restore.
-        // ConfigSubmissionService handles duplicate request IDs within each connection.
+        if (filteredJson == null || filteredJson.isBlank()) {
+            return Result.SKIP_DUPLICATE;
+        }
+        if (cooldownMs > 0 && nowMs == lastApplyMs && Objects.equals(filteredJson, lastAppliedJson)) {
+            return Result.SKIP_DUPLICATE;
+        }
         return Result.APPLY;
     }
 }

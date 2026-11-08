@@ -18,12 +18,23 @@ public enum Decision {
     DENY;
 
     /**
-     * Merges two decisions. {@code DENY} dominates, then {@code ALLOW}, then
-     * {@code PASS}. Used to fold the results of multiple hooks for one event.
+     * Merges two decisions where {@code DENY} dominates, then {@code ALLOW}, then
+     * {@code PASS}. Used for safety/veto decisions (e.g. death, packet validation,
+     * container open, game end).
      */
     public static Decision merge(Decision a, Decision b) {
         if (a == DENY || b == DENY) return DENY;
         if (a == ALLOW || b == ALLOW) return ALLOW;
+        return PASS;
+    }
+
+    /**
+     * Merges two decisions where {@code ALLOW} dominates over {@code DENY}, then
+     * {@code PASS}. Used when evaluating additive capability grants.
+     */
+    public static Decision mergeAllowWins(Decision a, Decision b) {
+        if (a == ALLOW || b == ALLOW) return ALLOW;
+        if (a == DENY || b == DENY) return DENY;
         return PASS;
     }
 }

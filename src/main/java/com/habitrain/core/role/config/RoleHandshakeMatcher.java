@@ -29,13 +29,11 @@ import java.util.Set;
  * hashes only open the RoleAction gate; they cannot grant a role. A missing
  * or blank client definition hash cannot open the RoleAction gate.
  *
- * <p>The stock core client echoes the definition hash from the latest
- * server-sent role snapshot once one has arrived, so the {@code HASH_MISMATCH}
- * branch <em>can</em> fire when the manifest hash and the snapshot hash
- * disagree. That is still not independent bilateral verification: the client
- * does not recompute the server's compiled entry view plus
- * {@code roleExtensionsV2} config. Do not advertise definition-hash gating as
- * closed independent verification.
+ * <p>The stock client independently hashes its registered static declarations.
+ * Enabled entries and conflict decisions follow the server's snapshot and do
+ * not enter this hash, so different local config files remain compatible.
+ * Executable handler implementations are represented by provider versions,
+ * not by this declarative fingerprint.
  */
 public final class RoleHandshakeMatcher {
 

@@ -34,10 +34,11 @@ public final class ScenePreloadCoordinator {
         return INSTANCE;
     }
 
-    private static final class PlayerProgress {
+    static final class PlayerProgress {
         final long totalBytes;
         final ConcurrentMap<String, Long> confirmedByHash = new ConcurrentHashMap<>();
         final Set<String> readyHashes = ConcurrentHashMap.newKeySet();
+        final Set<String> reportedHashes = ConcurrentHashMap.newKeySet();
         volatile long confirmedBytes;
         volatile boolean ready;
         volatile boolean failed;
@@ -45,6 +46,19 @@ public final class ScenePreloadCoordinator {
 
         PlayerProgress(long totalBytes) {
             this.totalBytes = Math.max(0L, totalBytes);
+        }
+
+        boolean acknowledge(String sha256, boolean success, Set<String> expectedHashes) {
+            if (sha256 == null) return false;
+            String hash = sha256.toLowerCase(java.util.Locale.ROOT);
+            if (!expectedHashes.contains(hash) || !reportedHashes.add(hash)) return false;
+            failed |= !success;
+            if (success) {
+                readyHashes.add(hash);
+                ready = readyHashes.containsAll(expectedHashes);
+                if (ready) confirmedBytes = totalBytes;
+            }
+            return true;
         }
     }
 
@@ -63,7 +77,8 @@ public final class ScenePreloadCoordinator {
             this.dimension = dimension;
             this.descriptorsByAssetKey = Map.copyOf(descriptorsByAssetKey);
             this.expectedHashes = descriptorsByAssetKey.values().stream()
-                    .map(SceneAssetDescriptor::sha256).collect(java.util.stream.Collectors.toUnmodifiableSet());
+                    .map(value -> value.sha256().toLowerCase(java.util.Locale.ROOT))
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
             this.totalBytes = descriptorsByAssetKey.values().stream()
                     .mapToLong(SceneAssetDescriptor::compressedSize).sum();
         }
@@ -78,7 +93,7 @@ public final class ScenePreloadCoordinator {
         if (level == null) return false;
         reset(level);
 
-        String normalizedMapKey = mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
+        String normalizedMapKey = mapKey == null || mapKey.isBlank() ? com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY : mapKey.trim();
         var settings = ConfigManager.getInstance().getSceneMotionSettings();
         Map<String, SceneAssetDescriptor> descriptors = new LinkedHashMap<>();
         if (settings.enabled) {
@@ -163,13 +178,9 @@ public final class ScenePreloadCoordinator {
         if (session == null || session.id != sessionId) return;
         PlayerProgress progress = session.players.get(player.getUUID());
         if (progress == null) return;
-        progress.failed = progress.failed || !success;
-        if (success) {
-            progress.readyHashes.add(sha256.toLowerCase(java.util.Locale.ROOT));
-            progress.ready = progress.readyHashes.containsAll(session.expectedHashes.stream()
-                    .map(hash -> hash.toLowerCase(java.util.Locale.ROOT)).toList());
-            if (progress.ready) progress.confirmedBytes = progress.totalBytes;
-        }
+        // Each enrolled asset has one terminal acknowledgement. Deduplication is bounded
+        // by the session's expected hashes and must not discard a different asset's reply.
+        if (!progress.acknowledge(sha256, success, session.expectedHashes)) return;
         LOGGER.info("[ScenePreload] client {} session={} player={} ready={} ({}/{})",
                 success ? "ready" : "failed", session.id, player.getGameProfile().getName(), success,
                 readyCount(session), session.players.size());
@@ -180,7 +191,7 @@ public final class ScenePreloadCoordinator {
         Session session = sessions.get(level.dimension());
         if (session == null || session.players.isEmpty()) return true;
         for (PlayerProgress progress : session.players.values()) {
-            if (!progress.ready) return false;
+            if (!progress.ready || progress.failed) return false;
         }
         return true;
     }

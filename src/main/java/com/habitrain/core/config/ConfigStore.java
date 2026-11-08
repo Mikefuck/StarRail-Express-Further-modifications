@@ -77,16 +77,28 @@ public class ConfigStore {
 
         AtomicJsonFiles.JsonLoad<JsonObject> loaded = AtomicJsonFiles.readJsonValidated(
                 configFile.toPath(), JsonObject.class, gson, root -> {
-                    ConfigValidation.validate(root);
-                    if (!new ConfigSync(this).loadFromJsonString(new ConfigRepository(), root.toString()))
-                        throw new IllegalArgumentException("配置 schema 无效");
+                    JsonObject check = root.deepCopy();
+                    RemovedModeConfigMigration.prune(check);
+                    check.remove("mvpAnimations");
+                    ConfigValidation.validateStructure(check);
                 });
         if (loaded.isMissing()) {
             createDefaultConfig(repo);
             save(repo);
             return;
         }
-        if (!loaded.ok()) {
+        JsonObject recoveredFields = null;
+        if ((loaded.usedBackup() || loaded.corrupt()) && loaded.quarantined() != null) {
+            // The quarantine is evidence, never rewritten. Recover valid fields over the valid backup.
+            try (Reader reader = Files.newBufferedReader(loaded.quarantined())) {
+                JsonObject damaged = gson.fromJson(reader, JsonObject.class);
+                if (damaged != null) recoveredFields = ConfigFieldRecovery.recover(damaged,
+                        loaded.ok() ? loaded.value() : null, LOGGER);
+            } catch (RuntimeException | IOException unreadableEvidence) {
+                LOGGER.warn("主配置无法按字段恢复，保留备份/默认候选: {}", unreadableEvidence.toString());
+            }
+        }
+        if (!loaded.ok() && recoveredFields == null) {
             LOGGER.error("加载任务配置失败：主文件与备份均不可读，重建默认配置");
             applyDefaults(repo);
             createDefaultConfig(repo);
@@ -95,7 +107,8 @@ public class ConfigStore {
         }
 
         try {
-            JsonObject root = loaded.value();
+            JsonObject root = recoveredFields != null ? recoveredFields : loaded.value();
+            dirty |= recoveredFields != null;
             dirty |= RemovedModeConfigMigration.prune(root);
             // 固定姿势不再使用旧动作配置；下次保存时清除历史字段。
             dirty |= root.remove("mvpAnimations") != null;
@@ -165,8 +178,13 @@ public class ConfigStore {
                 JsonObject tasks = root.getAsJsonObject("tasks");
                 Map<String, TaskConfigEntry> taskMap = repo.getMutableTaskConfigs();
                 for (var entry : tasks.entrySet()) {
-                    taskMap.put(entry.getKey(),
-                            TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
+                    try {
+                        if (!entry.getValue().isJsonObject()) throw new IllegalArgumentException("任务配置必须是对象");
+                        taskMap.put(entry.getKey(),
+                                TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
+                    } catch (RuntimeException ex) {
+                        LOGGER.warn("跳过无效的任务配置项 {}: {}", entry.getKey(), ex.getMessage());
+                    }
                 }
                 if (CoreConsumableTaskConfigMigration.migrate(taskMap)) {
                     dirty = true;
@@ -179,8 +197,13 @@ public class ConfigStore {
                 Map<String, GameModeConfigScope> modeMap = repo.getMutableGameModeConfigs();
                 modeMap.clear();
                 for (var entry : modes.entrySet()) {
-                    modeMap.put(entry.getKey(),
-                            GameModeConfigScope.fromJson(entry.getKey(), entry.getValue().getAsJsonObject()));
+                    try {
+                        if (!entry.getValue().isJsonObject()) throw new IllegalArgumentException("模式配置必须是对象");
+                        modeMap.put(entry.getKey(),
+                                GameModeConfigScope.fromJson(entry.getKey(), entry.getValue().getAsJsonObject()));
+                    } catch (RuntimeException ex) {
+                        LOGGER.warn("跳过无效的模式配置项 {}: {}", entry.getKey(), ex.getMessage());
+                    }
                 }
             }
 
@@ -194,26 +217,47 @@ public class ConfigStore {
                 if (mg.has("entries")) {
                     JsonObject entries = mg.getAsJsonObject("entries");
                     for (var e : entries.entrySet()) {
-                        mgMap.put(e.getKey(),
-                                MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
+                        try {
+                            if (!e.getValue().isJsonObject()) throw new IllegalArgumentException("小游戏配置必须是对象");
+                            mgMap.put(e.getKey(),
+                                    MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
+                        } catch (RuntimeException ex) {
+                            LOGGER.warn("跳过无效的小游戏配置项 {}: {}", e.getKey(), ex.getMessage());
+                        }
                     }
                 }
             }
 
             if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
-                repo.setModeMapVote(ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote")));
+                try {
+                    repo.setModeMapVote(ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote")));
+                } catch (RuntimeException ex) {
+                    LOGGER.warn("modeMapVote 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                    repo.setModeMapVote(ModeMapVoteSettings.createDefault());
+                }
             } else {
                 repo.setModeMapVote(ModeMapVoteSettings.createDefault());
             }
 
             if (root.has("environment") && root.get("environment").isJsonObject()) {
-                repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
+                try {
+                    repo.setEnvironment(EnvironmentSettings.fromJson(root.getAsJsonObject("environment")));
+                } catch (RuntimeException ex) {
+                    LOGGER.warn("environment 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                    repo.setEnvironment(EnvironmentSettings.createDefault());
+                }
             } else {
                 repo.setEnvironment(EnvironmentSettings.createDefault());
             }
 
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
-                repo.setSceneMotion(SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion")));
+                try {
+                    com.habitrain.core.network.ConfigUpdateAccessPolicy.validateSceneMotion(root.getAsJsonObject("sceneMotion"));
+                    repo.setSceneMotion(SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion")));
+                } catch (RuntimeException ex) {
+                    LOGGER.warn("sceneMotion 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                    repo.setSceneMotion(SceneMotionSettings.createDefault());
+                }
             } else {
                 repo.setSceneMotion(SceneMotionSettings.createDefault());
             }
@@ -222,9 +266,9 @@ public class ConfigStore {
                     repo.getMutableTaskConfigs().size(),
                     repo.getMutableGameModeConfigs().size(),
                     repo.getMutableMinigameConfigs().size());
-            if (loaded.usedBackup()) {
+            if (loaded.usedBackup() || recoveredFields != null) {
                 if (save(repo, false)) {
-                    LOGGER.warn("主配置损坏或缺失，已从 .bak 恢复");
+                    LOGGER.warn("主配置损坏或缺失，已从备份/合法字段恢复");
                 } else {
                     LOGGER.error("已从 .bak 加载主配置，但恢复主文件失败");
                 }
@@ -291,7 +335,8 @@ public class ConfigStore {
 
             JsonObject root = buildJsonRoot(repo, true);
             ConfigValidation.validate(root);
-            return AtomicJsonFiles.writeJson(configFile.toPath(), root, gson, true, backup);
+            return AtomicJsonFiles.writeJsonValidated(configFile.toPath(), root, gson, true, backup,
+                    primary -> ConfigValidation.validateStructure(primary.getAsJsonObject()));
         } catch (Exception e) {
             // 同时捕获 IOException 与 buildJsonRoot 抛出的 RuntimeException，
             // 避免非 IO 异常传出后 commit 已清 dirty 导致改动永久丢失。

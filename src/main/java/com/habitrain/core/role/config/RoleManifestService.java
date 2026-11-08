@@ -43,7 +43,35 @@ public final class RoleManifestService {
      */
     public static final Set<String> EXPERIMENTAL_CAPABILITIES = Set.of("client_hud_visual");
 
+    private static volatile @org.jetbrains.annotations.Nullable RoleManifest roundManifest;
+
+    /**
+     * Captures the active round's manifest before a mid-round config change
+     * mutates the live config/compiled entries, so players who join mid-round
+     * receive the manifest matching the active round snapshot.
+     */
+    public static void freezeRoundManifestIfNeeded() {
+        if ((RoleSnapshotManager.INSTANCE.round() != null || RoleSnapshotManager.INSTANCE.lastEnded() != null)
+                && roundManifest == null) {
+            roundManifest = buildLive();
+        }
+    }
+
+    public static void clearRoundManifest() {
+        roundManifest = null;
+    }
+
     public static RoleManifest build() {
+        if (RoleSnapshotManager.INSTANCE.round() != null || RoleSnapshotManager.INSTANCE.lastEnded() != null) {
+            RoleManifest frozen = roundManifest;
+            if (frozen != null) {
+                return frozen;
+            }
+        }
+        return buildLive();
+    }
+
+    private static RoleManifest buildLive() {
         String coreApi = RoleExtensionApi.instance().apiVersion();
         List<RoleProviderManifest> providers = providers();
         RoleSnapshot lobbySnap = RoleSnapshotManager.INSTANCE.lobby();

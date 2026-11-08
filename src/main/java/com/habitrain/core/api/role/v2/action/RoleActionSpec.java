@@ -10,13 +10,12 @@ import java.util.Objects;
  * Schema for one namespaced role action (design §16.2).
  *
  * <p>Providers register a spec during the registration phase. Core owns the
- * multiplex payload, size/rate/cooldown gates and server-thread dispatch.
- * Distance / line-of-sight / item checks are declared here so later
- * increments can honour them; this cut enforces size, rate, cooldown,
- * direction, current-role and (optional) alive.
+ * multiplex payload, size/rate/cooldown gates, target decoding, distance /
+ * line-of-sight / target-alive checks, and server-thread dispatch.
  */
 public final class RoleActionSpec {
 
+    public static final int MAX_PAYLOAD_BYTES = 65_536;
     private final ResourceLocation id;
     private final RoleKey role;
     private final RoleActionDirection direction;
@@ -48,12 +47,22 @@ public final class RoleActionSpec {
     }
 
     public static Builder of(String namespace, String path) {
+        return builder(namespace, path);
+    }
+
+    /** Creates a mutable builder; call {@link Builder#build()} to obtain the immutable spec. */
+    public static Builder builder(String namespace, String path) {
         Objects.requireNonNull(namespace, "namespace");
         Objects.requireNonNull(path, "path");
         return new Builder().id(ResourceLocation.fromNamespaceAndPath(namespace, path));
     }
 
     public static Builder of(ResourceLocation id) {
+        return builder(id);
+    }
+
+    /** Creates a mutable builder. {@code of} remains an equivalent compatibility alias. */
+    public static Builder builder(ResourceLocation id) {
         return new Builder().id(id);
     }
 
@@ -185,6 +194,7 @@ public final class RoleActionSpec {
         }
 
         public RoleActionSpec build() {
+            if (maxBytes > MAX_PAYLOAD_BYTES) throw new IllegalStateException("Role action exceeds wire byte budget: " + maxBytes);
             if (id == null) {
                 throw new IllegalStateException("RoleActionSpec requires an id");
             }
@@ -194,18 +204,25 @@ public final class RoleActionSpec {
             if (direction != RoleActionDirection.S2C && handler == null) {
                 throw new IllegalStateException("C2S/BIDIRECTIONAL RoleActionSpec requires a handler");
             }
-            if ((requireLineOfSight || requireTargetAlive)
-                    && targetDecoder != ActionTargetCodec.PLAYER_UUID) {
+            if (requireTargetAlive && targetDecoder != ActionTargetCodec.PLAYER_UUID) {
                 throw new IllegalStateException(
-                        "RoleActionSpec " + id + " uses line-of-sight/target-alive but declares targetDecoder "
-                                + targetDecoder + "; only PLAYER_UUID targets may use those checks");
+                        "RoleActionSpec " + id + " uses requireTargetAlive but declares targetDecoder "
+                                + targetDecoder + "; only PLAYER_UUID targets may use requireTargetAlive");
+            }
+            if (requireLineOfSight
+                    && targetDecoder != ActionTargetCodec.PLAYER_UUID
+                    && targetDecoder != ActionTargetCodec.ENTITY_ID) {
+                throw new IllegalStateException(
+                        "RoleActionSpec " + id + " uses line-of-sight but declares targetDecoder "
+                                + targetDecoder + "; only PLAYER_UUID and ENTITY_ID targets may use line-of-sight");
             }
             if (maxDistance > 0
                     && targetDecoder != ActionTargetCodec.PLAYER_UUID
-                    && targetDecoder != ActionTargetCodec.BLOCK_POS) {
+                    && targetDecoder != ActionTargetCodec.BLOCK_POS
+                    && targetDecoder != ActionTargetCodec.ENTITY_ID) {
                 throw new IllegalStateException(
                         "RoleActionSpec " + id + " uses maxDistance but declares targetDecoder "
-                                + targetDecoder + "; only PLAYER_UUID and BLOCK_POS targets may use distance");
+                                + targetDecoder + "; only PLAYER_UUID, BLOCK_POS and ENTITY_ID targets may use distance");
             }
             return new RoleActionSpec(this);
         }

@@ -1,5 +1,5 @@
 {
-    "required": false,
+    "required": true,
     "package": "com.habitrain.core.client.mixin",
     "compatibilityLevel": "JAVA_21",
     "plugin": "com.habitrain.core.mixin.HabiMixinPlugin",
@@ -28,7 +28,6 @@
         "MimeBodyHideMixin",
         "UnifiedSkillHudReadyShiftMixin",
         "SlothScreenLockMixin",
-        "ScreenWidgetAccessor",
         "SlothBackpackSleepMixin",
         "LustBackpackMixin",
         "TaskSettingsMenuEntriesMixin",
@@ -44,7 +43,7 @@
         "VoteLaunchAmbientSoundBlockMixin",
         "LobbyPlayersHudYieldMixin",
         "RepairAmbientLoopMixin",
-        "MapIntroSyncPayloadMixin",
+        "MapIntroReceiveMixin",
         "MapIntroduceScreenMixin",
         "StarRailLoadingOverlayMixin",
         "SREReceivingLevelScreenMixin",

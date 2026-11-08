@@ -1,7 +1,6 @@
 package com.habitrain.core.api.role.v2.action;
 
 import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -17,9 +16,11 @@ import java.util.function.Consumer;
  * are delivered separately through push listeners. {@code payload} handed to
  * callbacks is a defensive copy.
  *
- * <p>Client-only; dedicated servers never load this type.
+ * <p>Kept free of {@code @Environment(EnvType.CLIENT)} on the interface declaration
+ * so dedicated servers can class-load common references safely without
+ * {@code NoClassDefFoundError} (ROLE-API-04); runtime calls on a dedicated server
+ * fail fast in {@link #instance()}.
  */
-@Environment(EnvType.CLIENT)
 public interface RoleActionClientApi {
 
     /**
@@ -30,18 +31,22 @@ public interface RoleActionClientApi {
         EnvType env = null;
         try {
             env = FabricLoader.getInstance().getEnvironmentType();
-        } catch (Throwable ignored) {
+        } catch (RuntimeException ignored) {
             // JUnit / unloaded Fabric still resolves through the SPI bridge.
         }
         if (env != null && env != EnvType.CLIENT) {
             throw new IllegalStateException(
                     "RoleActionClientApi.instance() may only be called from ClientModInitializer or other client-side code");
         }
-        // 审核 A2：旧实现用 Class.forName 直接解析 client.role.RoleActionClientSession，
-        // 既依赖实现包又绕过 SPI。现在由客户端入口通过 RoleSpi 装配。
-        com.habitrain.core.api.spi.RoleSpi.RoleActionClientBridge bridge =
-                com.habitrain.core.api.spi.RoleSpi.actionClientOrNull();
-        Object session = bridge != null ? bridge.session() : null;
+        // 审核 A2 / X-CUT-11：通过 RoleSpi 获取客户端会话，并保留底层异常作为 cause。
+        final Object session;
+        try {
+            com.habitrain.core.api.spi.RoleSpi.RoleActionClientBridge bridge =
+                    com.habitrain.core.api.spi.RoleSpi.actionClientOrNull();
+            session = bridge != null ? bridge.session() : null;
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to resolve RoleActionClientApi client session", e);
+        }
         if (session instanceof RoleActionClientApi api) {
             return api;
         }

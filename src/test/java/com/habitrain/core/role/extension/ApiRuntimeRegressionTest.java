@@ -117,6 +117,28 @@ class ApiRuntimeRegressionTest {
         assertTrue(sword.isEmpty());
     }
 
+    @Test void cancellationPreservesOtherOwnersAndEarlierAssignmentRewards() throws Exception {
+        Player owner = player();
+        Player other = player();
+        var definition = new TaskDefinition.Builder(PROVIDER, "scoped_gift").build();
+        var previous = new TaskInstance(definition);
+        var current = new TaskInstance(definition);
+        var oldReward = ItemReclaimHelper.tagGrantedItem(new ItemStack(Items.DIAMOND), owner, previous);
+        var otherReward = ItemReclaimHelper.tagGrantedItem(new ItemStack(Items.EMERALD), other, current);
+        var currentGrant = ItemReclaimHelper.tagGrantedItem(new ItemStack(Items.IRON_SWORD), owner, current);
+        owner.getInventory().items.set(0, oldReward);
+        owner.getInventory().items.set(1, otherReward);
+        owner.getInventory().items.set(2, currentGrant);
+
+        ItemReclaimHelper.reclaimForTask(owner, current);
+
+        assertFalse(oldReward.isEmpty());
+        assertFalse(otherReward.isEmpty());
+        assertTrue(currentGrant.isEmpty());
+        assertNotEquals(previous.getInstanceId(), current.getInstanceId());
+        assertEquals(current.getInstanceId(), current.toNbt().getUUID("instanceId"));
+    }
+
     @ParameterizedTest @ValueSource(strings = {"cancel", "fail", "timeout", "reconnect"})
     void taskRemovalPathsReclaimAfterProviderThrows(String path) throws Exception {
         Player player = player();
@@ -178,6 +200,32 @@ class ApiRuntimeRegressionTest {
         ItemStack item = ItemReclaimHelper.tagGrantedItem(new ItemStack(Items.DIAMOND_SWORD), task.getFullId());
         player.getInventory().items.set(0, item);
         return item;
+    }
+
+    @Test void handshakeFingerprintDetectsItemTypeCountAndComponents() throws Exception {
+        ItemStack plain = new ItemStack(Items.DIAMOND, 2);
+        ItemStack renamed = plain.copy();
+        renamed.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                net.minecraft.network.chat.Component.literal("different template"));
+        assertNotEquals(definitionHash(plain), definitionHash(new ItemStack(Items.EMERALD, 2)));
+        assertNotEquals(definitionHash(plain), definitionHash(new ItemStack(Items.DIAMOND, 3)));
+        assertNotEquals(definitionHash(plain), definitionHash(renamed));
+        assertEquals(definitionHash(renamed), definitionHash(renamed.copy()));
+    }
+
+    private static String definitionHash(ItemStack item) throws Exception {
+        var key = RoleKey.of("audit_provider", "hash_template");
+        var definition = com.habitrain.core.api.role.v2.definition.RoleDefinition.builder(key)
+                .presentation(com.habitrain.core.api.role.v2.definition.RolePresentation.builder().build())
+                .faction(com.habitrain.core.api.role.v2.definition.RoleFactionProfile.builder().innocent().build())
+                .spawn(com.habitrain.core.api.role.v2.definition.RoleSpawnProfile.builder().build())
+                .compatibility(com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile.builder().build())
+                .inventory(com.habitrain.core.api.role.v2.definition.RoleInventoryProfile.builder().item(item).build())
+                .maxSprintTime(20).build();
+        var managedField = RoleExtensionRegistry.class.getDeclaredField("managedRoles");
+        managedField.setAccessible(true);
+        managedField.set(RoleExtensionRegistry.INSTANCE, new LinkedHashMap<>(Map.of(key.location(), ManagedSRERole.from(definition))));
+        return com.habitrain.core.role.config.RoleManifestHashes.definitionHash();
     }
     private static Player player() throws Exception {
         var player = allocate(net.minecraft.client.player.RemotePlayer.class);

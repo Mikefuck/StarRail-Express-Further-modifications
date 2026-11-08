@@ -9,7 +9,7 @@ import com.habitrain.core.client.gui.menu.ConfigUpdateContext;
 import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.render.GameRunningCache;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
+import com.habitrain.core.client.cache.ClientTaskBlockCache;
 import io.wifi.starrailexpress.event.client.OnGameFinishedClient;
 import io.wifi.starrailexpress.event.client.OnGameStartedClient;
 import net.fabricmc.api.EnvType;
@@ -27,17 +27,39 @@ import net.minecraft.client.Minecraft;
 @Environment(EnvType.CLIENT)
 public class ClientLifecycleHandler {
 
+    /** Netty disconnect cleanup is also drained by the render-thread tick. */
+    private final java.util.concurrent.atomic.AtomicReference<Runnable> pendingDisconnectCleanup =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
 
     public ClientLifecycleHandler(ShaderMonitor shaderMonitor) {
+
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            MapVotePreviewCache.shutdown();
+            com.habitrain.core.client.render.CustomTitlePanoramaRenderer.release();
+            com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().reset();
+            com.habitrain.core.scene.client.SceneBuildScheduler.getInstance().reset();
+        });
+
+        // INIT precedes play snapshots. JOIN may arrive after the first payloads.
+        ClientPlayConnectionEvents.INIT.register((handler, client) -> {
+            ClientConnectionSession.begin(handler);
+            pendingDisconnectCleanup.set(null);
+            Runnable initialize = () -> {
+                if (!ClientConnectionSession.isCurrent(handler)) return;
+                ConfigManager.getInstance().markClientConnected();
+                resetState(true, false, false, true);
+            };
+            if (client.isSameThread()) initialize.run(); else client.execute(initialize);
+        });
 
         // 玩家加入服务器 → 清除上一局残留的 HUD 状态 + 报告当前光影包 + 启动监测
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             client.execute(() -> {
-                ConfigManager.getInstance().markClientConnected();
-                boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
-                // JOIN 不清 ESP 扫描表 / ActiveTask：服务端会发 snapshot，clear 会与其竞态，
-                // 并且单机上会把集成服刚扫好的共享 CustomTaskBlockCache 一并清掉。
-                resetState(ClientSessionResetPolicy.clearEspCachesOnJoin(integratedHost), false);
+                if (!ClientConnectionSession.isCurrent(handler)
+                        || client.getConnection() != handler || !handler.getConnection().isConnected()) return;
+                com.habitrain.core.client.render.CustomTitlePanoramaRenderer.release();
+                // INIT 已清理上一连接；JOIN 保留刚到达的服务端 snapshot、握手与场景状态。
                 // 结束转场覆盖层独立于 resetState()（后者在 OnGameFinishedClient 当帧被调用），
                 // 换世界/断线时在此显式释放，避免黑场屏蔽残留。
                 com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
@@ -47,17 +69,29 @@ public class ClientLifecycleHandler {
 
         // 玩家断开连接 → 停止光影监测 + 重置 HUD
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (!ClientConnectionSession.disconnect(handler)) return;
             shaderMonitor.stop();
-            ConfigManager.getInstance().clearClientSession();
-            boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
-            resetState(ClientSessionResetPolicy.clearEspCachesOnDisconnect(integratedHost),
-                    ClientSessionResetPolicy.reloadLocalConfigOnDisconnect(integratedHost));
-            com.habitrain.core.scene.client.SceneProjectionDiagnostics.reset();
-            com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
+            Runnable cleanup = () -> {
+                if (!ClientConnectionSession.isDisconnected()) return;
+                ConfigManager.getInstance().clearClientSession();
+                boolean integratedHost = Minecraft.getInstance().getSingleplayerServer() != null;
+                resetState(ClientSessionResetPolicy.clearEspCachesOnDisconnect(integratedHost),
+                        ClientSessionResetPolicy.reloadLocalConfigOnDisconnect(integratedHost),
+                        false,
+                        true);
+                com.habitrain.core.scene.client.SceneProjectionDiagnostics.reset();
+                com.habitrain.core.client.gui.GameEndOverlayState.scheduleGrace(0L);
+            };
+            pendingDisconnectCleanup.set(cleanup);
+            if (client.isSameThread()) drainDisconnectCleanup();
+            else client.execute(this::drainDisconnectCleanup);
         });
 
         // 客户端 tick：场景视距提示（独立于光影监测）
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            drainDisconnectCleanup();
+            MapVotePreviewCache.tick();
+            com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance().tick(client);
             com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().tick(client);
         });
 
@@ -67,7 +101,9 @@ public class ClientLifecycleHandler {
         // 必须先 markGameFinished() 再 resetState()：resetState() 只清开局转场覆盖层，
         // 结束转场的覆盖层必须保留到滑出完成（fade-block 持续屏蔽 SRE 黑场淡出）。
         OnGameFinishedClient.EVENT.register(() -> {
+            var expected = Minecraft.getInstance().getConnection();
             Minecraft.getInstance().execute(() -> {
+                if (expected == null || !ClientConnectionSession.isCurrent(expected)) return;
                 if (Minecraft.getInstance().screen
                         instanceof com.habitrain.core.client.gui.GameEndTransitionScreen transition) {
                     transition.markGameFinished();
@@ -93,11 +129,20 @@ public class ClientLifecycleHandler {
         });
     }
 
+    private void drainDisconnectCleanup() {
+        Runnable cleanup = pendingDisconnectCleanup.getAndSet(null);
+        if (cleanup != null) cleanup.run();
+    }
+
     private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig) {
-        resetState(clearEspCaches, reloadLocalConfig, false);
+        resetState(clearEspCaches, reloadLocalConfig, false, false);
     }
 
     private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig, boolean matchFinished) {
+        resetState(clearEspCaches, reloadLocalConfig, matchFinished, false);
+    }
+
+    private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig, boolean matchFinished, boolean clearMapCaches) {
         GameRunningCache.invalidate();
         ConfigUpdateContext.reset();
         RepairModeClientState.reset();
@@ -107,11 +152,13 @@ public class ClientLifecycleHandler {
         OptionVoteState.clear();
         VoteLaunchSession.clear();
         com.habitrain.core.client.gui.MapResetProgressHud.reset();
-        MapVotePreviewCache.clearAll();
-        ClientMapIntroCache.clear();
+        if (clearMapCaches) {
+            MapVotePreviewCache.clearAll();
+            ClientMapIntroCache.clear();
+        }
         if (clearEspCaches) {
             ActiveTaskCache.clear();
-            CustomTaskBlockCache.clear();
+            ClientTaskBlockCache.clear();
         }
         if (reloadLocalConfig) {
             ConfigManager.getInstance().load();
@@ -125,7 +172,9 @@ public class ClientLifecycleHandler {
             com.habitrain.core.client.role.RoleStateClientCache.clear();
             com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.reset();
             com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.reset();
+            com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance().reset();
         }
+        com.habitrain.core.client.role.RoleNameRenderHelper.clearCache();
         com.habitrain.core.client.role.RoleActionClientSession.INSTANCE.clear();
         com.habitrain.core.client.role.RoleActionClientState.clear();
         // 角色扩展握手/快照在断线时清空，避免把上一服务器的 manifest 带入下一服务器。

@@ -34,6 +34,8 @@ public final class ConfigPatch {
     }
     public static boolean empty(JsonObject patch) { return patch.getAsJsonObject("set").size() == 0 && patch.getAsJsonArray("remove").isEmpty(); }
     public static JsonObject apply(JsonObject current, JsonObject patch, ConfigUpdateScope scope, String sceneMap) {
+        JsonInputLimits.check(current);
+        JsonInputLimits.check(patch);
         JsonObject result = current.deepCopy();
         if (!patch.has("set") || !patch.get("set").isJsonObject() || !patch.has("remove") || !patch.get("remove").isJsonArray())
             throw new IllegalArgumentException("patch 必须包含 set 对象与 remove 数组");
@@ -44,6 +46,7 @@ public final class ConfigPatch {
         return result;
     }
     public static JsonObject filtered(JsonObject patch, ConfigUpdateScope scope, String sceneMap) {
+        JsonInputLimits.check(patch);
         JsonObject result = new JsonObject(); JsonObject set = new JsonObject(); JsonArray remove = new JsonArray();
         patch.getAsJsonObject("set").entrySet().forEach(entry -> { if (permitted(entry.getKey(), scope, sceneMap)) set.add(entry.getKey(), entry.getValue().deepCopy()); });
         patch.getAsJsonArray("remove").forEach(entry -> { if (permitted(entry.getAsString(), scope, sceneMap)) remove.add(entry.deepCopy()); });
@@ -55,7 +58,7 @@ public final class ConfigPatch {
     private static List<String> path(String value, ConfigUpdateScope scope, String map) {
         if (value == null || !value.startsWith("/") || value.length() > 4096) throw new IllegalArgumentException("无效修改路径");
         List<String> parts = Arrays.stream(value.substring(1).split("/", -1)).map(s -> s.replace("~1", "/").replace("~0", "~")).toList();
-        if (parts.isEmpty() || !SECTIONS.contains(parts.getFirst())) throw new IllegalArgumentException("不允许修改此配置字段");
+        if (parts.isEmpty() || parts.size() > 16 || !SECTIONS.contains(parts.getFirst())) throw new IllegalArgumentException("不允许修改此配置字段");
         boolean allowed = switch (scope) {
             case FULL_MOD_MENU -> true;
             case BACKPACK_TASKS -> parts.getFirst().equals("tasks");

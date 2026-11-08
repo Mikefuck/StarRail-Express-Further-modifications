@@ -29,6 +29,10 @@ public final class RoleStateClientCache {
 
     private static final Map<SlotRef, RoleStateSyncPayload> latest = new ConcurrentHashMap<>();
     private static final Map<SlotRef, RoleStateSyncPayload> staging = new ConcurrentHashMap<>();
+    /** Includes removals, so an older value cannot resurrect a deleted slot. */
+    private static final Map<SlotRef, Long> revisions = new ConcurrentHashMap<>();
+    private static volatile long completedRevision;
+    private static volatile long snapshotBeginRevision;
     private static volatile long lastCompletedSnapshotId;
     private static volatile long snapshotId;
     private static volatile boolean snapshotInProgress;
@@ -52,19 +56,28 @@ public final class RoleStateClientCache {
             return;
         }
         if (payload.snapshotBegin()) {
-            if (payload.snapshotId() <= lastCompletedSnapshotId) {
+            if (payload.snapshotId() <= lastCompletedSnapshotId
+                    || (snapshotInProgress && payload.snapshotId() <= snapshotId)
+                    || payload.revision() <= completedRevision) {
                 return;
             }
             staging.clear();
             snapshotId = payload.snapshotId();
+            snapshotBeginRevision = payload.revision();
             snapshotInProgress = true;
             return;
         }
         if (payload.snapshotEnd()) {
-            if (snapshotInProgress && payload.snapshotId() == snapshotId) {
-                latest.clear();
-                latest.putAll(staging);
+            if (snapshotInProgress && payload.snapshotId() == snapshotId
+                    && payload.revision() >= snapshotBeginRevision) {
+                latest.entrySet().removeIf(entry -> !staging.containsKey(entry.getKey())
+                        && entry.getValue().revision() <= snapshotBeginRevision);
+                for (Map.Entry<SlotRef, RoleStateSyncPayload> entry : staging.entrySet()) {
+                    applyValue(entry.getKey(), entry.getValue());
+                }
                 staging.clear();
+                completedRevision = Math.max(completedRevision, payload.revision());
+                revisions.entrySet().removeIf(entry -> entry.getValue() <= completedRevision);
                 lastCompletedSnapshotId = snapshotId;
                 snapshotInProgress = false;
             }
@@ -76,24 +89,30 @@ public final class RoleStateClientCache {
             }
             SlotRef ref = new SlotRef(payload.id(), payload.role(), payload.scope(),
                     payload.worldKey(), payload.ownerPlayerId());
-            if (payload.removed()) {
-                staging.remove(ref);
-            } else {
-                staging.put(ref, payload);
-            }
+            staging.compute(ref, (k, existing) ->
+                    existing == null || payload.revision() > existing.revision() ? payload : existing);
             return;
         }
-        // Ordinary incremental payload: apply to the committed cache and cancel
-        // any in-progress staging so a later end cannot overwrite newer data.
-        snapshotInProgress = false;
-        staging.clear();
+        // Ordinary incremental payload: apply to the committed cache with monotonic revision guard.
         SlotRef ref = new SlotRef(payload.id(), payload.role(), payload.scope(),
                 payload.worldKey(), payload.ownerPlayerId());
-        if (payload.removed()) {
-            latest.remove(ref);
-        } else {
-            latest.put(ref, payload);
+        if (!applyValue(ref, payload)) {
+            return;
         }
+        if (snapshotInProgress) {
+            staging.compute(ref, (k, existing) ->
+                    existing == null || payload.revision() > existing.revision() ? payload : existing);
+        }
+    }
+
+    private static boolean applyValue(SlotRef ref, RoleStateSyncPayload payload) {
+        if (payload.revision() <= Math.max(completedRevision, revisions.getOrDefault(ref, 0L))) {
+            return false;
+        }
+        revisions.put(ref, payload.revision());
+        if (payload.removed()) latest.remove(ref);
+        else latest.put(ref, payload);
+        return true;
     }
 
     /** Precise lookup for one full slot key (id/role/scope/world/owner). */
@@ -139,6 +158,9 @@ public final class RoleStateClientCache {
     public static void clear() {
         latest.clear();
         staging.clear();
+        revisions.clear();
+        completedRevision = 0;
+        snapshotBeginRevision = 0;
         lastCompletedSnapshotId = 0;
         snapshotId = 0;
         snapshotInProgress = false;

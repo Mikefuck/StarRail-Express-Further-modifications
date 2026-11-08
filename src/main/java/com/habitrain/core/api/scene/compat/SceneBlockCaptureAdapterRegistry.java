@@ -60,7 +60,7 @@ public final class SceneBlockCaptureAdapterRegistry {
         return Collections.unmodifiableList(adapters);
     }
 
-    public void clear() {
+    public synchronized void clear() {
         adapters.clear();
     }
 }

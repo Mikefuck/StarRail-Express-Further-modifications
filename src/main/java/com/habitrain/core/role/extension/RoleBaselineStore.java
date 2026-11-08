@@ -54,7 +54,7 @@ public final class RoleBaselineStore {
      * the target plus every resolved counterpart that the relation profile can
      * touch, once per object, and {@link #restoreAll} restores all of them.
      */
-    public static void captureRelationGraph(SRERole self, RoleRelationProfile profile,
+    public static synchronized void captureRelationGraph(SRERole self, RoleRelationProfile profile,
                                             Function<RoleKey, SRERole> resolve) {
         if (self == null || profile == null) {
             return;
@@ -83,7 +83,7 @@ public final class RoleBaselineStore {
         }
     }
 
-    private static void captureRelation(SRERole role) {
+    private static synchronized void captureRelation(SRERole role) {
         if (role == null || RELATION_SNAPSHOTS.containsKey(role)) {
             return;
         }
@@ -94,7 +94,7 @@ public final class RoleBaselineStore {
                 new HashSet<>(role.relatedRoles)));
     }
 
-    private static void restoreRelations() {
+    private static synchronized void restoreRelations() {
         for (var e : RELATION_SNAPSHOTS.entrySet()) {
             SRERole role = e.getKey();
             RelationSnapshot snap = e.getValue();
@@ -117,7 +117,7 @@ public final class RoleBaselineStore {
      * values, which is what makes compile → activate → compile free of
      * patch accumulation.
      */
-    public static RoleBaseline getOrCapture(SRERole role) {
+    public static synchronized RoleBaseline getOrCapture(SRERole role) {
         return getOrCapture(role, skillBackend());
     }
 
@@ -126,7 +126,7 @@ public final class RoleBaselineStore {
      * Called before the first v2 overlay activation (snapshot compile entry),
      * so a role that is mutated later always has an immutable baseline.
      */
-    public static void captureAll(Collection<? extends SRERole> roles) {
+    public static synchronized void captureAll(Collection<? extends SRERole> roles) {
         if (roles == null) {
             return;
         }
@@ -142,7 +142,7 @@ public final class RoleBaselineStore {
      * {@code skillBackend} reads the unified skill table; a failure there (e.g.
      * an un-bootstrapped unit-test JVM) degrades to an empty skill snapshot.
      */
-    public static RoleBaseline getOrCapture(SRERole role, RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
+    public static synchronized RoleBaseline getOrCapture(SRERole role, RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
         RoleBaseline existing = BASELINES.get(role);
         if (existing != null) {
             return existing;
@@ -193,20 +193,35 @@ public final class RoleBaselineStore {
     }
 
     /** The captured baseline, or {@code null} if this object was never captured. */
-    public static RoleBaseline baseline(SRERole role) {
+    public static synchronized RoleBaseline baseline(SRERole role) {
         return BASELINES.get(role);
     }
 
     /** Restores the baseline values onto the object and keeps the baseline for reuse. */
-    public static void restore(SRERole role, RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
+    public static synchronized void restore(SRERole role, RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
         RoleBaseline baseline = BASELINES.get(role);
         if (baseline == null || role != baseline.role()) {
             return;
         }
+        if (role.defaultMaxCount != baseline.defaultMaxCount()) {
+            role.setDefaultMax(baseline.defaultMaxCount());
+        }
         role.defaultMaxCount = baseline.defaultMaxCount();
+        if (role.defaultEnableChance != baseline.defaultEnableChance()) {
+            role.setDefaultEnableChance(baseline.defaultEnableChance());
+        }
         role.defaultEnableChance = baseline.defaultEnableChance();
+        if (role.defaultEnableNeedPlayerCount != baseline.defaultEnableNeedPlayerCount()) {
+            role.setDefaultEnableNeededPlayerCount(baseline.defaultEnableNeedPlayerCount());
+        }
         role.defaultEnableNeedPlayerCount = baseline.defaultEnableNeedPlayerCount();
+        if (role.defaultEnableMaxPlayerCount != baseline.defaultEnableMaxPlayerCount()) {
+            role.setDefaultEnableMaxPlayerCount(baseline.defaultEnableMaxPlayerCount());
+        }
         role.defaultEnableMaxPlayerCount = baseline.defaultEnableMaxPlayerCount();
+        // The default fields and the configured SpawnInfo are independent.
+        // Upstream setters mutate both, so restore the configured values last.
+        role.spawnInfo = baseline.spawnInfo();
         role.setColor(baseline.color());
         role.setMoodType(baseline.mood());
         role.setInnocent(baseline.innocent());
@@ -248,7 +263,7 @@ public final class RoleBaselineStore {
     }
 
     /** Restores every captured object, keeping the baselines for later re-activation. */
-    public static void restoreAll(RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
+    public static synchronized void restoreAll(RoleRuntimeOverlayApplier.SkillBackend skillBackend) {
         for (SRERole role : new ArrayList<>(BASELINES.keySet())) {
             restore(role, skillBackend);
         }
@@ -256,7 +271,7 @@ public final class RoleBaselineStore {
     }
 
     /** Drops every captured baseline and restores the runtime skill backend (server stop, test isolation). */
-    public static void clear() {
+    public static synchronized void clear() {
         BASELINES.clear();
         RELATION_SNAPSHOTS.clear();
         skillBackendOverride = null;

@@ -22,6 +22,8 @@ final class ScenePacketIo {
      * 128 个字符在 UTF-8 下最多占 512 字节，旧值 32767 远宽于校验上限。
      */
     static final int MAX_ID_BYTES = 512;
+    /** SCN-SRV-15：注册表指纹可能超过 512 字节，与 SceneAssetPrefetchS2C / SceneStagingOfferS2C 保持 32767 上限一致。 */
+    static final int MAX_FINGERPRINT_BYTES = 32767;
 
     private ScenePacketIo() {}
 
@@ -41,10 +43,20 @@ final class ScenePacketIo {
         writeString(buf, value, MAX_ID_BYTES, "String");
     }
 
+    static String readFingerprint(ByteBuf buf) {
+        return readString(buf, MAX_FINGERPRINT_BYTES, "Fingerprint");
+    }
+
+    static void writeFingerprint(ByteBuf buf, String fingerprint) {
+        writeString(buf, fingerprint, MAX_FINGERPRINT_BYTES, "Fingerprint");
+    }
+
     private static String readString(ByteBuf buf, int maxBytes, String label) {
         int len = buf.readInt();
-        if (len <= 0) return "";
+        if (len < 0) throw new DecoderException(label + " negative length: " + len);
+        if (len == 0) return "";
         if (len > maxBytes) throw new DecoderException(label + " too long: " + len);
+        if (len > buf.readableBytes()) throw new DecoderException(label + " exceeds readable bytes: " + len);
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

@@ -61,11 +61,16 @@ public final class SceneRenderPayload {
 
     private static final Set<String> FORBIDDEN_KEYS = Set.of(
             "items", "inventory", "loottable", "loottableseed",
-            "command", "owner", "skullowner", "customname", "lock", "recipes"
+            "command", "owner", "skullowner", "customname", "lock", "recipes",
+            "components", "book", "page", "pages", "filtered_pages", "filtered_title",
+            "author", "resolved", "generation", "lastoutput", "successcount",
+            "trackoutput", "auto", "conditionmet", "powered", "updatelastexecution",
+            "lastexecution", "recorditem", "bees", "item", "listener", "cursors"
     );
 
     private final List<VisualMesh> meshes;
     private final CompoundTag customData;
+    private volatile byte[] cachedEncodedBytes;
 
     public SceneRenderPayload(List<VisualMesh> meshes, CompoundTag customData) {
         this.meshes = meshes != null ? List.copyOf(meshes) : List.of();
@@ -78,6 +83,17 @@ public final class SceneRenderPayload {
 
     public CompoundTag customData() {
         return customData != null ? customData.copy() : null;
+    }
+
+    /** Conservative retained heap estimate including parsed custom NBT and cached wire bytes. */
+    public long estimatedRetainedBytes() {
+        long size = 128L + meshes.size() * 8L;
+        for (VisualMesh mesh : meshes)
+            size += 64L + mesh.texture().toString().length() * 2L + mesh.vertices().size() * 64L;
+        if (customData != null) size += customData.sizeInBytes();
+        byte[] cached = cachedEncodedBytes;
+        if (cached != null) size += 24L + cached.length;
+        return size;
     }
 
     public boolean isEmpty() {
@@ -111,9 +127,9 @@ public final class SceneRenderPayload {
         if (customData != null) {
             validateCompoundTag(customData, 0);
         }
-        byte[] bytes = toByteArray();
-        if (bytes.length > SceneLimits.MAX_BLOCK_PAYLOAD_BYTES) {
-            throw new IOException("Payload encoded size exceeds 256 KiB: " + bytes.length + " bytes");
+        int encodedLen = encodedSize();
+        if (encodedLen > SceneLimits.MAX_BLOCK_PAYLOAD_BYTES) {
+            throw new IOException("Payload encoded size exceeds 256 KiB: " + encodedLen + " bytes");
         }
     }
 
@@ -244,7 +260,7 @@ public final class SceneRenderPayload {
             if (totalVertices > SceneLimits.MAX_VERTICES_PER_BLOCK) {
                 throw new IOException("Total vertices in payload exceeds limit: " + totalVertices);
             }
-            List<VisualVertex> vertices = new ArrayList<>(vertexCount);
+            List<VisualVertex> vertices = new ArrayList<>(Math.min(vertexCount, 256));
             for (int v = 0; v < vertexCount; v++) {
                 float x = in.readFloat();
                 float y = in.readFloat();
@@ -274,12 +290,26 @@ public final class SceneRenderPayload {
         return new SceneRenderPayload(meshes, customData);
     }
 
-    public byte[] toByteArray() throws IOException {
+    private byte[] ensureEncodedBytes() throws IOException {
+        byte[] cached = this.cachedEncodedBytes;
+        if (cached != null) {
+            return cached;
+        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (DataOutputStream dos = new DataOutputStream(baos)) {
             encode(dos);
         }
-        return baos.toByteArray();
+        byte[] encoded = baos.toByteArray();
+        this.cachedEncodedBytes = encoded;
+        return encoded;
+    }
+
+    public int encodedSize() throws IOException {
+        return ensureEncodedBytes().length;
+    }
+
+    public byte[] toByteArray() throws IOException {
+        return ensureEncodedBytes().clone();
     }
 
     public static SceneRenderPayload fromByteArray(byte[] bytes) throws IOException {
@@ -295,6 +325,7 @@ public final class SceneRenderPayload {
             if (dis.available() != 0) {
                 throw new IOException("Trailing bytes after visual payload: " + dis.available());
             }
+            payload.cachedEncodedBytes = bytes.clone();
             payload.validate();
             return payload;
         }

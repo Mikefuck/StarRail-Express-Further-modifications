@@ -2,7 +2,7 @@ package com.habitrain.core.api.role.v2.state;
 
 import com.habitrain.core.api.spi.RoleSpi;
 import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
@@ -12,11 +12,28 @@ import java.util.UUID;
  * Read-only view of state actually synchronized to this physical client.
  * Call on the client thread after client initialization. Never reads server
  * memory, even in singleplayer, and never exposes internal network payloads.
+ *
+ * <p>Kept free of {@code @Environment(EnvType.CLIENT)} on the interface declaration
+ * so dedicated servers can class-load common references safely (ROLE-API-04).
  */
-@Environment(EnvType.CLIENT)
 public interface RoleStateClientApi {
     static RoleStateClientApi instance() {
-        if (RoleSpi.stateClientOrNull() instanceof RoleStateClientApi api) return api;
+        EnvType env = null;
+        try {
+            env = FabricLoader.getInstance().getEnvironmentType();
+        } catch (RuntimeException ignored) {
+        }
+        if (env != null && env != EnvType.CLIENT) {
+            throw new IllegalStateException(
+                    "RoleStateClientApi.instance() may only be called on the physical client");
+        }
+        final Object raw;
+        try {
+            raw = RoleSpi.stateClientOrNull();
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to resolve RoleStateClientApi", e);
+        }
+        if (raw instanceof RoleStateClientApi api) return api;
         throw new IllegalStateException("RoleStateClientApi is unavailable before client initialization");
     }
 

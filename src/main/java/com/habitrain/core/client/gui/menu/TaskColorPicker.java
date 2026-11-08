@@ -6,7 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
-import java.awt.Color;
+import java.util.Locale;
 
 public class TaskColorPicker {
     private static final int ALPHA = 0xB4;
@@ -57,10 +57,9 @@ public class TaskColorPicker {
         colorBtn.setY(r1);
         colorBtn.render(g, mx, my, delta);
         int swatchX = colorBtn.getX() + colorBtn.getWidth() + 4;
-        Color col = new Color(cfg.getColor(), true);
         int idx = getColorIndex();
         String cName = idx >= 0 ? MenuTheme.COLOR_NAMES[idx] : "自定义";
-        renderColorSwatch(g, f, swatchX, r1 + 3, col, cName);
+        renderColorSwatch(g, f, swatchX, r1 + 3, cfg.getColor(), cName);
 
         int r2 = r1 + 22;
         g.drawString(f, Component.literal("§7描边粗细:"), labelX, r2 + 4, 0xCCCCCC, false);
@@ -70,16 +69,15 @@ public class TaskColorPicker {
         outlinePlusBtn.setY(r2);
         outlineMinusBtn.render(g, mx, my, delta);
         outlinePlusBtn.render(g, mx, my, delta);
-        String valStr = String.format("§b%.1f", cfg.outlineWidth);
+        String valStr = String.format(Locale.ROOT, "§b%.1f", cfg.outlineWidth);
         g.drawString(f, Component.literal(valStr), rowX + 50, r2 + 4, 0xFFFFFF, false);
         g.drawString(f, Component.literal("§7(1.0 ~ 10.0)"), rowX + 50 + f.width(valStr) + 4, r2 + 4, 0x555555, false);
 
         return r2 + 22;
     }
 
-    public static void renderColorSwatch(GuiGraphics g, Font f, int x, int y, Color color, String colorName) {
-        int fill = (color.getAlpha() << 24) | (color.getRed() << 16) | (color.getGreen() << 8) | color.getBlue();
-        g.fill(x, y, x + 12, y + 12, fill);
+    public static void renderColorSwatch(GuiGraphics g, Font f, int x, int y, int argbColor, String colorName) {
+        g.fill(x, y, x + 12, y + 12, argbColor);
         g.fill(x, y, x + 1, y + 12, 0x88FFFFFF);
         g.fill(x + 11, y, x + 12, y + 12, 0x88FFFFFF);
         g.fill(x, y, x + 12, y + 1, 0x88FFFFFF);

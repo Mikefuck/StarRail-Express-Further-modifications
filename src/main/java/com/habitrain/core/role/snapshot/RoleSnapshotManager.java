@@ -34,7 +34,12 @@ public final class RoleSnapshotManager {
 
     /** Sets the prepared lobby snapshot (compiled at server start / config load). */
     public synchronized void setLobby(RoleSnapshot snapshot) {
+        if (round != null || settlement != null) {
+            queuePending(snapshot);
+            return;
+        }
         this.lobby = snapshot;
+        this.pending = null;
         RoleSnapshotArchive.INSTANCE.put(snapshot);
         RoleRuntimeOverlayApplier.activate(snapshot);
         LOGGER.info("Lobby snapshot set: {}", snapshot.id());
@@ -42,8 +47,11 @@ public final class RoleSnapshotManager {
 
     /** Fixes the round snapshot from the current lobby (called at round start). */
     public synchronized void beginRound() {
+        activatePendingScheduled = false;
+        activatePending();
         this.settlement = null;
         this.round = lobby;
+        com.habitrain.core.role.config.RoleManifestService.clearRoundManifest();
         RoleRuntimeOverlayApplier.activate(round);
         LOGGER.info("Round snapshot fixed: {}", round == null ? "none" : round.id());
     }
@@ -59,13 +67,14 @@ public final class RoleSnapshotManager {
 
     /** Promotes the pending snapshot to the lobby (called at the next round boundary). */
     public synchronized void activatePending() {
+        this.settlement = null;
+        com.habitrain.core.role.config.RoleManifestService.clearRoundManifest();
         if (pending != null) {
             this.lobby = pending;
             this.pending = null;
             RoleRuntimeOverlayApplier.activate(lobby);
             LOGGER.info("Pending snapshot activated as lobby: {}", lobby.id());
         }
-        this.settlement = null;
     }
 
     /**
@@ -91,6 +100,7 @@ public final class RoleSnapshotManager {
 
     /** Clears the round snapshot (called at round end). */
     public synchronized void endRound() {
+        com.habitrain.core.role.config.RoleManifestService.freezeRoundManifestIfNeeded();
         this.settlement = this.round != null ? this.round : this.lobby;
         this.round = null;
     }
@@ -130,5 +140,6 @@ public final class RoleSnapshotManager {
         this.pending = null;
         this.settlement = null;
         this.activatePendingScheduled = false;
+        com.habitrain.core.role.config.RoleManifestService.clearRoundManifest();
     }
 }

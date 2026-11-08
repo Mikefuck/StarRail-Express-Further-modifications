@@ -10,10 +10,6 @@ import java.util.Objects;
  * Immutable relation profile: occupation, opposing and related roles, stored as
  * {@link RoleKey}s so a definition can be compiled before the counterpart
  * {@code SRERole} objects exist.
- *
- * <p>{@link role.extension.ManagedSRERole#from} only stores
- * these keys. Linking onto upstream setters happens later via
- * {@link role.extension.RoleExtensionCompiler#linkRelations}.
  */
 public record RoleRelationProfile(
         List<RoleKey> occupation,

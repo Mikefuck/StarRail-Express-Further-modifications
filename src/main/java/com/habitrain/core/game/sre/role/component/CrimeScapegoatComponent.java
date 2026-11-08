@@ -100,16 +100,8 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
 
         int slot = placeKnifeInHotbar(self, knife);
         if (slot < 0) {
-            // 热键栏满：仍尝试塞进背包再选中
-            if (!self.getInventory().add(knife.copy())) {
-                self.drop(knife.copy(), false);
-            }
-            slot = findKnifeHotbarSlot(self);
-            if (slot < 0) {
-                // 强制放进当前选中槽
-                slot = Math.max(0, Math.min(8, self.getInventory().selected));
-                self.getInventory().setItem(slot, knife.copy());
-            }
+            slot = Math.max(0, Math.min(8, self.getInventory().selected));
+            displaceAndSetSlot(self, slot, knife.copy());
         }
 
         forcedHotbarSlot = slot;
@@ -127,7 +119,7 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
                 0.8f
         );
         self.displayClientMessage(
-                Component.literal("§c[凶案替罪羊] 附近有人倒下！你被迫握起了假刀——10 秒内若被击杀将变为杀手。"),
+                Component.translatable("message.habitrain_core.scapegoat.exposed"),
                 true
         );
         sync();
@@ -146,13 +138,13 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
                 self.drop(gun, false);
             }
             self.displayClientMessage(
-                    Component.literal("§a[凶案替罪羊] 危机过去，假刀已收回，你获得了一把一次性左轮。"),
+                    Component.translatable("message.habitrain_core.scapegoat.safe_revolver"),
                     true
             );
         } else {
             HabiTrainCore.LOGGER.warn("[Scapegoat] once_revolver missing for {}", self.getName().getString());
             self.displayClientMessage(
-                    Component.literal("§a[凶案替罪羊] 危机过去，假刀已收回。"),
+                    Component.translatable("message.habitrain_core.scapegoat.safe"),
                     true
             );
         }
@@ -193,27 +185,63 @@ public final class CrimeScapegoatComponent implements RoleComponent, ServerTicki
             forcedHotbarSlot = findKnifeHotbarSlot(self);
         }
         if (forcedHotbarSlot < 0) {
-            // 刀丢了：补一把假刀
-            ItemStack knife = HabiRoleItems.createScapegoatKnife();
+            ItemStack existing = takeExistingScapegoatKnifeOutsideHotbar(self);
+            ItemStack knife = !existing.isEmpty() ? existing : HabiRoleItems.createScapegoatKnife();
             if (knife.isEmpty()) return;
             int slot = placeKnifeInHotbar(self, knife);
             if (slot < 0) {
                 slot = Math.max(0, Math.min(8, self.getInventory().selected));
-                self.getInventory().setItem(slot, knife);
+                displaceAndSetSlot(self, slot, knife);
             }
             forcedHotbarSlot = slot;
         } else {
             ItemStack inSlot = self.getInventory().getItem(forcedHotbarSlot);
             if (inSlot.isEmpty() || !HabiRoleItems.isScapegoatKnife(inSlot)) {
-                ItemStack knife = HabiRoleItems.createScapegoatKnife();
-                if (!knife.isEmpty()) {
-                    self.getInventory().setItem(forcedHotbarSlot, knife);
+                int otherHotbar = findKnifeHotbarSlot(self);
+                if (otherHotbar >= 0) {
+                    forcedHotbarSlot = otherHotbar;
+                } else {
+                    ItemStack existing = takeExistingScapegoatKnifeOutsideHotbar(self);
+                    ItemStack knife = !existing.isEmpty() ? existing : HabiRoleItems.createScapegoatKnife();
+                    if (!knife.isEmpty()) {
+                        displaceAndSetSlot(self, forcedHotbarSlot, knife);
+                    }
                 }
             }
         }
         if (self.getInventory().selected != forcedHotbarSlot) {
             self.getInventory().selected = forcedHotbarSlot;
         }
+    }
+
+    private static void displaceAndSetSlot(ServerPlayer self, int slot, ItemStack knife) {
+        ItemStack old = self.getInventory().getItem(slot);
+        self.getInventory().setItem(slot, knife);
+        if (!old.isEmpty() && !HabiRoleItems.isScapegoatKnife(old)) {
+            if (!self.getInventory().add(old)) {
+                self.drop(old, false);
+            }
+        }
+    }
+
+    private static ItemStack takeExistingScapegoatKnifeOutsideHotbar(ServerPlayer self) {
+        for (int i = 9; i < self.getInventory().getContainerSize(); i++) {
+            ItemStack s = self.getInventory().getItem(i);
+            if (!s.isEmpty() && HabiRoleItems.isScapegoatKnife(s)) {
+                self.getInventory().setItem(i, ItemStack.EMPTY);
+                return s;
+            }
+        }
+        try {
+            if (self.containerMenu != null) {
+                ItemStack carried = self.containerMenu.getCarried();
+                if (!carried.isEmpty() && HabiRoleItems.isScapegoatKnife(carried)) {
+                    self.containerMenu.setCarried(ItemStack.EMPTY);
+                    return carried;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return ItemStack.EMPTY;
     }
 
     private static int placeKnifeInHotbar(ServerPlayer self, ItemStack knife) {

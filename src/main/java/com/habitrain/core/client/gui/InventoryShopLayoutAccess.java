@@ -80,10 +80,11 @@ public interface InventoryShopLayoutAccess {
         synchronized (ROLE_WIDGETS) {
             Set<WeakReference<Button>> tracked = ROLE_WIDGETS.get(screen);
             if (tracked == null || tracked.isEmpty()) return false;
-            var children = screen.children();
+            Set<Object> childrenSet = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            childrenSet.addAll(screen.children());
             tracked.removeIf(reference -> {
                 Button widget = reference.get();
-                return widget == null || !children.contains(widget);
+                return widget == null || !childrenSet.contains(widget);
             });
             if (tracked.isEmpty()) {
                 ROLE_WIDGETS.remove(screen);

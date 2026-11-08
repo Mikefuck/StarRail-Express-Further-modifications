@@ -136,6 +136,8 @@ public final class SceneCompatibilityReport {
 
     private long totalIssues;
     private long droppedIssues;
+    private long strictBlockingIssues;
+    private long skipWarnBlockingIssues;
 
     public SceneCompatibilityReport() {
         this(DEFAULT_DETAILED, DEFAULT_ISSUE_SAMPLE_LIMIT);
@@ -177,10 +179,19 @@ public final class SceneCompatibilityReport {
 
         if (entry.isIssue()) {
             totalIssues++;
+            if (entry.isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT)) {
+                strictBlockingIssues++;
+            }
+            if (entry.isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN)) {
+                skipWarnBlockingIssues++;
+            }
             if (retained.size() < issueSampleLimit) {
                 retained.add(entry);
             } else {
                 droppedIssues++;
+                if (entry.isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT)) {
+                    replaceNonBlockingSample(entry);
+                }
             }
             return;
         }
@@ -332,6 +343,26 @@ public final class SceneCompatibilityReport {
                 (1.0 - (double) blocking / distinctPositions) * 100.0));
     }
 
+    private void replaceNonBlockingSample(Entry blockingEntry) {
+        boolean urgentSkipWarn = blockingEntry.isBlocking(
+                com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN);
+        for (int i = retained.size() - 1; i >= 0; i--) {
+            Entry candidate = retained.get(i);
+            if (!candidate.isBlocking(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT)
+                    || (urgentSkipWarn && !candidate.isBlocking(
+                            com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN))) {
+                retained.set(i, blockingEntry);
+                return;
+            }
+        }
+    }
+
+    /** 阻断条目总数（不受抽样上限影响）。 */
+    public long blockingIssueCount(com.habitrain.core.api.scene.model.ScenePublishPolicy policy) {
+        boolean skipAndWarn = policy == com.habitrain.core.api.scene.model.ScenePublishPolicy.SKIP_AND_WARN;
+        return skipAndWarn ? skipWarnBlockingIssues : strictBlockingIssues;
+    }
+
     public String toSummaryString() {
         return toSummaryString(com.habitrain.core.api.scene.model.ScenePublishPolicy.STRICT);
     }
@@ -340,7 +371,7 @@ public final class SceneCompatibilityReport {
         long total = totalBlocks();
         long adapted = adaptedBlocks();
         long issues = totalIssueCount();
-        long blocking = getBlockingIssues(policy).size();
+        long blocking = blockingIssueCount(policy);
         return String.format(java.util.Locale.ROOT,
                 "SceneCompatibilityReport (policy=%s): total=%d, adapted=%d, issues=%d, blocking=%d, compatible=%b, rate=%.1f%%",
                 policy, total, adapted, issues, blocking, isCompatible(policy), compatibilityPercentage(policy));

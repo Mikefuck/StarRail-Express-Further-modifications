@@ -28,46 +28,99 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     private final ConfigSync sync;
     private final MinigameEnforcement enforcement;
     private volatile MinecraftServer currentServer;
-    private final ThreadLocal<ClientConfigSession> clientSession = new ThreadLocal<>();
+    private final java.util.Set<Long> clientThreadIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile ClientConfigSession sharedClientSession;
     private static volatile ClientSaveHandler clientSaveHandler;
-    private long revision;
-    private String revisionJson;
+    private final Object revisionLock = new Object();
+    private volatile long serverRevision;
+    private volatile String revisionJson;
+    private volatile String cachedAuthoritativeJson;
+    private volatile boolean serverCacheDirty = true;
 
     @FunctionalInterface
     public interface ClientSaveHandler { ConfigSaveResult submit(String baseJson, String draftJson, long baseRevision); }
     public static void setClientSaveHandler(ClientSaveHandler handler) { clientSaveHandler = handler; }
-    private ConfigRepository repository() { ClientConfigSession session = clientSession.get(); return session == null ? repository : session.draft; }
-    private void markDirty() { ClientConfigSession session = clientSession.get(); if (session == null) store.markDirty(); else session.dirty = true; }
-    public void installClientSession() { if (clientSession.get() == null) clientSession.set(new ClientConfigSession(localSnapshot, store)); }
-    public void markClientConnected() { clientSession.set(new ClientConfigSession(localSnapshot, store)); clientSession.get().remote = true; clientSession.get().baseRevision = -1; }
-    public void clearClientSession() { clientSession.set(new ClientConfigSession(localSnapshot, store)); }
+    private ClientConfigSession currentClientSession() {
+        return clientThreadIds.contains(Thread.currentThread().threadId()) ? sharedClientSession : null;
+    }
+    private ConfigRepository repository() { ClientConfigSession session = currentClientSession(); return session == null ? repository : session.draft; }
+    private void markDirty() {
+        ClientConfigSession session = currentClientSession();
+        if (session == null) {
+            store.markDirty();
+            serverCacheDirty = true;
+        } else {
+            session.dirty = true;
+        }
+    }
+    private void refreshServerRevisionCache(@Nullable com.google.gson.JsonObject knownRoot) {
+        synchronized (revisionLock) {
+            com.google.gson.JsonObject root = knownRoot != null ? knownRoot.deepCopy() : store.buildJsonRoot(repository, false);
+            String current = root.toString();
+            if (!java.util.Objects.equals(current, revisionJson)) {
+                revisionJson = current;
+                serverRevision++;
+            }
+            root.addProperty("_habitrain_config_protocol", ConfigPatch.PROTOCOL);
+            root.addProperty("_habitrain_config_revision", serverRevision);
+            cachedAuthoritativeJson = root.toString();
+            serverCacheDirty = false;
+        }
+    }
+    public void installClientSession() {
+        clientThreadIds.add(Thread.currentThread().threadId());
+        if (sharedClientSession == null) {
+            sharedClientSession = new ClientConfigSession(localSnapshot, store);
+        }
+    }
+    public void markClientConnected() {
+        clientThreadIds.add(Thread.currentThread().threadId());
+        ClientConfigSession s = new ClientConfigSession(localSnapshot, store);
+        s.remote = true;
+        s.baseRevision = -1;
+        sharedClientSession = s;
+    }
+    public void clearClientSession() {
+        if (clientThreadIds.isEmpty()) {
+            clientThreadIds.add(Thread.currentThread().threadId());
+        }
+        sharedClientSession = new ClientConfigSession(localSnapshot, store);
+    }
     public void beginClientEditing() {
-        installClientSession(); ClientConfigSession session = clientSession.get();
+        installClientSession(); ClientConfigSession session = currentClientSession();
         if (!session.editing && !session.dirty) {
             session.draft.copyFrom(session.mirror); session.baseJson = store.toJsonString(session.draft);
             session.baseRevision = session.mirrorRevision;
         }
         session.editing = true;
     }
-    public void endClientEditing() { ClientConfigSession session = clientSession.get(); if (session != null) session.editing = false; }
-    public boolean hasClientConfigConflict() { ClientConfigSession session = clientSession.get(); return session != null && session.conflicted; }
-    public void markClientConfigConflict() { ClientConfigSession session = clientSession.get(); if (session != null) session.conflicted = true; }
+    public void endClientEditing() { ClientConfigSession session = currentClientSession(); if (session != null) session.editing = false; }
+    public boolean hasClientConfigConflict() { ClientConfigSession session = currentClientSession(); return session != null && session.conflicted; }
+    public void markClientConfigConflict() { ClientConfigSession session = currentClientSession(); if (session != null) session.conflicted = true; }
     public void reloadClientDraft() {
-        ClientConfigSession session = clientSession.get(); if (session == null) return;
+        ClientConfigSession session = currentClientSession(); if (session == null) return;
         session.draft.copyFrom(session.mirror); session.baseJson = store.toJsonString(session.mirror);
         session.baseRevision = session.mirrorRevision; session.dirty = false; session.conflicted = false;
     }
     public long revision() {
-        String current = store.toJsonString(repository);
-        if (!java.util.Objects.equals(current, revisionJson)) { revisionJson = current; revision++; }
-        return revision;
+        if (serverCacheDirty || cachedAuthoritativeJson == null) {
+            synchronized (revisionLock) {
+                if (serverCacheDirty || cachedAuthoritativeJson == null) {
+                    refreshServerRevisionCache(null);
+                }
+            }
+        }
+        return serverRevision;
     }
     public String authoritativeSyncJson() {
-        long currentRevision = revision();
-        var root = com.google.gson.JsonParser.parseString(revisionJson).getAsJsonObject();
-        root.addProperty("_habitrain_config_protocol", ConfigPatch.PROTOCOL);
-        root.addProperty("_habitrain_config_revision", currentRevision);
-        return root.toString();
+        if (serverCacheDirty || cachedAuthoritativeJson == null) {
+            synchronized (revisionLock) {
+                if (serverCacheDirty || cachedAuthoritativeJson == null) {
+                    refreshServerRevisionCache(null);
+                }
+            }
+        }
+        return cachedAuthoritativeJson;
     }
 
     public static void setOnSaveCallback(@Nullable Runnable callback) {
@@ -103,19 +156,28 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     }
 
     public void load() {
-        ClientConfigSession session = clientSession.get();
+        ClientConfigSession session = currentClientSession();
         ConfigRepository candidate = new ConfigRepository();
         if (session == null) {
             store.load(candidate); repository = candidate; localSnapshot = candidate.copy();
+            refreshServerRevisionCache(null);
+            ClientConfigSession shared = sharedClientSession;
+            if (shared != null && !shared.remote) {
+                shared.draft.copyFrom(candidate);
+                shared.mirror = candidate.copy();
+                shared.baseJson = store.toJsonString(candidate);
+                shared.dirty = false;
+                shared.conflicted = false;
+            }
         } else {
             // A disconnect reload must not clear the integrated server Store's dirty flag.
             new ConfigStore(store.getConfigFile()).load(candidate);
-            session.draft.copyFrom(candidate); session.mirror = candidate.copy(); session.baseJson = store.toJsonString(candidate); session.dirty = false;
+            session.draft.copyFrom(candidate); session.mirror = candidate.copy(); session.baseJson = store.toJsonString(candidate); session.dirty = false; session.conflicted = false;
         }
     }
 
     public ConfigSaveResult save() {
-        ClientConfigSession session = clientSession.get();
+        ClientConfigSession session = currentClientSession();
         if (session != null) {
             String json = store.toJsonString(session.draft);
             ConfigSaveResult result;
@@ -125,13 +187,21 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
             } else {
                 if (json.equals(session.baseJson)) return ConfigSaveResult.unchanged();
                 result = store.save(session.draft) ? ConfigSaveResult.saved() : ConfigSaveResult.failed("本地配置写入失败，草稿已保留");
-                if (result.successful()) { repository = session.draft.copy(); localSnapshot = repository.copy(); session.mirror = session.draft.copy(); session.baseJson = json; session.dirty = false; }
+                if (result.successful()) {
+                    repository = session.draft.copy();
+                    localSnapshot = repository.copy();
+                    session.mirror = session.draft.copy();
+                    session.baseJson = json;
+                    session.dirty = false;
+                    refreshServerRevisionCache(null);
+                }
             }
             return result;
         }
         ConfigSaveResult result = store.commitResult(repository);
         if (result.status() == ConfigSaveResult.Status.SAVED) {
             localSnapshot = repository.copy();
+            refreshServerRevisionCache(null);
             if (!repository().isSuppressCallback()) {
                 Runnable cb = repository().getOnSaveCallback();
                 if (cb != null) {
@@ -145,17 +215,23 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     }
 
     public void acknowledgeClient(String json, long acknowledgedRevision, boolean success, String submittedJson) {
-        ClientConfigSession session = clientSession.get(); if (session == null) return;
-        applySyncFromJson(json);
+        ClientConfigSession session = currentClientSession(); if (session == null) return;
+        if (json != null && !json.isBlank() && !"{}".equals(json.trim()) && acknowledgedRevision >= 0) {
+            applySyncFromJson(json);
+        }
         if (success) {
             // Preserve edits made while this request was in flight.
             boolean unchangedSinceSubmit = store.toJsonString(session.draft).equals(submittedJson);
-            if (!unchangedSinceSubmit) {
-                var laterEdits = ConfigPatch.diff(com.google.gson.JsonParser.parseString(submittedJson).getAsJsonObject(),
-                        store.buildJsonRoot(session.draft, false));
-                var merged = ConfigPatch.apply(store.buildJsonRoot(session.mirror, false), laterEdits,
-                        com.habitrain.core.network.ConfigUpdateScope.FULL_MOD_MENU, "");
-                sync.loadFromJsonString(session.draft, merged.toString());
+            if (!unchangedSinceSubmit && submittedJson != null) {
+                try {
+                    var laterEdits = ConfigPatch.diff(com.google.gson.JsonParser.parseString(submittedJson).getAsJsonObject(),
+                            store.buildJsonRoot(session.draft, false));
+                    var merged = ConfigPatch.apply(store.buildJsonRoot(session.mirror, false), laterEdits,
+                            com.habitrain.core.network.ConfigUpdateScope.FULL_MOD_MENU, "");
+                    sync.loadFromJsonObject(session.draft, merged, false);
+                } catch (RuntimeException e) {
+                    LOGGER.warn("合并在途配置编辑失败，保留当前草稿", e);
+                }
             }
             session.baseJson = store.toJsonString(session.mirror); session.baseRevision = acknowledgedRevision;
             if (unchangedSinceSubmit) { session.draft.copyFrom(session.mirror); session.dirty = false; }
@@ -165,21 +241,30 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
 
     public ConfigSaveResult submitPatch(com.google.gson.JsonObject patch, long baseRevision,
                                         com.habitrain.core.network.ConfigUpdateScope scope, String sceneMap) {
+        return submitPatch(patch, baseRevision, scope, sceneMap, false);
+    }
+
+    public ConfigSaveResult submitPatch(com.google.gson.JsonObject patch, long baseRevision,
+                                        com.habitrain.core.network.ConfigUpdateScope scope, String sceneMap,
+                                        boolean menuGateBlocked) {
         if (currentServer != null && !currentServer.isSameThread()) throw new IllegalStateException("配置提交必须在服务器线程执行");
         if (baseRevision != revision()) return new ConfigSaveResult(ConfigSaveResult.Status.CONFLICT, "服务器配置已变化；草稿已保留，可在保存栏放弃草稿并重载");
         try {
             var before = store.buildJsonRoot(repository, false);
             var next = ConfigPatch.apply(before, patch, scope, sceneMap);
-            if (next.toString().equals(before.toString())) return ConfigSaveResult.unchanged();
+            com.habitrain.core.network.ConfigUpdateAccessPolicy.validateMenuGateScopedMutation(before, next, scope, menuGateBlocked);
+            if (next.equals(before)) return ConfigSaveResult.unchanged();
             ConfigRepository candidate = new ConfigRepository();
-            if (!sync.loadFromJsonString(candidate, next.toString())) return ConfigSaveResult.failed("配置字段无效");
+            if (!sync.loadFromJsonObject(candidate, next, true)) return ConfigSaveResult.failed("配置字段无效");
             ConfigRepository prepared = candidate.copy();
             ConfigRepository preparedLocalSnapshot = candidate.copy();
             prepared.setOnSaveCallback(repository.getOnSaveCallback());
-            int syncBytes = store.buildJsonRoot(candidate, false).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            com.google.gson.JsonObject authoritativeRoot = store.buildJsonRoot(prepared, false);
+            int syncBytes = authoritativeRoot.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             if (syncBytes > ConfigPatch.MAX_SYNC_JSON_BYTES - 256) return ConfigSaveResult.failed("完整服务器配置超过同步大小限制，请缩减配置后重试");
             if (!store.save(candidate)) return ConfigSaveResult.failed("服务器配置写入失败，权威配置未改动");
-            repository = prepared; localSnapshot = preparedLocalSnapshot; revision();
+            repository = prepared; localSnapshot = preparedLocalSnapshot;
+            refreshServerRevisionCache(authoritativeRoot);
             try { applyChangedModules(before, next); }
             catch (RuntimeException error) { LOGGER.error("配置已保存，但运行副作用失败", error); return new ConfigSaveResult(ConfigSaveResult.Status.SAVED, "服务器已保存配置，但运行刷新失败，请查看服务器日志"); }
             return ConfigSaveResult.saved();
@@ -213,23 +298,19 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public boolean isMapAllowed(String fullId, String mapName) {
         TaskConfigEntry entry = repository().getTaskConfig(fullId);
         if (entry == null) return true;
-        if (entry.mapFilterMode == 0) return true;
-        boolean listEmpty = entry.enabledMaps == null || entry.enabledMaps.isEmpty();
-        boolean contained = !listEmpty && entry.enabledMaps.contains(mapName);
-        if (entry.mapFilterMode == 1) return listEmpty || contained;
-        return listEmpty || !contained;
+        return entry.isAllowedOnMap(mapName);
     }
 
     public void setTaskConfig(String fullId, TaskConfigEntry entry) {
         repository().setTaskConfig(fullId, entry);
         markDirty();
-        if (clientSession.get() == null) TaskPoolBuilder.invalidateAll();
+        if (currentClientSession() == null) TaskPoolBuilder.invalidateAll();
     }
 
     public void putTaskConfig(String fullId, TaskConfigEntry entry) {
         repository().putTaskConfig(fullId, entry);
         markDirty();
-        if (clientSession.get() == null) TaskPoolBuilder.invalidateAll();
+        if (currentClientSession() == null) TaskPoolBuilder.invalidateAll();
     }
 
     public Map<String, TaskConfigEntry> getAllConfigs() {
@@ -239,6 +320,25 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void setAllConfigs(Map<String, TaskConfigEntry> entries) {
         repository().setAllConfigs(entries);
         markDirty();
+    }
+
+    public GameModeConfigScope getGameModeConfig(String gameModeId) {
+        return repository().getGameModeConfig(gameModeId);
+    }
+
+    public GameModeConfigScope getOrCreateGameModeConfig(String gameModeId) {
+        return repository().getOrCreateGameModeConfig(gameModeId);
+    }
+
+    public void setGameModeConfig(String gameModeId, GameModeConfigScope scope) {
+        repository().setGameModeConfig(gameModeId, scope);
+        markDirty();
+        if (currentClientSession() == null) TaskPoolBuilder.invalidateAll();
+    }
+
+    public boolean isGameModeEnabled(String gameModeId) {
+        GameModeConfigScope scope = repository().getGameModeConfig(gameModeId);
+        return scope == null || scope.isEnabled();
     }
 
     public Map<String, GameModeConfigScope> getAllGameModeConfigs() {
@@ -291,7 +391,18 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     }
 
     public void applyShaderWhitelistSync(boolean enabled, List<String> list) {
-        sync.applyShaderWhitelistSync(repository(), enabled, list);
+        ClientConfigSession session = currentClientSession();
+        if (session != null) {
+            sync.applyShaderWhitelistSync(session.mirror, enabled, list);
+            session.remote = true;
+            if (!session.editing && !session.dirty) {
+                sync.applyShaderWhitelistSync(session.draft, enabled, list);
+                session.baseJson = store.toJsonString(session.draft);
+            }
+        } else {
+            sync.applyShaderWhitelistSync(repository, enabled, list);
+            refreshServerRevisionCache(null);
+        }
     }
 
     public String toJsonString() {
@@ -301,9 +412,12 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void loadFromJsonString(String json) {
         if (!sync.loadFromJsonString(repository(), json)) return;
         markDirty();
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
-        if (clientSession.get() == null) com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        if (currentClientSession() == null) {
+            refreshServerRevisionCache(null);
+            com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
+            com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+            com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        }
     }
 
     /**
@@ -313,23 +427,43 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
         boolean ok = sync.mergeFromJsonString(repository(), json);
         if (!ok) return false;
         markDirty();
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
-        if (clientSession.get() == null) com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        if (currentClientSession() == null) {
+            refreshServerRevisionCache(null);
+            com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
+            com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+            com.habitrain.core.task.TaskPoolBuilder.invalidateAll();
+        }
         return true;
     }
 
     public void applySyncData(Map<String, TaskConfigEntry> configs, float target) {
-        sync.applySyncData(repository(), configs, target);
+        applySyncData(configs, com.habitrain.core.network.TaskConfigPayload.pollLatestMinigames(), target);
+    }
+
+    public void applySyncData(Map<String, TaskConfigEntry> configs, Map<String, MinigameConfigEntry> minigames, float target) {
+        ClientConfigSession session = currentClientSession();
+        if (session != null) {
+            sync.applySyncData(session.mirror, configs, minigames, target);
+            session.remote = true;
+            if (!session.editing && !session.dirty) {
+                sync.applySyncData(session.draft, configs, minigames, target);
+                session.baseJson = store.toJsonString(session.draft);
+            }
+        } else {
+            sync.applySyncData(repository, configs, minigames, target);
+            refreshServerRevisionCache(null);
+        }
     }
 
     public void applySyncFromJson(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json.trim())) return;
         installClientSession();
         var root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
-        ConfigRepository latest = new ConfigRepository();
-        if (!sync.loadFromJsonString(latest, json)) return;
         long remoteRevision = root.has("_habitrain_config_revision") ? root.get("_habitrain_config_revision").getAsLong() : -1;
-        clientSession.get().receive(latest, store.toJsonString(latest), remoteRevision);
+        if (root.has("_habitrain_config_revision") && remoteRevision < 0) return;
+        ConfigRepository latest = new ConfigRepository();
+        if (!sync.loadFromJsonObject(latest, root, false)) return;
+        currentClientSession().receive(latest, store.toJsonString(latest), remoteRevision);
     }
 
     public File getConfigFile() {
@@ -352,7 +486,7 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void setKnifeDurabilityEnabled(boolean enabled) {
         repository().setKnifeDurabilityEnabled(enabled);
         markDirty();
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
+        if (currentClientSession() == null) com.habitrain.core.game.sre.mode.KnifeDurabilityToggleService.applyToServer(currentServer);
     }
 
     public boolean isLobbyVoiceGroupEnabled() {
@@ -362,7 +496,7 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void setLobbyVoiceGroupEnabled(boolean enabled) {
         repository().setLobbyVoiceGroupEnabled(enabled);
         markDirty();
-        if (clientSession.get() == null) com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
+        if (currentClientSession() == null) com.habitrain.core.game.sre.mode.SREGameModeBase.applyLobbyGroupToggle(currentServer);
     }
 
     public int getBlackoutGlobalCooldownSeconds() {
@@ -395,17 +529,32 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void setMinigameConfig(String minigameId, MinigameConfigEntry entry) {
         repository().setMinigameConfig(minigameId, entry);
         markDirty();
-        if (clientSession.get() == null && currentServer != null) applyMinigameEnforcement(currentServer);
+        if (currentClientSession() == null && currentServer != null) applyMinigameEnforcement(currentServer);
     }
 
     public void putMinigameConfig(String minigameId, MinigameConfigEntry entry) {
         repository().putMinigameConfig(minigameId, entry);
         markDirty();
-        if (clientSession.get() == null && currentServer != null) applyMinigameEnforcement(currentServer);
+        if (currentClientSession() == null && currentServer != null) applyMinigameEnforcement(currentServer);
     }
 
     public Map<String, MinigameConfigEntry> getAllMinigameConfigs() {
         return repository().getAllMinigameConfigs();
+    }
+
+    public void setMinigames(Map<String, MinigameConfigEntry> entries) {
+        ClientConfigSession session = currentClientSession();
+        if (session != null) {
+            session.mirror.setMinigames(entries);
+            if (!session.editing && !session.dirty) {
+                session.draft.setMinigames(entries);
+                session.baseJson = store.toJsonString(session.draft);
+            }
+        } else {
+            repository.setMinigames(entries);
+            refreshServerRevisionCache(null);
+            if (currentServer != null) applyMinigameEnforcement(currentServer);
+        }
     }
 
     @Override
@@ -424,7 +573,7 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     }
 
     public void applyMinigameEnforcement(@Nullable MinecraftServer server) {
-        if (clientSession.get() != null) return;
+        if (currentClientSession() != null) return;
         if (server != null && !server.isSameThread()) throw new IllegalStateException("小游戏配置生效必须在服务器线程");
         enforcement.apply(server, repository());
     }
@@ -436,6 +585,32 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
     public void setModeMapVoteSettings(ModeMapVoteSettings settings) {
         repository().setModeMapVote(settings);
         markDirty();
+    }
+
+    /** Server upload completion: persist its path and restore the live graph if saving fails. */
+    public ConfigSaveResult saveMapVotePreviewPath(String mapId, String path) {
+        if (currentClientSession() != null) return ConfigSaveResult.failed("预览图路径只能由服务端保存");
+        ModeMapVoteSettings settings = getModeMapVoteSettings();
+        MapVoteEntry entry = settings.maps.get(mapId);
+        if (entry == null) return ConfigSaveResult.failed("地图已不存在");
+        MapVoteProfileSettings previousProfile = entry.profile;
+        String previousPath = previousProfile == null ? null : previousProfile.previewPath;
+        if (previousProfile != null && java.util.Objects.equals(previousPath, path)) return ConfigSaveResult.unchanged();
+        if (entry.profile == null) entry.profile = new MapVoteProfileSettings();
+        entry.profile.previewPath = path;
+        setModeMapVoteSettings(settings);
+        boolean saved = false;
+        try {
+            ConfigSaveResult result = save();
+            saved = result.successful();
+            return result;
+        } finally {
+            if (!saved) {
+                entry.profile = previousProfile;
+                if (previousProfile != null) previousProfile.previewPath = previousPath;
+                setModeMapVoteSettings(settings);
+            }
+        }
     }
 
     public EnvironmentSettings getEnvironmentSettings() {

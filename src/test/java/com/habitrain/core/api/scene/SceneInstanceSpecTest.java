@@ -137,10 +137,10 @@ class SceneInstanceSpecTest {
 
         SceneInstanceSpec copy = original.toBuilder().build();
 
-        // 审核 S-09：旧断言在「原始 spec 从未设置 headStart」的基础上断言归零，
-        // 默认值本来就是 0，测试恒真、掩盖了真实语义。这里显式设置 3.0 后再断言折算清零。
+        // Copying an unmaterialized description must not lose its head start.
+        // Only service materialization consumes it into the resolved clock.
         assertEquals(3.0, original.headStartSeconds(), 1e-9);
-        assertEquals(0.0, copy.headStartSeconds(), 1e-9, "headStart 是一次性折算，复制后清零");
+        assertEquals(3.0, copy.headStartSeconds(), 1e-9);
         assertEquals(1234L, copy.startGameTime());
         assertEquals(2.0, copy.timeScale(), 1e-9);
         assertEquals(7, copy.priority());

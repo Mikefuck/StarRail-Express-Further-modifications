@@ -13,6 +13,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
+import java.util.Locale;
+
 /** 游戏内·数值平衡：DLC 占比 / 警长除数 / 停电通用 CD / 小游戏总开关。 */
 public class InGameBalancePage implements ConfigPage {
 
@@ -73,8 +75,11 @@ public class InGameBalancePage implements ConfigPage {
         try {
             int v = Integer.parseInt(sheriffField.getValue().trim());
             sheriffDivisor = Math.max(1, v);
+            sheriffField.setValue(String.valueOf(sheriffDivisor));
             ConfigManager.getInstance().setSheriffCountDivisor(sheriffDivisor);
-        } catch (NumberFormatException ignored) {}
+        } catch (NumberFormatException ignored) {
+            sheriffField.setValue(String.valueOf(sheriffDivisor));
+        }
         try {
             int v = Integer.parseInt(blackoutGlobalCooldownField.getValue().trim());
             blackoutGlobalCooldownSeconds = BlackoutGlobalCooldownRules.clampSeconds(v);
@@ -88,70 +93,73 @@ public class InGameBalancePage implements ConfigPage {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
         area.setBounds(x, y, w, h);
-        g.enableScissor(x, y, x + w, y + h);
         hits.clear();
-        int contentStartY = area.getContentY();
-        int cy = contentStartY;
-        int labelX = x + PAD;
-        int sliderW = Math.min(360, w - PAD * 2);
+        g.enableScissor(x, y, x + w, y + h);
+        try {
+            int contentStartY = area.getContentY();
+            int cy = contentStartY;
+            int labelX = x + PAD;
+            int sliderW = Math.min(360, w - PAD * 2);
 
-        // ===== DLC 任务目标占比 =====
-        g.drawString(font, "DLC 任务目标占比", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += 18;
-        g.drawString(font, Component.literal("§7系统自动平衡 DLC 与原版任务的出现概率（10%~80%）"),
-                labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-        cy += 18;
-        if (editable) {
-            if (slider.mouseDragged()) {
-                float nv = slider.valueFromMouse(mx);
-                if (nv != dlcTarget) { dlcTarget = nv; ConfigManager.getInstance().setDlcProbabilityTarget(dlcTarget); }
+            // ===== DLC 任务目标占比 =====
+            g.drawString(font, "DLC 任务目标占比", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += 18;
+            g.drawString(font, Component.literal("§7系统自动平衡 DLC 与原版任务的出现概率（10%~80%）"),
+                    labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            cy += 18;
+            if (editable) {
+                if (slider.mouseDragged()) {
+                    float nv = slider.valueFromMouse(mx);
+                    if (nv != dlcTarget) { dlcTarget = nv; ConfigManager.getInstance().setDlcProbabilityTarget(dlcTarget); }
+                }
+                slider.render(g, font, labelX, cy, sliderW, dlcTarget);
+            } else {
+                g.drawString(font, String.format(Locale.ROOT, "§6§l%d%%", Math.round(dlcTarget * 100)), labelX, cy + 1, 0xFFFFFFFF, false);
             }
-            slider.render(g, font, labelX, cy, sliderW, dlcTarget);
-        } else {
-            g.drawString(font, String.format("§6§l%d%%", Math.round(dlcTarget * 100)), labelX, cy + 1, 0xFFFFFFFF, false);
+            cy += 24;
+
+            // ===== 警长数量除数 =====
+            cy = sectionLine(g, cy, labelX, sliderW);
+            g.drawString(font, "警长数量除数", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += 18;
+            g.drawString(font, "§7警长数量 = floor(玩家数 / 除数)，默认 6", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            cy += 18;
+            g.drawString(font, "除数:", labelX, cy + 2, 0xFFCCCCCC, false);
+            EditRow.render(g, mx, my, delta, sheriffField, labelX + 50, cy, 60);
+            g.drawString(font, "§7（点底部保存生效）", labelX + 118, cy + 2, 0xFF777777, false);
+            cy += ROW_H;
+
+            // ===== 停电通用冷却 =====
+            cy = sectionLine(g, cy, labelX, sliderW);
+            g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown"),
+                    labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += 18;
+            g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.desc"),
+                    labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            cy += 18;
+            Component cooldownLabel = Component.translatable("screen.habitrain_core.balance.cooldown");
+            g.drawString(font, cooldownLabel, labelX, cy + 2, 0xFFCCCCCC, false);
+            int cooldownFieldX = labelX + font.width(cooldownLabel) + 8;
+            EditRow.render(g, mx, my, delta, blackoutGlobalCooldownField, cooldownFieldX, cy, 72);
+            g.drawString(font, Component.translatable("screen.habitrain_core.balance.seconds_range",
+                            BlackoutGlobalCooldownRules.MAX_SECONDS),
+                    cooldownFieldX + 80, cy + 2, MenuTheme.TEXT_DIM, false);
+            cy += ROW_H;
+            g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.zero"),
+                    labelX, cy - 8, MenuTheme.TEXT_DIM, false);
+            cy += 12;
+
+            // ===== 小游戏任务总开关 =====
+            cy = toggleRow(g, cy, labelX, "小游戏任务总开关",
+                    "关闭后 SRE 将不再分配任何小游戏任务",
+                    mgGlobal, "小游戏 · 已启用", "小游戏 · 已停用", "mg");
+
+            cy += 8;
+            area.setContentHeight(cy - contentStartY);
+            area.render(g);
+        } finally {
+            g.disableScissor();
         }
-        cy += 24;
-
-        // ===== 警长数量除数 =====
-        cy = sectionLine(g, cy, labelX, sliderW);
-        g.drawString(font, "警长数量除数", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += 18;
-        g.drawString(font, "§7警长数量 = floor(玩家数 / 除数)，默认 6", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-        cy += 18;
-        g.drawString(font, "除数:", labelX, cy + 2, 0xFFCCCCCC, false);
-        EditRow.render(g, mx, my, delta, sheriffField, labelX + 50, cy, 60);
-        g.drawString(font, "§7（点底部保存生效）", labelX + 118, cy + 2, 0xFF777777, false);
-        cy += ROW_H;
-
-        // ===== 停电通用冷却 =====
-        cy = sectionLine(g, cy, labelX, sliderW);
-        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown"),
-                labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += 18;
-        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.desc"),
-                labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-        cy += 18;
-        Component cooldownLabel = Component.translatable("screen.habitrain_core.balance.cooldown");
-        g.drawString(font, cooldownLabel, labelX, cy + 2, 0xFFCCCCCC, false);
-        int cooldownFieldX = labelX + font.width(cooldownLabel) + 8;
-        EditRow.render(g, mx, my, delta, blackoutGlobalCooldownField, cooldownFieldX, cy, 72);
-        g.drawString(font, Component.translatable("screen.habitrain_core.balance.seconds_range",
-                        BlackoutGlobalCooldownRules.MAX_SECONDS),
-                cooldownFieldX + 80, cy + 2, MenuTheme.TEXT_DIM, false);
-        cy += ROW_H;
-        g.drawString(font, Component.translatable("screen.habitrain_core.balance.blackout_global_cooldown.zero"),
-                labelX, cy - 8, MenuTheme.TEXT_DIM, false);
-        cy += 12;
-
-        // ===== 小游戏任务总开关 =====
-        cy = toggleRow(g, cy, labelX, "小游戏任务总开关",
-                "关闭后 SRE 将不再分配任何小游戏任务",
-                mgGlobal, "小游戏 · 已启用", "小游戏 · 已停用", "mg");
-
-        cy += 8;
-        area.setContentHeight(cy - contentStartY);
-        area.render(g);
-        g.disableScissor();
     }
 
     private int sectionLine(GuiGraphics g, int cy, int labelX, int w) {
@@ -175,7 +183,17 @@ public class InGameBalancePage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (editBoxInput.mouseClicked(mx, my, btn)) return true;
+        if (!area.isInside(mx, my)) {
+            flushPending();
+            editBoxInput.clearFocus();
+            return false;
+        }
+        boolean hadFocus = sheriffField.isFocused() || blackoutGlobalCooldownField.isFocused();
+        if (editBoxInput.mouseClicked(mx, my, btn)) {
+            if (hadFocus) flushPending();
+            return true;
+        }
+        flushPending();
         for (Hit hit : hits) {
             if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
@@ -188,6 +206,11 @@ public class InGameBalancePage implements ConfigPage {
             }
         }
         if (editable && slider.mouseClicked(mx, my)) {
+            float nv = slider.valueFromMouse(mx);
+            if (nv != dlcTarget) {
+                dlcTarget = nv;
+                ConfigManager.getInstance().setDlcProbabilityTarget(dlcTarget);
+            }
             MenuSounds.playClick();
             return true;
         }
@@ -196,7 +219,14 @@ public class InGameBalancePage implements ConfigPage {
 
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
-        if (slider.mouseDragged()) return true;
+        if (editable && slider.mouseDragged()) {
+            float nv = slider.valueFromMouse(mx);
+            if (nv != dlcTarget) {
+                dlcTarget = nv;
+                ConfigManager.getInstance().setDlcProbabilityTarget(dlcTarget);
+            }
+            return true;
+        }
         return area.mouseDragged(my);
     }
 

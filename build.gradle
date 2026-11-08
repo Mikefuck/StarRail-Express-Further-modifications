@@ -25,14 +25,30 @@ repositories {
     flatDir { dirs "libs" }
 }
 
-loom { }
+loom {
+    runs {
+        s0Server {
+            server()
+            runDir ".verification/s0-20261106/runtime/development-server"
+            vmArgs "-Dmixin.debug.export=true", "-Dmixin.debug.export.decompile=false",
+                    "-Dmixin.debug.verbose=true"
+        }
+        s0Client {
+            client()
+            runDir ".verification/s0-20261106/runtime/development-client"
+            vmArgs "-Dmixin.debug.export=true", "-Dmixin.debug.export.decompile=false",
+                    "-Dmixin.debug.verbose=true"
+        }
+    }
+}
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-    modImplementation "com.terraformersmc:modmenu:11.0.3"
+    modCompileOnly "com.terraformersmc:modmenu:11.0.3"
+    modLocalRuntime "com.terraformersmc:modmenu:11.0.3"
     include modImplementation("dev.kosmx.player-anim:player-animation-lib-fabric:2.0.4+1.21.1")
     // 开发环境必须使用上游的 named dev JAR；成品 intermediary JAR 在 Loom 中会漏映射
     // 继承的静态方法调用（例如 Block.simpleCodec），导致 runClient NoSuchMethodError。
@@ -59,10 +75,10 @@ dependencies {
     modImplementation "dev.upcraft.datasync:datasync-minecraft-1.21.1-fabric:0.10.2"
     // SRE 的 wathe_blocker mixin 使用 @MixinSquared:Handler 动态选择器。
     modImplementation "com.github.bawnorton.mixinsquared:mixinsquared-fabric:0.3.7-beta.1"
-    implementation "com.zaxxer:HikariCP:5.1.0"
-    implementation "com.github.promeg:tinypinyin:2.0.3"
-    implementation "com.electronwill.night-config:core:3.8.1"
-    implementation "com.electronwill.night-config:toml:3.8.1"
+    localRuntime "com.zaxxer:HikariCP:5.1.0"
+    localRuntime "com.github.promeg:tinypinyin:2.0.3"
+    localRuntime "com.electronwill.night-config:core:3.8.1"
+    localRuntime "com.electronwill.night-config:toml:3.8.1"
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.0"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
@@ -78,7 +94,20 @@ afterEvaluate {
     )
 }
 
-def stagedTestRuntimeDir = new File(gradle.gradleUserHomeDir, "habitrain-core-test-runtime")
+// Keep the Windows ASCII-path workaround, but never Sync over another checkout's tests.
+def testWorkspaceKey = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(rootProject.projectDir.canonicalPath.getBytes("UTF-8"))
+        .encodeHex().toString().substring(0, 24)
+def stagedTestRuntimeDir = new File(gradle.gradleUserHomeDir, "habitrain-core-test-runtime/${testWorkspaceKey}")
+
+tasks.withType(Test).configureEach {
+    systemProperty "file.encoding", "UTF-8"
+    systemProperty "habitrain.test.configDir", layout.buildDirectory.dir("test-config/${name}").get().asFile.absolutePath
+}
+
+tasks.withType(org.gradle.language.jvm.tasks.ProcessResources).configureEach {
+    filteringCharset = "UTF-8"
+}
 
 tasks.register("stageTestRuntime", Sync) {
     dependsOn(tasks.named("testClasses"))
@@ -146,12 +175,20 @@ tasks.named("check") {
 
 tasks.register("apiRuntimeRegressionTest", Test) {
     useJUnitPlatform()
+    // Each real Minecraft bootstrap gets its own JVM, including separate static registries.
+    forkEvery = 1
     dependsOn(tasks.named("stageTestRuntime"))
     testClassesDirs = tasks.named("test").get().testClassesDirs
     classpath = tasks.named("test").get().classpath
     include("**/ApiRuntimeRegressionTest.class")
     include("**/ProviderConstructorFailureTest.class")
     include("**/SnakeFruitRuntimeTest.class")
+}
+
+// `test` is the normal verification entry point as well as `build`/`check`.
+// Keep real bootstraps in separate workers instead of silently excluding them.
+tasks.named("test") {
+    dependsOn("greedPouchTest", "replacementRoleBootstrapTest", "apiRuntimeRegressionTest")
 }
 
 processResources {
@@ -169,11 +206,13 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
     it.options.release = 21
 }
 
 java {
     withSourcesJar()
+    tasks.withType(Javadoc).configureEach { options.encoding = "UTF-8" }
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
@@ -203,4 +242,16 @@ tasks.named("assemble") {
 publishing {
     publications { create("mavenJava", MavenPublication) { from components.java } }
     repositories { mavenLocal() }
+}
+
+// Production evidence only: this task never launches Minecraft or treats missing exports as a pass.
+tasks.register("verifyProductionMixins", JavaExec) {
+    dependsOn(tasks.named("stageTestRuntime"), tasks.named("remapJar"))
+    classpath = tasks.named("test").get().classpath
+    mainClass = "com.habitrain.core.verification.ProductionMixinVerifier"
+    doFirst {
+        def runtimeDir = providers.gradleProperty("s0RuntimeDir").orNull
+        if (runtimeDir == null) throw new GradleException("Supply -Ps0RuntimeDir=<isolated run directory>")
+        args(tasks.named("remapJar").get().archiveFile.get().asFile.absolutePath, file(runtimeDir).absolutePath)
+    }
 }

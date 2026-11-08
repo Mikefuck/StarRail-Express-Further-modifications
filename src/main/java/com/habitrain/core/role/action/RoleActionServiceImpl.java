@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -79,6 +80,17 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     private volatile ResultSender resultSender = (player, id, seq, ok, reason, payload) -> {};
     private volatile Clock clock = System::currentTimeMillis;
 
+    static {
+        com.habitrain.core.task.ClearableHandlerRegistry.register(() -> {
+            try {
+                if (RoleActionApi.instance() instanceof RoleActionServiceImpl impl) {
+                    impl.clear(false);
+                }
+            } catch (Throwable ignored) {
+            }
+        });
+    }
+
     public RoleActionServiceImpl() {}
 
     public void setCurrentRoleLookup(Function<ServerPlayer, RoleKey> lookup) {
@@ -111,14 +123,39 @@ public final class RoleActionServiceImpl implements RoleActionApi {
         this.clock = clock == null ? System::currentTimeMillis : clock;
     }
 
-    /** DISCONNECT cleanup: drops the player's sequence windows, rate and cooldown state. */
+    /** DISCONNECT cleanup: drops the player's sequence and rate windows, keeping cooldowns across reconnect. */
     public void onPlayerDisconnect(@Nullable UUID playerId) {
         if (playerId == null) {
             return;
         }
         seqWindows.keySet().removeIf(k -> playerId.equals(k.playerId()));
         rateWindows.keySet().removeIf(k -> playerId.equals(k.playerId()));
-        lastUseMs.keySet().removeIf(k -> playerId.equals(k.playerId()));
+    }
+
+    /** Clears cooldown/rate/sequence state for one player's role on role assignment/loss. */
+    public void clearCooldownsForRole(@Nullable UUID playerId, @Nullable RoleKey role) {
+        if (playerId == null) {
+            return;
+        }
+        if (role == null) {
+            lastUseMs.keySet().removeIf(k -> playerId.equals(k.playerId()));
+            rateWindows.keySet().removeIf(k -> playerId.equals(k.playerId()));
+            seqWindows.keySet().removeIf(k -> playerId.equals(k.playerId()));
+            return;
+        }
+        Set<ResourceLocation> actionIds = new java.util.HashSet<>();
+        synchronized (this) {
+            for (ManagedDeclaration<RoleActionSpec> decl : specs.values()) {
+                if (role.equals(decl.role())) {
+                    actionIds.add(decl.declaration().id());
+                }
+            }
+        }
+        if (!actionIds.isEmpty()) {
+            lastUseMs.keySet().removeIf(k -> playerId.equals(k.playerId()) && actionIds.contains(k.actionId()));
+            rateWindows.keySet().removeIf(k -> playerId.equals(k.playerId()) && actionIds.contains(k.actionId()));
+            seqWindows.keySet().removeIf(k -> playerId.equals(k.playerId()) && actionIds.contains(k.actionId()));
+        }
     }
 
     /**
@@ -158,13 +195,13 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     }
 
     @Override
-    public @Nullable RoleActionSpec spec(ResourceLocation id) {
+    public synchronized @Nullable RoleActionSpec spec(ResourceLocation id) {
         ManagedDeclaration<RoleActionSpec> decl = id == null ? null : specs.get(id);
         return decl == null ? null : decl.declaration();
     }
 
     @Override
-    public Collection<RoleActionSpec> specs() {
+    public synchronized Collection<RoleActionSpec> specs() {
         return specs.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
@@ -174,7 +211,7 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     }
 
     @Override
-    public List<RoleActionSpec> specsFor(RoleKey role) {
+    public synchronized List<RoleActionSpec> specsFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
@@ -190,6 +227,12 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     @Override
     public RoleActionResult dispatch(ResourceLocation actionId, @Nullable UUID playerId,
                                      @Nullable RoleKey currentRole, byte[] payload, int sequence) {
+        var server = com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.server();
+        if (server != null) {
+            if (!server.isSameThread()) return RoleActionResult.reject(RoleActionResult.HANDLER);
+            ServerPlayer player = playerId == null ? null : server.getPlayerList().getPlayer(playerId);
+            return receiveC2S(player, actionId, payload, sequence);
+        }
         return run(actionId, playerId, currentRole, payload, sequence, null, false);
     }
 
@@ -248,7 +291,23 @@ public final class RoleActionServiceImpl implements RoleActionApi {
 
     @Override
     public synchronized void freeze() {
+        requireCoreCaller("RoleActionApi.freeze()");
         this.frozen = true;
+    }
+
+    private static void requireCoreCaller(String method) {
+        if (com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
+            return;
+        }
+        Class<?> caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                .walk(frames -> frames.skip(2)
+                        .map(StackWalker.StackFrame::getDeclaringClass)
+                        .findFirst()
+                        .orElse(null));
+        if (caller != null && caller.getName().startsWith("com.habitrain.core.")) {
+            return;
+        }
+        throw new IllegalStateException(method + " may only be called by habitrain_core lifecycle");
     }
 
     @Override
@@ -411,10 +470,13 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                     if (pos.getY() < level.getMinBuildHeight() || pos.getY() >= level.getMaxBuildHeight()) {
                         return RoleActionResult.reject(RoleActionResult.TARGET, "block pos out of world");
                     }
-                    if (spec.maxDistance() > 0
-                            && player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)
-                            > spec.maxDistance() * spec.maxDistance()) {
+                    double maxDist = spec.maxDistance() > 0 ? spec.maxDistance() : 64.0;
+                    if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)
+                            > maxDist * maxDist) {
                         return RoleActionResult.reject(RoleActionResult.RANGE);
+                    }
+                    if (!level.isLoaded(pos)) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "block pos not loaded");
                     }
                 }
                 target = new RoleActionTarget.Block(pos);
@@ -430,8 +492,23 @@ public final class RoleActionServiceImpl implements RoleActionApi {
                 if (entityId <= 0) {
                     return RoleActionResult.reject(RoleActionResult.TARGET, "entity id must be positive");
                 }
-                if (player != null && player.level().getEntity(entityId) == null) {
-                    return RoleActionResult.reject(RoleActionResult.TARGET, "entity not found");
+                if (player != null) {
+                    net.minecraft.world.entity.Entity targetEntity = player.level().getEntity(entityId);
+                    if (targetEntity == null) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "entity not found");
+                    }
+                    if (spec.requireTargetAlive() && (!targetEntity.isAlive()
+                            || targetEntity instanceof ServerPlayer targetPlayer
+                            && !Boolean.TRUE.equals(aliveLookup.apply(targetPlayer)))) {
+                        return RoleActionResult.reject(RoleActionResult.TARGET, "target dead");
+                    }
+                    if (spec.maxDistance() > 0
+                            && player.distanceToSqr(targetEntity) > spec.maxDistance() * spec.maxDistance()) {
+                        return RoleActionResult.reject(RoleActionResult.RANGE);
+                    }
+                    if (spec.requireLineOfSight() && !player.hasLineOfSight(targetEntity)) {
+                        return RoleActionResult.reject(RoleActionResult.LINE_OF_SIGHT);
+                    }
                 }
                 target = new RoleActionTarget.Entity(entityId);
             }
@@ -594,7 +671,7 @@ public final class RoleActionServiceImpl implements RoleActionApi {
     }
 
     private static boolean lookupAlive(ServerPlayer player) {
-        return player != null && player.isAlive() && !player.isSpectator();
+        return com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(player);
     }
 
     private static @Nullable RoleKey lookupCurrentRole(ServerPlayer player) {
@@ -610,7 +687,11 @@ public final class RoleActionServiceImpl implements RoleActionApi {
             if (role == null || role.identifier() == null) {
                 return null;
             }
-            return RoleKey.of(role.identifier());
+            try {
+                return com.habitrain.core.api.role.v2.RoleCatalogApi.instance().canonicalize(role.identifier());
+            } catch (Throwable ignored) {
+                return RoleKey.of(role.identifier());
+            }
         } catch (Throwable t) {
             return null;
         }

@@ -18,31 +18,31 @@ public final class RoleOverlayAccessor {
     private RoleOverlayAccessor() {}
 
     /** The current overlay for {@code role}, or {@code null} when not modified. */
-    public static @Nullable CompiledModifyOverlay currentOverlay(SRERole role) {
+    public static synchronized @Nullable CompiledModifyOverlay currentOverlay(SRERole role) {
         return role == null ? null : OVERLAYS.get(role);
     }
 
     /** Whether {@code role} currently carries an active v2 MODIFY overlay. */
-    public static boolean isModified(SRERole role) {
+    public static synchronized boolean isModified(SRERole role) {
         return role != null && OVERLAYS.containsKey(role);
     }
 
     /** Registers (or replaces) the overlay for a role object. */
-    public static void set(SRERole role, CompiledModifyOverlay overlay) {
+    public static synchronized void set(SRERole role, CompiledModifyOverlay overlay) {
         if (role != null) {
             OVERLAYS.put(role, overlay);
         }
     }
 
     /** Removes the overlay for a role object (restore path). */
-    public static void remove(SRERole role) {
+    public static synchronized void remove(SRERole role) {
         if (role != null) {
             OVERLAYS.remove(role);
         }
     }
 
     /** Drops every overlay (server stop, snapshot switch, test isolation). */
-    public static void clear() {
+    public static synchronized void clear() {
         OVERLAYS.clear();
     }
 }

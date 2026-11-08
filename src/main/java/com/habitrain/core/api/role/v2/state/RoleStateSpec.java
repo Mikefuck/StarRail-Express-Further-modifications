@@ -32,6 +32,8 @@ import java.util.function.UnaryOperator;
  * @param <T> value type. Prefer boxed primitives and immutable records.
  */
 public final class RoleStateSpec<T> {
+    public static final int MAX_SYNC_BYTES = 65_536;
+
 
     private final ResourceLocation id;
     private final RoleKey role;
@@ -47,14 +49,14 @@ public final class RoleStateSpec<T> {
     /** Continuous migration chain; index i migrates version {@code (i+1) -> (i+2)}. */
     private final List<UnaryOperator<T>> migrations;
 
-    private RoleStateSpec(Builder<T> b) {
+    private RoleStateSpec(Builder<T> b, Set<ResetCause> effectiveResetOn) {
         this.id = Objects.requireNonNull(b.id, "id");
         this.role = Objects.requireNonNull(b.role, "role");
         this.type = Objects.requireNonNull(b.type, "type");
         this.scope = b.scope;
         this.persistence = b.persistence;
         this.sync = b.sync;
-        this.resetOn = Set.copyOf(b.resetOn);
+        this.resetOn = Set.copyOf(effectiveResetOn);
         this.defaultValue = b.defaultValue;
         this.dataVersion = b.dataVersion;
         this.maxSerializedBytes = b.maxSerializedBytes;
@@ -215,8 +217,8 @@ public final class RoleStateSpec<T> {
         }
 
         public Builder<T> maxSerializedBytes(int maxSerializedBytes) {
-            if (maxSerializedBytes < 0) {
-                throw new IllegalArgumentException("maxSerializedBytes must be >= 0");
+            if (maxSerializedBytes < 1) {
+                throw new IllegalArgumentException("maxSerializedBytes must be >= 1");
             }
             this.maxSerializedBytes = maxSerializedBytes;
             return this;
@@ -232,17 +234,29 @@ public final class RoleStateSpec<T> {
             if (type == null) {
                 throw new IllegalStateException("RoleStateSpec requires a type");
             }
-            if (resetOn.isEmpty()) {
+            if (sync == SyncPolicy.OWNER && scope != StateScope.PLAYER) {
+                throw new IllegalStateException(
+                        "RoleStateSpec " + id + " declares SyncPolicy.OWNER with scope=" + scope
+                                + "; OWNER sync is only valid for PLAYER scope");
+            }
+            if (scope == StateScope.ROUND
+                    && (persistence == Persistence.WORLD || persistence == Persistence.PERMANENT)) {
+                throw new IllegalStateException(
+                        "RoleStateSpec " + id + " declares ROUND scope with persistence=" + persistence);
+            }
+            // ROLE-API-09：不在 build() 中直接修改 Builder 自身的 resetOn，防止复用 Builder 时污染后续构建。
+            EnumSet<ResetCause> effectiveResetOn = EnumSet.copyOf(resetOn);
+            if (effectiveResetOn.isEmpty()) {
                 // PLAYER slots drop when the holder loses the role. ROUND
                 // persistence / ROUND scope drop at round end. WORLD/PERMANENT
                 // without an explicit cause stay until MANUAL.
                 if (scope == StateScope.PLAYER) {
-                    resetOn.add(ResetCause.ROLE_LOST);
+                    effectiveResetOn.add(ResetCause.ROLE_LOST);
                 }
                 if (scope == StateScope.ROUND
                         || persistence == Persistence.ROUND
                         || persistence == Persistence.NONE) {
-                    resetOn.add(ResetCause.ROUND_END);
+                    effectiveResetOn.add(ResetCause.ROUND_END);
                 }
             }
             if (!migrations.isEmpty() && migrations.size() != dataVersion - 1) {
@@ -258,7 +272,13 @@ public final class RoleStateSpec<T> {
                         "RoleStateSpec " + id + " requires a codec because persistence=" + persistence
                                 + " or sync=" + sync + "; refusing to silently ignore the declaration");
             }
-            return new RoleStateSpec<>(this);
+            if (needsCodec && maxSerializedBytes < 1) {
+                throw new IllegalStateException(
+                        "RoleStateSpec " + id + " requires maxSerializedBytes >= 1 when codec is used");
+            }
+            if (sync != SyncPolicy.NONE && sync != SyncPolicy.SERVER_ONLY && maxSerializedBytes > MAX_SYNC_BYTES)
+                throw new IllegalStateException("Synchronized role state exceeds wire byte budget: " + maxSerializedBytes);
+            return new RoleStateSpec<>(this, effectiveResetOn);
         }
     }
 }

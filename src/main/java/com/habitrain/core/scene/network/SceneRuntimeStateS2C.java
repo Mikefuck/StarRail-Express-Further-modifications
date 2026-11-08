@@ -43,10 +43,10 @@ public final class SceneRuntimeStateS2C implements CustomPacketPayload {
 
             SceneProfile profile;
             try {
-                JsonObject obj = JsonParser.parseString(profileJson).getAsJsonObject();
+                JsonObject obj = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(profileJson)).getAsJsonObject();
                 profile = SceneProfile.fromJson(obj);
             } catch (Exception e) {
-                profile = SceneProfile.createDefault();
+                throw new DecoderException("Invalid scene profile JSON", e);
             }
 
             SceneRuntimeState runtimeState = new SceneRuntimeState(active, startTime, revision, mapKey, assetHash, profile);
@@ -67,8 +67,9 @@ public final class SceneRuntimeStateS2C implements CustomPacketPayload {
 
     private static String readString(ByteBuf buf) {
         int len = buf.readInt();
-        if (len <= 0) return "";
-        if (len > MAX_STRING_LENGTH) throw new DecoderException("String too long: " + len);
+        if (len < 0) throw new DecoderException("Negative string length: " + len);
+        if (len == 0) return "";
+        if (len > MAX_STRING_LENGTH || len > buf.readableBytes()) throw new DecoderException("String too long: " + len);
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

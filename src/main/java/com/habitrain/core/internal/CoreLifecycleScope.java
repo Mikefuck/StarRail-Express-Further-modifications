@@ -20,6 +20,7 @@ import java.util.Set;
 public final class CoreLifecycleScope {
 
     private static final ThreadLocal<Integer> DEPTH = ThreadLocal.withInitial(() -> 0);
+    private static final ThreadLocal<Integer> UNPRIVILEGED_DEPTH = ThreadLocal.withInitial(() -> 0);
 
     private static final Set<String> CALLERS = Set.of(
             "com.habitrain.core.HabiTrainCore",
@@ -27,13 +28,14 @@ public final class CoreLifecycleScope {
             "com.habitrain.core.role.extension.RoleExtensionLifecycleHandler",
             "com.habitrain.core.client.HabiTrainCoreClient",
             "com.habitrain.core.client.role.RoleClientExtensionHooks");
+    private static final String CORE_PACKAGE_PREFIX = "com.habitrain.core.";
     private static final URI CORE_SOURCE = sourceOf(CoreLifecycleScope.class);
 
     /** Secondary check only; Fabric uses a shared loader for installed mods. */
     private static final ClassLoader CORE_LOADER = CoreLifecycleScope.class.getClassLoader();
 
     static {
-        CoreLifecycle.installProbe(CoreLifecycleScope.class, () -> DEPTH.get() > 0);
+        CoreLifecycle.installProbe(CoreLifecycleScope.class, CoreLifecycleScope::isActive);
     }
 
     private CoreLifecycleScope() {}
@@ -54,6 +56,27 @@ public final class CoreLifecycleScope {
         runWithinScope(action);
     }
 
+    /**
+     * X-CUT-07：在调用外部不可信扩展回调时临时挂起生命周期特权作用域，
+     * 确保第三方 {@code register} / {@code registerClient} 回调内 {@link #isActive()} 恒为 {@code false}。
+     */
+    public static void runUnprivileged(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        UNPRIVILEGED_DEPTH.set(UNPRIVILEGED_DEPTH.get() + 1);
+        try {
+            action.run();
+        } finally {
+            int next = UNPRIVILEGED_DEPTH.get() - 1;
+            if (next <= 0) {
+                UNPRIVILEGED_DEPTH.remove();
+            } else {
+                UNPRIVILEGED_DEPTH.set(next);
+            }
+        }
+    }
+
     private static void runWithinScope(Runnable action) {
         // 进入作用域必须在执行之前（被调用的 core 代码需要通过 isActive() 观察到它），
         // 因此这里用 try/finally 保证异常路径一定复位深度。
@@ -70,8 +93,11 @@ public final class CoreLifecycleScope {
         }
     }
 
-    /** 当前线程是否处于 core 生命周期作用域内。 */
+    /** 当前线程是否处于 core 生命周期作用域内（且调用链未进入第三方扩展回调）。 */
     public static boolean isActive() {
+        if (UNPRIVILEGED_DEPTH.get() > 0) {
+            return false;
+        }
         return DEPTH.get() > 0;
     }
 
@@ -101,8 +127,16 @@ public final class CoreLifecycleScope {
     }
 
     static boolean hasCoreSource(Class<?> declaring) {
-        return declaring != null && declaring.getClassLoader() == CORE_LOADER
-                && CORE_SOURCE != null && CORE_SOURCE.equals(sourceOf(declaring));
+        if (declaring == null || declaring.getClassLoader() != CORE_LOADER) {
+            return false;
+        }
+        URI targetSource = sourceOf(declaring);
+        if (CORE_SOURCE != null) {
+            return CORE_SOURCE.equals(targetSource);
+        }
+        // CORE-19：当自定义 ClassLoader 不提供 CodeSource 时（CORE_SOURCE == null），
+        // 对同 ClassLoader 且同样无 CodeSource 的本模组类回退按包名前缀校验，避免永久锁死自身初始化。
+        return targetSource == null && declaring.getName().startsWith(CORE_PACKAGE_PREFIX);
     }
 
     private static URI sourceOf(Class<?> type) {

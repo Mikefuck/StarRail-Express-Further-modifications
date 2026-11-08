@@ -29,15 +29,7 @@ import java.util.UUID;
 public interface RoleStateApi {
 
     static RoleStateApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    /** Lazily-bound default instance; avoids touching the game on class load. */
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleStateApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.state();
+        return com.habitrain.core.api.spi.RoleSpi.state();
     }
 
     /** The spec bound to {@code key}, or {@code null} if it was never registered. */

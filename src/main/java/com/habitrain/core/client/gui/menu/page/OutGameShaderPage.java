@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** 游戏外·光影白名单（内联页面）：启用 + 列表增删，即时保存。 */
 public class OutGameShaderPage implements ConfigPage {
@@ -24,6 +25,7 @@ public class OutGameShaderPage implements ConfigPage {
     private boolean whitelistEnabled;
     private final List<String> whitelist = new ArrayList<>();
     private final EditBox addBox;
+    private final EditBoxInputRouter inputRouter;
     private String addText = "";
     private ScrollArea area;
 
@@ -41,11 +43,12 @@ public class OutGameShaderPage implements ConfigPage {
         this.addBox.setHint(Component.literal("输入光影包名称..."));
         this.addBox.setResponder(t -> addText = t == null ? "" : t.trim());
         this.addBox.setEditable(editable);
+        this.inputRouter = new EditBoxInputRouter(this.addBox);
         this.area = new ScrollArea(0, 0, 0, 0);
     }
 
     @Override public boolean canSave() { return true; }
-    @Override public void save() { ConfigManager.getInstance().save(); }
+    @Override public void save() { saveToServer(); }
     @Override public void flushPending() {}
 
     @Override
@@ -71,31 +74,34 @@ public class OutGameShaderPage implements ConfigPage {
         g.fill(x + PAD(), y + HEADER_H, x + w - PAD(), y + HEADER_H + 1, MenuTheme.BORDER);
 
         int listY = y + HEADER_H + 4;
-        int listH = h - HEADER_H - 8;
+        int listH = Math.max(1, h - HEADER_H - 30);
         area.setBounds(x, listY, w, listH);
         g.enableScissor(x, listY, x + w, listY + listH);
-        int cy = area.getContentY();
-        if (whitelist.isEmpty()) {
-            String msg = whitelistEnabled ? "§7暂无允许的光影包 — 将阻止所有光影包" : "§7暂无添加的光影包，点击上方添加";
-            g.drawString(font, Component.literal(msg), x + w / 2 - font.width(msg) / 2, cy + 8, 0x555555, false);
-        } else {
-            for (int i = 0; i < whitelist.size(); i++) {
-                boolean hover = MenuTheme.inBounds(mx, my, x, cy, w, ROW_H);
-                MenuTheme.row(g, x, cy, w, ROW_H, hover, false);
-                String index = String.format("%02d", i + 1);
-                g.drawString(font, index, x + 7, cy + 8, MenuTheme.TEXT_DIM, false);
-                g.drawString(font, whitelist.get(i), x + 29, cy + 8, MenuTheme.TEXT_PRIMARY, false);
-                int delX = x + w - 22;
-                boolean delHover = hover && mx >= delX && mx < delX + 18 && my >= cy + 4 && my < cy + 22;
-                if (delHover) g.fill(delX, cy + 4, delX + 18, cy + 22, 0x44FF0000);
-                g.drawString(font, delHover ? "§c✕" : "§8✕", delX + 5, cy + 4, 0, false);
-                rowHits.add(new RowHit(i, x, cy, w, ROW_H));
-                cy += ROW_H + ROW_GAP;
+        try {
+            int cy = area.getContentY();
+            if (whitelist.isEmpty()) {
+                String msg = whitelistEnabled ? "§7暂无允许的光影包 — 将阻止所有光影包" : "§7暂无添加的光影包，点击上方添加";
+                g.drawString(font, Component.literal(msg), x + w / 2 - font.width(msg) / 2, cy + 8, 0x555555, false);
+            } else {
+                for (int i = 0; i < whitelist.size(); i++) {
+                    boolean hover = MenuTheme.inBounds(mx, my, x, cy, w, ROW_H);
+                    MenuTheme.row(g, x, cy, w, ROW_H, hover, false);
+                    String index = String.format(Locale.ROOT, "%02d", i + 1);
+                    g.drawString(font, index, x + 7, cy + 8, MenuTheme.TEXT_DIM, false);
+                    g.drawString(font, whitelist.get(i), x + 29, cy + 8, MenuTheme.TEXT_PRIMARY, false);
+                    int delX = x + w - 22;
+                    boolean delHover = hover && mx >= delX && mx < delX + 18 && my >= cy + 4 && my < cy + 22;
+                    if (delHover) g.fill(delX, cy + 4, delX + 18, cy + 22, 0x44FF0000);
+                    g.drawString(font, delHover ? "§c✕" : "§8✕", delX + 5, cy + 4, 0, false);
+                    rowHits.add(new RowHit(i, x, cy, w, ROW_H));
+                    cy += ROW_H + ROW_GAP;
+                }
             }
+            area.setContentHeight(whitelist.isEmpty() ? 40 : whitelist.size() * (ROW_H + ROW_GAP));
+            area.render(g);
+        } finally {
+            g.disableScissor();
         }
-        area.setContentHeight(whitelist.isEmpty() ? 40 : whitelist.size() * (ROW_H + ROW_GAP));
-        area.render(g);
-        g.disableScissor();
 
         int infoY = y + h - 24;
         g.drawString(font, "已允许 " + whitelist.size() + " 个光影包  /  状态 "
@@ -109,7 +115,9 @@ public class OutGameShaderPage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (addBox.mouseClicked(mx, my, btn)) return true;
+        if (inputRouter.mouseClicked(mx, my, btn)) return true;
+        int listY = y + HEADER_H + 4;
+        int listH = Math.max(1, h - HEADER_H - 30);
         for (RowHit hit : rowHits) {
             if (hit.index() == -1) {
                 if (PillToggle.hit(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
@@ -130,6 +138,7 @@ public class OutGameShaderPage implements ConfigPage {
                 }
                 continue;
             }
+            if (my < listY || my >= listY + listH) continue;
             // 列表行：仅点击右侧 ✕ 删除按钮删除（与旧版一致）
             int delX = hit.x() + hit.w() - 22;
             int delY = hit.y() + 4;
@@ -172,9 +181,9 @@ public class OutGameShaderPage implements ConfigPage {
                 addCurrentText();
                 return true;
             }
-            if (addBox.keyPressed(key, scan, mod)) return true;
+            if (inputRouter.keyPressed(key, scan, mod)) return true;
         }
         return false;
     }
-    @Override public boolean charTyped(char ch, int mod) { return addBox.isFocused() && addBox.charTyped(ch, mod); }
+    @Override public boolean charTyped(char ch, int mod) { return inputRouter.charTyped(ch, mod); }
 }

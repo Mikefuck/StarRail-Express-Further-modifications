@@ -141,6 +141,7 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         }
         h = h * 31L + count;
         // MODIFY / ALIAS / 配置门控变化分别经这两条路径体现。
+        h = h * 31L + RoleExtensionRegistry.INSTANCE.getManagedRoles().keySet().hashCode();
         h = h * 31L + RoleExtensionRegistry.INSTANCE.getPatches().hashCode();
         h = h * 31L + RoleExtensionRegistry.INSTANCE.getReplacements().hashCode();
         h = h * 31L + RoleExtensionRegistry.INSTANCE.getAliases().hashCode();
@@ -153,44 +154,71 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         if (role == null || role.identifier() == null) {
             return false;
         }
+        com.habitrain.core.api.role.v2.EffectiveRoleProfile profile = er.profile();
 
         // QuerySide: no side-scoped roles exist yet, so every side matches.
         // (Reserved for a later increment that introduces side-specific roles.)
 
-        if (query.purpose() == QueryPurpose.RANDOM && !role.canBeRandomedDefination()) {
+        boolean canBeRandomed = profile != null ? profile.canBeRandomed() : role.canBeRandomedDefination();
+        if (query.purpose() == QueryPurpose.RANDOM && !canBeRandomed) {
             return false;
         }
-        if (query.excludesOtherModeRoles() && role.isOtherModeRole()) {
+        boolean otherMode = profile != null ? profile.otherModeRole() : role.isOtherModeRole();
+        if (query.excludesOtherModeRoles() && otherMode) {
             return false;
         }
+        SRERole.SpecialMapRoleMap mapRole = profile != null && profile.specialMapRole() != null
+                ? profile.specialMapRole() : role.getSpecialMapRole();
         if (!query.mapAbilities().isEmpty()
-                && role.getSpecialMapRole() != SRERole.SpecialMapRoleMap.ALL
-                && !query.mapAbilities().contains(role.getSpecialMapRole())) {
+                && mapRole != SRERole.SpecialMapRoleMap.ALL
+                && !query.mapAbilities().contains(mapRole)) {
             return false;
         }
         if (!query.factions().isEmpty()
-                && query.factions().stream().noneMatch(f -> f.matches(role))) {
+                && query.factions().stream().noneMatch(f -> matchesFaction(f, profile, role))) {
             return false;
         }
         if (query.providerNamespace() != null
                 && !query.providerNamespace().equals(er.key().namespace())) {
             return false;
         }
-        if (!query.tags().isEmpty() && !role.isFlag(query.tags().toArray(new String[0]))) {
-            return false;
+        if (!query.tags().isEmpty()) {
+            if (profile != null) {
+                if (!profile.flags().containsAll(query.tags())) {
+                    return false;
+                }
+            } else if (!role.isFlag(query.tags().toArray(new String[0]))) {
+                return false;
+            }
         }
         int playerCount = query.playerCount();
         if (playerCount >= 0) {
-            if (role.defaultEnableNeedPlayerCount > 0
-                    && playerCount < role.defaultEnableNeedPlayerCount) {
+            int needCount = profile != null ? profile.needPlayerCount() : role.defaultEnableNeedPlayerCount;
+            int maxCount = profile != null ? profile.maxPlayerCount() : role.defaultEnableMaxPlayerCount;
+            if (needCount > 0 && playerCount < needCount) {
                 return false;
             }
-            if (role.defaultEnableMaxPlayerCount > 0
-                    && playerCount > role.defaultEnableMaxPlayerCount) {
+            if (maxCount > 0 && playerCount > maxCount) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean matchesFaction(
+            com.habitrain.core.api.role.v2.RoleFaction faction,
+            @org.jetbrains.annotations.Nullable com.habitrain.core.api.role.v2.EffectiveRoleProfile profile,
+            SRERole role) {
+        if (profile == null) {
+            return faction.matches(role);
+        }
+        return switch (faction) {
+            case INNOCENT -> profile.innocent() && !profile.vigilanteTeam() && !profile.neutral();
+            case VIGILANTE -> profile.vigilanteTeam();
+            case NEUTRAL -> profile.neutral() || profile.neutralForKiller();
+            case KILLER -> profile.canUseKiller();
+            case MAFIA -> profile.mafiaTeam();
+        };
     }
 
     @Override
@@ -200,21 +228,27 @@ public final class RoleCatalogImpl implements RoleCatalogApi {
         if (frozen != null) {
             return frozen.canonicalize(id);
         }
-        // v2 ALIAS redirect.
-        ResourceLocation alias = RoleExtensionRegistry.INSTANCE.resolveAlias(id);
-        if (alias != null) {
-            return RoleKey.of(alias);
-        }
-        // v2 REPLACE redirect (config-enabled replacements only).
-        RoleReplacement repl = RoleExtensionRegistry.INSTANCE.replacementFor(id);
-        if (repl != null && RoleExtensionRegistry.INSTANCE.isReplacementActive(id)) {
-            if (repl.identity() == ReplacementIdentity.KEEP_CANONICAL_ID
-                    || repl.identity() == ReplacementIdentity.PRESERVE_TARGET_ID) {
-                return RoleKey.of(id);
+        ResourceLocation cur = id;
+        Set<ResourceLocation> seen = new java.util.HashSet<>();
+        while (seen.add(cur)) {
+            ResourceLocation alias = RoleExtensionRegistry.INSTANCE.resolveAlias(cur);
+            if (alias != null && !alias.equals(cur)) {
+                cur = alias;
+                continue;
             }
-            return RoleKey.of(repl.replacement().key().location());
+            RoleReplacement repl = RoleExtensionRegistry.INSTANCE.replacementFor(cur);
+            if (repl != null && RoleExtensionRegistry.INSTANCE.isReplacementActive(cur)) {
+                if (repl.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS) {
+                    ResourceLocation next = repl.replacement().key().location();
+                    if (!next.equals(cur)) {
+                        cur = next;
+                        continue;
+                    }
+                }
+            }
+            break;
         }
-        return RoleKey.of(id);
+        return RoleKey.of(cur);
     }
 
     @Override

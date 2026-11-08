@@ -54,7 +54,8 @@ public final class RolePatch {
         public static IntPatch max(int v) { return new IntPatch(NumericOp.MAX, v); }
     }
 
-    /** A color override (announcement color). */
+    /** A fixed announcement color. @deprecated Prefer {@link RolePatch#fixedColor()}. */
+    @Deprecated(forRemoval = false)
     public record ColorPatch(int color) {}
 
     /** A mood-type override. */
@@ -80,6 +81,10 @@ public final class RolePatch {
 
         public static RoleKeyListPatch replaceAll(RoleKey... keys) {
             return new RoleKeyListPatch(ListOp.REPLACE_ALL, List.of(keys));
+        }
+
+        public static RoleKeyListPatch replaceMatchingIds(RoleKey... keys) {
+            return new RoleKeyListPatch(ListOp.REPLACE_MATCHING_IDS, List.of(keys));
         }
     }
 
@@ -191,6 +196,10 @@ public final class RolePatch {
     public PatchPriority priority() { return priority; }
     public @Nullable String entryKey() { return entryKey; }
     public @Nullable ColorPatch color() { return color; }
+    /** Fixed ARGB override, distinct from the dynamic {@code patch.ColorPatch} provider. */
+    public java.util.OptionalInt fixedColor() {
+        return color == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(color.color());
+    }
     public @Nullable com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider() { return colorProvider; }
     public @Nullable FlagsPatch flagsPatch() { return flagsPatch; }
     public @Nullable SpawnInfoPatch spawnInfoPatch() { return spawnInfoPatch; }
@@ -365,10 +374,15 @@ public final class RolePatch {
                 throw new IllegalStateException(
                         "RolePatch sets both color(ColorPatch) and colorProvider: pick one");
             }
+            if (shopPatch != null && shopTransform != null) {
+                throw new IllegalStateException(
+                        "RolePatch sets both shopPatch and shopTransform: pick one");
+            }
             if (flagsPatch != null && (innocent != null || canUseKiller != null || neutral != null
                     || vigilanteTeam != null || neutralForKiller != null || neutralForInnocent != null
-                    || canUseInstinct != null || instinctNightVision != null
-                    || canSeeTeammateKiller != null)) {
+                    || mafiaTeam != null || canUseInstinct != null || instinctNightVision != null
+                    || canSeeTeammateKiller != null || otherModeRole != null
+                    || hiddenForRotation != null)) {
                 throw new IllegalStateException(
                         "RolePatch sets both flagsPatch and individual flag patches: "
                                 + "flagsPatch wins at runtime, so the scalar patches would be ignored");

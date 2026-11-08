@@ -52,6 +52,15 @@ public final class RoleChatCapabilityHooks {
                     sender.getUUID(), currentRole(sender), null, null);
             return RoleCapabilityApi.instance().evaluateChat(ctx) != ChatDecision.BLOCK;
         });
+        ServerMessageEvents.ALLOW_COMMAND_MESSAGE.register((message, source, params) -> {
+            ServerPlayer sender = source == null ? null : source.getPlayer();
+            if (sender == null) {
+                return true;
+            }
+            RoleCapabilityContext ctx = RoleCapabilityContext.of(
+                    sender.getUUID(), currentRole(sender), null, null);
+            return RoleCapabilityApi.instance().evaluateChat(ctx) != ChatDecision.BLOCK;
+        });
         LOGGER.info("Chat capability gate registered");
     }
 
@@ -68,7 +77,11 @@ public final class RoleChatCapabilityHooks {
             if (role == null || role.identifier() == null) {
                 return null;
             }
-            return RoleKey.of(role.identifier());
+            try {
+                return com.habitrain.core.api.role.v2.RoleCatalogApi.instance().canonicalize(role.identifier());
+            } catch (Throwable ignored) {
+                return RoleKey.of(role.identifier());
+            }
         } catch (Throwable t) {
             return null;
         }

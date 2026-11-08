@@ -66,7 +66,16 @@ public final class AssetTransferRegistry {
      * <p>有它，链路两端才知道完成时该做什么——解码 base、应用补丁、把结果按 target 的 hash
      * 交给等待者；失败时把等待者重新挂到 target 的整文件下载上。</p>
      */
-    public record PatchTarget(String baseSha256, SceneAssetDescriptor target) {}
+    public record PatchTarget(String baseSha256, SceneAssetDescriptor target,
+                              SceneAssetDownloadQueue.Priority priority) {
+        public PatchTarget(String baseSha256, SceneAssetDescriptor target) {
+            this(baseSha256, target, SceneAssetDownloadQueue.Priority.PREFETCH);
+        }
+
+        public PatchTarget {
+            if (priority == null) priority = SceneAssetDownloadQueue.Priority.PREFETCH;
+        }
+    }
 
     /**
      * 单个 hash 的传输状态。字段除 {@code waiters}/{@code attempts} 外均可跨线程读，
@@ -176,9 +185,19 @@ public final class AssetTransferRegistry {
         }
 
         synchronized (lock) {
-            AssetEntry entry = entries.get(sha256);
+            AssetEntry entry = findUnderLock(sha256);
+            if (entry == null && patchTarget != null && patchTarget.target() != null) {
+                entry = findUnderLock(patchTarget.target().sha256());
+            }
             if (entry != null && entry.state != State.FAILED) {
                 // 已有链路在推进：只挂等待者。这就是「同一 hash 只有一条链」的落点。
+                if (patchTarget != null && entry.patchTarget != null
+                        && patchTarget.priority().ordinal() < entry.patchTarget.priority().ordinal()) {
+                    entry.patchTarget = new PatchTarget(
+                            entry.patchTarget.baseSha256(),
+                            entry.patchTarget.target(),
+                            patchTarget.priority());
+                }
                 addWaiter(entry, waiter);
                 return new Acquire(entry, Action.JOINED);
             }
@@ -301,12 +320,25 @@ public final class AssetTransferRegistry {
         }
     }
 
-    /** 按 hash 查找条目；不存在返回 null。 */
+    /** 按 hash 查找条目（含增量补丁正在构建的目标资产 hash）；不存在返回 null。 */
     public AssetEntry find(String sha256) {
         if (sha256 == null) return null;
         synchronized (lock) {
-            return entries.get(sha256);
+            return findUnderLock(sha256);
         }
+    }
+
+    private AssetEntry findUnderLock(String sha256) {
+        AssetEntry direct = entries.get(sha256);
+        if (direct != null && direct.state != State.FAILED) return direct;
+        for (AssetEntry candidate : entries.values()) {
+            if (candidate.state != State.FAILED && candidate.patchTarget != null
+                    && candidate.patchTarget.target() != null
+                    && sha256.equalsIgnoreCase(candidate.patchTarget.target().sha256())) {
+                return candidate;
+            }
+        }
+        return direct;
     }
 
     /** 处于活跃传输（尚未就绪也未失败）的条目数量。 */

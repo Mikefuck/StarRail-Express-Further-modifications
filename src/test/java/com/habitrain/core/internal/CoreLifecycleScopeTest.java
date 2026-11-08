@@ -4,6 +4,30 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CoreLifecycleScopeTest {
+    @Test void providerCallbacksSuspendPrivilegeEvenWhenTheyReenterAScope() {
+        CoreLifecycleTestSupport.run(() -> {
+            assertTrue(CoreLifecycleScope.isActive());
+            CoreLifecycleScope.runUnprivileged(() -> {
+                assertFalse(CoreLifecycleScope.isActive());
+                assertFalse(com.habitrain.core.api.spi.CoreLifecycle.isActive());
+                CoreLifecycleTestSupport.run(() -> assertFalse(CoreLifecycleScope.isActive()));
+            });
+            assertTrue(CoreLifecycleScope.isActive());
+        });
+        assertFalse(CoreLifecycleScope.isActive());
+    }
+
+    @Test void throwingProviderRestoresBootstrapPrivilegeAndFinallyLeavesTheScope() {
+        CoreLifecycleTestSupport.run(() -> {
+            assertThrows(IllegalStateException.class, () -> CoreLifecycleScope.runUnprivileged(() -> {
+                assertFalse(CoreLifecycleScope.isActive());
+                throw new IllegalStateException("provider failed");
+            }));
+            assertTrue(CoreLifecycleScope.isActive());
+        });
+        assertFalse(CoreLifecycleScope.isActive());
+    }
+
     @Test void nestedScopeAndExceptionRestoreDepth() {
         assertFalse(CoreLifecycleScope.isActive());
         assertThrows(IllegalArgumentException.class, () -> CoreLifecycleTestSupport.run(() -> {

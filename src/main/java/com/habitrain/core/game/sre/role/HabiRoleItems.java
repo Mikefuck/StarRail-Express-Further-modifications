@@ -36,17 +36,17 @@ public final class HabiRoleItems {
 
     public static ItemStack createBouquet(int count) {
         ItemStack stack = new ItemStack(Items.POPPY, Math.max(1, count));
-        stack.set(DataComponents.CUSTOM_NAME, Component.literal("虞美人"));
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.bouquet"));
         putFlag(stack, TAG_BOUQUET, true);
         return stack;
     }
 
     public static ItemStack createPepperSpray() {
         ItemStack stack = new ItemStack(Items.HONEY_BOTTLE, 1);
-        stack.set(DataComponents.CUSTOM_NAME, Component.literal("防狼喷雾"));
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.pepper_spray"));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("使用后 5 秒内免疫近战击杀"),
-                Component.literal("冷却 30 秒")
+                Component.translatable("item.habitrain_core.pepper_spray.desc"),
+                Component.translatable("item.habitrain_core.pepper_spray.cooldown")
         )));
         putFlag(stack, TAG_PEPPER_SPRAY, true);
         return stack;
@@ -78,7 +78,7 @@ public final class HabiRoleItems {
     public static ItemStack createScapegoatKnife() {
         ItemStack stack = lookupItem(FAKE_KNIFE_ID, 1);
         if (stack.isEmpty()) return ItemStack.EMPTY;
-        stack.set(DataComponents.CUSTOM_NAME, Component.literal("假刀"));
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.scapegoat_knife"));
         putFlag(stack, TAG_SCAPEGOAT_KNIFE, true);
         return stack;
     }
@@ -87,7 +87,7 @@ public final class HabiRoleItems {
         return hasFlag(stack, TAG_SCAPEGOAT_KNIFE);
     }
 
-    /** 收回替罪羊被动发放的假刀（只删带 tag 的）。 */
+    /** 收回替罪羊被动发放的假刀（只删带 tag 的，含背包与鼠标游标）。 */
     public static void reclaimScapegoatKnives(Player player) {
         if (player == null) return;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
@@ -95,6 +95,9 @@ public final class HabiRoleItems {
             if (isScapegoatKnife(stack)) {
                 player.getInventory().setItem(i, ItemStack.EMPTY);
             }
+        }
+        if (player.containerMenu != null && isScapegoatKnife(player.containerMenu.getCarried())) {
+            player.containerMenu.setCarried(ItemStack.EMPTY);
         }
     }
 

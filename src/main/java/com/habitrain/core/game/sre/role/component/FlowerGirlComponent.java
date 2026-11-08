@@ -3,6 +3,7 @@ package com.habitrain.core.game.sre.role.component;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoleItems;
 import com.habitrain.core.game.sre.role.HabiRoles;
+import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.SREArmorPlayerComponent;
@@ -56,6 +57,7 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     private final Map<UUID, Integer> stillTicks = new HashMap<>();
     private final Map<UUID, Vec3> lastPos = new HashMap<>();
     private final Map<UUID, Boolean> rewarded = new HashMap<>();
+    private final Map<UUID, Long> rewardedGlowUntil = new HashMap<>();
     /**
      * 目标 UUID → 各层未消耗馨香护盾的"垫底层数"（赠花前目标已有的护盾层数）。
      * 护盾按栈处理：后加的层先被消耗，目标护盾数跌到 ≤ 垫底层数即视为该层馨香护盾已消耗。
@@ -142,30 +144,7 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
     }
 
     private static ServerPlayer resolveTarget(ServerPlayer self, UUID targetId) {
-        if (targetId != null) {
-            Player p = self.level().getPlayerByUUID(targetId);
-            if (p instanceof ServerPlayer sp) return sp;
-        }
-        // 射线瞄准最近玩家
-        Vec3 eye = self.getEyePosition();
-        Vec3 look = self.getLookAngle();
-        double range = 6.0;
-        AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
-        ServerPlayer best = null;
-        double bestDist = range * range;
-        for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
-            if (p == self || p.isSpectator()) continue;
-            if (!(p instanceof ServerPlayer sp)) continue;
-            Vec3 to = p.getEyePosition().subtract(eye);
-            double proj = to.dot(look);
-            if (proj <= 0 || proj > range) continue;
-            double distSq = to.lengthSqr();
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = sp;
-            }
-        }
-        return best;
+        return ServerAimTargeting.resolve(self, targetId, 6.0D);
     }
 
     @Override
@@ -211,7 +190,9 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
             if (shop != null) shop.addToBalance(GOLD_REWARD);
         } catch (Throwable ignored) {}
         // 透视轮廓 60s
-        target.addEffect(new MobEffectInstance(MobEffects.GLOWING, GLOW_SECONDS * 20, 0, false, false, true));
+        int durationTicks = GLOW_SECONDS * 20;
+        target.addEffect(new MobEffectInstance(MobEffects.GLOWING, durationTicks, 0, false, false, true));
+        rewardedGlowUntil.put(target.getUUID(), target.level().getGameTime() + durationTicks);
     }
 
     private static void tryPlaceFallenLeaves(ServerPlayer target) {
@@ -219,12 +200,12 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
         Block block = BuiltInRegistries.BLOCK.get(HabiRoleItems.FALLEN_LEAVES_ID);
         if (block == null || block == Blocks.AIR) return;
         BlockPos feet = target.blockPosition();
-        BlockPos place = feet.below().above(); // 脚下方块上覆盖：优先脚下空气替换为落叶
-        // 覆盖脚下方块：若脚下是固体上表面，放在 feet
+        BlockPos above = feet.above();
+        // 覆盖脚下方块：优先放在 feet，若 feet 已被非空气半砖/地毯占用则尝试 feet.above()
         if (level.getBlockState(feet).canBeReplaced()) {
             level.setBlock(feet, block.defaultBlockState(), 3);
-        } else if (level.getBlockState(place).canBeReplaced()) {
-            level.setBlock(place, block.defaultBlockState(), 3);
+        } else if (level.getBlockState(above).canBeReplaced()) {
+            level.setBlock(above, block.defaultBlockState(), 3);
         }
     }
 
@@ -238,13 +219,19 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
             return;
         }
         comp.pruneConsumedShields(level);
+        long now = level.getGameTime();
         for (UUID id : giftedIds(comp)) {
             if (!(level.getPlayerByUUID(id) instanceof ServerPlayer p)) continue;
-            // 移除花束物品
-            for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
-                if (HabiRoleItems.isBouquet(p.getInventory().getItem(i))) {
-                    p.getInventory().setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
+            boolean otherFlowerGirlGifted = isGiftedByOtherAliveFlowerGirl(level, flowerGirl, id);
+            // 移除此卖花女赠送的花束物品
+            if (!otherFlowerGirlGifted) {
+                for (int i = 0; i < p.getInventory().getContainerSize(); i++) {
+                    if (HabiRoleItems.isBouquet(p.getInventory().getItem(i))) {
+                        p.getInventory().setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
+                    }
                 }
+            } else {
+                HabiRoleItems.consumeBouquet(p);
             }
             // 只收回尚未消耗的馨香护盾层，不动其他来源的护盾
             List<Integer> floors = comp.shieldFloors.get(id);
@@ -255,15 +242,52 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
                     if (armor != null) armor.removeArmor(Math.min(intact, armor.getArmor()));
                 } catch (Throwable ignored) {}
             }
-            if (Boolean.TRUE.equals(comp.rewarded.get(id))) {
-                p.removeEffect(MobEffects.GLOWING);
+            Long glowUntil = comp.rewardedGlowUntil.get(id);
+            if (Boolean.TRUE.equals(comp.rewarded.get(id))
+                    && glowUntil != null
+                    && now < glowUntil
+                    && !isGlowingFromOtherAliveFlowerGirl(level, flowerGirl, id, now)) {
+                MobEffectInstance activeGlow = p.getEffect(MobEffects.GLOWING);
+                if (activeGlow != null && activeGlow.getDuration() <= GLOW_SECONDS * 20) {
+                    p.removeEffect(MobEffects.GLOWING);
+                }
             }
         }
         comp.shieldFloors.clear();
         comp.stillTicks.clear();
         comp.lastPos.clear();
         comp.rewarded.clear();
+        comp.rewardedGlowUntil.clear();
         MELEE_IMMUNE_UNTIL.remove(flowerGirl.getUUID());
+    }
+
+    private static boolean isGiftedByOtherAliveFlowerGirl(ServerLevel level, ServerPlayer dying, UUID targetId) {
+        for (ServerPlayer sp : level.players()) {
+            if (sp == dying || !ServerAimTargeting.isAliveParticipant(sp)) continue;
+            if (!HabiRoles.isHabiRole(sp, HabiRoles.FLOWER_GIRL)) continue;
+            try {
+                FlowerGirlComponent other = KEY.get(sp);
+                if (other != null && giftedIds(other).contains(targetId)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return false;
+    }
+
+    private static boolean isGlowingFromOtherAliveFlowerGirl(ServerLevel level, ServerPlayer dying, UUID targetId, long now) {
+        for (ServerPlayer sp : level.players()) {
+            if (sp == dying || !ServerAimTargeting.isAliveParticipant(sp)) continue;
+            if (!HabiRoles.isHabiRole(sp, HabiRoles.FLOWER_GIRL)) continue;
+            try {
+                FlowerGirlComponent other = KEY.get(sp);
+                Long until = other != null ? other.rewardedGlowUntil.get(targetId) : null;
+                if (until != null && now < until) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return false;
     }
 
     /** 护盾数已跌到垫底层数及以下的馨香护盾层视为已消耗，移出追踪。目标离线时保持原状。 */
@@ -294,6 +318,7 @@ public final class FlowerGirlComponent implements RoleComponent, ServerTickingCo
         stillTicks.clear();
         lastPos.clear();
         rewarded.clear();
+        rewardedGlowUntil.clear();
         sync();
     }
 

@@ -66,6 +66,14 @@ public final class RoleExtensionConfigSection {
         return Map.copyOf(conflictWinners);
     }
 
+    public boolean isProviderEnabled(String providerId) {
+        return providers.getOrDefault(providerId, true);
+    }
+
+    public boolean isEntryEnabled(String entryId) {
+        return entries.getOrDefault(entryId, true);
+    }
+
     public boolean isAllowGlobalHooks() {
         return allowGlobalHooks;
     }

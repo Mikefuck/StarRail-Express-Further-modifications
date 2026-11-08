@@ -61,6 +61,11 @@ public final class EnvEditorShared {
         cy += ROW_H;
 
         if (isPreset) {
+            if (profileTickField != null) {
+                profileTickField.setFocused(false);
+                profileTickField.setX(-10000);
+                profileTickField.setY(-10000);
+            }
             if (profile.time.preset == null) profile.time.preset = EnvTimeSpec.Preset.DAY;
             g.drawString(font, "预设:", labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
             int preX = labelX + 40;
@@ -276,17 +281,21 @@ public final class EnvEditorShared {
             try {
                 float v = Float.parseFloat(profileFogEndField.getValue().trim());
                 if (v < 0) v = 0;
-                profile.fogEnd = v;
-                ConfigManager.getInstance().markEnvironmentDirty();
+                if (Float.compare(profile.fogEnd, v) != 0) {
+                    profile.fogEnd = v;
+                    ConfigManager.getInstance().markEnvironmentDirty();
+                }
             } catch (NumberFormatException ignored) {}
         }
         if (profileTickField != null && profileTickField.isFocused()) {
             if (profile.time == null) profile.time = EnvTimeSpec.createDefault();
             try {
-                int v = Integer.parseInt(profileTickField.getValue().trim());
-                profile.time.tick = EnvTimeSpec.clampTick(v);
-                profile.time.mode = EnvTimeSpec.Mode.TICK;
-                ConfigManager.getInstance().markEnvironmentDirty();
+                int v = EnvTimeSpec.clampTick(Integer.parseInt(profileTickField.getValue().trim()));
+                if (profile.time.tick != v || profile.time.mode != EnvTimeSpec.Mode.TICK) {
+                    profile.time.tick = v;
+                    profile.time.mode = EnvTimeSpec.Mode.TICK;
+                    ConfigManager.getInstance().markEnvironmentDirty();
+                }
             } catch (NumberFormatException ignored) {}
         }
     }

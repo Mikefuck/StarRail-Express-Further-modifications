@@ -77,6 +77,8 @@ public class OutGameVotePage implements ConfigPage {
     private final List<String> mapIds = new ArrayList<>();
     private final Map<String, EditBox> modeNameFields = new LinkedHashMap<>();
     private final Map<String, EditBox> mapNameFields = new LinkedHashMap<>();
+    private final Map<String, String> initialModeNames = new LinkedHashMap<>();
+    private final Map<String, String> initialMapNames = new LinkedHashMap<>();
 
     private record RowHit(String id, int toggleX, int toggleW, int mapsX, int mapsW, int y, int h, boolean mode) {}
     private record ButtonHit(String action, int x, int y, int w, int h) {}
@@ -180,6 +182,7 @@ public class OutGameVotePage implements ConfigPage {
                 box.setValue(dn);
                 box.setEditable(editable);
                 modeNameFields.put(id, box);
+                initialModeNames.put(id, box.getValue());
             }
         }
         for (String id : mapIds) {
@@ -190,6 +193,7 @@ public class OutGameVotePage implements ConfigPage {
                 box.setValue(dn);
                 box.setEditable(editable);
                 mapNameFields.put(id, box);
+                initialMapNames.put(id, box.getValue());
             }
         }
     }
@@ -230,17 +234,21 @@ public class OutGameVotePage implements ConfigPage {
         return idx >= 0 ? id.substring(idx + 1) : id;
     }
 
+    private String resolveDefaultMapDisplay(String id) {
+        String sreName = SREIntegration.getMapDisplayName(id);
+        if (sreName != null && !sreName.isBlank()) {
+            return sreName;
+        }
+        return id;
+    }
+
     private String resolveMapDisplay(String id) {
         ModeMapVoteSettings s = settings();
         MapVoteEntry e = s.maps.get(id);
         if (e != null && e.displayName != null && !e.displayName.isBlank()) {
             return e.displayName;
         }
-        String sreName = SREIntegration.getMapDisplayName(id);
-        if (sreName != null && !sreName.isBlank()) {
-            return sreName;
-        }
-        return id;
+        return resolveDefaultMapDisplay(id);
     }
 
     private boolean modeEnabled(ModeMapVoteSettings s, String id) {
@@ -269,7 +277,7 @@ public class OutGameVotePage implements ConfigPage {
 
         subHitThisFrame = subTabBar.render(g, font, x, y, w, innerTab, mx, my);
         int contentY = y + SubTabBar.H + 4;
-        int contentH = h - SubTabBar.H - 4;
+        int contentH = Math.max(1, h - SubTabBar.H - 4 - (!editable ? 16 : 0));
         switch (innerTab) {
             case 0 -> renderMain(g, mx, my, delta, x, contentY, w, contentH);
             case 1 -> renderPlayerCountDraw(g, mx, my, delta, x, contentY, w, contentH);
@@ -288,41 +296,43 @@ public class OutGameVotePage implements ConfigPage {
         int listH = h;
         listHeight = listH;
         g.enableScissor(x, listTop, x + w, listTop + listH);
+        try {
+            int cy = listTop + 6 - (int) scroll[0];
+            int labelX = x + PAD;
 
-        int cy = listTop + 6 - (int) scroll[0];
-        int labelX = x + PAD;
+            // ===== 总开关 =====
+            g.drawString(font, "模式 / 地图投票", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
+            ModeMapVoteSettings s = settings();
+            int toggleW = 70;
+            int toggleX = labelX;
+            g.fill(toggleX, cy, toggleX + toggleW, cy + 16, s.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+            g.drawString(font, s.enabled ? "§a已启用" : "§c已停用", toggleX + 6, cy + 4, 0xFFFFFFFF, false);
+            buttonHits.add(new ButtonHit("toggle_enabled", toggleX, cy, toggleW, 16));
+            cy += ROW_H + 4;
 
-        // ===== 总开关 =====
-        g.drawString(font, "模式 / 地图投票", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
-        ModeMapVoteSettings s = settings();
-        int toggleW = 70;
-        int toggleX = labelX;
-        g.fill(toggleX, cy, toggleX + toggleW, cy + 16, s.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, s.enabled ? "§a已启用" : "§c已停用", toggleX + 6, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("toggle_enabled", toggleX, cy, toggleW, 16));
-        cy += ROW_H + 4;
+            // ===== 时长 =====
+            g.drawString(font, "投票时长 / 秒（5–120）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
+            g.drawString(font, "模式投票:", labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
+            modeDurationField.setX(labelX + 60);
+            modeDurationField.setY(cy);
+            modeDurationField.setWidth(48);
+            modeDurationField.render(g, mx, my, delta);
+            g.drawString(font, "地图投票:", labelX + 130, cy + 2, MenuTheme.TEXT_SECONDARY, false);
+            mapDurationField.setX(labelX + 190);
+            mapDurationField.setY(cy);
+            mapDurationField.setWidth(48);
+            mapDurationField.render(g, mx, my, delta);
+            cy += ROW_H + SECTION_GAP;
 
-        // ===== 时长 =====
-        g.drawString(font, "投票时长 / 秒（5–120）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
-        g.drawString(font, "模式投票:", labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
-        modeDurationField.setX(labelX + 60);
-        modeDurationField.setY(cy);
-        modeDurationField.setWidth(48);
-        modeDurationField.render(g, mx, my, delta);
-        g.drawString(font, "地图投票:", labelX + 130, cy + 2, MenuTheme.TEXT_SECONDARY, false);
-        mapDurationField.setX(labelX + 190);
-        mapDurationField.setY(cy);
-        mapDurationField.setWidth(48);
-        mapDurationField.render(g, mx, my, delta);
-        cy += ROW_H + SECTION_GAP;
-
-        contentHeight[0] = cy - listTop + (int) scroll[0];
-        int maxScroll = Math.max(0, contentHeight[0] - listH);
-        scroll[0] = Mth.clamp(scroll[0], 0, maxScroll);
-        MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[0], maxScroll, 3);
-        g.disableScissor();
+            contentHeight[0] = cy - listTop + (int) scroll[0];
+            int maxScroll = Math.max(0, contentHeight[0] - listH);
+            scroll[0] = Mth.clamp(scroll[0], 0, maxScroll);
+            MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[0], maxScroll, 3);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     private void renderPlayerCountDraw(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
@@ -330,84 +340,86 @@ public class OutGameVotePage implements ConfigPage {
         int listH = h;
         listHeight = listH;
         g.enableScissor(x, listTop, x + w, listTop + listH);
+        try {
+            int cy = listTop + 6 - (int) scroll[1];
+            int labelX = x + PAD;
+            int innerW = w - PAD * 2 - 6;
 
-        int cy = listTop + 6 - (int) scroll[1];
-        int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
+            ModeMapVoteSettings s = settings();
+            MapPlayerCountSettings pc = s.playerCountOrDefault();
 
-        ModeMapVoteSettings s = settings();
-        MapPlayerCountSettings pc = s.playerCountOrDefault();
+            // ===== 按人数抽图 =====
+            g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
+            cy += 4;
+            g.drawString(font, "按人数抽图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
 
-        // ===== 按人数抽图 =====
-        g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
-        cy += 4;
-        g.drawString(font, "按人数抽图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
+            // row: enable draw + draw count
+            int rToggleW = 70;
+            g.fill(labelX, cy, labelX + rToggleW, cy + 16,
+                    pc.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+            g.drawString(font, pc.enabled ? "§a抽图开" : "§c抽图关", labelX + 6, cy + 4, 0xFFFFFFFF, false);
+            buttonHits.add(new ButtonHit("pc_toggle", labelX, cy, rToggleW, 16));
 
-        // row: enable draw + draw count
-        int rToggleW = 70;
-        g.fill(labelX, cy, labelX + rToggleW, cy + 16,
-                pc.enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-        g.drawString(font, pc.enabled ? "§a抽图开" : "§c抽图关", labelX + 6, cy + 4, 0xFFFFFFFF, false);
-        buttonHits.add(new ButtonHit("pc_toggle", labelX, cy, rToggleW, 16));
+            g.drawString(font, "抽取数量:", labelX + rToggleW + 10, cy + 4, MenuTheme.TEXT_SECONDARY, false);
+            drawCountField.setX(labelX + rToggleW + 10 + 56);
+            drawCountField.setY(cy);
+            drawCountField.setWidth(40);
+            drawCountField.render(g, mx, my, delta);
+            g.drawString(font, "§7(1–" + MapPlayerCountSettings.MAX_DRAW_COUNT + ")",
+                    labelX + rToggleW + 10 + 100, cy + 4, MenuTheme.TEXT_SECONDARY, false);
+            cy += ROW_H + 2;
 
-        g.drawString(font, "抽取数量:", labelX + rToggleW + 10, cy + 4, MenuTheme.TEXT_SECONDARY, false);
-        drawCountField.setX(labelX + rToggleW + 10 + 56);
-        drawCountField.setY(cy);
-        drawCountField.setWidth(40);
-        drawCountField.render(g, mx, my, delta);
-        g.drawString(font, "§7(1–" + MapPlayerCountSettings.MAX_DRAW_COUNT + ")",
-                labelX + rToggleW + 10 + 100, cy + 4, MenuTheme.TEXT_SECONDARY, false);
-        cy += ROW_H + 2;
+            g.drawString(font, "§7根据当前对局人数抽取地图；不足时补抽其他地图并标注“玩家人数不建议选择此地图”",
+                    labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
+            cy += ROW_H + SECTION_GAP;
 
-        g.drawString(font, "§7根据当前对局人数抽取地图；不足时补抽其他地图并标注“玩家人数不建议选择此地图”",
-                labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
-        cy += ROW_H + SECTION_GAP;
-
-        // ===== 每张地图的推荐人数 =====
-        g.drawString(font, "§e每张地图的推荐人数（0 = 不限制）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
-        if (mapIds.isEmpty()) {
-            g.drawString(font, isInWorld() ? "§7暂无地图条目（启动投票或注册地图后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-            cy += ROW_H;
-        } else {
-            for (String id : mapIds) {
-                boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
-                g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
-                        hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
-                MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
-
-                String shortId = id.length() > 14 ? id.substring(0, 12) + "…" : id;
-                g.drawString(font, "§7" + shortId, labelX + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
-
-                int minX = labelX + innerW - 150;
-                int maxX = labelX + innerW - 80;
-                g.drawString(font, "§7最小", minX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
-                EditBox minBox = mapMinFields.get(id);
-                if (minBox != null) {
-                    minBox.setX(minX);
-                    minBox.setY(cy + 4);
-                    minBox.setWidth(40);
-                    minBox.render(g, mx, my, delta);
-                }
-                g.drawString(font, "§7最大", maxX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
-                EditBox maxBox = mapMaxFields.get(id);
-                if (maxBox != null) {
-                    maxBox.setX(maxX);
-                    maxBox.setY(cy + 4);
-                    maxBox.setWidth(40);
-                    maxBox.render(g, mx, my, delta);
-                }
+            // ===== 每张地图的推荐人数 =====
+            g.drawString(font, "§e每张地图的推荐人数（0 = 不限制）", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
+            if (mapIds.isEmpty()) {
+                g.drawString(font, isInWorld() ? "§7暂无地图条目（启动投票或注册地图后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
                 cy += ROW_H;
-            }
-        }
+            } else {
+                for (String id : mapIds) {
+                    boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
+                    g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
+                            hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+                    MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
 
-        cy += SECTION_GAP;
-        contentHeight[1] = cy - listTop + (int) scroll[1];
-        int maxScroll = Math.max(0, contentHeight[1] - listH);
-        scroll[1] = Mth.clamp(scroll[1], 0, maxScroll);
-        MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[1], maxScroll, 3);
-        g.disableScissor();
+                    String shortId = id.length() > 14 ? id.substring(0, 12) + "…" : id;
+                    g.drawString(font, "§7" + shortId, labelX + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+
+                    int minX = labelX + innerW - 150;
+                    int maxX = labelX + innerW - 80;
+                    g.drawString(font, "§7最小", minX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+                    EditBox minBox = mapMinFields.get(id);
+                    if (minBox != null) {
+                        minBox.setX(minX);
+                        minBox.setY(cy + 4);
+                        minBox.setWidth(40);
+                        minBox.render(g, mx, my, delta);
+                    }
+                    g.drawString(font, "§7最大", maxX - 26, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+                    EditBox maxBox = mapMaxFields.get(id);
+                    if (maxBox != null) {
+                        maxBox.setX(maxX);
+                        maxBox.setY(cy + 4);
+                        maxBox.setWidth(40);
+                        maxBox.render(g, mx, my, delta);
+                    }
+                    cy += ROW_H;
+                }
+            }
+
+            cy += SECTION_GAP;
+            contentHeight[1] = cy - listTop + (int) scroll[1];
+            int maxScroll = Math.max(0, contentHeight[1] - listH);
+            scroll[1] = Mth.clamp(scroll[1], 0, maxScroll);
+            MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[1], maxScroll, 3);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     private void renderVoteModes(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
@@ -415,75 +427,77 @@ public class OutGameVotePage implements ConfigPage {
         int listH = h;
         listHeight = listH;
         g.enableScissor(x, listTop, x + w, listTop + listH);
+        try {
+            int cy = listTop + 6 - (int) scroll[2];
+            int labelX = x + PAD;
+            int innerW = w - PAD * 2 - 6;
 
-        int cy = listTop + 6 - (int) scroll[2];
-        int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
+            ModeMapVoteSettings s = settings();
 
-        ModeMapVoteSettings s = settings();
-
-        // ===== 模式列表 =====
-        g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
-        cy += 4;
-        g.drawString(font, "可投票模式", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
-        if (modeIds.isEmpty()) {
-            g.drawString(font, "§7暂无已注册的模式", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-            cy += ROW_H;
-        } else {
-            for (String id : modeIds) {
-                boolean enabled = modeEnabled(s, id);
-                boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
-                g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
-                        hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
-                MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
-
-                int tX = labelX + 6;
-                int tW = 36;
-                g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-                g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
-
-                String shortId = id.length() > 18 ? id.substring(0, 16) + "…" : id;
-                g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
-
-                EditBox nameBox = modeNameFields.get(id);
-                int mapsBtnW = 72;
-                int mapsBtnX = labelX + innerW - mapsBtnW - 6;
-                if (nameBox != null) {
-                    nameBox.setX(labelX + 180);
-                    nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(40, mapsBtnX - nameBox.getX() - 6));
-                    nameBox.render(g, mx, my, delta);
-                }
-
-                boolean mapsBtnHover = MenuTheme.inBounds(mx, my, mapsBtnX, cy + 3, mapsBtnW, 16);
-                MenuTheme.button(g, font, "可选地图…", mapsBtnX, cy + 3, mapsBtnW, 16,
-                        ACCENT, editable, mapsBtnHover);
-
-                int orderW = 18;
-                int orderX = mapsBtnX - orderW - 4;
-                boolean upHover = MenuTheme.inBounds(mx, my, orderX, cy + 3, orderW, 16);
-                MenuTheme.button(g, font, "▲", orderX, cy + 3, orderW, 16,
-                        ACCENT, editable, upHover);
-                buttonHits.add(new ButtonHit("mode_up:" + id, orderX, cy + 3, orderW, 16));
-
-                int downX = orderX - orderW - 2;
-                boolean downHover = MenuTheme.inBounds(mx, my, downX, cy + 3, orderW, 16);
-                MenuTheme.button(g, font, "▼", downX, cy + 3, orderW, 16,
-                        ACCENT, editable, downHover);
-                buttonHits.add(new ButtonHit("mode_down:" + id, downX, cy + 3, orderW, 16));
-
-                modeHits.add(new RowHit(id, tX, tW, mapsBtnX, mapsBtnW, cy, ROW_H - 2, true));
+            // ===== 模式列表 =====
+            g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
+            cy += 4;
+            g.drawString(font, "可投票模式", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
+            if (modeIds.isEmpty()) {
+                g.drawString(font, "§7暂无已注册的模式", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
                 cy += ROW_H;
-            }
-        }
+            } else {
+                for (String id : modeIds) {
+                    boolean enabled = modeEnabled(s, id);
+                    boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
+                    g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
+                            hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+                    MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
 
-        cy += SECTION_GAP;
-        contentHeight[2] = cy - listTop + (int) scroll[2];
-        int maxScroll = Math.max(0, contentHeight[2] - listH);
-        scroll[2] = Mth.clamp(scroll[2], 0, maxScroll);
-        MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[2], maxScroll, 3);
-        g.disableScissor();
+                    int tX = labelX + 6;
+                    int tW = 36;
+                    g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+                    g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
+
+                    String shortId = id.length() > 18 ? id.substring(0, 16) + "…" : id;
+                    g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+
+                    EditBox nameBox = modeNameFields.get(id);
+                    int mapsBtnW = 72;
+                    int mapsBtnX = labelX + innerW - mapsBtnW - 6;
+                    if (nameBox != null) {
+                        nameBox.setX(labelX + 180);
+                        nameBox.setY(cy + 4);
+                        nameBox.setWidth(Math.max(40, mapsBtnX - nameBox.getX() - 6));
+                        nameBox.render(g, mx, my, delta);
+                    }
+
+                    boolean mapsBtnHover = MenuTheme.inBounds(mx, my, mapsBtnX, cy + 3, mapsBtnW, 16);
+                    MenuTheme.button(g, font, "可选地图…", mapsBtnX, cy + 3, mapsBtnW, 16,
+                            ACCENT, editable, mapsBtnHover);
+
+                    int orderW = 18;
+                    int orderX = mapsBtnX - orderW - 4;
+                    boolean upHover = MenuTheme.inBounds(mx, my, orderX, cy + 3, orderW, 16);
+                    MenuTheme.button(g, font, "▲", orderX, cy + 3, orderW, 16,
+                            ACCENT, editable, upHover);
+                    buttonHits.add(new ButtonHit("mode_up:" + id, orderX, cy + 3, orderW, 16));
+
+                    int downX = orderX - orderW - 2;
+                    boolean downHover = MenuTheme.inBounds(mx, my, downX, cy + 3, orderW, 16);
+                    MenuTheme.button(g, font, "▼", downX, cy + 3, orderW, 16,
+                            ACCENT, editable, downHover);
+                    buttonHits.add(new ButtonHit("mode_down:" + id, downX, cy + 3, orderW, 16));
+
+                    modeHits.add(new RowHit(id, tX, tW, mapsBtnX, mapsBtnW, cy, ROW_H - 2, true));
+                    cy += ROW_H;
+                }
+            }
+
+            cy += SECTION_GAP;
+            contentHeight[2] = cy - listTop + (int) scroll[2];
+            int maxScroll = Math.max(0, contentHeight[2] - listH);
+            scroll[2] = Mth.clamp(scroll[2], 0, maxScroll);
+            MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[2], maxScroll, 3);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     private void renderVoteMaps(GuiGraphics g, int mx, int my, float delta, int x, int y, int w, int h) {
@@ -491,67 +505,69 @@ public class OutGameVotePage implements ConfigPage {
         int listH = h;
         listHeight = listH;
         g.enableScissor(x, listTop, x + w, listTop + listH);
+        try {
+            int cy = listTop + 6 - (int) scroll[3];
+            int labelX = x + PAD;
+            int innerW = w - PAD * 2 - 6;
 
-        int cy = listTop + 6 - (int) scroll[3];
-        int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
+            ModeMapVoteSettings s = settings();
 
-        ModeMapVoteSettings s = settings();
-
-        // ===== 地图列表 =====
-        g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
-        cy += 4;
-        g.drawString(font, "可投票地图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H;
-        if (mapIds.isEmpty()) {
-            g.drawString(font, isInWorld() ? "§7暂无地图条目（服务端启动扫描后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-            cy += ROW_H;
-        } else {
-            for (String id : mapIds) {
-                boolean enabled = mapEnabled(s, id);
-                boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
-                g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
-                        hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
-                MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
-
-                int tX = labelX + 6;
-                int tW = 36;
-                g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
-                g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
-
-                String shortId = id.length() > 20 ? id.substring(0, 18) + "…" : id;
-                g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
-
-                int profileW = 60;
-                int profileX = labelX + innerW - profileW - 4;
-
-                EditBox nameBox = mapNameFields.get(id);
-                if (nameBox != null) {
-                    nameBox.setX(labelX + 160);
-                    nameBox.setY(cy + 4);
-                    nameBox.setWidth(Math.max(30, profileX - nameBox.getX() - 6));
-                    nameBox.render(g, mx, my, delta);
-                }
-
-                boolean profileHover = MenuTheme.inBounds(mx, my, profileX, cy + 3, profileW, 16);
-                MenuTheme.button(g, font,
-                        Component.translatable("config.habitrain_core.map_profile.open").getString(),
-                        profileX, cy + 3, profileW, 16,
-                        ACCENT, editable, profileHover);
-                buttonHits.add(new ButtonHit("map_profile:" + id,
-                        profileX, cy + 3, profileW, 16));
-
-                mapHits.add(new RowHit(id, tX, tW, 0, 0, cy, ROW_H - 2, false));
+            // ===== 地图列表 =====
+            g.fill(labelX - 2, cy - 2, labelX + innerW + 2, cy - 1, MenuTheme.SEPARATOR);
+            cy += 4;
+            g.drawString(font, "可投票地图", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H;
+            if (mapIds.isEmpty()) {
+                g.drawString(font, isInWorld() ? "§7暂无地图条目（服务端启动扫描后出现）" : "§7暂无地图条目（需在世界中配置）", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
                 cy += ROW_H;
-            }
-        }
+            } else {
+                for (String id : mapIds) {
+                    boolean enabled = mapEnabled(s, id);
+                    boolean hover = MenuTheme.inBounds(mx, my, labelX, cy, innerW, ROW_H);
+                    g.fill(labelX, cy, labelX + innerW, cy + ROW_H - 2,
+                            hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
+                    MenuTheme.drawAccentStripe(g, labelX, cy, ROW_H - 2, MenuTheme.accentFor(id));
 
-        cy += SECTION_GAP + 4;
-        contentHeight[3] = cy - listTop + (int) scroll[3];
-        int maxScroll = Math.max(0, contentHeight[3] - listH);
-        scroll[3] = Mth.clamp(scroll[3], 0, maxScroll);
-        MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[3], maxScroll, 3);
-        g.disableScissor();
+                    int tX = labelX + 6;
+                    int tW = 36;
+                    g.fill(tX, cy + 4, tX + tW, cy + 18, enabled ? MenuTheme.BG_ENABLED : MenuTheme.BG_DISABLED);
+                    g.drawString(font, enabled ? "§a开" : "§c关", tX + 8, cy + 6, 0xFFFFFFFF, false);
+
+                    String shortId = id.length() > 20 ? id.substring(0, 18) + "…" : id;
+                    g.drawString(font, "§7" + shortId, tX + tW + 6, cy + 6, MenuTheme.TEXT_SECONDARY, false);
+
+                    int profileW = 60;
+                    int profileX = labelX + innerW - profileW - 4;
+
+                    EditBox nameBox = mapNameFields.get(id);
+                    if (nameBox != null) {
+                        nameBox.setX(labelX + 160);
+                        nameBox.setY(cy + 4);
+                        nameBox.setWidth(Math.max(30, profileX - nameBox.getX() - 6));
+                        nameBox.render(g, mx, my, delta);
+                    }
+
+                    boolean profileHover = MenuTheme.inBounds(mx, my, profileX, cy + 3, profileW, 16);
+                    MenuTheme.button(g, font,
+                            Component.translatable("config.habitrain_core.map_profile.open").getString(),
+                            profileX, cy + 3, profileW, 16,
+                            ACCENT, editable, profileHover);
+                    buttonHits.add(new ButtonHit("map_profile:" + id,
+                            profileX, cy + 3, profileW, 16));
+
+                    mapHits.add(new RowHit(id, tX, tW, 0, 0, cy, ROW_H - 2, false));
+                    cy += ROW_H;
+                }
+            }
+
+            cy += SECTION_GAP + 4;
+            contentHeight[3] = cy - listTop + (int) scroll[3];
+            int maxScroll = Math.max(0, contentHeight[3] - listH);
+            scroll[3] = Mth.clamp(scroll[3], 0, maxScroll);
+            MenuTheme.drawScrollbar(g, x + w - 4, listTop, listH, scroll[3], maxScroll, 3);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     // ---------------- 输入 ----------------
@@ -573,7 +589,7 @@ public class OutGameVotePage implements ConfigPage {
         }
 
         int contentY = y + SubTabBar.H + 4;
-        int contentH = h - SubTabBar.H - 4;
+        int contentH = Math.max(1, h - SubTabBar.H - 4 - (!editable ? 16 : 0));
         if (my < contentY || my >= contentY + contentH) return false;
 
         switch (innerTab) {
@@ -713,12 +729,7 @@ public class OutGameVotePage implements ConfigPage {
             if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
                 MenuSounds.playClick();
                 if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                MapVoteEntry e = settings().maps.computeIfAbsent(hit.id(), k -> {
-                    MapVoteEntry created = MapVoteEntry.createDefault();
-                    String dn = resolveMapDisplay(hit.id());
-                    if (!dn.equals(hit.id())) created.displayName = dn;
-                    return created;
-                });
+                MapVoteEntry e = settings().maps.computeIfAbsent(hit.id(), k -> MapVoteEntry.createDefault());
                 e.enabled = !e.enabled;
                 persist();
                 return true;
@@ -762,6 +773,7 @@ public class OutGameVotePage implements ConfigPage {
             return true;
         }
         box.setFocused(true);
+        box.mouseClicked(mx, my, 0);
         return true;
     }
 
@@ -769,7 +781,15 @@ public class OutGameVotePage implements ConfigPage {
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
         if (dragging[innerTab]) {
             int maxScroll = Math.max(0, contentHeight[innerTab] - listHeight);
-            scroll[innerTab] = Mth.clamp(dragStartScroll[innerTab] + (dragStartY[innerTab] - my), 0, maxScroll);
+            if (maxScroll > 0 && listHeight > 0) {
+                int total = Math.max(listHeight, contentHeight[innerTab]);
+                int thumbH = Math.max(16, (int) ((double) listHeight * listHeight / total));
+                double trackRange = Math.max(1.0, listHeight - thumbH);
+                double delta = (my - dragStartY[innerTab]) * (maxScroll / trackRange);
+                scroll[innerTab] = Mth.clamp(dragStartScroll[innerTab] + delta, 0, maxScroll);
+            } else {
+                scroll[innerTab] = 0;
+            }
             return true;
         }
         return false;
@@ -869,26 +889,40 @@ public class OutGameVotePage implements ConfigPage {
         drawCountField.setValue(String.valueOf(pc.drawCount));
 
         for (var e : modeNameFields.entrySet()) {
+            String id = e.getKey();
+            if (java.util.Objects.equals(e.getValue().getValue(), initialModeNames.get(id))) continue;
             String val = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
-            ModeVoteEntry me = s.modes.get(e.getKey());
+            ModeVoteEntry me = s.modes.get(id);
+            String defaultDisplay = resolveModeDisplay(id);
             if (me != null) {
-                me.displayName = val;
-            } else if (!val.isEmpty() && !val.equals(resolveModeDisplay(e.getKey()))) {
+                if ((me.displayName == null || me.displayName.isEmpty()) && val.equals(defaultDisplay)) {
+                    me.displayName = "";
+                } else {
+                    me.displayName = val;
+                }
+            } else if (!val.isEmpty() && !val.equals(defaultDisplay)) {
                 // Only create entry when user actually changed the display name
                 me = ModeVoteEntry.createDefault();
                 me.displayName = val;
-                s.modes.put(e.getKey(), me);
+                s.modes.put(id, me);
             }
         }
         for (var e : mapNameFields.entrySet()) {
+            String id = e.getKey();
+            if (java.util.Objects.equals(e.getValue().getValue(), initialMapNames.get(id))) continue;
             String val = e.getValue().getValue() != null ? e.getValue().getValue().trim() : "";
-            MapVoteEntry me = s.maps.get(e.getKey());
+            MapVoteEntry me = s.maps.get(id);
+            String defaultDisplay = resolveDefaultMapDisplay(id);
             if (me != null) {
-                me.displayName = val;
-            } else if (!val.isEmpty() && !val.equals(e.getKey())) {
+                if ((me.displayName == null || me.displayName.isEmpty()) && val.equals(defaultDisplay)) {
+                    me.displayName = "";
+                } else {
+                    me.displayName = val;
+                }
+            } else if (!val.isEmpty() && !val.equals(defaultDisplay)) {
                 me = MapVoteEntry.createDefault();
                 me.displayName = val;
-                s.maps.put(e.getKey(), me);
+                s.maps.put(id, me);
             }
         }
         // Per-map min/max player counts; only create entries when a value actually changed.
@@ -915,6 +949,13 @@ public class OutGameVotePage implements ConfigPage {
                     me.maxPlayers = val;
                 }
             }
+            MapVoteEntry me = s.maps.get(id);
+            if (me != null && me.minPlayers > 0 && me.maxPlayers > 0 && me.minPlayers > me.maxPlayers) {
+                me.maxPlayers = me.minPlayers;
+                if (maxBox != null && !maxBox.isFocused()) {
+                    maxBox.setValue(String.valueOf(me.maxPlayers));
+                }
+            }
         }
     }
 
@@ -934,6 +975,7 @@ public class OutGameVotePage implements ConfigPage {
         if (name != null) {
             name.setValue(entry != null && entry.displayName != null && !entry.displayName.isBlank()
                     ? entry.displayName : resolveMapDisplay(id));
+            initialMapNames.put(id, name.getValue());
         }
         EditBox min = mapMinFields.get(id);
         if (min != null) min.setValue(String.valueOf(entry != null ? entry.minPlayers : 0));

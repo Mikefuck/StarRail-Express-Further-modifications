@@ -572,24 +572,59 @@ public final class RoleExtensionRegistry {
 
     /**
      * The compiled replacement with any {@code MODIFY} patches folded on top.
-     * Patches targeting the hidden base apply first, then patches targeting the
-     * replacement's own id, so a REPLACE+MODIFY pair composes onto the surfaced
-     * role instead of the hidden baseline. The overlay is materialized onto the
-     * compiled replacement object itself, preserving its identity.
+     * Patches targeting the hidden base chain and patches targeting the
+     * replacement's own id are merged and sorted by {@link PatchPriority}
+     * (with patches targeting the replacement's own id winning ties at the same
+     * priority), so a {@code LATE} patch on the base is not clobbered by an
+     * {@code EARLY} patch on the replacement id.
      */
     public SRERole applyModifiesToReplacement(RoleReplacement replacement) {
         ManagedSRERole compiled = compiledReplacement(replacement);
         if (compiled == null) {
             return null;
         }
-        ResourceLocation targetId = replacement.target().location();
-        ResourceLocation replacementId = compiled.identifier();
-        List<ConfiguredPatch> combined = new ArrayList<>();
-        if (targetId != null && !targetId.equals(replacementId)) {
-            combined.addAll(configuredPatchesFor(targetId));
-        }
-        combined.addAll(configuredPatchesFor(replacementId));
+        List<ConfiguredPatch> combined = configuredPatchesForReplacement(
+                replacement.target().location(), compiled.identifier());
         return RoleRuntimeOverlayApplier.applyModifiesAndReturnConfigured(compiled, combined);
+    }
+
+    /**
+     * Collects and priority-sorts all enabled, non-conflicted {@code MODIFY}
+     * patches that apply to a replacement surface (including upstream targets in
+     * a {@code REPLACE -> REPLACE} chain).
+     */
+    public List<ConfiguredPatch> configuredPatchesForReplacement(
+            @Nullable ResourceLocation targetId, @Nullable ResourceLocation replacementId) {
+        Set<ResourceLocation> chainIds = new LinkedHashSet<>();
+        if (targetId != null) {
+            collectReplacedAncestors(targetId, chainIds);
+            chainIds.add(targetId);
+        }
+        if (replacementId != null) {
+            collectReplacedAncestors(replacementId, chainIds);
+            chainIds.add(replacementId);
+        }
+        List<ConfiguredPatch> combined = new ArrayList<>();
+        for (ResourceLocation id : chainIds) {
+            combined.addAll(configuredPatchesFor(id));
+        }
+        List<ResourceLocation> orderedChain = new ArrayList<>(chainIds);
+        combined.sort(Comparator
+                .comparingInt((ConfiguredPatch cp) -> orderedChain.indexOf(cp.patch().target().location()))
+                .thenComparingInt(cp -> cp.patch().priority().value())
+                .thenComparing(RoleExtensionRegistry::entryIdProvider)
+                .thenComparing(cp -> cp.patch().entryKey() == null ? "" : cp.patch().entryKey()));
+        return combined;
+    }
+
+    private void collectReplacedAncestors(ResourceLocation id, Set<ResourceLocation> out) {
+        for (RoleReplacement repl : activeReplacements()) {
+            ResourceLocation replId = repl.replacement().key().location();
+            ResourceLocation tgtId = repl.target().location();
+            if (id.equals(replId) && !id.equals(tgtId) && out.add(tgtId)) {
+                collectReplacedAncestors(tgtId, out);
+            }
+        }
     }
 
     /**
@@ -655,13 +690,21 @@ public final class RoleExtensionRegistry {
             }
             byFrom.computeIfAbsent(ma.alias().from().location(), k -> new ArrayList<>()).add(ma);
         }
+        Set<ResourceLocation> newIdReplaceTargets = new HashSet<>();
+        for (RoleReplacement repl : activeReplacements()) {
+            if (repl.identity() == com.habitrain.core.api.role.v2.definition.ReplacementIdentity.NEW_ID_WITH_ALIAS) {
+                newIdReplaceTargets.add(repl.target().location());
+            }
+        }
         Set<String> conflicting = new HashSet<>();
         for (var e : byFrom.entrySet()) {
+            ResourceLocation from = e.getKey();
             List<ManagedAlias> list = e.getValue();
-            if (list.size() < 2) {
+            boolean collidesWithReplace = newIdReplaceTargets.contains(from);
+            if (list.size() < 2 && !collidesWithReplace) {
                 continue;
             }
-            String winner = RoleExtensionConfigService.INSTANCE.winnerFor(e.getKey(), "alias");
+            String winner = RoleExtensionConfigService.INSTANCE.winnerFor(from, "alias");
             if (winner != null && list.stream()
                     .anyMatch(ma -> winner.equals(entryId(ma.provider(), ma.alias())))) {
                 for (ManagedAlias ma : list) {
@@ -681,7 +724,8 @@ public final class RoleExtensionRegistry {
     /**
      * The deterministic redirect map used by {@link #resolveAlias} and
      * {@link #validateAliasCycles}: enabled, non-conflicted (winner-resolved)
-     * aliases only, so a duplicate source can never depend on registration order.
+     * aliases plus active {@code NEW_ID_WITH_ALIAS} replacement redirects, so a
+     * duplicate source or a cross-REPLACE/ALIAS cycle is always detected.
      */
     private Map<ResourceLocation, ResourceLocation> effectiveAliasMap() {
         Set<String> conflicted = conflictingAliasEntryIds();
@@ -697,6 +741,11 @@ public final class RoleExtensionRegistry {
             }
             map.put(ma.alias().from().location(), ma.alias().to().location());
         }
+        for (RoleReplacement repl : activeReplacements()) {
+            if (repl.identity() == com.habitrain.core.api.role.v2.definition.ReplacementIdentity.NEW_ID_WITH_ALIAS) {
+                map.putIfAbsent(repl.target().location(), repl.replacement().key().location());
+            }
+        }
         return map;
     }
 
@@ -707,6 +756,16 @@ public final class RoleExtensionRegistry {
     /** Whether the given id was added through the v2 {@code ADD} model. */
     public boolean isAdded(ResourceLocation id) {
         return managedRoles.containsKey(id);
+    }
+
+    /** Whether a declaration entryId has already been committed. */
+    public synchronized boolean isEntryIdRegistered(String entryId) {
+        return registeredEntryIds.contains(entryId);
+    }
+
+    /** The declared {@link RoleDefinition} for an added id, or {@code null}. */
+    public @Nullable RoleDefinition getAddedDefinition(ResourceLocation id) {
+        return addedDefinitions.get(id);
     }
 
     /** The compiled managed role for an added id, or {@code null} if not added. */
@@ -770,6 +829,9 @@ public final class RoleExtensionRegistry {
      * </ul>
      */
     public @Nullable ManagedReplacement effectiveReplacementFor(ResourceLocation target) {
+        if (target == null || (isAdded(target) && !isAddedActive(target))) {
+            return null;
+        }
         List<ManagedReplacement> enabled = replacements.stream()
                 .filter(mr -> mr.replacement().target().location().equals(target))
                 .filter(mr -> RoleExtensionConfigService.INSTANCE.gateFor(
@@ -831,7 +893,7 @@ public final class RoleExtensionRegistry {
      */
     public List<ConfiguredPatch> configuredPatchesFor(ResourceLocation id) {
         List<ConfiguredPatch> out = new ArrayList<>();
-        Set<String> conflicts = RoleConflictAnalyzer.conflictingV2ModifyEntryIds();
+        Set<String> conflicts = RoleConflictAnalyzer.conflictingV2ModifyEntryIds(id);
         for (ManagedPatch mp : patches) {
             RolePatch patch = mp.patch();
             if (!patch.target().location().equals(id)) {
@@ -1072,9 +1134,20 @@ public final class RoleExtensionRegistry {
      * global/provider/entry gate reports {@code ACTIVE}/{@code DISABLED}.
      */
     public List<ManagedRoleEntry<?>> v2Entries() {
+        return v2Entries(knownRoleIds(), preExistingRoleIds());
+    }
+
+    /** Pure compile/client path: use the supplied raw catalog without initializing TMMRoles. */
+    public List<ManagedRoleEntry<?>> v2Entries(java.util.Collection<ResourceLocation> rawRoleIds) {
+        Set<ResourceLocation> preExisting = new HashSet<>(rawRoleIds);
+        preExisting.addAll(managedRoles.keySet());
+        Set<ResourceLocation> known = new HashSet<>(preExisting);
+        known.addAll(compiledReplacements.keySet());
+        return v2Entries(known, preExisting);
+    }
+
+    private List<ManagedRoleEntry<?>> v2Entries(Set<ResourceLocation> known, Set<ResourceLocation> preExisting) {
         List<ManagedRoleEntry<?>> out = new ArrayList<>();
-        Set<ResourceLocation> known = knownRoleIds();
-        Set<ResourceLocation> preExisting = preExistingRoleIds();
         for (ResourceLocation id : managedRoles.keySet()) {
             out.add(configured(
                     id.toString(),
@@ -1120,6 +1193,9 @@ public final class RoleExtensionRegistry {
             if (!preExisting.contains(target)) {
                 entry = entry.withStatus(EntryStatus.INVALID,
                         "v2 REPLACE target " + target + " does not exist (provider " + mr.provider() + ")");
+            } else if (isAdded(target) && !isAddedActive(target)) {
+                entry = entry.withStatus(EntryStatus.DISABLED,
+                        "v2 REPLACE target " + target + " is a disabled ADD role");
             } else {
                 long enabled = replacements.stream()
                         .filter(m -> m.replacement().target().location().equals(target))

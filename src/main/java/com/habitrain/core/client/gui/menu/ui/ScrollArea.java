@@ -8,8 +8,7 @@ import net.minecraft.util.Mth;
 public class ScrollArea {
     private int x, y, w, h;
     private double scroll;
-    private boolean dragging;
-    private double dragStartY, dragStartScroll;
+    private final ScrollbarDrag scrollbar = new ScrollbarDrag();
     private int contentHeight;
 
     public ScrollArea(int x, int y, int w, int h) { this.x = x; this.y = y; this.w = w; this.h = h; }
@@ -37,24 +36,14 @@ public class ScrollArea {
     }
 
     public boolean mouseClicked(double mx, double my, int btn) {
-        if (btn != 0 || mx < x + w - 7 || mx >= x + w || my < y || my >= y + h || maxScroll() <= 0) {
-            return false;
-        }
-        dragging = true;
-        dragStartY = my;
-        dragStartScroll = scroll;
-        return true;
+        return scrollbar.begin(mx, my, btn, x + w - 7, y, 7, h, contentHeight, scroll);
     }
     public boolean mouseDragged(double my) {
-        if (!dragging) return false;
-        scroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxScroll());
+        if (!scrollbar.isDragging()) return false;
+        scroll = scrollbar.offset(my, h, contentHeight);
         return true;
     }
-    public boolean mouseReleased() {
-        if (!dragging) return false;
-        dragging = false;
-        return true;
-    }
+    public boolean mouseReleased() { return scrollbar.end(); }
     public boolean mouseScrolled(double sy) {
         scroll = Mth.clamp(scroll - sy * 18, 0, maxScroll());
         return true;

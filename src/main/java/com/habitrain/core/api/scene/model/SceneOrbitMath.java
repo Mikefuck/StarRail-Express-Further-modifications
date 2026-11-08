@@ -18,6 +18,7 @@ public final class SceneOrbitMath {
         if (Double.isNaN(angle) || Double.isInfinite(angle)) return 0.0;
         double a = angle % 360.0;
         if (a < 0.0) a += 360.0;
+        if (a >= 360.0 || a == 0.0) a = 0.0;
         return a;
     }
 
@@ -26,8 +27,11 @@ public final class SceneOrbitMath {
      */
     public static double floorMod(double value, double mod) {
         if (Double.isNaN(value) || Double.isInfinite(value)) return 0.0;
-        if (mod <= 0.0) return 0.0;
-        return value - Math.floor(value / mod) * mod;
+        if (!Double.isFinite(mod) || mod <= 0.0) return 0.0;
+        double r = value - Math.floor(value / mod) * mod;
+        if (r < 0.0) r += mod;
+        if (r >= mod || r < 0.0 || !Double.isFinite(r)) return 0.0;
+        return r;
     }
 
     /**
@@ -299,9 +303,9 @@ public final class SceneOrbitMath {
      * 计算单轮角度行程 a(t)。
      */
     public static double calculateAngleProgress(double elapsedSeconds, double angularSpeed, double sweepDegrees) {
-        double time = Math.max(0.0, elapsedSeconds);
-        double speed = Math.max(0.0, angularSpeed);
-        double sweep = Math.max(0.0, Math.min(360.0, sweepDegrees));
+        double time = Double.isFinite(elapsedSeconds) ? Math.max(0.0, elapsedSeconds) : 0.0;
+        double speed = Double.isFinite(angularSpeed) ? Math.max(0.0, angularSpeed) : 0.0;
+        double sweep = Double.isFinite(sweepDegrees) ? Math.max(0.0, Math.min(360.0, sweepDegrees)) : 360.0;
         if (sweep >= 360.0) {
             return floorMod(speed * time, 360.0);
         } else {
@@ -314,7 +318,7 @@ public final class SceneOrbitMath {
      */
     public static double instanceOffsetAngle(int instanceIndex, int totalInstances, double spreadDegrees) {
         if (totalInstances <= 1 || instanceIndex <= 0) return 0.0;
-        double spread = Math.max(0.0, Math.min(360.0, spreadDegrees));
+        double spread = Double.isFinite(spreadDegrees) ? Math.max(0.0, Math.min(360.0, spreadDegrees)) : 360.0;
         if (Math.abs(spread - 360.0) < EPSILON) {
             return (instanceIndex * 360.0) / totalInstances;
         } else {
@@ -326,6 +330,9 @@ public final class SceneOrbitMath {
      * 计算浮动位移（正弦波连续往返）。
      */
     public static double calculateBob(double amplitude, double cyclesPerSecond, double elapsedSeconds) {
+        if (!Double.isFinite(amplitude) || !Double.isFinite(cyclesPerSecond) || !Double.isFinite(elapsedSeconds)) {
+            return 0.0;
+        }
         if (amplitude <= 0.0 || cyclesPerSecond <= 0.0) return 0.0;
         return amplitude * Math.sin(2.0 * Math.PI * cyclesPerSecond * Math.max(0.0, elapsedSeconds));
     }

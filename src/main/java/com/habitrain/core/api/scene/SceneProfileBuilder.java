@@ -93,7 +93,13 @@ public final class SceneProfileBuilder {
 
     /** 源选区：{@code [minX, minY, minZ] -> [maxX, maxY, maxZ]} 闭区间（内部转为 maxExclusive）。 */
     public SceneProfileBuilder bounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
-        profile.setSourceBounds(new SceneBounds(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1));
+        int loX = Math.min(minX, maxX);
+        int loY = Math.min(minY, maxY);
+        int loZ = Math.min(minZ, maxZ);
+        int hiX = (int) Math.min(Integer.MAX_VALUE, (long) Math.max(minX, maxX) + 1L);
+        int hiY = (int) Math.min(Integer.MAX_VALUE, (long) Math.max(minY, maxY) + 1L);
+        int hiZ = (int) Math.min(Integer.MAX_VALUE, (long) Math.max(minZ, maxZ) + 1L);
+        profile.setSourceBounds(new SceneBounds(loX, loY, loZ, hiX, hiY, hiZ));
         return this;
     }
 

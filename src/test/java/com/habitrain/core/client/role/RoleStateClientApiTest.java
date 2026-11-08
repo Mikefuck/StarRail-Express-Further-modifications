@@ -30,6 +30,7 @@ class RoleStateClientApiTest {
         server.clear(true);
         server.setStore(null);
         RoleExtensionConfigService.INSTANCE.resetForTests();
+        com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.clear();
         RoleStateClientCache.clear();
         client = RoleStateClientApi.instance();
         key = server.register(RoleStateSpec.of("audit", "charge", Integer.class).role(ROLE)
@@ -53,6 +54,7 @@ class RoleStateClientApiTest {
         server.clear(true);
         RoleStateClientCache.clear();
         RoleExtensionConfigService.INSTANCE.resetForTests();
+        com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.clear();
     }
     private RoleStateClientValue<Integer> read() { return client.read(key, StateScope.PLAYER, WORLD, OWNER); }
 

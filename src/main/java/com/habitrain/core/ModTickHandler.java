@@ -46,6 +46,8 @@ public class ModTickHandler {
             }
 
             tickMoreMods(server);
+            com.habitrain.core.role.capability.ServerVoicePermissions.refresh(server);
+            com.habitrain.core.game.sre.match.ServerMatchContext.tick(server);
         });
     }
 
@@ -58,9 +60,9 @@ public class ModTickHandler {
         }
         GameLifecycleHandler.tickGameEndCheck(isGameActive, server);
 
-        // 人数不足阈值下雨 + 环境 profile 维持（主世界）
+        // 人数不足阈值下雨 + 环境 profile 维持（主世界及活跃对局维度）
         for (ServerLevel world : server.getAllLevels()) {
-            if (world.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            if (world.dimension() == net.minecraft.world.level.Level.OVERWORLD || isGameActive(world)) {
                 SREWeatherController.tick(world);
                 EnvironmentController.tick(world);
             }
@@ -69,6 +71,12 @@ public class ModTickHandler {
     }
 
     private static boolean isGameActive(ServerLevel world) {
+        if (world == null) {
+            return false;
+        }
+        if (GameModeRegistry.isActiveInLevel(world)) {
+            return true;
+        }
         try {
             Object gameComponent = SREGameWorldComponent.KEY.get(world);
             if (gameComponent instanceof SREGameWorldComponent gc) {

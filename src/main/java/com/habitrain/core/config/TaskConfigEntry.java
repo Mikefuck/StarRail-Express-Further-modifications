@@ -118,6 +118,45 @@ public class TaskConfigEntry {
         return instinctColor;
     }
 
+    /** 判断该任务在指定地图名下是否允许分配（忽略大小写；mode=1 白名单空列表时返回 false）。 */
+    public boolean isAllowedOnMap(String mapName) {
+        if (mapName == null || mapName.isEmpty()) return true;
+        if (mapFilterMode == 0) return true;
+        boolean listEmpty = enabledMaps == null || enabledMaps.isEmpty();
+        if (mapFilterMode == 1) {
+            if (listEmpty) return false;
+            for (String m : enabledMaps) {
+                if (m != null && m.equalsIgnoreCase(mapName)) return true;
+            }
+            return false;
+        }
+        // 2 = 黑名单
+        if (listEmpty) return true;
+        for (String m : enabledMaps) {
+            if (m != null && m.equalsIgnoreCase(mapName)) return false;
+        }
+        return true;
+    }
+
+    public TaskConfigEntry copy() {
+        TaskConfigEntry c = new TaskConfigEntry(this.enabled);
+        if (this.enabledMaps != null) {
+            c.enabledMaps = new ArrayList<>(this.enabledMaps);
+        }
+        c.mapFilterMode = this.mapFilterMode;
+        c.instinctColor = this.instinctColor;
+        c.hasInstinctColor = this.hasInstinctColor;
+        c.instinctColorFromLegacyJson = this.instinctColorFromLegacyJson;
+        c.outlineWidth = this.outlineWidth;
+        c.goldReward = this.goldReward;
+        c.hasGoldReward = this.hasGoldReward;
+        c.emotionReward = this.emotionReward;
+        c.hasEmotionReward = this.hasEmotionReward;
+        c.refreshWeight = this.refreshWeight;
+        c.hasRefreshWeight = this.hasRefreshWeight;
+        return c;
+    }
+
     public static TaskConfigEntry createDefault() {
         return new TaskConfigEntry(true);
     }

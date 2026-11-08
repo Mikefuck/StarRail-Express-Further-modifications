@@ -51,6 +51,7 @@ public class ManagedSRERole extends NormalRole {
     private final @Nullable String simpleDescriptionKey;
     private final @Nullable String objectivesKey;
     private final @Nullable String icon;
+    private final @Nullable RoleDefinition definition;
 
     private ManagedSRERole(ResourceLocation identifier, int color, boolean isInnocent,
                            boolean canUseKiller, MoodType moodType, int maxSprintTime,
@@ -65,7 +66,8 @@ public class ManagedSRERole extends NormalRole {
                            @Nullable String descriptionKey,
                            @Nullable String simpleDescriptionKey,
                            @Nullable String objectivesKey,
-                           @Nullable String icon) {
+                           @Nullable String icon,
+                           @Nullable RoleDefinition definition) {
         super(identifier, color, isInnocent, canUseKiller, moodType, maxSprintTime, canSeeTime);
         this.defaultItems = defaultItems;
         this.shopEntries = shopEntries;
@@ -78,6 +80,12 @@ public class ManagedSRERole extends NormalRole {
         this.simpleDescriptionKey = simpleDescriptionKey;
         this.objectivesKey = objectivesKey;
         this.icon = icon;
+        this.definition = definition;
+    }
+
+    /** The declarative {@link RoleDefinition} this role was compiled from, if available. */
+    public @Nullable RoleDefinition definition() {
+        return definition;
     }
 
     @Override
@@ -172,7 +180,8 @@ public class ManagedSRERole extends NormalRole {
                 presentation.descriptionKey(),
                 presentation.simpleDescriptionKey(),
                 presentation.objectivesKey(),
-                presentation.icon()
+                presentation.icon(),
+                def
         );
 
         applyCommonProfiles(role, def);
@@ -189,17 +198,13 @@ public class ManagedSRERole extends NormalRole {
         if (compatibility.componentKey() != null) {
             role.setComponentKey(compatibility.componentKey());
         }
-        if (compatibility.canSeeCoin()) {
-            role.setCanSeeCoin(true);
-        }
-        if (compatibility.canPickUpRevolver()) {
-            role.setCanPickUpRevolver(true);
-        }
-        if (compatibility.canBeRandomed()) {
-            role.setCanBeRandomedByOtherRoles(true);
-        }
+        role.setCanSeeCoin(compatibility.canSeeCoin());
+        role.setCanPickUpRevolver(compatibility.canPickUpRevolver());
+        role.setCanBeRandomedByOtherRoles(compatibility.canBeRandomed());
         if (compatibility.otherModeRole()) {
             role.setOtherModeRole(true);
+        } else {
+            role.setOtherModeRole(false);
         }
         if (compatibility.specialMapRole() != null
                 && compatibility.specialMapRole() != io.wifi.starrailexpress.api.SRERole.SpecialMapRoleMap.ALL) {
@@ -207,14 +212,13 @@ public class ManagedSRERole extends NormalRole {
         }
         if (compatibility.hiddenForRotation()) {
             role.setHiddenForRoleRotation(true);
+        } else {
+            role.setHiddenForRoleRotation(false);
         }
         if (compatibility.occupiedRoleCount() != 1) {
             role.setOccupiedRoleCount(compatibility.occupiedRoleCount());
         }
 
-        if (faction.neutralExplicit()) {
-            role.setNeutrals(faction.neutral());
-        }
         if (faction.vigilanteTeamExplicit()) {
             role.setVigilanteTeam(faction.vigilanteTeam());
         }
@@ -223,6 +227,11 @@ public class ManagedSRERole extends NormalRole {
         }
         if (faction.neutralForInnocentExplicit()) {
             role.setNeutralForInnocent(faction.neutralForInnocent());
+        }
+        // Apply explicit neutral flag AFTER setNeutralForKiller / setNeutralForInnocent
+        // because those upstream setters unconditionally force isNeutrals = true.
+        if (faction.neutralExplicit()) {
+            role.setNeutrals(faction.neutral());
         }
         if (faction.mafiaTeamExplicit()) {
             role.setMafiaTeam(faction.mafiaTeam());
@@ -290,8 +299,30 @@ public class ManagedSRERole extends NormalRole {
     public List<ShopEntry> getShopEntries() {
         if (shopLive != null) {
             List<ShopEntry> fresh = shopLive.get();
-            return fresh == null ? List.of() : fresh;
+            return fresh == null ? List.of() : copyShopEntries(fresh);
         }
-        return shopEntries != null ? shopEntries : super.getShopEntries();
+        return shopEntries != null ? copyShopEntries(shopEntries) : super.getShopEntries();
+    }
+
+    private static List<ShopEntry> copyShopEntries(List<ShopEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+        List<ShopEntry> out = new java.util.ArrayList<>(entries.size());
+        for (ShopEntry entry : entries) {
+            if (entry == null) {
+                continue;
+            }
+            if (entry.getClass() == ShopEntry.class) {
+                ItemStack stack = entry.stack();
+                out.add(new ShopEntry(
+                        stack == null || stack.isEmpty() ? ItemStack.EMPTY : stack.copy(),
+                        entry.price(),
+                        entry.type()));
+            } else {
+                out.add(entry);
+            }
+        }
+        return List.copyOf(out);
     }
 }

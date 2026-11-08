@@ -41,8 +41,18 @@ public record RoleManifestPayload(
     public static final Type<RoleManifestPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_manifest"));
 
-    private static final int MAX_PROVIDERS = 64;
+    private static final int MAX_PROVIDERS = 4096;
     private static final int MAX_STRINGS = 4096;
+
+    public RoleManifestPayload {
+        providers = providers == null ? List.of() : List.copyOf(providers);
+        capabilities = capabilities == null ? List.of() : List.copyOf(capabilities);
+        experimentalCapabilities = experimentalCapabilities == null ? List.of() : List.copyOf(experimentalCapabilities);
+        if (providers.size() > MAX_PROVIDERS || capabilities.size() > MAX_STRINGS
+                || experimentalCapabilities.size() > MAX_STRINGS) {
+            throw new IllegalArgumentException("Role manifest exceeds the supported declaration count");
+        }
+    }
 
     public static final StreamCodec<FriendlyByteBuf, RoleManifestPayload> CODEC =
             StreamCodec.ofMember(RoleManifestPayload::write, RoleManifestPayload::new);
@@ -96,9 +106,11 @@ public record RoleManifestPayload(
 
     private void write(FriendlyByteBuf buf) {
         buf.writeUtf(coreApiVersion == null ? "" : coreApiVersion, 64);
-        buf.writeVarInt(providers == null ? 0 : providers.size());
+        int providerLimit = providers == null ? 0 : Math.min(providers.size(), MAX_PROVIDERS);
+        buf.writeVarInt(providerLimit);
         if (providers != null) {
-            for (ProviderRow row : providers) {
+            for (int i = 0; i < providerLimit; i++) {
+                ProviderRow row = providers.get(i);
                 buf.writeUtf(row.providerId() == null ? "" : row.providerId(), 128);
                 buf.writeUtf(row.version() == null ? "" : row.version(), 64);
                 buf.writeBoolean(row.requiredClient());
@@ -113,20 +125,22 @@ public record RoleManifestPayload(
         }
         buf.writeUtf(presentationHash == null ? "" : presentationHash, 128);
         buf.writeUtf(configJson == null ? "" : configJson, 1 << 20);
-        buf.writeVarInt(experimentalCapabilities == null ? 0 : experimentalCapabilities.size());
+        int expLimit = experimentalCapabilities == null ? 0 : Math.min(experimentalCapabilities.size(), MAX_STRINGS);
+        buf.writeVarInt(expLimit);
         if (experimentalCapabilities != null) {
-            for (String cap : experimentalCapabilities) {
-                buf.writeUtf(cap == null ? "" : cap, 128);
+            for (int i = 0; i < expLimit; i++) {
+                String cap = experimentalCapabilities.get(i);
+                buf.writeUtf(cap == null ? "" : cap, 64);
             }
         }
     }
 
     private static List<ProviderRow> readProviders(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
-        if (n < 0 || n > MAX_PROVIDERS) {
+        if (n < 0 || n > MAX_PROVIDERS || n > buf.readableBytes() / 3) {
             throw new DecoderException("Invalid provider count: " + n);
         }
-        List<ProviderRow> rows = new ArrayList<>(n);
+        List<ProviderRow> rows = new ArrayList<>(Math.min(n, 32));
         for (int i = 0; i < n; i++) {
             rows.add(new ProviderRow(buf.readUtf(128), buf.readUtf(64), buf.readBoolean()));
         }
@@ -135,10 +149,10 @@ public record RoleManifestPayload(
 
     private static List<String> readStrings(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
-        if (n < 0 || n > MAX_STRINGS) {
+        if (n < 0 || n > MAX_STRINGS || n > buf.readableBytes()) {
             throw new DecoderException("Invalid string list size: " + n);
         }
-        List<String> out = new ArrayList<>(n);
+        List<String> out = new ArrayList<>(Math.min(n, 64));
         for (int i = 0; i < n; i++) {
             out.add(buf.readUtf(64));
         }
@@ -146,9 +160,11 @@ public record RoleManifestPayload(
     }
 
     private static void writeStrings(FriendlyByteBuf buf, List<String> values) {
-        buf.writeVarInt(values == null ? 0 : values.size());
+        int limit = values == null ? 0 : Math.min(values.size(), MAX_STRINGS);
+        buf.writeVarInt(limit);
         if (values != null) {
-            for (String value : values) {
+            for (int i = 0; i < limit; i++) {
+                String value = values.get(i);
                 buf.writeUtf(value == null ? "" : value, 64);
             }
         }

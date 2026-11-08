@@ -107,7 +107,10 @@ public final class ProviderRegistrationTransaction {
             throw new IllegalArgumentException(
                     "ADD role id " + id + " must be in the provider's namespace " + providerId);
         }
-        if (stagedAddRoles.containsKey(id) || registry.isAdded(id)) {
+        if (stagedAddRoles.containsKey(id) || registry.isAdded(id)
+                || registry.isNewIdReplacementRoleId(id)
+                || stagedReplacements.stream().anyMatch(r -> r.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS
+                        && id.equals(r.replacement().key().location()))) {
             throw new IllegalArgumentException("ADD role already registered: " + id);
         }
         SRERole role = ManagedSRERole.compile(def);
@@ -122,7 +125,7 @@ public final class ProviderRegistrationTransaction {
         Objects.requireNonNull(patch, "patch");
         RoleExtensionRegistry.validateEntryKey(providerId, patch.entryKey());
         String entryId = RoleExtensionRegistry.entryId(providerId, patch);
-        if (!stagedEntryIds.add(entryId)) {
+        if (!stagedEntryIds.add(entryId) || registry.isEntryIdRegistered(entryId)) {
             throw new IllegalArgumentException("Duplicate MODIFY entryId: " + entryId
                     + "; set a distinct entryKey for each declaration");
         }
@@ -134,9 +137,18 @@ public final class ProviderRegistrationTransaction {
         ensureOpen();
         Objects.requireNonNull(replacement, "replacement");
         RoleExtensionRegistry.validateReplacementIdentity(providerId, replacement);
+        if (replacement.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS) {
+            ResourceLocation rid = replacement.replacement().key().location();
+            if (stagedAddRoles.containsKey(rid) || registry.isAdded(rid)
+                    || registry.isNewIdReplacementRoleId(rid)
+                    || stagedReplacements.stream().anyMatch(r -> r.identity() == ReplacementIdentity.NEW_ID_WITH_ALIAS
+                            && rid.equals(r.replacement().key().location()))) {
+                throw new IllegalArgumentException("NEW_ID_WITH_ALIAS replacement id already registered: " + rid);
+            }
+        }
         RoleExtensionRegistry.validateEntryKey(providerId, replacement.entryKey());
         String entryId = RoleExtensionRegistry.entryId(providerId, replacement);
-        if (!stagedEntryIds.add(entryId)) {
+        if (!stagedEntryIds.add(entryId) || registry.isEntryIdRegistered(entryId)) {
             throw new IllegalArgumentException("Duplicate REPLACE entryId: " + entryId
                     + "; set a distinct entryKey for each declaration");
         }
@@ -152,7 +164,7 @@ public final class ProviderRegistrationTransaction {
                     + " must be in the provider's namespace " + providerId);
         }
         String entryId = RoleExtensionRegistry.entryId(providerId, alias);
-        if (!stagedEntryIds.add(entryId)) {
+        if (!stagedEntryIds.add(entryId) || registry.isEntryIdRegistered(entryId)) {
             throw new IllegalArgumentException("Duplicate ALIAS entryId: " + entryId);
         }
         stagedAliases.add(alias);

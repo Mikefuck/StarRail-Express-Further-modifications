@@ -114,6 +114,31 @@ public final class RoleQuery {
     }
 
     @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof RoleQuery other)) return false;
+        return includeReplaced == other.includeReplaced
+                && includeDisabled == other.includeDisabled
+                && includeInvalid == other.includeInvalid
+                && playerCount == other.playerCount
+                && purpose == other.purpose
+                && side == other.side
+                && Objects.equals(mode, other.mode)
+                && Objects.equals(mapAbilities, other.mapAbilities)
+                && Objects.equals(factions, other.factions)
+                && Objects.equals(providerNamespace, other.providerNamespace)
+                && Objects.equals(tags, other.tags)
+                && ordering == other.ordering;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(purpose, side, mode, mapAbilities, factions,
+                includeReplaced, includeDisabled, includeInvalid,
+                providerNamespace, tags, playerCount, ordering);
+    }
+
+    @Override
     public String toString() {
         return "RoleQuery{purpose=" + purpose + ", side=" + side
                 + ", mode=" + (mode == null ? "any" : mode.identifier)
@@ -155,7 +180,7 @@ public final class RoleQuery {
         }
 
         /**
-         * 地图能力过滤（审核 A-08）。
+         * 地图能力过滤。
          *
          * <p>{@code null} 数组或数组内含 {@code null} 元素过去会直接
          * {@link Collections#addAll} → 写入 {@code null} 元素（或抛 NPE），
@@ -164,7 +189,19 @@ public final class RoleQuery {
          */
         public Builder mapAbilities(SRERole.SpecialMapRoleMap... abilities) {
             if (abilities == null) {
-                throw new NullPointerException("mapAbilities must not be null (audit A-08)");
+                throw new NullPointerException("mapAbilities must not be null");
+            }
+            for (SRERole.SpecialMapRoleMap ability : abilities) {
+                if (ability != null) {
+                    this.mapAbilities.add(ability);
+                }
+            }
+            return this;
+        }
+
+        public Builder mapAbilities(java.util.Collection<SRERole.SpecialMapRoleMap> abilities) {
+            if (abilities == null) {
+                throw new NullPointerException("mapAbilities must not be null");
             }
             for (SRERole.SpecialMapRoleMap ability : abilities) {
                 if (ability != null) {
@@ -175,7 +212,7 @@ public final class RoleQuery {
         }
 
         /**
-         * 阵营过滤（审核 A-08）。
+         * 阵营过滤。
          *
          * <p>旧实现 {@code Collections.addAll(this.factions, factions)} 在
          * {@code factions == null} 时抛 NPE（{@code Collections.addAll} 对 null 数组的行为），
@@ -185,7 +222,19 @@ public final class RoleQuery {
          */
         public Builder factions(RoleFaction... factions) {
             if (factions == null) {
-                throw new NullPointerException("factions must not be null (audit A-08)");
+                throw new NullPointerException("factions must not be null");
+            }
+            for (RoleFaction faction : factions) {
+                if (faction != null) {
+                    this.factions.add(faction);
+                }
+            }
+            return this;
+        }
+
+        public Builder factions(java.util.Collection<RoleFaction> factions) {
+            if (factions == null) {
+                throw new NullPointerException("factions must not be null");
             }
             for (RoleFaction faction : factions) {
                 if (faction != null) {
@@ -237,7 +286,19 @@ public final class RoleQuery {
          */
         public Builder tags(String... tags) {
             if (tags == null) {
-                throw new NullPointerException("tags must not be null (audit A-08)");
+                throw new NullPointerException("tags must not be null");
+            }
+            for (String tag : tags) {
+                if (tag != null) {
+                    this.tags.add(tag);
+                }
+            }
+            return this;
+        }
+
+        public Builder tags(java.util.Collection<String> tags) {
+            if (tags == null) {
+                throw new NullPointerException("tags must not be null");
             }
             for (String tag : tags) {
                 if (tag != null) {

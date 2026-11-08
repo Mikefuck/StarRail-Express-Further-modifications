@@ -34,24 +34,29 @@ public abstract class SRERepairTeamJoinMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|SRERepairTeamJoinMixin");
 
-    /** 名单含维修员时按过滤名单重放入队命令，维修员不入队；无维修员时走原逻辑。 */
+    /** 服务器存在维修员（或参战名单含维修员）时按过滤名单逐人入队，维修员不入队；无维修员时走原逻辑。 */
     @Inject(method = "addPlayersToTeam", at = @At("HEAD"), cancellable = true)
     private static void habitrain$filterRepairersFromTeamJoin(CommandSourceStack source,
             List<ServerPlayer> players, String teamName, CallbackInfo ci) {
-        List<ServerPlayer> nonRepairers = players.stream()
+        List<ServerPlayer> nonRepairers = players == null ? List.of() : players.stream()
                 .filter(p -> p != null && !RepairModeManager.isRepairer(p))
                 .collect(Collectors.toList());
-        if (nonRepairers.size() == players.size()) {
+        boolean anyOnlineRepairer = source != null
+                && source.getServer() != null
+                && source.getServer().getPlayerList() != null
+                && source.getServer().getPlayerList().getPlayers().stream().anyMatch(RepairModeManager::isRepairer);
+        if (!anyOnlineRepairer && players != null && nonRepairers.size() == players.size()
+                && RepairModeManager.getLockedMapIds().isEmpty()) {
             return; // 无维修员：与上游行为完全一致
         }
         try {
             var cmd = source.getServer().getCommands();
             cmd.performPrefixedCommand(source, "team add " + teamName);
-            if (!nonRepairers.isEmpty()) {
-                String names = nonRepairers.stream()
-                        .map(p -> p.getGameProfile().getName())
-                        .collect(Collectors.joining(" "));
-                cmd.performPrefixedCommand(source, "team join " + teamName + " " + names);
+            for (ServerPlayer player : nonRepairers) {
+                String name = player.getScoreboardName();
+                if (name != null && !name.isBlank()) {
+                    cmd.performPrefixedCommand(source, "team join " + teamName + " " + name);
+                }
             }
             cmd.performPrefixedCommand(source, "team modify " + teamName + " seeFriendlyInvisibles false");
         } catch (Exception e) {

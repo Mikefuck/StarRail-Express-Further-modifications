@@ -68,12 +68,40 @@ public final class ScenePartialStore {
         this.dir = dir;
     }
 
+    public Path directory() {
+        return dir;
+    }
+
+    public static boolean isValidSha256(String sha256) {
+        if (sha256 == null || sha256.length() != 64) return false;
+        for (int i = 0; i < 64; i++) {
+            char c = sha256.charAt(i);
+            boolean hex = (c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F');
+            if (!hex) return false;
+        }
+        return true;
+    }
+
     public Path dataFile(String sha256) {
-        return dir.resolve(sha256 + PART_SUFFIX);
+        return resolveSafe(sha256, PART_SUFFIX);
     }
 
     public Path metaFile(String sha256) {
-        return dir.resolve(sha256 + META_SUFFIX);
+        return resolveSafe(sha256, META_SUFFIX);
+    }
+
+    private Path resolveSafe(String sha256, String suffix) {
+        if (!isValidSha256(sha256)) {
+            throw new IllegalArgumentException("Invalid SHA-256 hash for scene partial file");
+        }
+        Path root = dir.toAbsolutePath().normalize();
+        Path resolved = root.resolve(sha256.toLowerCase(Locale.ROOT) + suffix).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new IllegalArgumentException("Scene partial file path escapes cache directory");
+        }
+        return resolved;
     }
 
     /**
@@ -81,7 +109,7 @@ public final class ScenePartialStore {
      * 缺失或过长）都返回 empty——调用方据此退回从 0 重新下载。
      */
     public Optional<PendingPart> load(String sha256) {
-        if (sha256 == null || sha256.isBlank()) return Optional.empty();
+        if (!isValidSha256(sha256)) return Optional.empty();
         Path meta = metaFile(sha256);
         if (!Files.isRegularFile(meta)) return Optional.empty();
 
@@ -141,10 +169,11 @@ public final class ScenePartialStore {
      *              会被续传时的前缀校验挡住）；挂起/收尾的最终记录传 true
      */
     public boolean store(PendingPart part, boolean fsync) {
-        if (part == null || part.sha256() == null || part.sha256().isBlank()) return false;
+        if (part == null || !isValidSha256(part.sha256())) return false;
+        String cleanSha256 = part.sha256().toLowerCase(Locale.ROOT);
         JsonObject root = new JsonObject();
         root.addProperty("version", SCHEMA_VERSION);
-        root.addProperty("sha256", part.sha256());
+        root.addProperty("sha256", cleanSha256);
         root.addProperty("totalSize", part.totalSize());
         root.addProperty("resumableBytes", part.resumableBytes());
         root.addProperty("prefixSha256", part.prefixSha256());
@@ -153,7 +182,7 @@ public final class ScenePartialStore {
         }
         root.addProperty("updatedAtMillis", part.updatedAtMillis());
         // backup=false：这是逐资产的临时记录，多一个 .bak 只会污染缓存目录。
-        return AtomicJsonFiles.writeJson(metaFile(part.sha256()), root, GSON, fsync, false);
+        return AtomicJsonFiles.writeJson(metaFile(cleanSha256), root, GSON, fsync, false);
     }
 
     /**
@@ -164,7 +193,7 @@ public final class ScenePartialStore {
      * 的坏状态，不该主动制造。</p>
      */
     public void discard(String sha256) {
-        if (sha256 == null) return;
+        if (!isValidSha256(sha256)) return;
         deleteQuietly(dataFile(sha256));
         deleteQuietly(metaFile(sha256));
     }
@@ -172,12 +201,20 @@ public final class ScenePartialStore {
     /**
      * 清理不可续传的残留：旧版 {@code .download.*} 崩溃残留、没有元数据或元数据不合法的孤儿、
      * 过期项，最后按配额从最旧的开始删。
-     *
-     * <p>只应在会话开始时跑一次（或缓存目录首次被使用时），不要在每次下载后跑。</p>
      */
     public SweepResult sweep(long nowMillis, long quotaBytes, long maxAgeMillis) {
+        return sweep(nowMillis, quotaBytes, maxAgeMillis, Set.of());
+    }
+
+    public SweepResult sweep(long nowMillis, long quotaBytes, long maxAgeMillis, Set<String> protectedHashes) {
         int removed = 0;
         long freed = 0L;
+        Set<String> active = new HashSet<>();
+        if (protectedHashes != null) {
+            for (String h : protectedHashes) {
+                if (h != null) active.add(h.toLowerCase(Locale.ROOT));
+            }
+        }
 
         List<Path> entries;
         try (Stream<Path> stream = Files.list(dir)) {
@@ -204,6 +241,20 @@ public final class ScenePartialStore {
             String name = entry.getFileName().toString();
             if (!name.endsWith(PART_SUFFIX)) continue;
             String hash = name.substring(0, name.length() - PART_SUFFIX.length());
+            if (!isValidSha256(hash)) {
+                long length = sizeOf(entry);
+                deleteQuietly(entry);
+                Path siblingMeta = entry.resolveSibling(name + ".json").normalize();
+                if (siblingMeta.startsWith(dir.toAbsolutePath().normalize())) {
+                    deleteQuietly(siblingMeta);
+                }
+                removed++;
+                freed += length;
+                continue;
+            }
+            if (active.contains(hash.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
             Optional<PendingPart> part = load(hash);
             if (part.isEmpty()) {
                 long length = sizeOf(entry);
@@ -265,7 +316,10 @@ public final class ScenePartialStore {
             stream.forEach(entry -> {
                 String name = entry.getFileName().toString();
                 if (!name.endsWith(PART_SUFFIX) || name.endsWith(META_SUFFIX)) return;
-                hashes.add(name.substring(0, name.length() - PART_SUFFIX.length()));
+                String hash = name.substring(0, name.length() - PART_SUFFIX.length());
+                if (isValidSha256(hash)) {
+                    hashes.add(hash.toLowerCase(Locale.ROOT));
+                }
             });
         } catch (IOException e) {
             LOGGER.debug("枚举场景部分下载文件失败: {}", dir, e);

@@ -103,6 +103,9 @@ public final class TicketShopRenderer {
     }
 
     public void renderItem(StoreItemWidget widget, GuiGraphics g, int mouseX, int mouseY) {
+        if (widget.getWidth() <= 0 || widget.getHeight() <= 0) {
+            return;
+        }
         ShopEntry entry = widget.index >= 0 && widget.index < liveEntries.size()
                 ? liveEntries.get(widget.index) : widget.entry;
         Price price = priceOf(widget, entry);

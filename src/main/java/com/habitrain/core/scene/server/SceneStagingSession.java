@@ -4,6 +4,7 @@ import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Server-authoritative identity and state for one diagnostic staging asset. */
 public final class SceneStagingSession {
@@ -27,6 +28,7 @@ public final class SceneStagingSession {
     private final long expiresAt;
     private boolean reportAccepted;
     private String clientEnvironment = "";
+    private final AtomicBoolean promoting = new AtomicBoolean(false);
 
     public SceneStagingSession(String stagingId, UUID requesterId, String mapKey,
                                String dimensionId, String toolSessionId,
@@ -34,7 +36,7 @@ public final class SceneStagingSession {
                                long expiresAt) {
         this.stagingId = Objects.requireNonNull(stagingId);
         this.requesterId = Objects.requireNonNull(requesterId);
-        this.mapKey = mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
+        this.mapKey = mapKey == null || mapKey.isBlank() ? com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY : mapKey.trim();
         this.dimensionId = dimensionId == null ? "" : dimensionId;
         this.toolSessionId = toolSessionId == null ? "" : toolSessionId;
         this.descriptor = Objects.requireNonNull(descriptor);
@@ -54,6 +56,12 @@ public final class SceneStagingSession {
     public long expiresAt() { return expiresAt; }
     public boolean reportAccepted() { return reportAccepted; }
     public String clientEnvironment() { return clientEnvironment; }
+    public boolean tryBeginPromote() { return promoting.compareAndSet(false, true); }
+    public void resetPromote() { promoting.set(false); }
+    public boolean isPromoting() { return promoting.get(); }
+    private volatile boolean committed;
+    boolean isCommitted() { return committed; }
+    void markCommitted() { committed = true; }
 
     public ValidationFailure validate(UUID actorId, boolean hasOp2, String suppliedStagingId,
                                       String suppliedMapKey, String suppliedHash,

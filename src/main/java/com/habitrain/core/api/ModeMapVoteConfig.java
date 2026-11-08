@@ -1,6 +1,7 @@
 package com.habitrain.core.api;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Optional overrides for a single mode→map vote run.
@@ -33,13 +34,20 @@ public final class ModeMapVoteConfig {
 
     /**
      * 返回一份不可变快照：{@code modeIds}/{@code mapIds} 被复制为只读列表，
-     * {@code null} 仍然表示「不限制」。
+     * {@code null} 仍然表示「不限制」。列表中的 {@code null} 元素会被自动过滤（API-TV-22）。
      */
     public ModeMapVoteConfig snapshot() {
         return new ModeMapVoteConfig(
                 modeDurationSeconds,
                 mapDurationSeconds,
-                modeIds == null ? null : List.copyOf(modeIds),
-                mapIds == null ? null : List.copyOf(mapIds));
+                copyNonNull(modeIds),
+                copyNonNull(mapIds));
+    }
+
+    private static List<String> copyNonNull(List<String> source) {
+        if (source == null) {
+            return null;
+        }
+        return source.stream().filter(Objects::nonNull).toList();
     }
 }

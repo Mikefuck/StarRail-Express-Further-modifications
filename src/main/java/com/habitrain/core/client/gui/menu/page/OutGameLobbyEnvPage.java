@@ -93,30 +93,36 @@ public class OutGameLobbyEnvPage implements ConfigPage {
         buttonHits.clear();
         area.setBounds(x, y, w, h);
         g.enableScissor(x, y, x + w, y + h);
+        try {
+            int startCy = area.getContentY();
+            int cy = startCy;
+            int labelX = x + PAD;
+            int innerW = w - PAD * 2 - 6;
 
-        int startCy = area.getContentY();
-        int cy = startCy;
-        int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
+            // ===== 标题 + 说明（对应旧版 renderLobby） =====
+            g.drawString(font, "大厅环境配置", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
+            cy += HEADER_H + 2;
+            g.drawString(font, "§7控制大厅（非对局）时段的时间、天气与雾效", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
+            cy += ROW_H;
 
-        // ===== 标题 + 说明（对应旧版 renderLobby） =====
-        g.drawString(font, "大厅环境配置", labelX, cy, MenuTheme.TEXT_PRIMARY, false);
-        cy += HEADER_H + 2;
-        g.drawString(font, "§7控制大厅（非对局）时段的时间、天气与雾效", labelX, cy, MenuTheme.TEXT_SECONDARY, false);
-        cy += ROW_H;
+            cy = EnvEditorShared.renderProfileEditor(g, mx, my, delta, font, labelX, cy, innerW,
+                    lobbyProfile(), "profile", buttonHits, profileTickField, profileFogEndField);
 
-        cy = EnvEditorShared.renderProfileEditor(g, mx, my, delta, font, labelX, cy, innerW,
-                lobbyProfile(), "profile", buttonHits, profileTickField, profileFogEndField);
-
-        cy += 8;
-        area.setContentHeight(cy - startCy);
-        area.render(g);
-        g.disableScissor();
+            cy += 8;
+            area.setContentHeight(cy - startCy);
+            area.render(g);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
+        if (!area.isInside(mx, my)) return false;
+
+        // 失焦前先刷入已修改的聚焦输入框，避免下一帧被旧模型值覆盖
+        flushPending();
 
         // 文本框优先（手动边界，停靠哨兵坐标自然落空）
         EnvEditorShared.unfocusAll(profileTickField, profileFogEndField);

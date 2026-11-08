@@ -115,7 +115,7 @@ public final class SceneAssetCodec {
         validateAssetData(data, formatVersion);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (GZIPOutputStream gzos = new LeveledGzipOutputStream(baos, gzipLevel);
-             DataOutputStream dos = new DataOutputStream(gzos)) {
+             DataOutputStream dos = new DataOutputStream(new SceneWriteLimit(gzos, MAX_UNCOMPRESSED_BYTES))) {
 
             dos.writeInt(MAGIC);
             dos.writeInt(formatVersion);
@@ -168,6 +168,7 @@ public final class SceneAssetCodec {
             dos.writeLong(crc.getValue());
             dos.flush();
         }
+        if (baos.size() > MAX_COMPRESSED_BYTES) throw new IOException("Scene encoded asset exceeds compressed byte budget");
         return baos.toByteArray();
     }
 
@@ -380,6 +381,10 @@ public final class SceneAssetCodec {
      * 从压缩的字节数组中解码 AssetData（支持 v1、v2 与 v3）。
      */
     public static AssetData decode(byte[] compressedBytes) throws IOException {
+        return decode(compressedBytes, new SceneReadBudget());
+    }
+
+    static AssetData decode(byte[] compressedBytes, SceneReadBudget budget) throws IOException {
         if (compressedBytes == null || compressedBytes.length == 0
                 || compressedBytes.length > MAX_COMPRESSED_BYTES) {
             throw new IOException("Invalid compressed scene asset size");
@@ -434,15 +439,16 @@ public final class SceneAssetCodec {
                 throw new IOException("Invalid section count: " + sectionCount);
             }
 
+            budget.sections(sectionCount);
             CRC32 crc = new CRC32();
             List<SectionData> sections = version >= FORMAT_VERSION_V3
-                    ? readSectionsV3(dis, sectionCount, sourceBounds, haloBounds, crc)
-                    : readSectionsV2(dis, sectionCount, sourceBounds, haloBounds, crc);
+                    ? readSectionsV3(dis, sectionCount, sourceBounds, haloBounds, crc, budget)
+                    : readSectionsV2(dis, sectionCount, sourceBounds, haloBounds, crc, budget);
 
             List<SceneBlockPayloadEntry> blockPayloads = new ArrayList<>();
             if (version >= FORMAT_VERSION_V2) {
                 int payloadCount = dis.readInt();
-                if (payloadCount < 0 || payloadCount > SceneLimits.MAX_NON_AIR_BLOCKS) {
+                if (payloadCount < 0 || payloadCount > SceneLimits.MAX_BLOCK_PAYLOAD_ENTRIES) {
                     throw new IOException("Invalid payload count: " + payloadCount);
                 }
                 long totalPayloadBytes = 0L;
@@ -473,18 +479,20 @@ public final class SceneAssetCodec {
                         throw new IOException("Invalid adapter data version: " + adapterVersion);
                     }
                     int byteLength = dis.readInt();
-                    if (byteLength < 0 || byteLength > SceneLimits.MAX_BLOCK_PAYLOAD_BYTES) {
+                    if (byteLength <= 0 || byteLength > SceneLimits.MAX_BLOCK_PAYLOAD_BYTES) {
                         throw new IOException("Single block payload exceeds limit: " + byteLength + " bytes");
                     }
-                    totalPayloadBytes += byteLength;
+                    totalPayloadBytes += Math.max(64L, byteLength);
                     if (totalPayloadBytes > SceneLimits.MAX_TOTAL_PAYLOAD_BYTES) {
                         throw new IOException("Total asset adapter data exceeds 32 MiB limit: " + totalPayloadBytes + " bytes");
                     }
+                    budget.payload(byteLength);
                     byte[] payloadBytes = new byte[byteLength];
                     dis.readFully(payloadBytes);
                     crc.update(payloadBytes);
 
                     SceneRenderPayload payload = SceneRenderPayload.fromByteArray(payloadBytes);
+                    budget.charge(Math.max(0L, payload.estimatedRetainedBytes() - (4096L + 8L * byteLength)), 0);
                     blockPayloads.add(new SceneBlockPayloadEntry(lx, ly, lz, adapterId, adapterVersion, payload));
                 }
             }
@@ -509,8 +517,8 @@ public final class SceneAssetCodec {
      */
     private static List<SectionData> readSectionsV2(DataInputStream dis, int sectionCount,
                                                     SceneBounds sourceBounds, SceneBounds haloBounds,
-                                                    CRC32 crc) throws IOException {
-        List<SectionData> sections = new ArrayList<>(sectionCount);
+                                                    CRC32 crc, SceneReadBudget budget) throws IOException {
+        List<SectionData> sections = new ArrayList<>(Math.min(sectionCount, 1024));
         Set<String> sectionPositions = new HashSet<>();
 
         for (int s = 0; s < sectionCount; s++) {
@@ -528,10 +536,12 @@ public final class SceneAssetCodec {
             if (paletteSize <= 0 || paletteSize > 4096) {
                 throw new IOException("Invalid palette size: " + paletteSize);
             }
-            List<String> palette = new ArrayList<>(paletteSize);
+            budget.palette(paletteSize);
+            List<String> palette = new ArrayList<>(Math.min(paletteSize, 256));
             for (int p = 0; p < paletteSize; p++) {
                 String paletteEntry = dis.readUTF();
                 requireStringLength("palette entry", paletteEntry, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
+                budget.string(paletteEntry);
                 palette.add(paletteEntry);
             }
 
@@ -564,22 +574,24 @@ public final class SceneAssetCodec {
      */
     private static List<SectionData> readSectionsV3(DataInputStream dis, int sectionCount,
                                                     SceneBounds sourceBounds, SceneBounds haloBounds,
-                                                    CRC32 crc) throws IOException {
+                                                    CRC32 crc, SceneReadBudget budget) throws IOException {
         int globalCount = dis.readInt();
         // 这个上限必须在任何分配之前生效：否则一个伪造的超大 int 就能让客户端在读到任何数据
         // 之前先按它分配一张表。v2 的 sectionCount 与 paletteSize 有同样的前置检查。
         if (globalCount <= 0 || globalCount > SceneLimits.MAX_GLOBAL_PALETTE_ENTRIES) {
             throw new IOException("Invalid global palette size: " + globalCount);
         }
-        List<String> globalPalette = new ArrayList<>(globalCount);
+        budget.palette(globalCount);
+        List<String> globalPalette = new ArrayList<>(Math.min(globalCount, 4096));
         for (int i = 0; i < globalCount; i++) {
             String entry = dis.readUTF();
             requireStringLength("global palette entry", entry, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
+            budget.string(entry);
             globalPalette.add(entry);
         }
 
         Set<String> sectionPositions = new HashSet<>();
-        V3SectionGeometry[] geometry = new V3SectionGeometry[sectionCount];
+        List<V3SectionGeometry> geometry = new ArrayList<>(Math.min(sectionCount, 1024));
         byte[] scratch = new byte[4];
 
         for (int s = 0; s < sectionCount; s++) {
@@ -597,7 +609,8 @@ public final class SceneAssetCodec {
             if (paletteSize <= 0 || paletteSize > 4096) {
                 throw new IOException("Invalid palette size: " + paletteSize);
             }
-            List<String> palette = new ArrayList<>(paletteSize);
+            budget.palette(paletteSize);
+            List<String> palette = new ArrayList<>(Math.min(paletteSize, 256));
             for (int p = 0; p < paletteSize; p++) {
                 int globalIndex = readIntCrc(dis, crc, scratch);
                 if (globalIndex < 0 || globalIndex >= globalCount) {
@@ -616,7 +629,7 @@ public final class SceneAssetCodec {
             short[] indices = new short[4096];
             readIndices(dis, crc, indices, indexBitWidth(paletteSize),
                     encoding == INDEX_ENCODING_SPARSE, paletteSize, s);
-            geometry[s] = new V3SectionGeometry(rx, ry, rz, palette, indices);
+            geometry.add(new V3SectionGeometry(rx, ry, rz, palette, indices));
         }
 
         List<SectionData> sections = new ArrayList<>(sectionCount);
@@ -629,7 +642,7 @@ public final class SceneAssetCodec {
             dis.readFully(blockLight);
             crc.update(blockLight);
 
-            V3SectionGeometry g = geometry[s];
+            V3SectionGeometry g = geometry.get(s);
             sections.add(new SectionData(g.relX, g.relY, g.relZ, g.palette, g.indices, skyLight, blockLight));
         }
         return sections;
@@ -738,6 +751,9 @@ public final class SceneAssetCodec {
             throw new IOException("Invalid section count: " + (data.sections == null ? -1 : data.sections.size()));
         }
 
+        SceneReadBudget budget = new SceneReadBudget();
+        budget.sections(data.sections.size());
+        Set<String> globalStrings = new HashSet<>();
         Set<String> sectionPositions = new HashSet<>();
         for (SectionData section : data.sections) {
             if (section == null) throw new IOException("Scene asset contains a null section");
@@ -751,8 +767,10 @@ public final class SceneAssetCodec {
             if (section.palette == null || section.palette.isEmpty() || section.palette.size() > 4096) {
                 throw new IOException("Invalid palette size in section " + sectionKey);
             }
+            budget.palette(section.palette.size());
             for (String paletteEntry : section.palette) {
                 requireStringLength("palette entry", paletteEntry, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
+                if (formatVersion < FORMAT_VERSION_V3 || globalStrings.add(paletteEntry)) budget.string(paletteEntry);
             }
             if (formatVersion >= FORMAT_VERSION_V3 && !AIR_BLOCK_ID.equals(section.palette.get(0))) {
                 // v3 的稀疏编码把"索引 0"当作隐含默认值（位图没置位的格子直接补 0），而渲染端
@@ -774,9 +792,10 @@ public final class SceneAssetCodec {
         }
 
         if (formatVersion < FORMAT_VERSION_V2) return;
+        if (formatVersion >= FORMAT_VERSION_V3) budget.palette(globalStrings.size());
         List<SceneBlockPayloadEntry> payloads = data.blockPayloads != null
                 ? data.blockPayloads : Collections.emptyList();
-        if (payloads.size() > SceneLimits.MAX_NON_AIR_BLOCKS) {
+        if (payloads.size() > SceneLimits.MAX_BLOCK_PAYLOAD_ENTRIES) {
             throw new IOException("Invalid payload count: " + payloads.size());
         }
         long totalPayloadBytes = 0L;
@@ -801,8 +820,10 @@ public final class SceneAssetCodec {
                 throw new IOException("Invalid adapter version at " + payloadKey + ": " + entry.adapterVersion());
             }
             entry.payload().validate();
-            int payloadBytes = entry.payload().toByteArray().length;
-            totalPayloadBytes += payloadBytes;
+            int payloadBytes = entry.payload().encodedSize();
+            budget.payload(payloadBytes);
+            budget.charge(Math.max(0L, entry.payload().estimatedRetainedBytes() - (4096L + 8L * payloadBytes)), 0);
+            totalPayloadBytes += Math.max(64L, payloadBytes);
             if (payloadBytes > SceneLimits.MAX_BLOCK_PAYLOAD_BYTES
                     || totalPayloadBytes > SceneLimits.MAX_TOTAL_PAYLOAD_BYTES) {
                 throw new IOException("Scene asset visual payload data exceeds its size limit");
@@ -860,13 +881,13 @@ public final class SceneAssetCodec {
      */
     public static long estimateUncompressedSize(AssetData data, int formatVersion) {
         if (data == null) return 0L;
-        long size = 128L + 24L; // base header + halo bounds
+        long size = 128L + 24L + modifiedUtfSize(data.dimensionId) + modifiedUtfSize(data.fingerprint);
         if (formatVersion >= FORMAT_VERSION_V3) {
             size += 4L; // globalPaletteSize 字段
             for (SectionData section : data.sections) {
                 int paletteSize = section.palette.size();
                 for (String entry : section.palette) {
-                    size += 2L + (entry == null ? 0L : entry.getBytes(StandardCharsets.UTF_8).length);
+                    size += modifiedUtfSize(entry);
                 }
                 // 坐标 12 + paletteSize 4 + 全局索引引用 4/项 + 编码标记 1 + 索引块 + 两种光照
                 size += 16L + 4L * paletteSize + 1L
@@ -877,19 +898,30 @@ public final class SceneAssetCodec {
             for (SectionData section : data.sections) {
                 size += 16L + 8192L + 2048L + 2048L;
                 for (String entry : section.palette) {
-                    size += 2L + (entry == null ? 0L : entry.getBytes(StandardCharsets.UTF_8).length);
+                    size += modifiedUtfSize(entry);
                 }
             }
         }
         if (data.blockPayloads != null) {
             for (SceneBlockPayloadEntry entry : data.blockPayloads) {
-                size += 32L; // position + adapterId overhead
+                String adapterStr = entry.adapterId() != null ? entry.adapterId().toString() : "";
+                size += 22L + modifiedUtfSize(adapterStr);
                 try {
-                    size += entry.payload().toByteArray().length;
+                    size += entry.payload().encodedSize();
                 } catch (Throwable ignored) {
                     size += 256L;
                 }
             }
+        }
+        return size;
+    }
+
+    /** DataOutputStream.writeUTF uses modified UTF-8, including two-byte NULs and surrogate pairs. */
+    private static long modifiedUtfSize(String value) {
+        long size = 2L;
+        if (value != null) for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            size += c >= 1 && c <= 127 ? 1 : c <= 2047 ? 2 : 3;
         }
         return size;
     }
@@ -903,7 +935,7 @@ public final class SceneAssetCodec {
      * 作为 UTF-8 字节数的上界既保守又不分配。</p>
      *
      * <p>估算覆盖：Section 对象头与三个数组（{@code short[4096]} + 两个 {@code byte[2048]}）、
-     * 调色板字符串与列表槽位、以及每个视觉载荷序列化后的大小。它刻意偏保守——宁可早一点淘汰，
+     * 调色板字符串与列表槽位、以及每个视觉载荷对象与序列化后的大小。它刻意偏保守——宁可早一点淘汰，
      * 也不要让实际占用超出配额。</p>
      */
     public static long estimateRetainedBytes(AssetData data) {
@@ -924,11 +956,9 @@ public final class SceneAssetCodec {
         }
         if (data.blockPayloads != null) {
             for (SceneBlockPayloadEntry entry : data.blockPayloads) {
-                size += 32L;
-                try {
-                    size += entry.payload().toByteArray().length;
-                } catch (Throwable ignored) {
-                    size += 256L;
+                size += 160L;
+                if (entry != null && entry.payload() != null) {
+                    size += entry.payload().estimatedRetainedBytes();
                 }
             }
         }
@@ -960,7 +990,7 @@ public final class SceneAssetCodec {
 
         @Override public int read() throws IOException {
             int value = super.read();
-            if (value >= 0) add(1);
+            if (value >= 0) add(1L);
             return value;
         }
 
@@ -970,7 +1000,13 @@ public final class SceneAssetCodec {
             return read;
         }
 
-        private void add(int amount) throws IOException {
+        @Override public long skip(long n) throws IOException {
+            long skipped = super.skip(n);
+            if (skipped > 0) add(skipped);
+            return skipped;
+        }
+
+        private void add(long amount) throws IOException {
             count += amount;
             if (count > limit) throw new IOException("Scene asset exceeds uncompressed size limit");
         }

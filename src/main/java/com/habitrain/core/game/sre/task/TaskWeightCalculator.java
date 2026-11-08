@@ -70,7 +70,8 @@ public final class TaskWeightCalculator {
             Set<String> builtinSreTaskIds,
             @Nullable Set<String> enabledSceneTasks
     ) {
-        if (!TaskWeightCurves.shouldIncludeOriginalTasks(activeMode, player, builtinSreTaskIds)) {
+        Set<String> allowedByMode = TaskWeightCurves.resolveAllowedOriginalTaskIds(activeMode, player, builtinSreTaskIds);
+        if (allowedByMode != null && allowedByMode.isEmpty()) {
             LOGGER.debug("[HabiDebug] Original SRE tasks filtered out by active GameMode");
             return 0f;
         }
@@ -81,6 +82,10 @@ public final class TaskWeightCalculator {
 
         // ── 非场景任务：与上游 getAvailableTasksList() 同一循环、同一顺序 ──
         for (SREPlayerTaskComponent.Task task : SREPlayerTaskComponent.Task.getAvailableTasksList()) {
+            if (allowedByMode != null && !allowedByMode.contains(task.name().toLowerCase(java.util.Locale.ROOT))) {
+                LOGGER.debug("[HabiDebug]   skip original {}: filtered out by active GameMode", task.name());
+                continue;
+            }
             if (existingTasks.containsKey(task)) {
                 LOGGER.debug("[HabiDebug]   skip original {}: already in tasks", task.name());
                 continue;
@@ -99,6 +104,9 @@ public final class TaskWeightCalculator {
             }
 
             float weight = originalWeight(task, currentMood, timesGotten);
+            if (weight <= 0f) {
+                continue;
+            }
             LOGGER.debug("[HabiDebug]   ADD original {}: weight={}", task.name(), weight);
             entries.add(new AbstractMap.SimpleEntry<>(task, weight));
             total += weight;
@@ -108,6 +116,7 @@ public final class TaskWeightCalculator {
         // ── 场景任务：与上游同一门控（地图 enabledSceneTasks + 职业刷新限制）──
         if (enabledSceneTasks != null && !enabledSceneTasks.isEmpty()) {
             for (SREPlayerTaskComponent.Task task : SREPlayerTaskComponent.Task.getSceneTasksList()) {
+                if (allowedByMode != null && !allowedByMode.contains(task.name().toLowerCase(java.util.Locale.ROOT))) continue;
                 if (existingTasks.containsKey(task)) continue;
                 if (!enabledSceneTasks.contains(task.name())) continue;
                 if (disabledTasks.contains(task.name())) continue;
@@ -115,6 +124,7 @@ public final class TaskWeightCalculator {
                 if (role != null && !role.canRefreshTask(player, task)) continue;
 
                 float weight = originalWeight(task, currentMood, timesGotten);
+                if (weight <= 0f) continue;
                 LOGGER.debug("[HabiDebug]   ADD scene original {}: weight={}", task.name(), weight);
                 entries.add(new AbstractMap.SimpleEntry<>(task, weight));
                 total += weight;
@@ -126,12 +136,25 @@ public final class TaskWeightCalculator {
         return total;
     }
 
-    /** 反重复权重 × 心情曲线（与上游逐字同式）。 */
+    /** 反重复权重 × 心情曲线 × 配置 refreshWeight。 */
     private static float originalWeight(SREPlayerTaskComponent.Task task, float currentMood,
                                         Map<SREPlayerTaskComponent.Task, Integer> timesGotten) {
         int times = timesGotten.getOrDefault(task, 1);
         float weight = 1f / Math.max(1, times);
-        return applyMoodWeight(weight, task.category, currentMood);
+        weight = applyMoodWeight(weight, task.category, currentMood);
+        try {
+            String fullId = "habitrain_core:" + task.name().toLowerCase(java.util.Locale.ROOT);
+            com.habitrain.core.config.TaskConfigEntry cfg =
+                    com.habitrain.core.config.ConfigManager.getInstance().getTaskConfig(fullId);
+            if (cfg != null) {
+                float refreshWeight = cfg.hasRefreshWeight ? cfg.refreshWeight : 1.0f;
+                if (refreshWeight >= 0f) {
+                    weight *= refreshWeight;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return weight;
     }
 
     /**

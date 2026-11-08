@@ -65,10 +65,11 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
     private ExecutorService backgroundExecutor = createExecutor();
 
     private static ExecutorService createExecutor() {
-        return Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "HabiTrain-SceneCapture-Worker");
-        t.setDaemon(true);
-        return t;
+        return new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(1), r -> {
+            Thread t = new Thread(r, "HabiTrain-SceneCapture-Worker");
+            t.setDaemon(true);
+            return t;
         });
     }
 
@@ -77,6 +78,10 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
         final UUID requesterPlayerId;
         final String toolSessionId;
         final ServerLevel level;
+        final String dimensionId;
+        final int dataVersion;
+        final boolean hasSkyLight;
+        final long stagingGeneration;
         final SceneBounds bounds;
         final SceneBounds haloBounds;
         final List<SectionPos> pendingSections = new ArrayList<>();
@@ -87,8 +92,12 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
         CaptureTicketWindow<ChunkPos> ticketWindow;
         int totalSectionsToScan;
         long totalNonAirBlocks = 0;
+        long totalPayloadBytes = 0;
         int currentSectionIndex = 0;
         long lastProgressGameTime = Long.MIN_VALUE;
+        volatile boolean compressing = false;
+        volatile boolean cancelled = false;
+        boolean terminalProgressSent;
 
         ActiveCaptureTask(String mapKey, UUID requesterPlayerId, String toolSessionId,
                           ServerLevel level, SceneBounds bounds, SceneBounds haloBounds) {
@@ -96,12 +105,17 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
             this.requesterPlayerId = requesterPlayerId;
             this.toolSessionId = toolSessionId;
             this.level = level;
+            this.dimensionId = level.dimension().location().toString();
+            this.dataVersion = net.minecraft.SharedConstants.getCurrentVersion().getDataVersion().getVersion();
+            this.hasSkyLight = level.dimensionType().hasSkyLight();
+            this.stagingGeneration = SceneStagingService.getInstance().currentGeneration();
             this.bounds = bounds;
             this.haloBounds = haloBounds != null ? haloBounds : bounds;
         }
     }
 
-    private ActiveCaptureTask currentTask = null;
+    private volatile ActiveCaptureTask currentTask = null;
+    private boolean accepting = true;
 
     private SceneCaptureService() {}
 
@@ -109,8 +123,8 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
      * 请求开始捕获指定地图的场景资产。
      */
     public synchronized boolean requestCapture(ServerLevel level, String mapKey, SceneBounds bounds, ServerPlayer requester) {
-        if (requester == null || level == null) return false;
-        if (!requester.hasPermissions(2)) {
+        if (requester == null || level == null || !accepting) return false;
+        if (!requester.hasPermissions(2) || com.habitrain.core.api.menu.MenuGateApi.isBlocked(requester, level.getServer())) {
             requester.sendSystemMessage(net.minecraft.network.chat.Component.literal("§c需要 OP2 权限才能生成场景资产"));
             return false;
         }
@@ -129,7 +143,7 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
             return false;
         }
 
-        String normalizedMapKey = mapKey == null || mapKey.isBlank() ? "__default__" : mapKey.trim();
+        String normalizedMapKey = mapKey == null || mapKey.isBlank() ? com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY : mapKey.trim();
         SceneSelectionSessionManager selectionManager = SceneSelectionSessionManager.getInstance();
         selectionManager.selectEditorMap(requester.getUUID(), normalizedMapKey);
         String toolSessionId = selectionManager.getEditorSessionId(requester.getUUID());
@@ -247,6 +261,7 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
     public synchronized void tick(MinecraftServer server) {
         if (currentTask == null || server == null) return;
         ActiveCaptureTask task = currentTask;
+        if (task.compressing) return;
 
         if (server.getPlayerList().getPlayer(task.requesterPlayerId) == null) {
             terminateCurrentTask(server, task, "发起捕获的管理员已离线");
@@ -264,7 +279,7 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
 
                 task.ticketWindow.alignToSection(task.currentSectionIndex);
                 SectionPos secPos = task.pendingSections.get(task.currentSectionIndex);
-                SectionCaptureResult result = captureSection(task.level, task.bounds, task.haloBounds, secPos, task.capturedPayloads);
+                SectionCaptureResult result = captureSection(task, secPos);
                 task.accounting.record(result.outcome());
 
                 if (result.outcome() == SceneCaptureAccounting.SectionOutcome.MISSING) {
@@ -320,16 +335,23 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
                                 + "/" + task.totalSectionsToScan);
                 return;
             }
-            // 第一阶段完成，转入后台线程进行 GZIP 压缩与写盘
-            ActiveCaptureTask finishedTask = this.currentTask;
-            this.currentTask = null;
-            releaseTickets(finishedTask);
-            dispatchBackgroundSave(server, finishedTask);
+            if (task.capturedSections.isEmpty()) {
+                terminateCurrentTask(server, task, "选区内没有任何非空气方块");
+                return;
+            }
+            // 第一阶段完成，保持 currentTask 占位直到后台压缩/暂存结束，防并发任务无限排队
+            task.compressing = true;
+            releaseTickets(task);
+            dispatchBackgroundSave(server, task);
         }
     }
 
-    private SectionCaptureResult captureSection(ServerLevel level, SceneBounds bounds, SceneBounds haloBounds,
-                                                SectionPos secPos, List<SceneBlockPayloadEntry> outPayloads) {
+    private SectionCaptureResult captureSection(ActiveCaptureTask task, SectionPos secPos) {
+        ServerLevel level = task.level;
+        SceneBounds bounds = task.bounds;
+        SceneBounds haloBounds = task.haloBounds;
+        List<SceneBlockPayloadEntry> outPayloads = task.capturedPayloads;
+
         ChunkPos chunkPos = secPos.chunk();
         if (!level.hasChunk(chunkPos.x, chunkPos.z)) {
             return SectionCaptureResult.missing();
@@ -390,10 +412,18 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
                     blockIndices[flatIdx] = paletteIdx;
 
                     if (inVisible && outPayloads != null) {
-                        BlockPos worldPos = new BlockPos(worldX, worldY, worldZ);
-                        BlockEntity blockEntity = level.getBlockEntity(worldPos);
-                        SceneBlockCaptureAdapter adapter = SceneBlockCaptureAdapterRegistry.getInstance().findAdapter(state, blockEntity);
+                        BlockPos worldPos = null;
+                        BlockEntity blockEntity = null;
+                        if (state.hasBlockEntity()) {
+                            worldPos = new BlockPos(worldX, worldY, worldZ);
+                            blockEntity = chunk.getBlockEntity(worldPos);
+                        }
+                        SceneBlockCaptureAdapter adapter = SceneBlockCaptureAdapterRegistry.getInstance()
+                                .findAdapter(state, blockEntity);
                         if (adapter != null) {
+                            if (worldPos == null) {
+                                worldPos = new BlockPos(worldX, worldY, worldZ);
+                            }
                             try {
                                 int localX = worldX - bounds.minX();
                                 int localY = worldY - bounds.minY();
@@ -403,6 +433,15 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
                                 SceneRenderPayload payload = adapter.captureVisualData(ctx);
                                 if (payload != null && !payload.isEmpty()) {
                                     payload.validate();
+                                    if (outPayloads.size() >= SceneLimits.MAX_BLOCK_PAYLOAD_ENTRIES) {
+                                        throw new IllegalStateException(
+                                                "方块视觉负载条目数超过上限 (" + SceneLimits.MAX_BLOCK_PAYLOAD_ENTRIES + ")");
+                                    }
+                                    task.totalPayloadBytes += Math.max(64L, payload.encodedSize());
+                                    if (task.totalPayloadBytes > SceneLimits.MAX_TOTAL_PAYLOAD_BYTES) {
+                                        throw new IllegalStateException(
+                                                "方块视觉负载总字节数超过上限 (" + SceneLimits.MAX_TOTAL_PAYLOAD_BYTES + ")");
+                                    }
                                     outPayloads.add(new SceneBlockPayloadEntry(
                                             localX, localY, localZ, adapter.adapterId(), adapter.dataVersion(), payload));
                                 }
@@ -426,8 +465,14 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
         DataLayer skyLayer = level.getLightEngine().getLayerListener(LightLayer.SKY).getDataLayerData(secPos);
         if (skyLayer != null && skyLayer.getData() != null && skyLayer.getData().length == 2048) {
             System.arraycopy(skyLayer.getData(), 0, skyLight, 0, 2048);
-        } else {
-            Arrays.fill(skyLight, (byte) 0xFF); // 默认满亮度天空光
+        } else if (task.hasSkyLight) {
+            // An absent layer can also mean complete darkness (e.g. an enclosed overworld section).
+            BlockPos.MutableBlockPos lightPos = new BlockPos.MutableBlockPos();
+            for (int index = 0; index < 4096; index++) {
+                lightPos.set(secMinX + (index & 15), secMinY + (index >> 8), secMinZ + ((index >> 4) & 15));
+                int brightness = level.getBrightness(LightLayer.SKY, lightPos) & 15;
+                skyLight[index >> 1] |= (byte) (brightness << ((index & 1) * 4));
+            }
         }
 
         DataLayer blockLayer = level.getLightEngine().getLayerListener(LightLayer.BLOCK).getDataLayerData(secPos);
@@ -485,10 +530,12 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
     private void dispatchBackgroundSave(MinecraftServer server, ActiveCaptureTask task) {
         sendProgress(server, task, "COMPRESSING", 0.75f, "正在编码与压缩资产...");
 
+        try {
         ensureExecutor().execute(() -> {
             try {
-                int dataVersion = net.minecraft.SharedConstants.getCurrentVersion().getDataVersion().getVersion();
-                String dimension = task.level.dimension().location().toString();
+                if (task.cancelled) return;
+                int dataVersion = task.dataVersion;
+                String dimension = task.dimensionId;
                 String fingerprint = com.habitrain.core.api.scene.asset.SceneRegistryFingerprint.calculate();
 
                 SceneAssetCodec.AssetData assetData = new SceneAssetCodec.AssetData(
@@ -503,12 +550,15 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
 
                 long uncompressedSize = SceneAssetCodec.estimateUncompressedSize(assetData);
                 if (uncompressedSize > SceneAssetCodec.MAX_UNCOMPRESSED_BYTES) {
+                    clearCurrentTask(task);
                     server.execute(() -> failTask(server, task, "解压后资产超过 128 MiB 上限"));
                     return;
                 }
 
                 byte[] compressed = SceneAssetCodec.encode(assetData);
+                if (task.cancelled) return;
                 if (compressed.length > SceneTransferService.MAX_FILE_SIZE) {
+                    clearCurrentTask(task);
                     server.execute(() -> failTask(server, task, "压缩后资产超过 64 MiB 传输上限"));
                     return;
                 }
@@ -525,7 +575,9 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
                             task.mapKey, warning.code(), warning.hint());
                     String message = "资产偏大（" + sizeReport.humanCompressed() + " / "
                             + sizeReport.sectionCount() + " Section）：" + warning.hint();
-                    server.execute(() -> sendProgress(server, task, "SIZE_WARNING", 0.9f, message));
+                    if (!task.cancelled) {
+                        server.execute(() -> sendProgress(server, task, "SIZE_WARNING", 0.9f, message));
+                    }
                 });
 
                 SceneAssetDescriptor descriptor = new SceneAssetDescriptor(
@@ -538,26 +590,44 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
                         System.currentTimeMillis()
                 );
 
+                if (task.cancelled) return;
                 // 增量补丁：拿同 mapKey 的上一版当底。生成失败/不值得都只是"这次没有增量"，
                 // 全量资产照旧发布，客户端照旧能下。
                 SceneDeltaStore.PatchBlob delta = SceneDeltaBuilder.build(
                         task.mapKey, assetData, sha256, compressed.length);
 
+                if (task.cancelled) return;
                 boolean staged = SceneStagingService.getInstance().stage(
                         server, task.requesterPlayerId, task.mapKey,
-                        task.level.dimension().location().toString(), task.toolSessionId,
-                        compressed, descriptor, delta);
+                        dimension, task.toolSessionId,
+                        compressed, descriptor, delta, task.stagingGeneration, () -> !task.cancelled);
+                clearCurrentTask(task);
                 if (staged) {
                     LOGGER.info("场景资产已进入诊断暂存: mapKey={}, hash={}, sections={}",
                             task.mapKey, descriptor.shortHash(), task.capturedSections.size());
-                } else {
+                } else if (!task.cancelled) {
                     server.execute(() -> failTask(server, task, "写入诊断暂存资产失败；旧正式资产未改变"));
                 }
             } catch (Throwable t) {
-                LOGGER.error("后台压缩场景资产失败", t);
-                server.execute(() -> failTask(server, task, "压缩资产异常: " + t.getMessage()));
+                clearCurrentTask(task);
+                if (!task.cancelled) {
+                    LOGGER.error("后台压缩场景资产失败", t);
+                    server.execute(() -> failTask(server, task, "压缩资产异常: " + safeMessage(t)));
+                }
+            } finally {
+                clearCurrentTask(task);
             }
         });
+        } catch (java.util.concurrent.RejectedExecutionException rejected) {
+            clearCurrentTask(task);
+            failTask(server, task, "后台场景队列已满，请等待当前压缩完成");
+        }
+    }
+
+    private synchronized void clearCurrentTask(ActiveCaptureTask task) {
+        if (currentTask == task) {
+            currentTask = null;
+        }
     }
 
     private CaptureTicketWindow<ChunkPos> createTicketWindow(ActiveCaptureTask task) {
@@ -578,9 +648,12 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
     }
 
     private void terminateCurrentTask(MinecraftServer server, ActiveCaptureTask task, String reason) {
+        task.cancelled = true;
+        if (task.compressing) SceneStagingService.getInstance().discardForPlayer(task.requesterPlayerId);
         if (currentTask == task) currentTask = null;
         releaseTickets(task);
-        failTask(server, task, reason);
+        LOGGER.warn("场景捕获任务失败: mapKey={}, 原因={}", task.mapKey, reason);
+        sendProgress(server, task, "FAILED", 0.0f, "失败: " + reason, true);
     }
 
     private void releaseTickets(ActiveCaptureTask task) {
@@ -598,6 +671,7 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
         if (task == null || requesterPlayerId == null || !requesterPlayerId.equals(task.requesterPlayerId)) {
             return false;
         }
+        task.cancelled = true;
         MinecraftServer server = task.level.getServer();
         String resolvedReason = reason == null || reason.isBlank() ? "捕获已取消" : reason;
         if (server != null) {
@@ -620,24 +694,41 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
     }
 
     private void sendProgress(MinecraftServer server, ActiveCaptureTask task, String state, float progress, String msg) {
+        sendProgress(server, task, state, progress, msg, false);
+    }
+
+    private void sendProgress(MinecraftServer server, ActiveCaptureTask task, String state, float progress, String msg,
+                              boolean cancellationTerminal) {
+        boolean terminal = "FAILED".equals(state);
+        if (server == null || task.cancelled && !cancellationTerminal || task.terminalProgressSent || !accepting
+                || task.stagingGeneration != SceneStagingService.getInstance().currentGeneration()
+                || !task.toolSessionId.equals(SceneSelectionSessionManager.getInstance().getEditorSessionId(task.requesterPlayerId))) return;
         SceneAssetBuildProgressS2C payload = new SceneAssetBuildProgressS2C(
                 task.mapKey, state, progress, task.currentSectionIndex, task.totalSectionsToScan, msg);
 
         ServerPlayer player = server.getPlayerList().getPlayer(task.requesterPlayerId);
-        if (player != null) {
+        if (player != null && !player.hasDisconnected()) {
+            if (terminal) task.terminalProgressSent = true;
             ServerPlayNetworking.send(player, payload);
         }
     }
 
     private synchronized ExecutorService ensureExecutor() {
+        if (!accepting) throw new java.util.concurrent.RejectedExecutionException("Capture service stopped");
         if (backgroundExecutor == null || backgroundExecutor.isShutdown()) {
             backgroundExecutor = createExecutor();
         }
         return backgroundExecutor;
     }
 
+    public synchronized void start() { accepting = true; }
+
     public synchronized void shutdown() {
+        accepting = false;
         ActiveCaptureTask task = currentTask;
+        if (task != null) {
+            task.cancelled = true;
+        }
         currentTask = null;
         releaseTickets(task);
         if (backgroundExecutor != null) backgroundExecutor.shutdownNow();
@@ -669,5 +760,19 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
 
     private static <T extends Comparable<T>> String getPropertyValueName(Property<T> prop, BlockState state) {
         return prop.getName(state.getValue(prop));
+    }
+
+    /** Wait outside service locks so cancelled workers can finish their finally blocks. */
+    public void awaitStopped() {
+        awaitExecutor(backgroundExecutor);
+    }
+    private static void awaitExecutor(java.util.concurrent.ExecutorService executor) {
+        if (executor == null || !executor.isShutdown()) return;
+        try {
+            if (!executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS))
+                LOGGER.warn("Scene worker is still cancelling; lifecycle generations reject its results");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

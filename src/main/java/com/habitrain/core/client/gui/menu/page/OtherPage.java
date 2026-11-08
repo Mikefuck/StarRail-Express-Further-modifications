@@ -51,31 +51,33 @@ public class OtherPage implements ConfigPage {
         area.setBounds(x, y, w, h);
         hits.clear();
         g.enableScissor(x, y, x + w, y + h);
+        try {
+            int contentStartY = area.getContentY();
+            int cy = contentStartY + PAD;
+            int cardX = x + PAD;
+            int cardW = Math.max(180, w - PAD * 2 - 5);
 
-        int contentStartY = area.getContentY();
-        int cy = contentStartY + PAD;
-        int cardX = x + PAD;
-        int cardW = Math.max(180, w - PAD * 2 - 5);
+            cy = renderToggleCard(g, cardX, cy, cardW, 1,
+                    "杀手刀耐久规则",
+                    "开启后使用上游耐久；关闭后杀手刀保持无限耐久",
+                    knifeDurabilityEnabled, "耐久 · 已启用", "耐久 · 已关闭");
+            cy += GAP;
+            cy = renderToggleCard(g, cardX, cy, cardW, 2,
+                    "对局外自动拉入大厅语音群组",
+                    "控制进服、大厅空闲和对局结束后是否自动加入 LobbyChat",
+                    lobbyVoiceGroupEnabled, "自动拉群 · 已启用", "自动拉群 · 已关闭");
+            cy += GAP;
+            cy = renderToggleCard(g, cardX, cy, cardW, 3,
+                    "停电黑暗时长增强",
+                    "开启后普通停电强制黑暗+失明 20 秒，忍者关灯 10 秒；关闭保持原版 10 秒",
+                    blackoutEffectEnhancementEnabled, "增强 · 已启用", "增强 · 已关闭");
+            cy += PAD;
 
-        cy = renderToggleCard(g, cardX, cy, cardW, 1,
-                "杀手刀耐久规则",
-                "开启后使用上游耐久；关闭后杀手刀保持无限耐久",
-                knifeDurabilityEnabled, "耐久 · 已启用", "耐久 · 已关闭");
-        cy += GAP;
-        cy = renderToggleCard(g, cardX, cy, cardW, 2,
-                "对局外自动拉入大厅语音群组",
-                "控制进服、大厅空闲和对局结束后是否自动加入 LobbyChat",
-                lobbyVoiceGroupEnabled, "自动拉群 · 已启用", "自动拉群 · 已关闭");
-        cy += GAP;
-        cy = renderToggleCard(g, cardX, cy, cardW, 3,
-                "停电黑暗时长增强",
-                "开启后普通停电强制黑暗+失明 20 秒，忍者关灯 10 秒；关闭保持原版 10 秒",
-                blackoutEffectEnhancementEnabled, "增强 · 已启用", "增强 · 已关闭");
-        cy += PAD;
-
-        area.setContentHeight(cy - contentStartY);
-        area.render(g);
-        g.disableScissor();
+            area.setContentHeight(cy - contentStartY);
+            area.render(g);
+        } finally {
+            g.disableScissor();
+        }
     }
 
     private int renderToggleCard(GuiGraphics g, int x, int y, int w, int action,
@@ -95,6 +97,7 @@ public class OtherPage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+        if (!area.isInside(mx, my)) return false;
         for (Hit hit : hits) {
             if (!MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) continue;
             if (!editable) {

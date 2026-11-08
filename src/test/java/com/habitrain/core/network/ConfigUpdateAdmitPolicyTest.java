@@ -5,6 +5,18 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ConfigUpdateAdmitPolicyTest {
+    @Test
+    void retryWithNewRequestIdMustApplyEvenWhenRevisionAndPatchHashAreUnchanged() {
+        assertEquals(ConfigUpdateAdmitPolicy.Result.APPLY,
+                ConfigUpdateAdmitPolicy.admit("retry", "failed", 42L, 42L, 12345, 12345));
+    }
+
+    @Test
+    void sameRequestIdIsReplayedRatherThanAppliedTwice() {
+        assertEquals(ConfigUpdateAdmitPolicy.Result.SKIP_DUPLICATE,
+                ConfigUpdateAdmitPolicy.admit("same-request", "same-request", 42L, 42L, 12345, 12345));
+    }
+
 
     @Test
     void firstUpdateApplies() {

@@ -85,10 +85,10 @@ class SceneViewDistanceWarningSessionTest {
         assertEquals(SceneViewDistanceWarningSession.WarningKind.NONE,
                 SceneViewDistanceWarningSession.warningKind(advice(
                         bounds, SceneVisibilityAdvisor.ViewStatus.UNATTAINABLE, true)));
-        assertEquals(SceneViewDistanceWarningSession.WarningKind.NONE,
+        assertEquals(SceneViewDistanceWarningSession.WarningKind.CLIENT_SETTING_LOW,
                 SceneViewDistanceWarningSession.warningKind(advice(
                         bounds, SceneVisibilityAdvisor.ViewStatus.CLIENT_SETTING_LOW, false)),
-                "scene max-distance failures are administrator diagnostics, not player prompts");
+                "An administrator distance issue must not hide the client's own low setting");
     }
 
     private static SceneViewDistanceWarningSession openedSession() {

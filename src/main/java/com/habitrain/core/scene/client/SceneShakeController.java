@@ -14,31 +14,34 @@ public final class SceneShakeController {
 
     private SceneShakeSettings currentSettings = SceneShakeSettings.createDisabled();
     private boolean active = false;
-    private long startTimeMs = 0L;
+    private long startNanos = 0L;
+    private boolean started = false;
 
     private SceneShakeController() {}
 
     public synchronized void updateSettings(SceneShakeSettings settings, boolean active) {
         this.currentSettings = settings != null ? settings : SceneShakeSettings.createDisabled();
         this.active = active && this.currentSettings.isEnabled();
-        if (this.active && this.startTimeMs == 0L) {
-            this.startTimeMs = System.currentTimeMillis();
+        if (this.active && !this.started) {
+            this.startNanos = System.nanoTime();
+            this.started = true;
         } else if (!this.active) {
-            this.startTimeMs = 0L;
+            this.startNanos = 0L;
+            this.started = false;
         }
     }
 
-    public boolean isActive() {
+    public synchronized boolean isActive() {
         return active && currentSettings.isEnabled();
     }
 
     /**
      * 计算相机旋转偏移量 (pitch, yaw, roll)（单位：度）。
      */
-    public float[] getRotationOffset(float partialTick) {
+    public synchronized float[] getRotationOffset(float partialTick) {
         if (!isActive()) return new float[]{0f, 0f, 0f};
 
-        double t = (System.currentTimeMillis() - startTimeMs) / 1000.0;
+        double t = Math.max(0L, System.nanoTime() - startNanos) / 1_000_000_000.0;
         double freq = currentSettings.getFrequencyHz();
         double amp = currentSettings.getRotationAmplitudeDegrees();
 
@@ -53,10 +56,10 @@ public final class SceneShakeController {
     /**
      * 计算相机位置偏移量 (x, y, z)（单位：格）。
      */
-    public float[] getPositionOffset(float partialTick) {
+    public synchronized float[] getPositionOffset(float partialTick) {
         if (!isActive()) return new float[]{0f, 0f, 0f};
 
-        double t = (System.currentTimeMillis() - startTimeMs) / 1000.0;
+        double t = Math.max(0L, System.nanoTime() - startNanos) / 1_000_000_000.0;
         double freq = currentSettings.getFrequencyHz();
         double amp = currentSettings.getTranslationAmplitudeBlocks();
 

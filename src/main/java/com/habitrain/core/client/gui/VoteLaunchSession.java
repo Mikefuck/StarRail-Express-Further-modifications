@@ -10,10 +10,13 @@ import net.minecraft.util.Mth;
  * {@link VoteLaunchTransitionScreen} 读取。进度不绑在任何界面上，界面重建时可从这里恢复。</p>
  */
 public final class VoteLaunchSession {
+    private static final long SESSION_TIMEOUT_MILLIS = 120_000L;
+
     private static boolean active;
     private static boolean startConfirmed;
     private static boolean launchConfirmed;
     private static boolean gameActive;
+    private static long lastUpdatedAtMillis;
 
     private static int progress;
     private static int playerCount;
@@ -24,22 +27,34 @@ public final class VoteLaunchSession {
 
     private VoteLaunchSession() {}
 
+    private static void expireIfStale() {
+        if (active && lastUpdatedAtMillis > 0L
+                && System.currentTimeMillis() - lastUpdatedAtMillis > SESSION_TIMEOUT_MILLIS) {
+            clear();
+        }
+    }
+
     /** 地图投票结束、上游开始重置地图时调用。 */
     public static void begin(String resolvedMapId) {
-        // 已在本局会话中（结算包重发）：只同步 mapId，不清空进度
-        if (active) {
+        expireIfStale();
+        String id = resolvedMapId == null ? "" : resolvedMapId;
+        // 已在本局会话中（结算包重发）：若尚未进入 ACTIVE 且目标地图未切换，只同步 mapId，不清空进度
+        if (active && !gameActive && (id.isBlank() || winningMapId.isBlank() || id.equals(winningMapId))) {
             applyMapId(resolvedMapId);
+            lastUpdatedAtMillis = System.currentTimeMillis();
             return;
         }
         clear();
         active = true;
-        String id = resolvedMapId == null ? "" : resolvedMapId;
+        lastUpdatedAtMillis = System.currentTimeMillis();
         winningMapId = id;
         mapId = id;
     }
 
     public static void updateProgress(int prog, int players, int killers, String map, String mode) {
+        expireIfStale();
         if (!active) return;
+        lastUpdatedAtMillis = System.currentTimeMillis();
         // 进度只增不减；只有 clear()/新会话会归零。
         progress = Math.max(progress, Mth.clamp(prog, 0, 100));
         if (players > 0) playerCount = players;
@@ -59,9 +74,11 @@ public final class VoteLaunchSession {
      * @return true 若本调用首次确认（接收器据此打开全屏转场）
      */
     public static boolean onStartConfirmed(String confirmedMapId) {
+        expireIfStale();
         if (!active) {
             return false;
         }
+        lastUpdatedAtMillis = System.currentTimeMillis();
         applyMapId(confirmedMapId);
         if (startConfirmed) {
             return false;
@@ -76,7 +93,9 @@ public final class VoteLaunchSession {
      * @return true 若本调用首次将 launchConfirmed 置真
      */
     public static boolean onLaunchConfirmed(String confirmedMapId) {
+        expireIfStale();
         if (!active) return false;
+        lastUpdatedAtMillis = System.currentTimeMillis();
         applyMapId(confirmedMapId);
         progress = 100;
         if (launchConfirmed) {
@@ -88,6 +107,7 @@ public final class VoteLaunchSession {
 
     public static void onGameActive() {
         if (!active) return;
+        lastUpdatedAtMillis = System.currentTimeMillis();
         gameActive = true;
     }
 
@@ -100,6 +120,7 @@ public final class VoteLaunchSession {
         startConfirmed = false;
         launchConfirmed = false;
         gameActive = false;
+        lastUpdatedAtMillis = 0L;
         progress = 0;
         playerCount = 0;
         killerCount = 0;
@@ -109,6 +130,7 @@ public final class VoteLaunchSession {
     }
 
     public static boolean isActive() {
+        expireIfStale();
         return active;
     }
 

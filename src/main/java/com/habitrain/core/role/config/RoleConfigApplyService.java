@@ -18,12 +18,17 @@ public final class RoleConfigApplyService {
     private RoleConfigApplyService() {}
 
     public static void applyAndBroadcast(MinecraftServer server) {
+        if (com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.round() != null
+                || com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.lastEnded() != null) {
+            RoleManifestService.freezeRoundManifestIfNeeded();
+        }
         RoleExtensionRegistry.INSTANCE.recomputeCompiledEntries();
         RoleExtensionLifecycleHandler.publishSnapshotAfterRebuild();
         if (server == null) {
             return;
         }
-        if (com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.round() != null) {
+        if (com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.round() != null
+                || com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.lastEnded() != null) {
             // Mid-round: pending is next-round only. Do not replace the client's
             // round snapshot used by HUD / instinct / handshake.
             return;

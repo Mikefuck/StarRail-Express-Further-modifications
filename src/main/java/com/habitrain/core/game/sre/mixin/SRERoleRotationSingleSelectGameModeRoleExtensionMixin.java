@@ -2,12 +2,17 @@ package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.game.sre.role.RoleRotationDraftStateAccess;
 import com.habitrain.core.game.sre.role.RoleRotationRefreshAccess;
+import com.habitrain.core.game.sre.role.SreRoleResolver;
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.game.modes.funny.SRERoleRotationSingleSelectGameMode;
 import io.wifi.starrailexpress.game.modes.funny.rotation.SingleSelectDraftState;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
  * Bridges the role-override refresh to the single-select role-rotation game
@@ -23,6 +28,19 @@ public abstract class SRERoleRotationSingleSelectGameModeRoleExtensionMixin
 
     @Shadow
     private void broadcastSync(ServerLevel world) {
+    }
+
+    @Redirect(
+            method = "forceFinishRotation",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lio/wifi/starrailexpress/api/TMMRoles;CIVILIAN:Lio/wifi/starrailexpress/api/SRERole;"
+            ),
+            require = 1,
+            remap = false
+    )
+    private SRERole habitrain$resolveCivilianInForceFinish() {
+        return SreRoleResolver.resolveOrOriginal(TMMRoles.CIVILIAN);
     }
 
     @Override

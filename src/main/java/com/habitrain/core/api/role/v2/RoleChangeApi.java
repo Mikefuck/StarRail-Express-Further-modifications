@@ -18,10 +18,11 @@ public interface RoleChangeApi {
 
     /** The process-wide role-change service. */
     static RoleChangeApi instance() {
-        return DefaultHolder.INSTANCE;
+        return com.habitrain.core.api.spi.RoleSpi.change();
     }
 
-    /** Lazily-bound default instance; avoids touching the game on class load. */
+    /** @deprecated Internal compatibility holder; use {@link RoleChangeApi#instance()}. */
+    @Deprecated(forRemoval = false)
     final class DefaultHolder {
         private DefaultHolder() {}
 

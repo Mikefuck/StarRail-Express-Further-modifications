@@ -3,14 +3,11 @@ package com.habitrain.core.game.sre.mode;
 
 import com.habitrain.core.game.sre.task.SreTaskMirrors;
 import com.habitrain.core.game.sre.voice.VoiceChatPresence;
+import com.habitrain.core.game.sre.voice.VoiceGroupService;
 import com.habitrain.core.api.*;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.game.AbstractGameMode;
 import com.habitrain.core.task.TaskManager;
-import de.maxhenkel.voicechat.api.Group;
-import de.maxhenkel.voicechat.api.VoicechatConnection;
-import de.maxhenkel.voicechat.api.VoicechatServerApi;
-import io.wifi.starrailexpress.compat.TrainVoicePlugin;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.OnGameEnd;
 import io.wifi.starrailexpress.event.OnGameStarted;
@@ -107,6 +104,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         if (STATE.isSreEventsRegistered()) return;
         STATE.setSreEventsRegistered(true);
         OnGameStarted.EVENT.register(serverLevel -> {
+            ForcedReadyJoinGate.clear();
             // 清空待入队：对局已开始不再把人拉进大厅群
             if (!STATE.getPendingVoiceJoins().isEmpty()) {
                 STATE.getPendingVoiceJoins().clear();
@@ -117,9 +115,21 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         });
 
         OnGameEnd.EVENT.register((serverLevel, gameWorldComponent) -> {
+            ForcedReadyJoinGate.clear();
             STATE.setPendingGameEndGroupJoin(true);
             LOGGER.info("[VoiceGroup] 游戏结束，标记待处理");
         });
+
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            ForcedReadyJoinGate.clear();
+            STATE.resetServerState();
+        });
+    }
+
+    /** Drops world/server references while preserving process-wide event registration guards. */
+    public static void resetServerState() {
+        ForcedReadyJoinGate.clear();
+        STATE.resetServerState();
     }
 
     // ========== 语音群组管理 ==========
@@ -148,36 +158,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
             return false;
         }
         if (!ConfigManager.getInstance().isLobbyVoiceGroupEnabled()) return false;
-        if (TrainVoicePlugin.isVoiceChatMissing()) return false;
-        if (TrainVoicePlugin.SERVER_API == null) return false;
-
-        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
-        VoicechatConnection connection = api.getConnectionOf(playerUUID);
-        if (connection == null) return false;
-
-        try {
-            // 已在 LobbyChat → 视为成功，避免重复 setGroup
-            Group current = connection.getGroup();
-            if (current != null && LOBBY_GROUP_ID.equals(current.getId())) {
-                return true;
-            }
-
-            if (STATE.getLobbyGroup() == null) {
-                STATE.setLobbyGroup(api.groupBuilder()
-                        .setId(LOBBY_GROUP_ID)
-                        .setName("LobbyChat")
-                        .setPersistent(true)
-                        .setType(Group.Type.OPEN)
-                        .setHidden(false)
-                        .build());
-            }
-            connection.setGroup(STATE.getLobbyGroup());
-            LOGGER.info("[VoiceGroup] successfully added {} to lobby group", playerUUID);
-            return true;
-        } catch (Exception e) {
-            LOGGER.error("[VoiceGroup] failed to set group for player {}", playerUUID, e);
-            return false;
-        }
+        return VoiceGroupService.tryAddPlayerToLobbyGroup(STATE, LOBBY_GROUP_ID, playerUUID);
     }
 
     /**
@@ -221,26 +202,10 @@ public abstract class SREGameModeBase extends AbstractGameMode {
     }
 
     private static void leaveLobbyGroupForAllOnline(MinecraftServer server) {
-        if (!VoiceChatPresence.isLoaded()) {
+        if (!VoiceChatPresence.isLoaded() || server == null) {
             return;
         }
-        if (server == null) return;
-        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
-        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
-        int left = 0;
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            try {
-                VoicechatConnection connection = api.getConnectionOf(player.getUUID());
-                if (connection == null) continue;
-                Group group = connection.getGroup();
-                if (group != null && LOBBY_GROUP_ID.equals(group.getId())) {
-                    connection.setGroup(null);
-                    left++;
-                }
-            } catch (Exception e) {
-                LOGGER.debug("[VoiceGroup] failed to leave lobby group for {}", player.getUUID(), e);
-            }
-        }
+        int left = VoiceGroupService.leaveLobbyGroupForAllOnline(server, LOBBY_GROUP_ID);
         if (left > 0) {
             LOGGER.info("[VoiceGroup] removed {} players from LobbyChat on game start", left);
         }
@@ -277,7 +242,7 @@ public abstract class SREGameModeBase extends AbstractGameMode {
             return;
         }
         // voicechat 服务端 API 尚未就绪时不消耗重试次数（否则 20 秒后永久放弃，直到对局结束才补拉）
-        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) {
+        if (!VoiceChatPresence.isLoaded() || !VoiceGroupService.isServerApiReady()) {
             return;
         }
         Iterator<Map.Entry<UUID, Integer>> it = STATE.getPendingVoiceJoins().entrySet().iterator();
@@ -353,9 +318,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
         // 对局中/开局过渡：不拉人进大厅
         if (isAnySreGameStartingOrRunning(server)) return;
         // voicechat 未就绪：等下次
-        if (TrainVoicePlugin.isVoiceChatMissing() || TrainVoicePlugin.SERVER_API == null) return;
+        if (!VoiceGroupService.isServerApiReady()) return;
 
-        VoicechatServerApi api = TrainVoicePlugin.SERVER_API;
         int queued = 0;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             UUID id = player.getUUID();
@@ -363,12 +327,8 @@ public abstract class SREGameModeBase extends AbstractGameMode {
             if (STATE.getPendingVoiceJoins().containsKey(id)) continue;
 
             try {
-                VoicechatConnection connection = api.getConnectionOf(id);
-                if (connection != null) {
-                    Group group = connection.getGroup();
-                    if (group != null && LOBBY_GROUP_ID.equals(group.getId())) {
-                        continue; // 已在 LobbyChat
-                    }
+                if (VoiceGroupService.isPlayerInLobbyGroup(id, LOBBY_GROUP_ID)) {
+                    continue; // 已在 LobbyChat
                 }
                 // connection 未就绪，或不在 LobbyChat → 入队
                 STATE.getPendingVoiceJoins().put(id, MAX_VOICE_JOIN_RETRIES);

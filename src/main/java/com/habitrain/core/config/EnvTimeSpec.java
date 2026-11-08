@@ -11,7 +11,7 @@ public final class EnvTimeSpec {
         Preset(int time) { this.time = time; }
         public static Preset fromName(String s) {
             if (s == null) return DAY;
-            try { return Preset.valueOf(s.trim().toUpperCase()); }
+            try { return Preset.valueOf(s.trim().toUpperCase(java.util.Locale.ROOT)); }
             catch (Exception e) { return DAY; }
         }
         public static Preset nearest(int tick) {
@@ -55,7 +55,7 @@ public final class EnvTimeSpec {
         EnvTimeSpec s = createDefault();
         if (o == null) return s;
         if (o.has("mode")) {
-            try { s.mode = Mode.valueOf(o.get("mode").getAsString().trim().toUpperCase()); }
+            try { s.mode = Mode.valueOf(o.get("mode").getAsString().trim().toUpperCase(java.util.Locale.ROOT)); }
             catch (Exception ignored) { s.mode = Mode.PRESET; }
         }
         if (o.has("preset")) s.preset = Preset.fromName(o.get("preset").getAsString());

@@ -23,7 +23,7 @@ public enum ConfigUpdateScope {
     }
 
     public static String attachToConfigJson(String configJson, ConfigUpdateScope scope, String sceneMapKey) {
-        JsonElement parsed = JsonParser.parseString(configJson == null ? "{}" : configJson);
+        JsonElement parsed = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(configJson == null ? "{}" : configJson));
         if (!parsed.isJsonObject()) return configJson;
         JsonObject root = parsed.getAsJsonObject();
         root.addProperty(JSON_KEY, (scope == null ? FULL_MOD_MENU : scope).name());
@@ -36,9 +36,18 @@ public enum ConfigUpdateScope {
     /** Missing or invalid metadata is deliberately treated as full Mod Menu access (the safest default). */
     public static ConfigUpdateScope fromConfigJson(String configJson) {
         try {
-            JsonElement parsed = JsonParser.parseString(configJson == null ? "{}" : configJson);
+            JsonElement parsed = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(configJson == null ? "{}" : configJson));
             if (!parsed.isJsonObject()) return FULL_MOD_MENU;
-            JsonElement value = parsed.getAsJsonObject().get(JSON_KEY);
+            return fromConfigJson(parsed.getAsJsonObject());
+        } catch (RuntimeException ignored) {
+            return FULL_MOD_MENU;
+        }
+    }
+
+    public static ConfigUpdateScope fromConfigJson(JsonObject root) {
+        if (root == null) return FULL_MOD_MENU;
+        try {
+            JsonElement value = root.get(JSON_KEY);
             if (value == null || !value.isJsonPrimitive()) return FULL_MOD_MENU;
             return ConfigUpdateScope.valueOf(value.getAsString());
         } catch (RuntimeException ignored) {
@@ -48,9 +57,18 @@ public enum ConfigUpdateScope {
 
     public static String sceneMapKeyFromConfigJson(String configJson) {
         try {
-            JsonElement parsed = JsonParser.parseString(configJson == null ? "{}" : configJson);
+            JsonElement parsed = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(configJson == null ? "{}" : configJson));
             if (!parsed.isJsonObject()) return "";
-            JsonElement value = parsed.getAsJsonObject().get(SCENE_MAP_JSON_KEY);
+            return sceneMapKeyFromConfigJson(parsed.getAsJsonObject());
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    public static String sceneMapKeyFromConfigJson(JsonObject root) {
+        if (root == null) return "";
+        try {
+            JsonElement value = root.get(SCENE_MAP_JSON_KEY);
             if (value == null || !value.isJsonPrimitive()) return "";
             String mapKey = value.getAsString();
             return mapKey == null ? "" : mapKey.trim();

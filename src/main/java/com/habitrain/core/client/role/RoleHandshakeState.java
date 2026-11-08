@@ -59,16 +59,7 @@ public final class RoleHandshakeState {
     }
 
     /**
-     * Builds the client's local manifest from the loaded mod set.
-     *
-     * <p>The definition hash is taken from the server-sent
-     * {@link RoleSnapshotPayload} when one has already arrived. This is not an
-     * independent client-side computation of the server's compiled entry view —
-     * the stock client cannot reproduce that without the server's full registry
-     * and config — but it makes the client report a non-null fingerprint, so a
-     * manifest/snapshot hash inconsistency is caught by the matcher instead of
-     * being silently skipped. Presentation hash remains {@code null} (no
-     * snapshot equivalent exists yet), matching the existing trust path.
+     * Builds the client's local manifest from the loaded mod set and local role registry.
      */
     public static ClientManifest buildLocalManifest() {
         Map<String, String> versions = new LinkedHashMap<>();
@@ -86,10 +77,18 @@ public final class RoleHandshakeState {
         String api = RoleExtensionApi.instance().apiVersion();
         java.util.Set<String> loadedClientExtensions = RoleClientExtensionApi.instance()
                 .loadedProviderIds();
-        com.habitrain.core.network.RoleSnapshotPayload snapshot = RoleSnapshotState.INSTANCE.get();
-        String expectedDefinitionHash = snapshot == null ? null : snapshot.definitionHash();
+        String localDefinitionHash = computeLocalDefinitionHash();
         return new ClientManifest(api, versions, hasPresentationResources,
-                expectedDefinitionHash, null, loadedClientExtensions);
+                localDefinitionHash, null, loadedClientExtensions);
+    }
+
+    private static @Nullable String computeLocalDefinitionHash() {
+        try {
+            return com.habitrain.core.role.config.RoleManifestHashes.definitionHash();
+        } catch (RuntimeException failure) {
+            com.habitrain.core.HabiTrainCore.LOGGER.warn("Cannot compute local role declaration hash", failure);
+            return null;
+        }
     }
 
     public @Nullable RoleManifest serverManifest() {

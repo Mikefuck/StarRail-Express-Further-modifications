@@ -77,20 +77,21 @@ public final class RoleClientExtensionHooks {
             RoleClientExtensionApi.instance().freeze();
         });
         CommonInstinctEvents.ALIVE_COMMON_BEFORE_EVENT.register(
-                (self, target, enabled) -> apply(InstinctPhase.ALIVE_BEFORE, self, target));
+                (self, target, enabled) -> apply(InstinctPhase.ALIVE_BEFORE, self, target, enabled));
         CommonInstinctEvents.ALIVE_COMMON_MIDDLE_EVENT.register(
-                (self, target, enabled) -> apply(InstinctPhase.ALIVE_MIDDLE, self, target));
+                (self, target, enabled) -> apply(InstinctPhase.ALIVE_MIDDLE, self, target, enabled));
         CommonInstinctEvents.ALIVE_COMMON_AFTER_EVENT.register(
-                (self, target, enabled) -> apply(InstinctPhase.ALIVE_AFTER, self, target));
+                (self, target, enabled) -> apply(InstinctPhase.ALIVE_AFTER, self, target, enabled));
         CommonInstinctEvents.SPECTATOR_COMMON_EVENT.register(
-                (self, target, enabled) -> apply(InstinctPhase.SPECTATOR, self, target));
+                (self, target, enabled) -> apply(InstinctPhase.SPECTATOR, self, target, enabled));
         HudRenderCallback.EVENT.register((graphics, deltaTracker) ->
                 renderHud(graphics, deltaTracker.getGameTimeDeltaPartialTick(false)));
         HabiTrainCore.LOGGER.info("[RoleClientExtensionHooks] HUD/instinct adapters registered");
     }
 
     private static TrueFalseAndCustomResult<Integer> apply(InstinctPhase phase,
-                                                           LocalPlayer viewer, Entity entity) {
+                                                           LocalPlayer viewer, Entity entity,
+                                                           boolean enabled) {
         if (viewer == null || !(entity instanceof Player target)) {
             return TrueFalseAndCustomResult.pass();
         }
@@ -103,7 +104,9 @@ public final class RoleClientExtensionHooks {
         return switch (decision.kind()) {
             case PASS -> TrueFalseAndCustomResult.pass();
             case HIDE -> TrueFalseAndCustomResult.no();
-            case CUSTOM -> TrueFalseAndCustomResult.custom(decision.color());
+            case CUSTOM -> enabled && decision.color() != null
+                    ? TrueFalseAndCustomResult.custom(decision.color())
+                    : TrueFalseAndCustomResult.pass();
         };
     }
 

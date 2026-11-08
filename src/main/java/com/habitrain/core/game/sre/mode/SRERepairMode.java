@@ -28,7 +28,7 @@ public class SRERepairMode extends SREGameModeBase {
     public boolean isActive(ServerLevel level) {
         try {
             SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
-            if (gw == null || gw.getGameMode() == null) return false;
+            if (gw == null || !gw.isRunning() || gw.getGameMode() == null) return false;
             String modeId = gw.getGameMode().identifier.toString();
             return modeId.contains("repair");
         } catch (Exception e) {

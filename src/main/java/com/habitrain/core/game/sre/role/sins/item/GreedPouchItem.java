@@ -39,12 +39,12 @@ public final class GreedPouchItem {
 
     public static ItemStack createBoundPouch(Player owner) {
         ItemStack stack = new ItemStack(Items.BUNDLE, 1);
-        stack.set(DataComponents.CUSTOM_NAME, Component.literal("贪婪收纳袋"));
+        stack.set(DataComponents.CUSTOM_NAME, Component.translatable("item.habitrain_core.greed_pouch"));
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("绑定：不可丢弃；种类数达到开局人数的三分之一减一获胜（向上取整，至少1种）"),
-                Component.literal("把偷来的物品放进袋内即计入种类"),
-                Component.literal("容量：32件，每件物品占1格，与堆叠上限无关"),
-                Component.literal("也可：主/副手持袋，另一手持物右键吸收")
+                Component.translatable("item.habitrain_core.greed_pouch.desc"),
+                Component.translatable("item.habitrain_core.greed_pouch.collect"),
+                Component.translatable("item.habitrain_core.greed_pouch.capacity"),
+                Component.translatable("item.habitrain_core.greed_pouch.use")
         )));
         HabiRoleItems.putFlag(stack, TAG_GREED_POUCH, true);
         if (owner != null) {

@@ -55,6 +55,11 @@ final class SceneMotionFieldParser {
         return String.format(Locale.ROOT, "%.2f", value);
     }
 
+    /** Preserve configured precision without emitting exponent notation rejected by EditBox's filter. */
+    static String formatInput(double value) {
+        return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+
     static String formatDirectionInput(double value) {
         if (Math.abs(value - Math.rint(value)) < 1.0e-8) {
             return String.format(Locale.ROOT, "%.0f", value);

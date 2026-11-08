@@ -75,12 +75,19 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             return;
         }
         loaded = true;
-        for (var container : FabricLoader.getInstance()
-                .getEntrypointContainers(ENTRYPOINT_KEY, RoleClientExtensionEntrypoint.class)) {
+        List<net.fabricmc.loader.api.entrypoint.EntrypointContainer<RoleClientExtensionEntrypoint>> containers =
+                new ArrayList<>(FabricLoader.getInstance()
+                        .getEntrypointContainers(ENTRYPOINT_KEY, RoleClientExtensionEntrypoint.class));
+        containers.sort(java.util.Comparator
+                .comparing((net.fabricmc.loader.api.entrypoint.EntrypointContainer<RoleClientExtensionEntrypoint> c) ->
+                        c.getProvider().getMetadata().getId())
+                .thenComparing(c -> String.valueOf(c.getDefinition())));
+        for (var container : containers) {
             String providerId = container.getProvider().getMetadata().getId();
             ScopedRoleClientExtensionRegistrar scoped = new ScopedRoleClientExtensionRegistrar(providerId, this);
             try {
-                container.getEntrypoint().register(scoped);
+                com.habitrain.core.internal.CoreLifecycleScope.runUnprivileged(
+                        () -> container.getEntrypoint().register(scoped));
                 scoped.commit();
                 loadedProviders.add(providerId);
             } catch (Throwable e) {
@@ -109,18 +116,20 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleHudSpec> huds() {
-        return Collections.unmodifiableCollection(huds.values());
+    public synchronized Collection<RoleHudSpec> huds() {
+        return List.copyOf(huds.values());
     }
 
     @Override
-    public List<RoleHudSpec> hudsFor(RoleKey role) {
+    public synchronized List<RoleHudSpec> hudsFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(role);
         List<RoleHudSpec> out = new ArrayList<>();
         for (RoleHudSpec spec : huds.values()) {
-            if (role.equals(spec.role()) && isActive(hudProviders.get(spec.id()), role, spec.entryKey())) {
+            if (matchesRoleKey(spec.role(), role, canonical)
+                    && isActive(hudProviders.get(spec.id()), spec.role(), spec.entryKey())) {
                 out.add(spec);
             }
         }
@@ -153,19 +162,20 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleInstinctRule> instincts() {
-        return Collections.unmodifiableCollection(instincts.values());
+    public synchronized Collection<RoleInstinctRule> instincts() {
+        return List.copyOf(instincts.values());
     }
 
     @Override
-    public List<RoleInstinctRule> instinctsFor(RoleKey viewerRole) {
+    public synchronized List<RoleInstinctRule> instinctsFor(RoleKey viewerRole) {
         if (viewerRole == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(viewerRole);
         List<RoleInstinctRule> out = new ArrayList<>();
         for (RoleInstinctRule rule : instincts.values()) {
-            if (viewerRole.equals(rule.viewerRole())
-                    && isActive(instinctProviders.get(rule.id()), viewerRole, rule.entryKey())) {
+            if (matchesRoleKey(rule.viewerRole(), viewerRole, canonical)
+                    && isActive(instinctProviders.get(rule.id()), rule.viewerRole(), rule.entryKey())) {
                 out.add(rule);
             }
         }
@@ -173,18 +183,20 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleSkinSpec> skins() {
-        return Collections.unmodifiableCollection(skins.values());
+    public synchronized Collection<RoleSkinSpec> skins() {
+        return List.copyOf(skins.values());
     }
 
     @Override
-    public List<RoleSkinSpec> skinsFor(RoleKey role) {
+    public synchronized List<RoleSkinSpec> skinsFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(role);
         List<RoleSkinSpec> out = new ArrayList<>();
         for (RoleSkinSpec spec : skins.values()) {
-            if (role.equals(spec.role()) && isActive(skinProviders.get(spec.id()), role, spec.entryKey())) {
+            if (matchesRoleKey(spec.role(), role, canonical)
+                    && isActive(skinProviders.get(spec.id()), spec.role(), spec.entryKey())) {
                 out.add(spec);
             }
         }
@@ -192,13 +204,14 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     /** First matching skin for {@code role} + {@code kind}, or {@code null}. */
-    public @Nullable RoleSkinSpec skinFor(RoleKey role, RoleSkinKind kind) {
+    public synchronized @Nullable RoleSkinSpec skinFor(RoleKey role, RoleSkinKind kind) {
         if (role == null || kind == null) {
             return null;
         }
+        RoleKey canonical = canonicalizeRole(role);
         for (RoleSkinSpec spec : skins.values()) {
-            if (role.equals(spec.role()) && kind == spec.kind()
-                    && isActive(skinProviders.get(spec.id()), role, spec.entryKey())) {
+            if (matchesRoleKey(spec.role(), role, canonical) && kind == spec.kind()
+                    && isActive(skinProviders.get(spec.id()), spec.role(), spec.entryKey())) {
                 return spec;
             }
         }
@@ -206,19 +219,20 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleNameRenderRule> nameRenders() {
-        return Collections.unmodifiableCollection(nameRenders.values());
+    public synchronized Collection<RoleNameRenderRule> nameRenders() {
+        return List.copyOf(nameRenders.values());
     }
 
     @Override
-    public List<RoleNameRenderRule> nameRendersFor(RoleKey role) {
+    public synchronized List<RoleNameRenderRule> nameRendersFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(role);
         List<RoleNameRenderRule> out = new ArrayList<>();
         for (RoleNameRenderRule rule : nameRenders.values()) {
-            if (role.equals(rule.role())
-                    && isActive(nameRenderProviders.get(rule.id()), role, rule.entryKey())) {
+            if (matchesRoleKey(rule.role(), role, canonical)
+                    && isActive(nameRenderProviders.get(rule.id()), rule.role(), rule.entryKey())) {
                 out.add(rule);
             }
         }
@@ -226,13 +240,15 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleHudWidget> hudWidgetsFor(RoleKey role) {
+    public synchronized Collection<RoleHudWidget> hudWidgetsFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(role);
         List<RoleHudWidget> out = new ArrayList<>();
         for (ManagedHudWidget managed : hudWidgets.values()) {
-            if (role.equals(managed.role()) && isActive(managed.provider(), role, managed.entryKey())) {
+            if (matchesRoleKey(managed.role(), role, canonical)
+                    && isActive(managed.provider(), managed.role(), managed.entryKey())) {
                 out.add(managed.widget());
             }
         }
@@ -240,22 +256,43 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
     }
 
     @Override
-    public Collection<RoleScreenSpec> screens() {
-        return Collections.unmodifiableCollection(screens.values());
+    public synchronized Collection<RoleScreenSpec> screens() {
+        return List.copyOf(screens.values());
     }
 
     @Override
-    public List<RoleScreenSpec> screensFor(RoleKey role) {
+    public synchronized List<RoleScreenSpec> screensFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
+        RoleKey canonical = canonicalizeRole(role);
         List<RoleScreenSpec> out = new ArrayList<>();
         for (RoleScreenSpec spec : screens.values()) {
-            if (role.equals(spec.role()) && isActive(screenProviders.get(spec.id()), role, spec.entryKey())) {
+            if (matchesRoleKey(spec.role(), role, canonical)
+                    && isActive(screenProviders.get(spec.id()), spec.role(), spec.entryKey())) {
                 out.add(spec);
             }
         }
         return List.copyOf(out);
+    }
+
+    private static RoleKey canonicalizeRole(RoleKey role) {
+        try {
+            return com.habitrain.core.api.role.v2.RoleCatalogApi.instance().canonicalize(role.location());
+        } catch (Throwable ignored) {
+            return role;
+        }
+    }
+
+    private static boolean matchesRoleKey(@Nullable RoleKey specRole, RoleKey queryRole, RoleKey canonicalQuery) {
+        if (specRole == null) {
+            return false;
+        }
+        if (specRole.equals(queryRole) || specRole.equals(canonicalQuery)) {
+            return true;
+        }
+        RoleKey canonicalSpec = canonicalizeRole(specRole);
+        return canonicalSpec.equals(canonicalQuery);
     }
 
     /**
@@ -476,6 +513,8 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
             return true;
         }
         if (entryKey != null && !entryKey.isBlank()) {
+            boolean isDefaultRolePath = entryKey.equals(role.location().getPath());
+            String targetSuffix = "@" + role.location();
             ActiveEntryIndex index = activeEntryIndex;
             if (index != null) {
                 // Prefix matches can only live under this provider's group; legacy
@@ -484,7 +523,8 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
                 List<String> providerEntries = index.byProvider.get(provider);
                 if (providerEntries != null) {
                     for (String activeEntry : providerEntries) {
-                        if (activeEntry.startsWith(serverShape)) {
+                        if (activeEntry.startsWith(serverShape)
+                                || (isDefaultRolePath && activeEntry.endsWith(targetSuffix))) {
                             return true;
                         }
                     }
@@ -493,11 +533,33 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
                         || index.exact.contains(role.location().toString());
             }
             for (String activeEntry : entries) {
-                if (matchesActiveEntry(provider, entryKey, role, activeEntry)) {
+                if (matchesActiveEntry(provider, entryKey, role, activeEntry)
+                        || (isDefaultRolePath && activeEntry != null
+                                && activeEntry.startsWith(provider + "$")
+                                && activeEntry.endsWith(targetSuffix))) {
                     return true;
                 }
             }
             return false;
+        }
+        String targetSuffix = "@" + role.location();
+        ActiveEntryIndex index = activeEntryIndex;
+        if (index != null) {
+            List<String> providerEntries = index.byProvider.get(provider);
+            if (providerEntries != null) {
+                for (String activeEntry : providerEntries) {
+                    if (activeEntry.endsWith(targetSuffix)) {
+                        return true;
+                    }
+                }
+            }
+        } else {
+            for (String activeEntry : entries) {
+                if (activeEntry != null && activeEntry.startsWith(provider + "$")
+                        && activeEntry.endsWith(targetSuffix)) {
+                    return true;
+                }
+            }
         }
         return entries.contains(legacyEntryKey(provider, role))
                 || entries.contains(role.location().toString());
@@ -528,7 +590,23 @@ public final class RoleClientExtensionRegistry implements RoleClientExtensionApi
 
     @Override
     public synchronized void freeze() {
+        requireCoreCaller("RoleClientExtensionApi.freeze()");
         this.frozen = true;
+    }
+
+    private static void requireCoreCaller(String method) {
+        if (com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
+            return;
+        }
+        Class<?> caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                .walk(frames -> frames.skip(2)
+                        .map(StackWalker.StackFrame::getDeclaringClass)
+                        .findFirst()
+                        .orElse(null));
+        if (caller != null && caller.getName().startsWith("com.habitrain.core.")) {
+            return;
+        }
+        throw new IllegalStateException(method + " may only be called by habitrain_core lifecycle");
     }
 
     @Override

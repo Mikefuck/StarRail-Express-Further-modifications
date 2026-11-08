@@ -127,8 +127,8 @@ public final class HabiComponents implements EntityComponentInitializer, WorldCo
         try { WrathComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         try { GreedComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         try { GluttonyComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
-        // Keep selection cooldown / revival deadline and stimulant aftermath through reconnects.
-        if (!isActiveRound(player)) {
+        // Keep selection cooldown / revival deadline through same-round reconnects only if still Lust.
+        if (!isActiveRound(player) || !HabiRoles.isHabiRole(player, SevenSins.LUST)) {
             try { LustComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}
         }
         try { SlothComponent.KEY.get(player).clear(); } catch (Throwable ignored) {}

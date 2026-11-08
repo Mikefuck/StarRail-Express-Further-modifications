@@ -33,7 +33,36 @@ public record RoleActionResult(boolean ok, String reasonKey, @Nullable String de
 
     public RoleActionResult {
         Objects.requireNonNull(reasonKey, "reasonKey");
-        payload = payload == null ? new byte[0] : payload;
+        payload = payload == null || payload.length == 0 ? new byte[0] : payload.clone();
+    }
+
+    @Override
+    public byte[] payload() {
+        return payload.length == 0 ? payload : payload.clone();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof RoleActionResult other)) return false;
+        return ok == other.ok
+                && Objects.equals(reasonKey, other.reasonKey)
+                && Objects.equals(detail, other.detail)
+                && java.util.Arrays.equals(payload, other.payload);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(ok, reasonKey, detail);
+        return 31 * result + java.util.Arrays.hashCode(payload);
+    }
+
+    @Override
+    public String toString() {
+        return "RoleActionResult[ok=" + ok
+                + ", reasonKey=" + reasonKey
+                + ", detail=" + detail
+                + ", payload=" + java.util.Arrays.toString(payload) + "]";
     }
 
     public RoleActionResult(boolean ok, String reasonKey, @Nullable String detail) {
@@ -54,5 +83,16 @@ public record RoleActionResult(boolean ok, String reasonKey, @Nullable String de
 
     public static RoleActionResult reject(String reasonKey, @Nullable String detail) {
         return new RoleActionResult(false, reasonKey, detail, new byte[0]);
+    }
+
+    /** Typed built-in rejection; the string factories continue to support custom addon keys. */
+    public static RoleActionResult rejectReason(RoleActionReason reason, @Nullable String detail) {
+        if (Objects.requireNonNull(reason, "reason") == RoleActionReason.OK)
+            throw new IllegalArgumentException("OK is not a rejection reason");
+        return reject(reason.translationKey(), detail);
+    }
+
+    public java.util.Optional<RoleActionReason> knownReason() {
+        return RoleActionReason.fromKey(reasonKey);
     }
 }

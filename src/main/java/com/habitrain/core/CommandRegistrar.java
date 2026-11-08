@@ -4,6 +4,7 @@ import com.habitrain.core.game.sre.voice.VoiceGroupService;
 import com.habitrain.core.api.GameMode;
 import com.habitrain.core.api.GameModeRegistry;
 import com.habitrain.core.api.ModeMapVoteApi;
+import com.habitrain.core.api.menu.MenuGateApi;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.MapPlayerCountSettings;
 import com.habitrain.core.config.MenuGateService;
@@ -15,6 +16,7 @@ import com.habitrain.core.role.config.RoleConfigApplyService;
 import com.habitrain.core.role.config.RoleExtensionConfigService;
 import com.habitrain.core.role.diag.RoleConfigCommands;
 import com.habitrain.core.role.diag.RoleDiagnosticsCommands;
+import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -26,6 +28,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +40,10 @@ import java.util.List;
  */
 public final class CommandRegistrar {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|CommandRegistrar");
+
+    private static volatile long cachedMapsTimestampMs = 0L;
+    private static volatile List<String> cachedAvailableMaps = List.of();
+    private static final long MAP_SUGGEST_CACHE_TTL_MS = 2000L;
 
     private CommandRegistrar() {}
 
@@ -52,8 +59,9 @@ public final class CommandRegistrar {
                         )
                 );
             }
-            // /habi_api 命令族（OP：list/vote）
+            // /habi_api 命令族（OP：list/vote/mappool/repair/menugate/scene）
             dispatcher.register(Commands.literal("habi_api")
+                    .requires(source -> source.hasPermission(2))
                     .then(Commands.literal("list")
                             .requires(source -> source.hasPermission(2))
                             .executes(ctx -> {
@@ -101,6 +109,7 @@ public final class CommandRegistrar {
                             }))
                     )
                     .then(Commands.literal("mappool")
+                            .requires(source -> source.hasPermission(2))
                             .then(Commands.literal("status")
                                     .requires(source -> source.hasPermission(2))
                                     .executes(ctx -> {
@@ -115,6 +124,7 @@ public final class CommandRegistrar {
                     )
                     // 维修人员模式（OP2）：进入维修模式并锁定地图，被锁地图不进投票池
                     .then(Commands.literal("repair")
+                            .requires(source -> source.hasPermission(2))
                             // 进入维修模式并锁定一张地图
                             .then(Commands.argument("map", StringArgumentType.string())
                                     .suggests(availableMaps())
@@ -174,6 +184,7 @@ public final class CommandRegistrar {
                                     }))
                             // 强制解锁一张地图（移除所有负责玩家）
                             .then(Commands.literal("unlock")
+                                    .requires(source -> source.hasPermission(2))
                                     .then(Commands.argument("map", StringArgumentType.string())
                                             .suggests(lockedMaps())
                                             .requires(source -> source.hasPermission(2))
@@ -191,6 +202,7 @@ public final class CommandRegistrar {
                                             })))
                             // 强制指定某玩家进入维修模式并锁定一张地图
                             .then(Commands.literal("add")
+                                    .requires(source -> source.hasPermission(2))
                                     .then(Commands.argument("player", StringArgumentType.string())
                                             .suggests(onlinePlayerNames())
                                             .then(Commands.argument("map", StringArgumentType.string())
@@ -222,18 +234,14 @@ public final class CommandRegistrar {
                                                     }))))
                             // 强制某玩家退出维修模式
                             .then(Commands.literal("remove")
+                                    .requires(source -> source.hasPermission(2))
                                     .then(Commands.argument("player", StringArgumentType.string())
                                             .suggests(onlinePlayerNames())
                                             .requires(source -> source.hasPermission(2))
                                             .executes(ctx -> {
                                                 String name = StringArgumentType.getString(ctx, "player");
                                                 ServerPlayer target = findPlayer(ctx.getSource().getServer(), name);
-                                                boolean ok;
-                                                if (target != null) {
-                                                    ok = RepairModeManager.exit(target);
-                                                } else {
-                                                    ok = false;
-                                                }
+                                                boolean ok = target != null && RepairModeManager.exit(target);
                                                 if (!ok) {
                                                     ctx.getSource().sendFailure(
                                                             Component.literal("§c" + name + " 不在维修模式中（或不在线）"));
@@ -244,9 +252,9 @@ public final class CommandRegistrar {
                                                 return 1;
                                             })))
                     )
-                    // Mod 菜单访问门控（OP4 且非玩家：仅服务器后台控制台可维护允许列表）
+                    // CORE-01：Mod 菜单访问门控仅允许真实服务器后台控制台（拒绝玩家、/execute as 非玩家实体、命令方块）
                     .then(Commands.literal("menugate")
-                            .requires(source -> source.hasPermission(4) && !source.isPlayer())
+                            .requires(CommandRegistrar::isServerConsole)
                             .then(Commands.literal("enable")
                                     .executes(ctx -> {
                                         if (!MenuGateService.setEnabled(true)) {
@@ -356,14 +364,15 @@ public final class CommandRegistrar {
                                                             "§c保存 Mod 菜单门控失败，未移除 " + name));
                                                     return 0;
                                                 }
-                                                ctx.getSource().sendSuccess(() -> Component.literal(
-                                                        "§c未找到 " + name + "（允许列表中无此玩家）"), false);
-                                                return 1;
+                                                // CORE-13：目标不存在时应走 sendFailure 并返回 0
+                                                ctx.getSource().sendFailure(Component.literal(
+                                                        "§c未找到 " + name + "（允许列表中无此玩家）"));
+                                                return 0;
                                             })))
                     )
-                    // 移动场景系统调试与管理命令
+                    // 移动场景系统调试与管理命令（CORE-17 / X-CUT-18：同时校验 MenuGate）
                     .then(Commands.literal("scene")
-                            .requires(source -> source.hasPermission(2))
+                            .requires(CommandRegistrar::canUseSceneAdminCommands)
                             .then(Commands.literal("tool").executes(ctx -> {
                                 ServerPlayer player = ctx.getSource().getPlayerOrException();
                                 player.getInventory().add(new net.minecraft.world.item.ItemStack(
@@ -386,29 +395,10 @@ public final class CommandRegistrar {
                                 return 1;
                             }))
                             .then(Commands.literal("start")
-                                    .executes(ctx -> {
-                                        ServerLevel level = ctx.getSource().getLevel();
-                                        var ctxRes = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level);
-                                        boolean ok = com.habitrain.core.api.scene.SceneMotionApi.instance().startScene(level, ctxRes.mapKey());
-                                        if (ok) {
-                                            ctx.getSource().sendSuccess(() -> Component.literal("§a已启动场景运动: " + ctxRes.mapKey()), true);
-                                            return 1;
-                                        }
-                                        ctx.getSource().sendFailure(Component.literal("§c启动场景失败（配置禁用或无有效资产）"));
-                                        return 0;
-                                    })
+                                    .executes(ctx -> executeSceneStart(ctx.getSource(), null))
                                     .then(Commands.argument("map", StringArgumentType.string())
-                                            .executes(ctx -> {
-                                                ServerLevel level = ctx.getSource().getLevel();
-                                                String map = StringArgumentType.getString(ctx, "map");
-                                                boolean ok = com.habitrain.core.api.scene.SceneMotionApi.instance().startScene(level, map);
-                                                if (ok) {
-                                                    ctx.getSource().sendSuccess(() -> Component.literal("§a已启动场景运动: " + map), true);
-                                                    return 1;
-                                                }
-                                                ctx.getSource().sendFailure(Component.literal("§c启动场景失败（配置禁用或无有效资产）"));
-                                                return 0;
-                                            }))
+                                            .executes(ctx -> executeSceneStart(
+                                                    ctx.getSource(), StringArgumentType.getString(ctx, "map"))))
                             )
                             .then(Commands.literal("stop").executes(ctx -> {
                                 ServerLevel level = ctx.getSource().getLevel();
@@ -416,51 +406,36 @@ public final class CommandRegistrar {
                                 ctx.getSource().sendSuccess(() -> Component.literal("§e已停止当前维度的场景运动"), true);
                                 return 1;
                             }))
-                            // 导出当前资产供整合包分发：玩家侧放进 habitrain_scene_seed/ 即可零网络加载。
+                            // CORE-12：导出当前资产供整合包分发，提示目录与 SceneSeedImporter.SEED_DIR_NAME 一致，且不泄露宿主机绝对路径
                             .then(Commands.literal("export").executes(ctx -> {
-                                var result = com.habitrain.core.scene.server.SceneExportService.exportAll();
-                                if (!result.ok()) {
-                                    ctx.getSource().sendFailure(Component.literal("§c导出失败: " + result.error()));
-                                    return 0;
+                                var source = ctx.getSource();
+                                var server = source.getServer();
+                                var snapshot = com.habitrain.core.scene.server.SceneExportService.snapshot();
+                                boolean queued = com.habitrain.core.internal.ServerFileTasks.submit(server,
+                                        () -> com.habitrain.core.scene.server.SceneExportService.export(snapshot,
+                                                () -> com.habitrain.core.internal.ServerFileTasks.isCurrent(server)),
+                                        (result, failure) -> {
+                                if (failure != null || !result.ok()) {
+                                    source.sendFailure(Component.literal("§c导出失败，请查看服务器日志"));
+                                    return;
                                 }
-                                ctx.getSource().sendSuccess(() -> Component.literal(
+                                LOGGER.info("已导出 {} 个场景资产到 {}", result.assets(), result.directory());
+                                source.sendSuccess(() -> Component.literal(
                                         "§a已导出 §e" + result.assets() + " §a个场景资产（§f"
                                                 + com.habitrain.core.api.scene.asset.SceneAssetSizeReport.humanBytes(result.bytes())
-                                                + "§a）\n§7目录: §f" + result.directory()
-                                                + "\n§7把该目录里的 .hscene 放进客户端 §f.habitrain_scene_seed/§7 即可免下载"
+                                                + "§a）\n§7导出目录: §f<world>/" + com.habitrain.core.scene.server.SceneExportService.DIR_NAME + "/"
+                                                + "\n§7把该目录里的 .hscene 放进客户端 §fhabitrain_scene_seed/§7 即可免下载"
                                                 + (result.skipped() > 0 ? "\n§7跳过（无文件/无效）: §e" + result.skipped() : "")), false);
+                                        });
+                                if (!queued) { source.sendFailure(Component.literal("§c文件处理队列繁忙，请稍后再试")); return 0; }
+                                source.sendSuccess(() -> Component.literal("§e正在后台导出场景资产，完成后会通知"), false);
                                 return 1;
                             }))
                             .then(Commands.literal("build")
-                                    .executes(ctx -> {
-                                        ServerLevel level = ctx.getSource().getLevel();
-                                        ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                        var ctxRes = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level);
-                                        var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(ctxRes.mapKey());
-                                        if (profile.getSourceBounds().isEmpty()) {
-                                            ctx.getSource().sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds"));
-                                            return 0;
-                                        }
-                                        com.habitrain.core.scene.server.SceneCaptureService.getInstance()
-                                                .requestCapture(level, ctxRes.mapKey(), profile.getSourceBounds(), player);
-                                        ctx.getSource().sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + ctxRes.mapKey()), false);
-                                        return 1;
-                                    })
+                                    .executes(ctx -> executeSceneBuild(ctx.getSource(), null))
                                     .then(Commands.argument("map", StringArgumentType.string())
-                                            .executes(ctx -> {
-                                                ServerLevel level = ctx.getSource().getLevel();
-                                                ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                                String map = StringArgumentType.getString(ctx, "map");
-                                                var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(map);
-                                                if (profile.getSourceBounds().isEmpty()) {
-                                                    ctx.getSource().sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds: " + map));
-                                                    return 0;
-                                                }
-                                                com.habitrain.core.scene.server.SceneCaptureService.getInstance()
-                                                        .requestCapture(level, map, profile.getSourceBounds(), player);
-                                                ctx.getSource().sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + map), false);
-                                                return 1;
-                                            }))
+                                            .executes(ctx -> executeSceneBuild(
+                                                    ctx.getSource(), StringArgumentType.getString(ctx, "map"))))
                             )
                             // API 场景实例（外部 Mod 注册，数量无上限）诊断
                             .then(Commands.literal("api")
@@ -498,6 +473,38 @@ public final class CommandRegistrar {
             dispatcher.register(roleApiRootCommand());
           });
         LOGGER.info("命令已注册: /instantgroup, /habi_api list|vote|mappool|repair|menugate, /habitrain roleapi");
+    }
+
+    private static int executeSceneStart(CommandSourceStack source, @Nullable String mapArg) {
+        ServerLevel level = source.getLevel();
+        String map = (mapArg != null && !mapArg.isBlank())
+                ? mapArg
+                : com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
+        boolean ok = com.habitrain.core.api.scene.SceneMotionApi.instance().startScene(level, map);
+        if (ok) {
+            source.sendSuccess(() -> Component.literal("§a已启动场景运动: " + map), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal("§c启动场景失败（配置禁用或无有效资产）"));
+        return 0;
+    }
+
+    private static int executeSceneBuild(CommandSourceStack source, @Nullable String mapArg)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerLevel level = source.getLevel();
+        ServerPlayer player = source.getPlayerOrException();
+        String map = (mapArg != null && !mapArg.isBlank())
+                ? mapArg
+                : com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
+        var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(map);
+        if (profile.getSourceBounds().isEmpty()) {
+            source.sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds: " + map));
+            return 0;
+        }
+        com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                .requestCapture(level, map, profile.getSourceBounds(), player);
+        source.sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + map), false);
+        return 1;
     }
 
     private static java.util.UUID playerIdOrNull(MinecraftServer server, String name) {
@@ -588,56 +595,17 @@ public final class CommandRegistrar {
             if (opt == null || opt.isEmpty()) {
                 return null;
             }
-            Object profile = opt.get();
-            if (profile instanceof com.mojang.authlib.GameProfile gp && gp.getName() != null) {
-                return gp.getName();
-            }
-            try {
-                var m = profile.getClass().getMethod("name");
-                Object name = m.invoke(profile);
-                if (name instanceof String str && !str.isBlank()) {
-                    return str;
-                }
-            } catch (ReflectiveOperationException ignored) {
-            }
-            try {
-                var m = profile.getClass().getMethod("getName");
-                Object name = m.invoke(profile);
-                if (name instanceof String str && !str.isBlank()) {
-                    return str;
-                }
-            } catch (ReflectiveOperationException ignored) {
-            }
+            GameProfile gp = opt.get();
+            String name = gp != null ? gp.getName() : null;
+            return (name != null && !name.isBlank()) ? name : null;
         } catch (Exception e) {
             LOGGER.debug("menugate offline name lookup failed for {}", id, e);
-        }
-        return null;
-    }
-
-    private static java.util.UUID extractProfileUuid(Object profile) {
-        if (profile == null) {
             return null;
         }
-        if (profile instanceof com.mojang.authlib.GameProfile gp) {
-            return gp.getId();
-        }
-        try {
-            var m = profile.getClass().getMethod("id");
-            Object id = m.invoke(profile);
-            if (id instanceof java.util.UUID u) {
-                return u;
-            }
-        } catch (ReflectiveOperationException ignored) {
-        }
-        try {
-            var m = profile.getClass().getMethod("getId");
-            Object id = m.invoke(profile);
-            if (id instanceof java.util.UUID u) {
-                return u;
-            }
-        } catch (ReflectiveOperationException ignored) {
-        }
-        return null;
+    }
+
+    private static java.util.UUID extractProfileUuid(GameProfile profile) {
+        return profile != null ? profile.getId() : null;
     }
 
     private static int sendLines(CommandSourceStack source, List<String> lines) {
@@ -671,11 +639,51 @@ public final class CommandRegistrar {
         };
     }
 
-    /** Tab 补全：服务器当前可用地图（每次调用实时扫描 train_maps，非缓存）。 */
+    private static MinecraftServer mapsCacheOwner;
+    private static boolean mapsRefreshPending;
+
+    public static void clearMapSuggestions() {
+        mapsCacheOwner = null;
+        mapsRefreshPending = false;
+        cachedAvailableMaps = List.of();
+        cachedMapsTimestampMs = 0L;
+    }
+
+    /** Suggestions use a snapshot; a cache miss never walks the disk on the server thread. */
     private static SuggestionProvider<CommandSourceStack> availableMaps() {
         return (ctx, builder) -> {
             ServerLevel level = ctx.getSource().getLevel();
-            for (String mapId : SREModeStartAdapter.getAvailableMaps(level)) {
+            MinecraftServer server = level.getServer();
+            if (mapsCacheOwner != server) {
+                mapsCacheOwner = server;
+                cachedAvailableMaps = List.of();
+                cachedMapsTimestampMs = 0L;
+                mapsRefreshPending = false;
+            }
+            long now = System.currentTimeMillis();
+            List<String> maps = cachedAvailableMaps;
+            if (!mapsRefreshPending && (now - cachedMapsTimestampMs > MAP_SUGGEST_CACHE_TTL_MS)) {
+                java.nio.file.Path root = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("train_maps");
+                mapsRefreshPending = true;
+                if (!com.habitrain.core.internal.ServerFileTasks.submit(server, () -> {
+                    if (!java.nio.file.Files.isDirectory(root)) return List.<String>of();
+                    try (var files = java.nio.file.Files.walk(root)) {
+                        return files.filter(java.nio.file.Files::isRegularFile)
+                                .map(root::relativize).map(Object::toString)
+                                .filter(path -> path.toLowerCase(java.util.Locale.ROOT).endsWith(".json"))
+                                .map(path -> path.substring(0, path.length() - 5).replace('\\', '/'))
+                                .filter(path -> !com.habitrain.core.vote.MapVoteProfileStore.isReservedMapId(path))
+                                .sorted().toList();
+                    } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+                }, (refreshed, failure) -> {
+                    if (mapsCacheOwner == server) {
+                        mapsRefreshPending = false;
+                        cachedMapsTimestampMs = System.currentTimeMillis();
+                        if (failure == null) cachedAvailableMaps = refreshed;
+                    }
+                })) mapsRefreshPending = false;
+            }
+            for (String mapId : maps) {
                 builder.suggest(mapId);
             }
             return builder.buildFuture();
@@ -721,6 +729,7 @@ public final class CommandRegistrar {
      */
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> roleApiRootCommand() {
         return Commands.literal("habitrain")
+                .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("roleapi")
                         .requires(source -> source.hasPermission(2))
                         .then(Commands.literal("providers").executes(ctx ->
@@ -787,21 +796,32 @@ public final class CommandRegistrar {
                                         RoleDiagnosticsCommands.state(null, null)))
                                 .then(Commands.argument("player", StringArgumentType.word())
                                         .suggests(onlinePlayerNames())
-                                        .executes(ctx -> sendLines(ctx.getSource(),
-                                                RoleDiagnosticsCommands.state(
-                                                        playerIdOrNull(ctx.getSource().getServer(),
-                                                                StringArgumentType.getString(ctx, "player")),
-                                                        null)))
+                                        .executes(ctx -> {
+                                            String playerName = StringArgumentType.getString(ctx, "player");
+                                            java.util.UUID targetId = playerIdOrNull(ctx.getSource().getServer(), playerName);
+                                            if (targetId == null) {
+                                                ctx.getSource().sendFailure(Component.literal("§c未找到在线玩家: " + playerName));
+                                                return 0;
+                                            }
+                                            return sendLines(ctx.getSource(), RoleDiagnosticsCommands.state(targetId, null));
+                                        })
                                         .then(Commands.argument("role", StringArgumentType.string())
-                                                .executes(ctx -> sendLines(ctx.getSource(),
-                                                        RoleDiagnosticsCommands.state(
-                                                                playerIdOrNull(ctx.getSource().getServer(),
-                                                                        StringArgumentType.getString(ctx, "player")),
-                                                                StringArgumentType.getString(ctx, "role")))))))
+                                                .executes(ctx -> {
+                                                    String playerName = StringArgumentType.getString(ctx, "player");
+                                                    java.util.UUID targetId = playerIdOrNull(ctx.getSource().getServer(), playerName);
+                                                    if (targetId == null) {
+                                                        ctx.getSource().sendFailure(Component.literal("§c未找到在线玩家: " + playerName));
+                                                        return 0;
+                                                    }
+                                                    return sendLines(ctx.getSource(),
+                                                            RoleDiagnosticsCommands.state(targetId,
+                                                                    StringArgumentType.getString(ctx, "role")));
+                                                }))))
                         // 角色扩展 v2 配置（§13.1/13.4）：只读 status OP2，修改 OP4
                         .then(Commands.literal("config")
+                                .requires(CommandRegistrar::canUseSceneAdminCommands)
                                 .then(Commands.literal("status")
-                                        .requires(source -> source.hasPermission(2))
+                                        .requires(CommandRegistrar::canUseSceneAdminCommands)
                                         .executes(ctx -> sendLines(ctx.getSource(),
                                                 RoleConfigCommands.status())))
                                 .then(Commands.literal("set")
@@ -818,7 +838,13 @@ public final class CommandRegistrar {
                                                                         return 0;
                                                                     }
                                                                     RoleExtensionConfigService.INSTANCE.setProviderEnabled(id, on);
+                                                                    String saveErr = RoleExtensionConfigService.INSTANCE.lastSaveError();
                                                                     RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                                    if (saveErr != null) {
+                                                                        ctx.getSource().sendFailure(Component.literal(
+                                                                                "§c配置已内存生效但落盘失败: " + saveErr));
+                                                                        return 0;
+                                                                    }
                                                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                                                             "§a已" + (on ? "启用" : "禁用") + " provider §e" + id), true);
                                                                     return 1;
@@ -835,7 +861,13 @@ public final class CommandRegistrar {
                                                                         return 0;
                                                                     }
                                                                     RoleExtensionConfigService.INSTANCE.setEntryEnabled(entryId, on);
+                                                                    String saveErr = RoleExtensionConfigService.INSTANCE.lastSaveError();
                                                                     RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                                    if (saveErr != null) {
+                                                                        ctx.getSource().sendFailure(Component.literal(
+                                                                                "§c配置已内存生效但落盘失败: " + saveErr));
+                                                                        return 0;
+                                                                    }
                                                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                                                             "§a已" + (on ? "启用" : "禁用") + " entry §e" + entryId), true);
                                                                     return 1;
@@ -850,7 +882,13 @@ public final class CommandRegistrar {
                                                                 return 0;
                                                             }
                                                             RoleExtensionConfigService.INSTANCE.setAllowGlobalHooks(on);
+                                                            String saveErr = RoleExtensionConfigService.INSTANCE.lastSaveError();
                                                             RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                            if (saveErr != null) {
+                                                                ctx.getSource().sendFailure(Component.literal(
+                                                                        "§c配置已内存生效但落盘失败: " + saveErr));
+                                                                return 0;
+                                                            }
                                                             ctx.getSource().sendSuccess(() -> Component.literal(
                                                                     "§a已" + (on ? "开启" : "关闭") + " 全局 hook"), true);
                                                             return 1;
@@ -864,7 +902,13 @@ public final class CommandRegistrar {
                                                             String winner = StringArgumentType.getString(ctx, "winnerEntry");
                                                             String resolved = "none".equalsIgnoreCase(winner) ? null : winner;
                                                             RoleExtensionConfigService.INSTANCE.setConflictWinner(targetField, resolved);
+                                                            String saveErr = RoleExtensionConfigService.INSTANCE.lastSaveError();
                                                             RoleConfigApplyService.applyAndBroadcast(ctx.getSource().getServer());
+                                                            if (saveErr != null) {
+                                                                ctx.getSource().sendFailure(Component.literal(
+                                                                        "§c配置已内存生效但落盘失败: " + saveErr));
+                                                                return 0;
+                                                            }
                                                             ctx.getSource().sendSuccess(() -> Component.literal(
                                                                     resolved == null
                                                                             ? "§e已清除 " + targetField + " 的冲突裁决"
@@ -878,25 +922,51 @@ public final class CommandRegistrar {
     }
 
     /**
-     * {@code /habitrain roleapi config set|winner}: OP4. In-game players on a
-     * dedicated server also need MenuGate when it is enabled. Console and
-     * command blocks stay OP4 break-glass.
+     * CORE-01：严格校验命令来源是否为服务器后台控制台（或 RCON）。
+     * 必须同时满足 {@code source.getServer() != null}、{@code source.getEntity() == null}（排除 {@code /execute as @e}）
+     * 并核验原始 CommandSource 为服务器实例或 RCON，不信任可变显示名。
      */
-    private static boolean canWriteRoleApiConfig(CommandSourceStack source) {
-        if (!source.hasPermission(4)) {
+    private static boolean isServerConsole(CommandSourceStack source) {
+        if (source == null || !source.hasPermission(4) || source.getServer() == null) return false;
+        Object origin = ((com.habitrain.core.game.sre.mixin.CommandSourceStackAccessor) (Object) source)
+                .habitrain$getOriginalSource();
+        return origin == source.getServer() || origin instanceof net.minecraft.server.rcon.RconConsoleSource;
+    }
+
+    private static boolean canUseSceneAdminCommands(CommandSourceStack source) {
+        if (source == null || !source.hasPermission(2)) {
             return false;
         }
-        if (!source.isPlayer()) {
+        if (isServerConsole(source)) {
             return true;
         }
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
+        if (((com.habitrain.core.game.sre.mixin.CommandSourceStackAccessor) (Object) source)
+                .habitrain$getOriginalSource() instanceof ServerPlayer player) {
+            return !MenuGateApi.isBlocked(player, source.getServer());
+        }
+        return false;
+    }
+
+    /**
+     * CORE-01：{@code /habitrain roleapi config set|winner} 需要 OP4。
+     * 仅允许服务器后台控制台，或通过 MenuGate 校验的在线 OP4 玩家；
+     * 严禁通过 {@code /execute as @e[type=!player]} 或命令方块绕过。
+     */
+    private static boolean canWriteRoleApiConfig(CommandSourceStack source) {
+        if (source == null || !source.hasPermission(4)) {
+            return false;
+        }
+        if (isServerConsole(source)) {
             return true;
         }
-        MinecraftServer server = source.getServer();
-        if (server == null || !server.isDedicatedServer() || !MenuGateService.isEnabled()) {
-            return true;
+        if (((com.habitrain.core.game.sre.mixin.CommandSourceStackAccessor) (Object) source)
+                .habitrain$getOriginalSource() instanceof ServerPlayer player) {
+            MinecraftServer server = source.getServer();
+            if (server == null || !server.isDedicatedServer() || !MenuGateService.isEnabled()) {
+                return true;
+            }
+            return MenuGateService.isAllowed(player);
         }
-        return MenuGateService.isAllowed(player);
+        return false;
     }
 }

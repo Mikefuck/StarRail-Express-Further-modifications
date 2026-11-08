@@ -86,6 +86,16 @@ public abstract class GreedPouchClickMixin {
         // THROW from slot (Q on slot)
         if (clickType == ClickType.THROW && slotOwn) {
             cancel(sp, ci);
+            return;
+        }
+
+        // SWAP (hotbar keys 1-9 or offhand key F) with an external container slot
+        if (clickType == ClickType.SWAP && (button >= 0 && button < 9 || button == 40)) {
+            ItemStack swapped = sp.getInventory().getItem(button);
+            boolean swappedOwn = GreedPouchItem.isBoundPouchOf(sp, swapped);
+            if ((slotOwn || swappedOwn) && !slotIsPlayerInv) {
+                cancel(sp, ci);
+            }
         }
     }
 

@@ -29,6 +29,8 @@ final class TicketFire {
     private final List<Mote> smoke = new ArrayList<>();
     private final float[] lightX = new float[MAX_LIGHTS];
     private final float[] lightY = new float[MAX_LIGHTS];
+    private final float[] scratchXs = new float[4];
+    private final float[] scratchYs = new float[4];
     private int lights;
 
     TicketFire(float seed) {
@@ -283,8 +285,8 @@ final class TicketFire {
     /** 不规则四边形纸灰，绕自身旋转并左右翻滚。 */
     private void flakeQuad(GuiGeo geo, Mote m, float size, int color) {
         float flip = 0.25f + 0.75f * Math.abs(Mth.cos(m.age * m.tumble + m.phase));
-        float[] xs = new float[4];
-        float[] ys = new float[4];
+        float[] xs = this.scratchXs;
+        float[] ys = this.scratchYs;
         float cos = Mth.cos(m.angle);
         float sin = Mth.sin(m.angle);
         for (int i = 0; i < 4; i++) {

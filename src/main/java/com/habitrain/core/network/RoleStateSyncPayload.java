@@ -52,7 +52,7 @@ public record RoleStateSyncPayload(
             StreamCodec.ofMember(RoleStateSyncPayload::write, RoleStateSyncPayload::new);
 
     /** Hard decode cap; the spec's {@code maxSerializedBytes} is the real gate. */
-    public static final int DECODE_MAX_BYTES = 65536;
+    public static final int DECODE_MAX_BYTES = com.habitrain.core.api.role.v2.state.RoleStateSpec.MAX_SYNC_BYTES;
 
     /** A value payload (never a removal). */
     public static RoleStateSyncPayload value(ResourceLocation id, RoleKey role, StateScope scope,
@@ -138,11 +138,11 @@ public record RoleStateSyncPayload(
 
     private static @Nullable byte[] readBody(FriendlyByteBuf buf) {
         int len = buf.readVarInt();
-        if (len < 0) {
+        if (len == -1) {
             return null;
         }
-        if (len > DECODE_MAX_BYTES) {
-            throw new IllegalArgumentException("role-state slot exceeds decode cap: " + len);
+        if (len < -1 || len > DECODE_MAX_BYTES || len > buf.readableBytes()) {
+            throw new io.netty.handler.codec.DecoderException("role-state slot length invalid or exceeds decode cap: " + len);
         }
         byte[] body = new byte[len];
         buf.readBytes(body);
@@ -150,6 +150,9 @@ public record RoleStateSyncPayload(
     }
 
     private void write(FriendlyByteBuf buf) {
+        if (encoded != null && encoded.length > DECODE_MAX_BYTES) {
+            throw new io.netty.handler.codec.EncoderException("role-state slot exceeds encode cap: " + encoded.length);
+        }
         buf.writeBoolean(id != null);
         if (id != null) {
             buf.writeResourceLocation(id);

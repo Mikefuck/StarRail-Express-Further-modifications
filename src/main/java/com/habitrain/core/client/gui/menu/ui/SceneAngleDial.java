@@ -160,7 +160,8 @@ public final class SceneAngleDial {
     }
 
     public static boolean isMouseOverDial(double mx, double my, int x, int y, int width) {
-        int cx = x + width / 2;
+        int safeWidth = Math.max(120, width);
+        int cx = x + safeWidth / 2;
         int cy = y + 50;
         double dx = mx - cx;
         double dy = my - cy;
@@ -179,7 +180,8 @@ public final class SceneAngleDial {
 
     public static void applyMouseAngle(double mx, double my, int x, int y, int width,
                                        DoubleConsumer onAngleChanged) {
-        int cx = x + width / 2;
+        int safeWidth = Math.max(120, width);
+        int cx = x + safeWidth / 2;
         int cy = y + 50;
         double dx = mx - cx;
         double dy = my - cy;

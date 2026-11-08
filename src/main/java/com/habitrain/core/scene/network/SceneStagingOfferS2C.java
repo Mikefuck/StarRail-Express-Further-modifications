@@ -58,7 +58,7 @@ public record SceneStagingOfferS2C(String stagingId, String mapKey,
 
     private static String readString(ByteBuf buf, int max) {
         int len = buf.readInt();
-        if (len < 0 || len > max) throw new DecoderException("String too long: " + len);
+        if (len < 0 || len > max || len > buf.readableBytes()) throw new DecoderException("String too long: " + len);
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

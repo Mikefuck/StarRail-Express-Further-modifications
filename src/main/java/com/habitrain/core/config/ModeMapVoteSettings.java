@@ -16,7 +16,7 @@ public final class ModeMapVoteSettings {
      * Player-count based map draw (replaces the old fixed pool rotation); never null
      * after {@link #playerCountOrDefault()}.
      */
-    public MapPlayerCountSettings mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
+    public volatile MapPlayerCountSettings mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
 
     public static ModeMapVoteSettings createDefault() {
         ModeMapVoteSettings s = new ModeMapVoteSettings();
@@ -25,10 +25,17 @@ public final class ModeMapVoteSettings {
     }
 
     public MapPlayerCountSettings playerCountOrDefault() {
-        if (mapPlayerCountDraw == null) {
-            mapPlayerCountDraw = MapPlayerCountSettings.createDefault();
+        MapPlayerCountSettings cur = mapPlayerCountDraw;
+        if (cur == null) {
+            synchronized (this) {
+                cur = mapPlayerCountDraw;
+                if (cur == null) {
+                    cur = MapPlayerCountSettings.createDefault();
+                    mapPlayerCountDraw = cur;
+                }
+            }
         }
-        return mapPlayerCountDraw;
+        return cur;
     }
 
     public JsonObject toJson() {

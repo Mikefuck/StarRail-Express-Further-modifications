@@ -25,25 +25,35 @@ public final class RoleNameRenderHelper {
     private RoleNameRenderHelper() {}
 
     /** The first NAMEPLATE rule declared for the target player's role, if any. */
-    private static Player cachedPlayer;
-    private static RoleNameRenderRule cachedRule;
+    private static java.lang.ref.WeakReference<Player> cachedPlayerRef = new java.lang.ref.WeakReference<>(null);
+    private static @Nullable RoleKey cachedRoleKey;
+    private static boolean hasCachedRule;
+    private static @Nullable RoleNameRenderRule cachedRule;
+
+    public static void clearCache() {
+        cachedPlayerRef = new java.lang.ref.WeakReference<>(null);
+        cachedRoleKey = null;
+        hasCachedRule = false;
+        cachedRule = null;
+    }
 
     public static @Nullable RoleNameRenderRule findNameplateRule(Player player) {
         if (player == null || player.level() == null || !player.level().isClientSide) {
-            cachedPlayer = null;
-            cachedRule = null;
+            clearCache();
             return null;
         }
-        if (cachedPlayer == player) {
+        RoleKey currentRole = RoleClientExtensionHooks.currentRole(player);
+        if (hasCachedRule && cachedPlayerRef.get() == player && java.util.Objects.equals(cachedRoleKey, currentRole)) {
             return cachedRule;
         }
-        cachedPlayer = player;
-        cachedRule = computeNameplateRule(player);
+        cachedPlayerRef = new java.lang.ref.WeakReference<>(player);
+        cachedRoleKey = currentRole;
+        cachedRule = computeNameplateRule(currentRole);
+        hasCachedRule = true;
         return cachedRule;
     }
 
-    private static @Nullable RoleNameRenderRule computeNameplateRule(Player player) {
-        RoleKey role = RoleClientExtensionHooks.currentRole(player);
+    private static @Nullable RoleNameRenderRule computeNameplateRule(@Nullable RoleKey role) {
         if (role == null) {
             return null;
         }

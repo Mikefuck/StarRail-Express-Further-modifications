@@ -25,6 +25,16 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // A built-in patch loads above normal mod assets; root assets alone may
+        // lose to SRE's own language file in the production resource stack.
+        boolean languagePatch = net.fabricmc.fabric.api.resource.ResourceManagerHelper.registerBuiltinResourcePack(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("habitrain_core", "language_fixes"),
+                net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("habitrain_core").orElseThrow(),
+                net.minecraft.network.chat.Component.literal("HabiTrain Core - Language fixes"),
+                net.fabricmc.fabric.api.resource.ResourcePackActivationType.ALWAYS_ENABLED);
+        if (!languagePatch) {
+            throw new IllegalStateException("HabiTrain Core language compatibility pack is missing");
+        }
         com.habitrain.core.config.ConfigManager.getInstance().installClientSession();
         com.habitrain.core.client.config.ClientConfigSubmission.init();
         // 审核 A2/B14：装配客户端侧 SPI（场景渲染运行时 + 菜单门控客户端状态）。
@@ -46,6 +56,7 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         com.habitrain.core.client.config.ClientVisualPreferences.load();
         // 结算纪念车票的做旧/燃烧与 MVP 人像着色器
         com.habitrain.core.client.gui.TicketShaders.register();
+        com.habitrain.core.scene.client.SceneShaders.register();
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.START.register(
                 com.habitrain.core.scene.client.SceneCameraShakeRenderer::apply);
         HabiTrainCore.LOGGER.info("哈比列车任务API 客户端初始化完成");
@@ -95,23 +106,9 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         // 生命周期事件处理（JOIN / DISCONNECT / 游戏结束 / 配置保存回调）
         new ClientLifecycleHandler(shaderMonitor);
 
-        // 加载界面纹理预注册
-        try {
-            com.habitrain.core.client.loading.HabiLoadingScreenTextures.registerTextures(net.minecraft.client.Minecraft.getInstance());
-        } catch (Throwable ignored) {
-        }
-
-        // 确保 SREClient 的本能高亮缓存为线程安全的 ConcurrentHashMap
-        try {
-            if (!(io.wifi.starrailexpress.client.SREClient.cachedHighLightMap instanceof java.util.concurrent.ConcurrentHashMap)) {
-                io.wifi.starrailexpress.client.SREClient.cachedHighLightMap = new java.util.concurrent.ConcurrentHashMap<>(
-                        io.wifi.starrailexpress.client.SREClient.cachedHighLightMap != null ? io.wifi.starrailexpress.client.SREClient.cachedHighLightMap : java.util.Map.of()
-                );
-            }
-        } catch (Throwable ignored) {
-        }
-
-        // 注：字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
+        // 注：加载界面纹理由 HabiLoadingScreenTextures.registerTextures 幂等按需注册；
+        //     SREClient.cachedHighLightMap 由 InstinctCacheFixMixin 在 <clinit> 统一替换为 ConcurrentHashMap；
+        //     字幕报幕客户端接收由 SRE 4.3.0 原生注册（SREClient），
         //     SubtitleHUDPrefixFixMixin 仍拦截 enqueueFromPacket 做任务标题归一化。
     }
 }

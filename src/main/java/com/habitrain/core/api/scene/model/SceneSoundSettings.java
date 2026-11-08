@@ -70,12 +70,16 @@ public final class SceneSoundSettings {
 
     public static SceneSoundSettings fromJson(JsonObject json) {
         if (json == null) return createDefault();
-        boolean enabled = json.has("enabled") && json.get("enabled").getAsBoolean();
-        String soundId = json.has("soundId") ? json.get("soundId").getAsString() : DEFAULT_SOUND_ID;
-        float volume = json.has("volume") ? json.get("volume").getAsFloat() : DEFAULT_VOLUME;
-        float pitch = json.has("pitch") ? json.get("pitch").getAsFloat() : DEFAULT_PITCH;
-        int fadeTicks = json.has("fadeTicks") ? json.get("fadeTicks").getAsInt() : DEFAULT_FADE_TICKS;
+        boolean enabled = isPrimitive(json, "enabled") && json.get("enabled").getAsBoolean();
+        String soundId = isPrimitive(json, "soundId") ? json.get("soundId").getAsString() : DEFAULT_SOUND_ID;
+        float volume = isPrimitive(json, "volume") ? json.get("volume").getAsFloat() : DEFAULT_VOLUME;
+        float pitch = isPrimitive(json, "pitch") ? json.get("pitch").getAsFloat() : DEFAULT_PITCH;
+        int fadeTicks = isPrimitive(json, "fadeTicks") ? json.get("fadeTicks").getAsInt() : DEFAULT_FADE_TICKS;
         return new SceneSoundSettings(enabled, soundId, volume, pitch, fadeTicks);
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        return json.has(key) && json.get(key).isJsonPrimitive();
     }
 
     @Override

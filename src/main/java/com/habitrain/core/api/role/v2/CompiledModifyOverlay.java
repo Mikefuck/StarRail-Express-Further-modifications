@@ -27,6 +27,8 @@ import java.util.Objects;
  * {@link EffectiveRoleProfile#toOverlay()}. It is produced by the snapshot
  * compiler and materialized onto the original role only at snapshot activation
  * by the runtime overlay applier, keeping compilation pure.
+ * Prefer {@link #builder} or {@link #toBuilder()} to the retained positional
+ * constructors when assembling or editing an overlay.
  */
 public final class CompiledModifyOverlay {
 
@@ -213,5 +215,162 @@ public final class CompiledModifyOverlay {
     /** Whether any skill spec was folded by a patch. */
     public boolean hasSkills() {
         return skillsSpecified;
+    }
+
+    /**
+     * Named construction. Unset primitives are zero/false and collections empty;
+     * use {@link #toBuilder()} to edit an existing compiled value.
+     */
+    public static Builder builder(MoodType mood, SpecialMapRoleMap specialMapRole) {
+        return new Builder(mood, specialMapRole);
+    }
+
+    /** Copies every field, including explicit empty lists and callback handles. */
+    public Builder toBuilder() {
+        return builder(mood, specialMapRole)
+                .color(color)
+                .colorProvider(colorProvider)
+                .flagsPatch(flagsPatch)
+                .spawnInfoPatch(spawnInfoPatch)
+                .namePatch(namePatch)
+                .descriptionPatch(descriptionPatch)
+                .simpleDescriptionPatch(simpleDescriptionPatch)
+                .defaultItemsPatch(defaultItemsPatch)
+                .shopPatch(shopPatch)
+                .shopTransform(shopTransform)
+                .winConditionHook(winConditionHook)
+                .innocent(innocent)
+                .canUseKiller(canUseKiller)
+                .neutral(neutral)
+                .vigilanteTeam(vigilanteTeam)
+                .defaultMax(defaultMax)
+                .enableChance(enableChance)
+                .needPlayerCount(needPlayerCount)
+                .maxPlayerCount(maxPlayerCount)
+                .canSeeCoin(canSeeCoin)
+                .canPickUpRevolver(canPickUpRevolver)
+                .canBeRandomed(canBeRandomed)
+                .maxSprintTime(maxSprintTime)
+                .canSeeTime(canSeeTime)
+                .neutralForKiller(neutralForKiller)
+                .neutralForInnocent(neutralForInnocent)
+                .mafiaTeam(mafiaTeam)
+                .canUseInstinct(canUseInstinct)
+                .instinctNightVision(instinctNightVision)
+                .canSeeTeammateKiller(canSeeTeammateKiller)
+                .otherModeRole(otherModeRole)
+                .hiddenForRotation(hiddenForRotation)
+                .occupiedRoleCount(occupiedRoleCount)
+                .occupationKeys(occupationKeys)
+                .opposingKeys(opposingKeys)
+                .relatedKeys(relatedKeys)
+                .opposingTwoWay(opposingTwoWay)
+                .skills(skills)
+                .skillsSpecified(skillsSpecified);
+    }
+
+    /** Mutable named builder. Only build() publishes the immutable value. */
+    public static final class Builder {
+        private int color;
+        private MoodType mood;
+        private com.habitrain.core.api.role.v2.patch.ColorPatch colorProvider;
+        private FlagsPatch flagsPatch;
+        private SpawnInfoPatch spawnInfoPatch;
+        private NamePatch namePatch;
+        private RoleTextPatch descriptionPatch;
+        private RoleTextPatch simpleDescriptionPatch;
+        private DefaultItemsPatch defaultItemsPatch;
+        private ShopPatch shopPatch;
+        private ShopTransform shopTransform;
+        private WinConditionHook winConditionHook;
+        private boolean innocent;
+        private boolean canUseKiller;
+        private boolean neutral;
+        private boolean vigilanteTeam;
+        private int defaultMax;
+        private int enableChance;
+        private int needPlayerCount;
+        private int maxPlayerCount;
+        private boolean canSeeCoin;
+        private boolean canPickUpRevolver;
+        private boolean canBeRandomed;
+        private int maxSprintTime;
+        private boolean canSeeTime;
+        private boolean neutralForKiller;
+        private boolean neutralForInnocent;
+        private boolean mafiaTeam;
+        private boolean canUseInstinct;
+        private boolean instinctNightVision;
+        private boolean canSeeTeammateKiller;
+        private boolean otherModeRole;
+        private boolean hiddenForRotation;
+        private int occupiedRoleCount;
+        private SpecialMapRoleMap specialMapRole;
+        private List<RoleKey> occupationKeys = List.of();
+        private List<RoleKey> opposingKeys = List.of();
+        private List<RoleKey> relatedKeys = List.of();
+        private boolean opposingTwoWay;
+        private List<RoleSkillSpec> skills = List.of();
+        private boolean skillsSpecified;
+
+        private Builder(MoodType mood, SpecialMapRoleMap specialMapRole) {
+            this.mood = Objects.requireNonNull(mood, "mood");
+            this.specialMapRole = Objects.requireNonNull(specialMapRole, "specialMapRole");
+        }
+
+        public Builder color(int value) { this.color = value; return this; }
+        public Builder colorProvider(com.habitrain.core.api.role.v2.patch.ColorPatch value) { this.colorProvider = value; return this; }
+        public Builder flagsPatch(FlagsPatch value) { this.flagsPatch = value; return this; }
+        public Builder spawnInfoPatch(SpawnInfoPatch value) { this.spawnInfoPatch = value; return this; }
+        public Builder namePatch(NamePatch value) { this.namePatch = value; return this; }
+        public Builder descriptionPatch(RoleTextPatch value) { this.descriptionPatch = value; return this; }
+        public Builder simpleDescriptionPatch(RoleTextPatch value) { this.simpleDescriptionPatch = value; return this; }
+        public Builder defaultItemsPatch(DefaultItemsPatch value) { this.defaultItemsPatch = value; return this; }
+        public Builder shopPatch(ShopPatch value) { this.shopPatch = value; return this; }
+        public Builder shopTransform(ShopTransform value) { this.shopTransform = value; return this; }
+        public Builder winConditionHook(WinConditionHook value) { this.winConditionHook = value; return this; }
+        public Builder innocent(boolean value) { this.innocent = value; return this; }
+        public Builder canUseKiller(boolean value) { this.canUseKiller = value; return this; }
+        public Builder neutral(boolean value) { this.neutral = value; return this; }
+        public Builder vigilanteTeam(boolean value) { this.vigilanteTeam = value; return this; }
+        public Builder defaultMax(int value) { this.defaultMax = value; return this; }
+        public Builder enableChance(int value) { this.enableChance = value; return this; }
+        public Builder needPlayerCount(int value) { this.needPlayerCount = value; return this; }
+        public Builder maxPlayerCount(int value) { this.maxPlayerCount = value; return this; }
+        public Builder canSeeCoin(boolean value) { this.canSeeCoin = value; return this; }
+        public Builder canPickUpRevolver(boolean value) { this.canPickUpRevolver = value; return this; }
+        public Builder canBeRandomed(boolean value) { this.canBeRandomed = value; return this; }
+        public Builder maxSprintTime(int value) { this.maxSprintTime = value; return this; }
+        public Builder canSeeTime(boolean value) { this.canSeeTime = value; return this; }
+        public Builder neutralForKiller(boolean value) { this.neutralForKiller = value; return this; }
+        public Builder neutralForInnocent(boolean value) { this.neutralForInnocent = value; return this; }
+        public Builder mafiaTeam(boolean value) { this.mafiaTeam = value; return this; }
+        public Builder canUseInstinct(boolean value) { this.canUseInstinct = value; return this; }
+        public Builder instinctNightVision(boolean value) { this.instinctNightVision = value; return this; }
+        public Builder canSeeTeammateKiller(boolean value) { this.canSeeTeammateKiller = value; return this; }
+        public Builder otherModeRole(boolean value) { this.otherModeRole = value; return this; }
+        public Builder hiddenForRotation(boolean value) { this.hiddenForRotation = value; return this; }
+        public Builder occupiedRoleCount(int value) { this.occupiedRoleCount = value; return this; }
+        public Builder occupationKeys(List<RoleKey> value) { this.occupationKeys = value; return this; }
+        public Builder opposingKeys(List<RoleKey> value) { this.opposingKeys = value; return this; }
+        public Builder relatedKeys(List<RoleKey> value) { this.relatedKeys = value; return this; }
+        public Builder opposingTwoWay(boolean value) { this.opposingTwoWay = value; return this; }
+        public Builder skills(List<RoleSkillSpec> value) { this.skills = value; return this; }
+        public Builder skillsSpecified(boolean value) { this.skillsSpecified = value; return this; }
+
+        public CompiledModifyOverlay build() {
+            return new CompiledModifyOverlay(
+                    color, mood, colorProvider, flagsPatch,
+                    spawnInfoPatch, namePatch, descriptionPatch, simpleDescriptionPatch,
+                    defaultItemsPatch, shopPatch, shopTransform, winConditionHook,
+                    innocent, canUseKiller, neutral, vigilanteTeam,
+                    defaultMax, enableChance, needPlayerCount, maxPlayerCount,
+                    canSeeCoin, canPickUpRevolver, canBeRandomed, maxSprintTime,
+                    canSeeTime, neutralForKiller, neutralForInnocent, mafiaTeam,
+                    canUseInstinct, instinctNightVision, canSeeTeammateKiller, otherModeRole,
+                    hiddenForRotation, occupiedRoleCount, specialMapRole, occupationKeys,
+                    opposingKeys, relatedKeys, opposingTwoWay, skills,
+                    skillsSpecified);
+        }
     }
 }

@@ -42,24 +42,40 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
     @Override
     public void hud(RoleHudSpec spec) {
         requireOpen();
+        registry.validateHud(providerId, spec);
+        if (huds.stream().anyMatch(s -> s.id().equals(spec.id()))) {
+            throw new IllegalArgumentException("Duplicate HUD spec in provider batch: " + spec.id());
+        }
         huds.add(spec);
     }
 
     @Override
     public void instinct(RoleInstinctRule rule) {
         requireOpen();
+        registry.validateInstinct(providerId, rule);
+        if (instincts.stream().anyMatch(r -> r.id().equals(rule.id()))) {
+            throw new IllegalArgumentException("Duplicate instinct rule in provider batch: " + rule.id());
+        }
         instincts.add(rule);
     }
 
     @Override
     public void skin(RoleSkinSpec spec) {
         requireOpen();
+        registry.validateSkin(providerId, spec);
+        if (skins.stream().anyMatch(s -> s.id().equals(spec.id()))) {
+            throw new IllegalArgumentException("Duplicate skin spec in provider batch: " + spec.id());
+        }
         skins.add(spec);
     }
 
     @Override
     public void nameRender(RoleNameRenderRule rule) {
         requireOpen();
+        registry.validateNameRender(providerId, rule);
+        if (nameRenders.stream().anyMatch(r -> r.id().equals(rule.id()))) {
+            throw new IllegalArgumentException("Duplicate name-render rule in provider batch: " + rule.id());
+        }
         nameRenders.add(rule);
     }
 
@@ -72,6 +88,11 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
         if (entryKey == null || entryKey.isBlank()) {
             entryKey = role == null ? null : role.location().getPath();
         }
+        registry.validateHudWidget(providerId, id, entryKey, role, widget);
+        ResourceLocation finalId = id;
+        if (hudWidgets.stream().anyMatch(e -> e.id().equals(finalId))) {
+            throw new IllegalArgumentException("Duplicate HUD widget in provider batch: " + id);
+        }
         hudWidgets.add(new HudWidgetEntry(id, entryKey, role, widget));
     }
 
@@ -83,6 +104,10 @@ final class ScopedRoleClientExtensionRegistrar implements RoleClientExtensionReg
     @Override
     public void screen(RoleScreenSpec spec) {
         requireOpen();
+        registry.validateScreen(providerId, spec);
+        if (screens.stream().anyMatch(s -> s.id().equals(spec.id()))) {
+            throw new IllegalArgumentException("Duplicate screen spec in provider batch: " + spec.id());
+        }
         screens.add(spec);
     }
 

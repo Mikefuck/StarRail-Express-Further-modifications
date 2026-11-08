@@ -1,5 +1,6 @@
 package com.habitrain.core.api.scene.model;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.Objects;
@@ -8,7 +9,7 @@ import java.util.Objects;
  * 场景运行时状态（服务端下发给客户端以确定性推进时间与位移）。
  */
 public final class SceneRuntimeState {
-    public static final SceneRuntimeState INACTIVE = new SceneRuntimeState(false, 0L, 0, "__default__", "", SceneProfile.createDefault());
+    public static final SceneRuntimeState INACTIVE = new SceneRuntimeState(false, 0L, 0, com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY, "", SceneProfile.createDefault());
 
     private final boolean active;
     private final long startGameTime;
@@ -22,9 +23,9 @@ public final class SceneRuntimeState {
         this.active = active;
         this.startGameTime = startGameTime;
         this.profileRevision = profileRevision;
-        this.mapKey = mapKey != null ? mapKey : "__default__";
+        this.mapKey = mapKey != null ? mapKey : com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY;
         this.assetHash = assetHash != null ? assetHash : "";
-        this.profile = profile != null ? profile : SceneProfile.createDefault();
+        this.profile = profile != null ? profile.copy() : SceneProfile.createDefault();
     }
 
     public boolean isActive() { return active; }
@@ -32,7 +33,7 @@ public final class SceneRuntimeState {
     public int getProfileRevision() { return profileRevision; }
     public String getMapKey() { return mapKey; }
     public String getAssetHash() { return assetHash; }
-    public SceneProfile getProfile() { return profile; }
+    public SceneProfile getProfile() { return profile.copy(); }
 
     /**
      * 计算自开局以来经过的真实秒数。
@@ -59,7 +60,7 @@ public final class SceneRuntimeState {
         double speed = profile.getSpeedBlocksPerSecond();
         SceneLoopSettings loop = profile.getLoop();
         double loopDist = SceneMotionMath.effectiveLoopDistance(
-                profile.getSourceBounds(), profile.directionRaw(), loop);
+                profile.getSourceBounds(), profile.getRotationDegrees(), profile.directionRaw(), loop);
         return SceneMotionMath.phase(loop.isEnabled(), speed, elapsedSeconds,
                 profile.getPhaseOffsetBlocks(), loopDist);
     }
@@ -90,15 +91,20 @@ public final class SceneRuntimeState {
 
     public static SceneRuntimeState fromJson(JsonObject json) {
         if (json == null) return INACTIVE;
-        boolean active = json.has("active") && json.get("active").getAsBoolean();
-        long start = json.has("startGameTime") ? json.get("startGameTime").getAsLong() : 0L;
-        int rev = json.has("profileRevision") ? json.get("profileRevision").getAsInt() : 0;
-        String map = json.has("mapKey") ? json.get("mapKey").getAsString() : "__default__";
-        String hash = json.has("assetHash") ? json.get("assetHash").getAsString() : "";
+        boolean active = isPrimitive(json, "active") && json.get("active").getAsBoolean();
+        long start = isPrimitive(json, "startGameTime") ? json.get("startGameTime").getAsLong() : 0L;
+        int rev = isPrimitive(json, "profileRevision") ? json.get("profileRevision").getAsInt() : 0;
+        String map = isPrimitive(json, "mapKey") ? json.get("mapKey").getAsString() : com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY;
+        String hash = isPrimitive(json, "assetHash") ? json.get("assetHash").getAsString() : "";
         SceneProfile prof = json.has("profile") && json.get("profile").isJsonObject()
                 ? SceneProfile.fromJson(json.getAsJsonObject("profile"))
                 : SceneProfile.createDefault();
         return new SceneRuntimeState(active, start, rev, map, hash, prof);
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        JsonElement el = json.get(key);
+        return el != null && el.isJsonPrimitive();
     }
 
     @Override

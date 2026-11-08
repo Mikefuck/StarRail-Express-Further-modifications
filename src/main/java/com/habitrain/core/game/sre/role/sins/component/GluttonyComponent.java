@@ -189,7 +189,7 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
             buffs.put(id, entry);
             apply(self, picked, entry);
             self.displayClientMessage(
-                    Component.literal("§a[暴食] 获得 " + effectLabel(picked) + " I（30s）"),
+                    Component.translatable("message.habitrain_core.sin_gluttony.gained", effectLabel(picked)),
                     true
             );
             KEY.sync(player);
@@ -202,9 +202,7 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
             entry.remainingTicks = Math.min(BUFF_MAX_TICKS, entry.remainingTicks + BUFF_ADD_TICKS);
             apply(self, picked, entry);
             self.displayClientMessage(
-                    Component.literal("§a[暴食] " + effectLabel(picked)
-                            + " 升至 " + roman(entry.amplifier + 1)
-                            + "（" + (entry.remainingTicks / 20) + "s）"),
+                    Component.translatable("message.habitrain_core.sin_gluttony.upgraded", effectLabel(picked), roman(entry.amplifier + 1), entry.remainingTicks / 20),
                     true
             );
             KEY.sync(player);
@@ -217,13 +215,12 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
         apply(self, picked, entry);
         if (entry.remainingTicks > before) {
             self.displayClientMessage(
-                    Component.literal("§e[暴食] " + effectLabel(picked) + " 已满级，时长 +"
-                            + ((entry.remainingTicks - before) / 20) + "s（上限 60s）"),
+                    Component.translatable("message.habitrain_core.sin_gluttony.extended", effectLabel(picked), (entry.remainingTicks - before) / 20),
                     true
             );
         } else {
             self.displayClientMessage(
-                    Component.literal("§e[暴食] " + effectLabel(picked) + " 已满级且时长已达上限。"),
+                    Component.translatable("message.habitrain_core.sin_gluttony.capped", effectLabel(picked)),
                     true
             );
         }
@@ -244,6 +241,9 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
     @Override
     public void clear() {
         buffs.clear();
+        if (player != null && player.level() != null && !player.level().isClientSide()) {
+            KEY.sync(player);
+        }
     }
 
     @Override
@@ -259,6 +259,7 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
 
     private void tickBuffs(ServerPlayer self) {
         if (buffs.isEmpty()) return;
+        boolean removedAny = false;
         Iterator<Map.Entry<ResourceLocation, BuffEntry>> it = buffs.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<ResourceLocation, BuffEntry> e = it.next();
@@ -266,6 +267,7 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
             entry.remainingTicks--;
             if (entry.remainingTicks <= 0) {
                 it.remove();
+                removedAny = true;
                 // Stop maintaining our contribution. Vanilla expires it naturally;
                 // removing by effect id would also delete external/hidden effects.
                 continue;
@@ -279,35 +281,21 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
                 apply(self, holder, entry);
             }
         }
+        if (removedAny) {
+            KEY.sync(self);
+        }
     }
 
     private void scrubDebuffs(ServerPlayer self) {
         for (Holder<MobEffect> debuff : CLEARABLE_DEBUFFS) {
-            if (!self.hasEffect(debuff)) continue;
+            MobEffectInstance active = self.getEffect(debuff);
+            if (active == null) continue;
             if (isDenied(effectId(debuff))) continue;
+            // Preserve hard root/stun control effects (e.g. Mime Killer amplifier 127).
+            if (debuff.equals(MobEffects.MOVEMENT_SLOWDOWN) && active.getAmplifier() >= 100) {
+                continue;
+            }
             self.removeEffect(debuff);
-        }
-
-        // review L5：先 hasEffect 短路，避免每 tick 无负面效果时仍全量拷贝
-        // 活跃效果列表。第二个循环只可能命中 CLEARABLE_DEBUFFS 中的条目。
-        boolean anyCandidate = false;
-        for (Holder<MobEffect> debuff : CLEARABLE_DEBUFFS) {
-            if (self.hasEffect(debuff)) {
-                anyCandidate = true;
-                break;
-            }
-        }
-        if (!anyCandidate) return;
-
-        List<MobEffectInstance> actives = new ArrayList<>(self.getActiveEffects());
-        for (MobEffectInstance inst : actives) {
-            Holder<MobEffect> holder = inst.getEffect();
-            ResourceLocation id = effectId(holder);
-            if (id == null) continue;
-            if (isDenied(id)) continue;
-            if (isClearableVanilla(holder)) {
-                self.removeEffect(holder);
-            }
         }
     }
 
@@ -340,12 +328,12 @@ public final class GluttonyComponent implements RoleComponent, ServerTickingComp
         return BuiltInRegistries.MOB_EFFECT.getHolder(id).orElse(null);
     }
 
-    private static String effectLabel(Holder<MobEffect> holder) {
+    private static Component effectLabel(Holder<MobEffect> holder) {
         try {
-            return Component.translatable(holder.value().getDescriptionId()).getString();
+            return Component.translatable(holder.value().getDescriptionId());
         } catch (Throwable t) {
             ResourceLocation id = effectId(holder);
-            return id != null ? id.getPath() : "effect";
+            return Component.literal(id != null ? id.getPath() : "effect");
         }
     }
 

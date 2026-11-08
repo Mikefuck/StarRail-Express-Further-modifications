@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.role.sins.component;
 
+import com.habitrain.core.game.sre.role.HabiRoleItems;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.item.GreedPouchItem;
@@ -7,6 +8,7 @@ import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.ShopContent;
 import io.wifi.starrailexpress.util.ShopEntry;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
@@ -91,9 +93,12 @@ public final class GreedInventoryMenu extends ChestMenu {
             int remaining = Math.max(0, wallet.balance);
             wallet.balance = 0;
             wallet.sync();
-            GreedEconomy.credit(target, remaining);
+            if (remaining > 0) {
+                GreedEconomy.credit(target, remaining);
+                target.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.compensation", remaining), false);
+            }
             greed.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.backlash", remaining), false);
-            target.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.compensation", remaining), false);
+            greed.closeContainer();
             return;
         }
         ItemStack taken = actual.copyWithCount(1);
@@ -119,7 +124,7 @@ public final class GreedInventoryMenu extends ChestMenu {
     }
 
     private static int price(ItemStack stack) {
-        if (GreedPouchItem.isGreedPouch(stack)) return -1;
+        if (GreedPouchItem.isGreedPouch(stack) || HabiRoleItems.isScapegoatKnife(stack)) return -1;
         int killer = lookup(stack, ShopContent.getDefaultKnifeEntries());
         if (killer >= 0) return killer;
         int civilian = lookup(stack, ShopContent.getShopEntries(TMMRoles.CIVILIAN.getIdentifier()));
@@ -130,15 +135,49 @@ public final class GreedInventoryMenu extends ChestMenu {
             int candidate = lookup(stack, ShopContent.getShopEntries(role.getIdentifier()));
             if (candidate >= 0) lowest = Math.min(lowest, candidate);
         }
+        if (lowest != Integer.MAX_VALUE) return lowest;
+        for (var role : TMMRoles.ROLES.values()) {
+            if (role.isInnocent() && !role.canUseKiller()) continue;
+            int candidate = lookup(stack, ShopContent.getShopEntries(role.getIdentifier()));
+            if (candidate >= 0) lowest = Math.min(lowest, candidate);
+        }
         return lowest == Integer.MAX_VALUE ? -1 : lowest;
     }
 
     private static int lookup(ItemStack stack, List<ShopEntry> entries) {
+        if (entries == null) return -1;
         for (var entry : entries) {
-            if (entry.currency() == ShopEntry.Currency.MONEY && stack.is(entry.stack().getItem())) {
+            if (entry != null
+                    && entry.currency() == ShopEntry.Currency.MONEY
+                    && matchesShopStack(stack, entry.stack())) {
                 return GreedPolicy.doubledUnitPrice(entry.price(), entry.stack().getCount());
             }
         }
         return -1;
+    }
+
+    private static boolean matchesShopStack(ItemStack targetStack, ItemStack shopStack) {
+        if (targetStack == null || shopStack == null || targetStack.isEmpty() || shopStack.isEmpty()) {
+            return false;
+        }
+        if (!targetStack.is(shopStack.getItem())) {
+            return false;
+        }
+        boolean targetSpecial = hasSpecialSkillComponents(targetStack);
+        boolean shopSpecial = hasSpecialSkillComponents(shopStack);
+        if (targetSpecial || shopSpecial) {
+            return ItemStack.isSameItemSameComponents(targetStack, shopStack);
+        }
+        return true;
+    }
+
+    private static boolean hasSpecialSkillComponents(ItemStack stack) {
+        return HabiRoleItems.isRedApple(stack)
+                || HabiRoleItems.isPepperSpray(stack)
+                || HabiRoleItems.isBouquet(stack)
+                || HabiRoleItems.isScapegoatKnife(stack)
+                || HabiRoleItems.hasFlag(stack, HabiRoleItems.TAG_LUST_INCENSE)
+                || stack.has(DataComponents.CUSTOM_DATA)
+                || stack.has(DataComponents.CUSTOM_NAME);
     }
 }

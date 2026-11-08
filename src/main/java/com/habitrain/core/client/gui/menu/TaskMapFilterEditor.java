@@ -114,13 +114,14 @@ public class TaskMapFilterEditor {
             mapFilterBtn.mouseClicked(mx, my, button);
             return true;
         }
-        if (cfg.enabled && mx >= mapField.getX() && mx < mapField.getX() + mapField.getWidth()
+        if (cfg.enabled && mapField.visible && mapField.active && mx >= mapField.getX() && mx < mapField.getX() + mapField.getWidth()
                 && my >= mapField.getY() && my < mapField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
                 return true;
             }
             mapField.setFocused(true);
+            mapField.mouseClicked(mx, my, button);
             return true;
         }
         return false;

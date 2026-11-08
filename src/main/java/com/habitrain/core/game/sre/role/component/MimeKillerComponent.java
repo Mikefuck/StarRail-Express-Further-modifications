@@ -2,6 +2,7 @@ package com.habitrain.core.game.sre.role.component;
 
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
+import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
 import io.wifi.starrailexpress.api.RoleComponent;
 import io.wifi.starrailexpress.api.RoleSkill;
 import io.wifi.starrailexpress.cca.DynamicShopComponent;
@@ -53,6 +54,7 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
      */
     private static final Map<UUID, Integer> HIDDEN_BODIES = new HashMap<>();
     private static final Map<UUID, Long> MUTED_UNTIL = new java.util.concurrent.ConcurrentHashMap<>();
+    private static volatile long lastKnownGameTime;
 
     public MimeKillerComponent(Player player) {
         this.player = player;
@@ -167,24 +169,46 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
     public static void clearHiddenBodies() {
         HIDDEN_BODIES.clear();
         MUTED_UNTIL.clear();
+        lastKnownGameTime = 0L;
     }
 
-    /** 被默剧杀手禁言（聊天 + 语音）；纯服务端状态，不依赖任何药水效果。 */
+    /** 被默剧杀手禁言（聊天 + 语音）；纯服务端状态，不依赖任何药水效果，且支持音频线程无锁安全读取。 */
     public static boolean isMuted(Player player) {
         if (player == null) return false;
-        Long until = MUTED_UNTIL.get(player.getUUID());
-        if (until == null) return false;
-        if (player.level().getGameTime() >= until) {
-            MUTED_UNTIL.remove(player.getUUID());
-            return false;
+        UUID id = player.getUUID();
+        if (player.getServer() != null && player.getServer().isSameThread()) {
+            if (!player.isAlive() || player.isSpectator()) {
+                MUTED_UNTIL.remove(id);
+                return false;
+            }
+            if (player.level() != null) {
+                lastKnownGameTime = player.level().getGameTime();
+            }
         }
-        return true;
+        return isMuted(id, lastKnownGameTime);
+    }
+
+    public static boolean isMuted(UUID playerId) {
+        return isMuted(playerId, lastKnownGameTime);
+    }
+
+    private static boolean isMuted(UUID playerId, long now) {
+        if (playerId == null) return false;
+        return MUTED_UNTIL.computeIfPresent(playerId, (id, until) -> now >= until ? null : until) != null;
     }
 
     /**
      * 每 tick 递减；隐藏中 re-assert invisible；到期后恢复可见。
      */
     public static void tickHiddenBodies(Iterable<ServerLevel> levels) {
+        if (levels != null) {
+            for (ServerLevel level : levels) {
+                if (level != null) {
+                    lastKnownGameTime = level.getGameTime();
+                    break;
+                }
+            }
+        }
         if (HIDDEN_BODIES.isEmpty()) return;
 
         Iterator<Map.Entry<UUID, Integer>> it = HIDDEN_BODIES.entrySet().iterator();
@@ -203,16 +227,10 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
         }
     }
 
-    /** 兼容旧无参调用（无 level 时只删 map，无法恢复实体）。 */
+    /** 兼容旧无参调用（不得在无 level 引用时提前删除 HIDDEN_BODIES 条目以免漏调 restoreBodyVisible）。 */
+    @Deprecated
     public static void tickHiddenBodies() {
-        // no-op for signature compatibility; HabiRoleEvents 应调用带 levels 的版本
-        Iterator<Map.Entry<UUID, Integer>> it = HIDDEN_BODIES.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<UUID, Integer> e = it.next();
-            int v = e.getValue() - 1;
-            if (v <= 0) it.remove();
-            else e.setValue(v);
-        }
+        // Intentional no-op: HabiRoleEvents calls tickHiddenBodies(Iterable<ServerLevel>)
     }
 
     /** 隐藏窗口内 re-assert；仅走 getEntity，不扫全图。 */
@@ -260,7 +278,9 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
         int ticks = MIME_DURATION_SECONDS * 20;
         target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, ticks, 255, false, false, true));
         target.addEffect(new MobEffectInstance(MobEffects.JUMP, ticks, 128, false, false, true));
-        MUTED_UNTIL.put(target.getUUID(), target.level().getGameTime() + ticks);
+        long now = target.level().getGameTime();
+        lastKnownGameTime = now;
+        MUTED_UNTIL.put(target.getUUID(), now + ticks);
 
         try {
             KEY.maybeGet(self).ifPresent(comp -> comp.rootedTicks.put(target.getUUID(), ticks));
@@ -269,49 +289,36 @@ public final class MimeKillerComponent implements RoleComponent, ServerTickingCo
     }
 
     private static ServerPlayer resolveTarget(ServerPlayer self, UUID targetId) {
-        if (targetId != null) {
-            Player p = self.level().getPlayerByUUID(targetId);
-            if (p instanceof ServerPlayer sp) return sp;
-        }
-        Vec3 eye = self.getEyePosition();
-        Vec3 look = self.getLookAngle();
-        double range = 8.0;
-        AABB box = self.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0);
-        ServerPlayer best = null;
-        double bestDist = range * range;
-        for (Player p : self.level().getEntitiesOfClass(Player.class, box)) {
-            if (p == self || p.isSpectator()) continue;
-            if (!(p instanceof ServerPlayer sp)) continue;
-            Vec3 to = p.getEyePosition().subtract(eye);
-            double proj = to.dot(look);
-            if (proj <= 0 || proj > range) continue;
-            double distSq = to.lengthSqr();
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = sp;
-            }
-        }
-        return best;
+        return ServerAimTargeting.resolve(self, targetId, 8.0D);
     }
 
     @Override
     public void serverTick() {
         if (player.level().isClientSide) return;
+        lastKnownGameTime = player.level().getGameTime();
         if (rootedTicks.isEmpty()) return;
         Iterator<Map.Entry<UUID, Integer>> it = rootedTicks.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<UUID, Integer> e = it.next();
+            UUID targetId = e.getKey();
             int left = e.getValue() - 1;
-            Player t = player.level().getPlayerByUUID(e.getKey());
-            if (t != null && left > 0) {
-                t.setDeltaMovement(0, Math.min(0, t.getDeltaMovement().y), 0);
-                t.hurtMarked = true;
+            Player t = player.level().getPlayerByUUID(targetId);
+            if (t instanceof ServerPlayer sp && ServerAimTargeting.isAliveParticipant(sp) && left > 0) {
+                sp.setDeltaMovement(0, Math.min(0, sp.getDeltaMovement().y), 0);
+                sp.hurtMarked = true;
                 if (left % 5 == 0) {
-                    t.teleportTo(t.getX(), t.getY(), t.getZ());
+                    sp.teleportTo(sp.getX(), sp.getY(), sp.getZ());
                 }
                 e.setValue(left);
             } else {
                 it.remove();
+                if (!(t instanceof ServerPlayer sp) || !ServerAimTargeting.isAliveParticipant(sp)) {
+                    MUTED_UNTIL.remove(targetId);
+                    if (t != null) {
+                        t.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                        t.removeEffect(MobEffects.JUMP);
+                    }
+                }
             }
         }
     }

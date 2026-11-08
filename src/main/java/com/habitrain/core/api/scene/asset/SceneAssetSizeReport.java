@@ -141,7 +141,7 @@ public final class SceneAssetSizeReport {
             for (var entry : data.blockPayloads) {
                 long body;
                 try {
-                    body = entry.payload().toByteArray().length;
+                    body = entry.payload().encodedSize();
                 } catch (Throwable ignored) {
                     body = 0L;
                 }

@@ -27,8 +27,16 @@ public final class RoleConflictAnalyzer {
 
     /** Compiled statuses for registered v2 declarations. */
     public static List<ManagedRoleEntry<?>> analyze() {
-        List<ManagedRoleEntry<?>> entries = new ArrayList<>();
-        entries.addAll(RoleExtensionRegistry.INSTANCE.v2Entries());
+        return analyzeEntries(RoleExtensionRegistry.INSTANCE.v2Entries());
+    }
+
+    /** Same conflict resolution using an already supplied raw catalog, without upstream initialization. */
+    public static List<ManagedRoleEntry<?>> analyze(java.util.Collection<ResourceLocation> rawRoleIds) {
+        return analyzeEntries(RoleExtensionRegistry.INSTANCE.v2Entries(rawRoleIds));
+    }
+
+    private static List<ManagedRoleEntry<?>> analyzeEntries(List<ManagedRoleEntry<?>> declarations) {
+        List<ManagedRoleEntry<?>> entries = new ArrayList<>(declarations);
 
         Set<String> v2Conflicts = conflictingV2ModifyEntryIds(entries);
         for (int i = 0; i < entries.size(); i++) {
@@ -52,6 +60,11 @@ public final class RoleConflictAnalyzer {
      */
     public static Set<String> conflictingV2ModifyEntryIds() {
         return conflictingV2ModifyEntryIds(RoleExtensionRegistry.INSTANCE.v2Entries());
+    }
+
+    /** Runtime callers already resolved this role; do not initialize upstream registries for diagnostics. */
+    static Set<String> conflictingV2ModifyEntryIds(ResourceLocation resolvedTarget) {
+        return conflictingV2ModifyEntryIds(RoleExtensionRegistry.INSTANCE.v2Entries(Set.of(resolvedTarget)));
     }
 
     private static Set<String> conflictingV2ModifyEntryIds(List<ManagedRoleEntry<?>> entries) {
@@ -109,7 +122,17 @@ public final class RoleConflictAnalyzer {
     private static Map<String, Object> scalarSetWrites(RolePatch patch) {
         Map<String, Object> writes = new LinkedHashMap<>();
         if (patch.color() != null) writes.put(RoleExtensionCompiler.FIELD_COLOR, patch.color().color());
+        if (patch.colorProvider() != null) writes.put(RoleExtensionCompiler.FIELD_COLOR_PROVIDER, patch.colorProvider());
+        if (patch.flagsPatch() != null) writes.put(RoleExtensionCompiler.FIELD_FLAGS_PATCH, patch.flagsPatch());
+        if (patch.spawnInfoPatch() != null) writes.put(RoleExtensionCompiler.FIELD_SPAWN_PATCH, patch.spawnInfoPatch());
         if (patch.mood() != null) writes.put(RoleExtensionCompiler.FIELD_MOOD, patch.mood().mood());
+        if (patch.namePatch() != null) writes.put(RoleExtensionCompiler.FIELD_NAME, patch.namePatch());
+        if (patch.descriptionPatch() != null) writes.put(RoleExtensionCompiler.FIELD_DESCRIPTION, patch.descriptionPatch());
+        if (patch.simpleDescriptionPatch() != null) writes.put(RoleExtensionCompiler.FIELD_SIMPLE_DESCRIPTION, patch.simpleDescriptionPatch());
+        if (patch.defaultItemsPatch() != null) writes.put(RoleExtensionCompiler.FIELD_DEFAULT_ITEMS, patch.defaultItemsPatch());
+        if (patch.shopPatch() != null) writes.put(RoleExtensionCompiler.FIELD_SHOP_PATCH, patch.shopPatch());
+        if (patch.shopTransform() != null) writes.put(RoleExtensionCompiler.FIELD_SHOP_TRANSFORM, patch.shopTransform());
+        if (patch.winConditionHook() != null) writes.put(RoleExtensionCompiler.FIELD_WIN_CONDITION_HOOK, patch.winConditionHook());
         putBooleanSet(writes, RoleExtensionCompiler.FIELD_INNOCENT, patch.innocent());
         putBooleanSet(writes, RoleExtensionCompiler.FIELD_CAN_USE_KILLER, patch.canUseKiller());
         putBooleanSet(writes, RoleExtensionCompiler.FIELD_NEUTRAL, patch.neutral());

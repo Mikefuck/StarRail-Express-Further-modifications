@@ -16,12 +16,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = MapScannerManager.class, remap = false)
 public class MapScannerCacheBroadcastMixin {
 
-    @Inject(method = "loadOrScanAndSaveScannerArea", at = @At("HEAD"), remap = false)
-    private static void habitrain$invalidatePreviousMapRevision(
-            ServerLevel serverLevel, AreasWorldComponent areas, CallbackInfo ci) {
-        CustomTaskBlockScanner.beginMapLoad(serverLevel);
-    }
-
     @Inject(method = "loadOrScanAndSaveScannerArea", at = @At("RETURN"), remap = false)
     private static void habitrain$broadcastCachedCustomBlocks(
             ServerLevel serverLevel, AreasWorldComponent areas, CallbackInfo ci) {

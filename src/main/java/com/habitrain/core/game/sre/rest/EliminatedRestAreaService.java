@@ -1,17 +1,18 @@
 package com.habitrain.core.game.sre.rest;
 
 import com.habitrain.core.HabiTrainCore;
+import com.habitrain.core.game.sre.voice.VoiceGroupService;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
+import com.mojang.brigadier.context.CommandContext;
 import io.wifi.starrailexpress.cca.AreasWorldComponent;
+import io.wifi.starrailexpress.cca.ExtraSlotComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
-import io.wifi.starrailexpress.compat.TrainVoicePlugin;
 import io.wifi.starrailexpress.event.AllowSpectatorPlayerInAreas;
 import io.wifi.starrailexpress.event.OnGameEnd;
 import io.wifi.starrailexpress.event.OnGameStarted;
 import io.wifi.starrailexpress.event.OnPlayerDeath;
-import com.mojang.brigadier.context.CommandContext;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import io.wifi.starrailexpress.game.GameUtils;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -20,15 +21,20 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +72,7 @@ public final class EliminatedRestAreaService {
     private static final Set<UUID> REVIVING_PLAYERS = new HashSet<>();
     private static final Map<UUID, RestPromptState> PROMPT_STATES = new HashMap<>();
     private static final Map<UUID, Long> TOGGLE_COOLDOWN_UNTIL = new HashMap<>();
+    private static final Map<UUID, StashedLoadout> STASHED_LOADOUTS = new HashMap<>();
     private static final int TOGGLE_COOLDOWN_TICKS = 10;
     /** 往返等待房间的玩家命令；客户端右上角提示里显示的就是它。 */
     public static final String REST_COMMAND = "rest";
@@ -91,6 +98,7 @@ public final class EliminatedRestAreaService {
                     ELIMINATED_MATCH_LEVELS.put(playerId, serverPlayer.serverLevel().dimension());
                     RESTING_MATCH_LEVELS.remove(playerId);
                     REVIVING_PLAYERS.remove(playerId);
+                    VoiceGroupService.ensureSpectatorVoiceGroup(playerId);
                     syncPrompt(serverPlayer, false);
                 }
             }
@@ -150,10 +158,11 @@ public final class EliminatedRestAreaService {
         if (matchLevel != null) {
             ELIMINATED_MATCH_LEVELS.put(playerId, matchLevel);
         }
+        VoiceGroupService.ensureSpectatorVoiceGroup(playerId);
     }
 
     /**
-     * Used by the ServerPlayer mixin so all upstream survival checks continue
+     * Used by the GameUtils survival/spectator mixins so all upstream survival checks continue
      * to regard a resting player as eliminated.
      */
     public static boolean isResting(ServerPlayer player) {
@@ -202,6 +211,7 @@ public final class EliminatedRestAreaService {
             ELIMINATED_PLAYERS.remove(playerId);
             ELIMINATED_MATCH_LEVELS.remove(playerId);
             REVIVING_PLAYERS.remove(playerId);
+            STASHED_LOADOUTS.remove(playerId);
             return;
         }
         if (stillEliminated) {
@@ -214,14 +224,32 @@ public final class EliminatedRestAreaService {
             return;
         }
         UUID playerId = player.getUUID();
+        ResourceKey<Level> recordedMatchKey = ELIMINATED_MATCH_LEVELS.get(playerId);
+        if (recordedMatchKey == null) {
+            recordedMatchKey = RESTING_MATCH_LEVELS.get(playerId);
+        }
+        ServerLevel recordedMatchLevel = (server != null && recordedMatchKey != null)
+                ? server.getLevel(recordedMatchKey) : null;
         Boolean matchStopped = lookupOriginalMatchStopped(playerId, key -> {
             ServerLevel matchLevel = server == null ? null : server.getLevel(key);
             SREGameWorldComponent matchWorld = matchLevel == null ? null : SREGameWorldComponent.KEY.get(matchLevel);
             return matchWorld == null ? null : !matchWorld.isRunning();
         });
+        boolean stillEliminated = GameUtils.isPlayerEliminated(player) || ELIMINATED_PLAYERS.contains(playerId);
         applyJoinReconnect(playerId, RESTING_MATCH_LEVELS.containsKey(playerId),
                 matchStopped != null, Boolean.TRUE.equals(matchStopped),
-                GameUtils.isPlayerEliminated(player));
+                stillEliminated);
+
+        // 非 overworld 维度对局中，若玩家在休息区（overworld）断线重连，handleDisconnect 已移除 RESTING_MATCH_LEVELS，
+        // 此时玩家落在 overworld 且可能仍处于 ADVENTURE 模式；将其送回对局维度的旁观出生点并确保加入隔离观战语音组。
+        if (Boolean.FALSE.equals(matchStopped) && ELIMINATED_PLAYERS.contains(playerId) && recordedMatchLevel != null) {
+            if (player.serverLevel() != recordedMatchLevel
+                    || player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
+                returnToSpectator(player, recordedMatchLevel);
+            } else {
+                VoiceGroupService.ensureSpectatorVoiceGroup(playerId);
+            }
+        }
     }
 
     /** null means unknown; the player's current lobby is never a match fallback. */
@@ -245,6 +273,8 @@ public final class EliminatedRestAreaService {
         if (!completeUpstreamRevival(player.getUUID())) {
             return;
         }
+        restoreStashedLoadout(player);
+        VoiceGroupService.resetPlayerVoiceGroup(player.getUUID());
         HabiTrainCore.LOGGER.info(
                 "[EliminatedRest] {} cleared eliminated/rest state for upstream revival in {}",
                 player.getGameProfile().getName(), player.serverLevel().dimension().location());
@@ -262,10 +292,54 @@ public final class EliminatedRestAreaService {
             return;
         }
 
+        restoreStashedLoadout(player);
         ServerLevel matchLevel = getRestingMatchLevel(player);
         if (matchLevel != null && player.serverLevel() != matchLevel) {
             player.teleportTo(matchLevel, player.getX(), player.getY(), player.getZ(), player.getYRot(),
                     player.getXRot());
+        }
+    }
+
+    /**
+     * Called from explicit upstream revival entrypoints ({@code GameUtils.revivePlayerToItsRoom}
+     * / {@code GameUtils.revivePlayer}) so even a player who stayed in the train as a spectator
+     * (never entering the rest area) has their elimination state cleared upon revival.
+     */
+    public static void onExplicitUpstreamRevival(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        UUID playerId = player.getUUID();
+        if (ENTERING_REST_PLAYERS.contains(playerId)) {
+            return;
+        }
+        restoreStashedLoadout(player);
+        RESTING_MATCH_LEVELS.remove(playerId);
+        ELIMINATED_PLAYERS.remove(playerId);
+        ELIMINATED_MATCH_LEVELS.remove(playerId);
+        REVIVING_PLAYERS.remove(playerId);
+        PROMPT_STATES.remove(playerId);
+        TOGGLE_COOLDOWN_UNTIL.remove(playerId);
+        VoiceGroupService.resetPlayerVoiceGroup(playerId);
+        syncPrompt(player, true);
+    }
+
+    /**
+     * When a physical spectator in an active match is switched back to {@link GameType#ADVENTURE}
+     * (e.g. Necromancer/Refugee/Timekeeper revival without entering the rest area), clear their
+     * elimination record so they cannot later use {@code /rest} if swallowed by a Pelican.
+     */
+    public static void clearEliminatedOnSpectatorToAdventureRevival(ServerPlayer player) {
+        if (player == null || ENTERING_REST_PLAYERS.contains(player.getUUID())) {
+            return;
+        }
+        ServerLevel level = resolveMatchLevel(player);
+        if (level == null) {
+            return;
+        }
+        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(level);
+        if (gameWorld != null && gameWorld.isRunning()) {
+            onExplicitUpstreamRevival(player);
         }
     }
 
@@ -342,6 +416,7 @@ public final class EliminatedRestAreaService {
                     ? null : SREGameWorldComponent.KEY.get(matchLevel);
             if (matchLevel == null || matchWorld == null || !matchWorld.isRunning()) {
                 RESTING_MATCH_LEVELS.remove(player.getUUID());
+                clearPlayerInventoryAndEffects(player);
                 syncPrompt(player, true);
                 return ToggleResult.NOT_RUNNING;
             }
@@ -349,9 +424,9 @@ public final class EliminatedRestAreaService {
             return ToggleResult.RETURNED;
         }
 
-        ServerLevel matchLevel = player.serverLevel();
-        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(matchLevel);
-        if (gameWorld == null || !gameWorld.isRunning()) {
+        ServerLevel matchLevel = resolveMatchLevel(player);
+        SREGameWorldComponent gameWorld = matchLevel == null ? null : SREGameWorldComponent.KEY.get(matchLevel);
+        if (matchLevel == null || gameWorld == null || !gameWorld.isRunning()) {
             syncPrompt(player, true);
             return ToggleResult.NOT_RUNNING;
         }
@@ -364,21 +439,24 @@ public final class EliminatedRestAreaService {
     }
 
     private static void moveToRestArea(ServerPlayer player, ServerLevel matchLevel) {
+        // 暂存并清空对局背包与药水效果，防止在 ADVENTURE 休息区使用/走私/箱子复制对局武器（GAME-SRE-05）。
+        stashAndClearLoadout(player);
+
         // This deliberately matches GameUtils.resetPlayerAfterGame: the selected
         // map owns spawnPos, while the post-game/rest area is in the overworld.
         AreasWorldComponent.PosWithOrientation spawn = getPostGameSpawn(matchLevel);
         ServerLevel postGameLevel = player.getServer().overworld();
         player.teleportTo(postGameLevel, spawn.pos.x, spawn.pos.y, spawn.pos.z, spawn.yaw, spawn.pitch);
 
-        // Set the physical game mode before recording the virtual spectator
-        // state; the ServerPlayer mixin then preserves elimination semantics.
         ENTERING_REST_PLAYERS.add(player.getUUID());
         try {
             player.setGameMode(GameType.ADVENTURE);
             RESTING_MATCH_LEVELS.put(player.getUUID(), matchLevel.dimension());
+            ELIMINATED_MATCH_LEVELS.putIfAbsent(player.getUUID(), matchLevel.dimension());
         } finally {
             ENTERING_REST_PLAYERS.remove(player.getUUID());
         }
+        VoiceGroupService.ensureSpectatorVoiceGroup(player.getUUID());
         syncPrompt(player, true);
 
         AreasWorldComponent areas = AreasWorldComponent.KEY.get(matchLevel);
@@ -394,13 +472,12 @@ public final class EliminatedRestAreaService {
                             + "SRE out-of-area systems treat this as normal for the post-game area",
                     player.getGameProfile().getName(), spawn.pos.z, mapName, playArea.minZ, playArea.maxZ);
         }
-
-        // Deliberately do not call TrainVoicePlugin.resetPlayer here. Death
-        // already assigned the player to Train Spectators, which must stay.
     }
 
     private static void returnToSpectator(ServerPlayer player, ServerLevel matchLevel) {
         RESTING_MATCH_LEVELS.remove(player.getUUID());
+        // 清空在休息区期间可能拾取的任何物品，保持旁观态净空
+        clearPlayerInventoryAndEffects(player);
         player.setGameMode(GameType.SPECTATOR);
 
         AreasWorldComponent.PosWithOrientation spawn = AreasWorldComponent.KEY.get(matchLevel).getSpectatorSpawnPos();
@@ -412,9 +489,7 @@ public final class EliminatedRestAreaService {
                 player.getGameProfile().getName(), matchLevel.dimension().location(),
                 spawn == null ? "<missing>" : "(" + spawn.pos.x + ", " + spawn.pos.y + ", " + spawn.pos.z + ")");
 
-        // Reassert the DLC's simple-voice spectator group without touching the
-        // lobby group logic, which only runs outside an active match.
-        TrainVoicePlugin.addPlayer(player.getUUID());
+        VoiceGroupService.ensureSpectatorVoiceGroup(player.getUUID());
         syncPrompt(player, true);
     }
 
@@ -437,12 +512,39 @@ public final class EliminatedRestAreaService {
         return matchLevelKey == null ? null : player.getServer().getLevel(matchLevelKey);
     }
 
+    private static ServerLevel resolveMatchLevel(ServerPlayer player) {
+        if (player == null) {
+            return null;
+        }
+        ServerLevel current = player.serverLevel();
+        SREGameWorldComponent currentWorld = current == null ? null : SREGameWorldComponent.KEY.get(current);
+        if (currentWorld != null && currentWorld.isRunning()) {
+            return current;
+        }
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return null;
+        }
+        ResourceKey<Level> recorded = ELIMINATED_MATCH_LEVELS.get(player.getUUID());
+        if (recorded == null) {
+            recorded = RESTING_MATCH_LEVELS.get(player.getUUID());
+        }
+        if (recorded != null) {
+            ServerLevel recordedLevel = server.getLevel(recorded);
+            SREGameWorldComponent recordedWorld = recordedLevel == null ? null : SREGameWorldComponent.KEY.get(recordedLevel);
+            if (recordedWorld != null && recordedWorld.isRunning()) {
+                return recordedLevel;
+            }
+        }
+        return null;
+    }
+
     private static boolean canEnterRestArea(ServerPlayer player) {
         if (player == null || isResting(player) || !ELIMINATED_PLAYERS.contains(player.getUUID())) {
             return false;
         }
-        ServerLevel level = player.serverLevel();
-        SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(level);
+        ServerLevel level = resolveMatchLevel(player);
+        SREGameWorldComponent gameWorld = level == null ? null : SREGameWorldComponent.KEY.get(level);
         return gameWorld != null && gameWorld.isRunning() && GameUtils.isPlayerEliminated(player);
     }
 
@@ -456,6 +558,7 @@ public final class EliminatedRestAreaService {
                 PROMPT_STATES.remove(playerId);
                 continue;
             }
+            VoiceGroupService.ensureSpectatorVoiceGroup(playerId);
             syncPrompt(player, false);
         }
     }
@@ -470,6 +573,100 @@ public final class EliminatedRestAreaService {
         RestPromptState previous = PROMPT_STATES.put(playerId, current);
         if (force || !current.equals(previous)) {
             EliminatedRestPromptPayload.sendTo(player, current.visible(), current.canToggle());
+        }
+    }
+
+    private static void stashAndClearLoadout(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        UUID playerId = player.getUUID();
+        if (!STASHED_LOADOUTS.containsKey(playerId)) {
+            var inv = player.getInventory();
+            List<ItemStack> items = new ArrayList<>(inv.items.size());
+            for (ItemStack s : inv.items) items.add(s.copy());
+            List<ItemStack> armor = new ArrayList<>(inv.armor.size());
+            for (ItemStack s : inv.armor) armor.add(s.copy());
+            List<ItemStack> offhand = new ArrayList<>(inv.offhand.size());
+            for (ItemStack s : inv.offhand) offhand.add(s.copy());
+            ItemStack carried = player.containerMenu != null ? player.containerMenu.getCarried().copy() : ItemStack.EMPTY;
+
+            Map<ResourceLocation, ItemStack> extraSlots = new HashMap<>();
+            try {
+                ExtraSlotComponent.KEY.maybeGet(player).ifPresent(extra -> {
+                    if (extra.SLOTS != null) {
+                        for (var e : extra.SLOTS.entrySet()) {
+                            if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
+                                extraSlots.put(e.getKey(), e.getValue().copy());
+                            }
+                        }
+                    }
+                });
+            } catch (Throwable ignored) {
+            }
+
+            List<MobEffectInstance> effects = new ArrayList<>();
+            for (MobEffectInstance eff : player.getActiveEffects()) {
+                effects.add(new MobEffectInstance(eff));
+            }
+            STASHED_LOADOUTS.put(playerId, new StashedLoadout(items, armor, offhand, carried, extraSlots, effects));
+        }
+        clearPlayerInventoryAndEffects(player);
+    }
+
+    private static void clearPlayerInventoryAndEffects(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        try {
+            player.getInventory().clearContent();
+            if (player.containerMenu != null) {
+                player.containerMenu.setCarried(ItemStack.EMPTY);
+            }
+            ExtraSlotComponent.KEY.maybeGet(player).ifPresent(ExtraSlotComponent::clear);
+            player.removeAllEffects();
+            player.inventoryMenu.broadcastChanges();
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.debug("[EliminatedRest] clearPlayerInventoryAndEffects failed for {}", player.getUUID(), t);
+        }
+    }
+
+    private static void restoreStashedLoadout(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        StashedLoadout loadout = STASHED_LOADOUTS.remove(player.getUUID());
+        if (loadout == null) {
+            return;
+        }
+        try {
+            clearPlayerInventoryAndEffects(player);
+            var inv = player.getInventory();
+            for (int i = 0; i < Math.min(inv.items.size(), loadout.items().size()); i++) {
+                inv.items.set(i, loadout.items().get(i).copy());
+            }
+            for (int i = 0; i < Math.min(inv.armor.size(), loadout.armor().size()); i++) {
+                inv.armor.set(i, loadout.armor().get(i).copy());
+            }
+            for (int i = 0; i < Math.min(inv.offhand.size(), loadout.offhand().size()); i++) {
+                inv.offhand.set(i, loadout.offhand().get(i).copy());
+            }
+            if (player.containerMenu != null && loadout.carried() != null && !loadout.carried().isEmpty()) {
+                player.containerMenu.setCarried(loadout.carried().copy());
+            }
+            if (!loadout.extraSlots().isEmpty()) {
+                ExtraSlotComponent.KEY.maybeGet(player).ifPresent(extra -> {
+                    for (var e : loadout.extraSlots().entrySet()) {
+                        extra.setItem(e.getKey(), e.getValue().copy());
+                    }
+                });
+            }
+            for (MobEffectInstance eff : loadout.effects()) {
+                player.addEffect(new MobEffectInstance(eff));
+            }
+            player.inventoryMenu.broadcastChanges();
+        } catch (Throwable t) {
+            HabiTrainCore.LOGGER.warn("[EliminatedRest] restoreStashedLoadout failed for {}", player.getUUID(), t);
         }
     }
 
@@ -495,9 +692,30 @@ public final class EliminatedRestAreaService {
         }
         Set<UUID> affected = playersBoundToDimension(dimension);
         if (server != null) {
+            boolean otherMatchRunning = false;
+            for (ServerLevel lvl : server.getAllLevels()) {
+                if (dimension.equals(lvl.dimension())) {
+                    continue;
+                }
+                SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(lvl);
+                if (gw != null && gw.isRunning()) {
+                    otherMatchRunning = true;
+                    break;
+                }
+            }
+            if (!otherMatchRunning) {
+                for (UUID playerId : ELIMINATED_PLAYERS) {
+                    if (!ELIMINATED_MATCH_LEVELS.containsKey(playerId)) {
+                        affected.add(playerId);
+                    }
+                }
+            }
             for (UUID playerId : affected) {
                 ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                 if (player != null) {
+                    if (RESTING_MATCH_LEVELS.containsKey(playerId)) {
+                        clearPlayerInventoryAndEffects(player);
+                    }
                     EliminatedRestPromptPayload.sendTo(player, false, false);
                 }
             }
@@ -529,6 +747,7 @@ public final class EliminatedRestAreaService {
             REVIVING_PLAYERS.remove(playerId);
             PROMPT_STATES.remove(playerId);
             TOGGLE_COOLDOWN_UNTIL.remove(playerId);
+            STASHED_LOADOUTS.remove(playerId);
         }
     }
 
@@ -540,6 +759,7 @@ public final class EliminatedRestAreaService {
         REVIVING_PLAYERS.clear();
         PROMPT_STATES.clear();
         TOGGLE_COOLDOWN_UNTIL.clear();
+        STASHED_LOADOUTS.clear();
     }
 
     static void resetTablesForTest() {
@@ -597,5 +817,14 @@ public final class EliminatedRestAreaService {
     }
 
     private record RestPromptState(boolean visible, boolean canToggle) {
+    }
+
+    private record StashedLoadout(
+            List<ItemStack> items,
+            List<ItemStack> armor,
+            List<ItemStack> offhand,
+            ItemStack carried,
+            Map<ResourceLocation, ItemStack> extraSlots,
+            List<MobEffectInstance> effects) {
     }
 }

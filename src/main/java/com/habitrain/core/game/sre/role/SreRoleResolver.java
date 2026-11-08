@@ -98,14 +98,35 @@ public final class SreRoleResolver {
                     : (lookup == null ? null : lookup.find(canonical));
         }
         RoleExtensionRegistry registry = RoleExtensionRegistry.INSTANCE;
-        ResourceLocation alias = registry.resolveAlias(id);
-        ResourceLocation canonical = alias == null ? id : alias;
-        RoleReplacement repl = registry.replacementFor(canonical);
-        if (repl == null && alias != null) {
-            repl = registry.replacementFor(id);
+        ResourceLocation cur = id;
+        RoleReplacement lastRepl = null;
+        java.util.Set<ResourceLocation> seen = new java.util.HashSet<>();
+        while (cur != null && seen.add(cur)) {
+            ResourceLocation alias = registry.resolveAlias(cur);
+            if (alias != null && !alias.equals(cur)) {
+                cur = alias;
+                continue;
+            }
+            RoleReplacement repl = registry.replacementFor(cur);
+            if (repl != null) {
+                lastRepl = repl;
+                ResourceLocation replId = repl.replacement().key().location();
+                if (!replId.equals(cur)) {
+                    cur = replId;
+                    continue;
+                }
+            }
+            break;
         }
-        if (repl != null) {
-            SRERole surfaced = registry.applyModifiesToReplacement(repl);
+        ResourceLocation canonical = cur == null ? id : cur;
+        if (lastRepl == null) {
+            lastRepl = registry.replacementFor(canonical);
+            if (lastRepl == null && !canonical.equals(id)) {
+                lastRepl = registry.replacementFor(id);
+            }
+        }
+        if (lastRepl != null) {
+            SRERole surfaced = registry.applyModifiesToReplacement(lastRepl);
             if (surfaced != null) {
                 return surfaced;
             }
@@ -119,7 +140,7 @@ public final class SreRoleResolver {
                 return registry.applyModifies(raw);
             }
         }
-        if (alias == null) {
+        if (canonical.equals(id)) {
             return null;
         }
         SRERole aliasTarget = heldFor(canonical, held);

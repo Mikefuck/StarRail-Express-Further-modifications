@@ -25,15 +25,24 @@ import org.lwjgl.opengl.GL11;
  */
 final class PaperCanvas {
     private TextureTarget target;
+    private final boolean useDepth;
+    private com.habitrain.core.client.render.ClientRenderState previousRenderState;
+    PaperCanvas() { this(true); }
+    PaperCanvas(boolean useDepth) { this.useDepth = useDepth; }
+    private FramebufferState previousFramebuffer;
 
     /** 清空并绑定画布；之后的 GuiGraphics 绘制都落在画布上。 */
     void begin(GuiGraphics g) {
         g.flush();
+        if (previousFramebuffer != null) throw new IllegalStateException("Canvas already bound");
+        previousFramebuffer = new FramebufferState();
+        previousRenderState = com.habitrain.core.client.render.ClientRenderState.capture();
+        try {
         Window window = Minecraft.getInstance().getWindow();
         int w = Math.max(1, window.getWidth());
         int h = Math.max(1, window.getHeight());
         if (this.target == null) {
-            this.target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+            this.target = new TextureTarget(w, h, useDepth, Minecraft.ON_OSX);
             this.target.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         } else if (this.target.width != w || this.target.height != h) {
             this.target.resize(w, h, Minecraft.ON_OSX);
@@ -43,12 +52,28 @@ final class PaperCanvas {
         }
         this.target.clear(Minecraft.ON_OSX);
         this.target.bindWrite(true);
+        } catch (RuntimeException | Error failure) {
+            previousFramebuffer.close();
+            previousFramebuffer = null;
+            previousRenderState.close();
+            previousRenderState = null;
+            throw failure;
+        }
     }
 
-    /** 结束作画，切回主帧缓冲。 */
+    /** 结束作画，切回先前的帧缓冲（或主帧缓冲）。 */
     void end(GuiGraphics g) {
-        g.flush();
-        Minecraft.getInstance().getMainRenderTarget().bindWrite(true);
+        try {
+            g.flush();
+        } finally {
+            FramebufferState previous = previousFramebuffer;
+            previousFramebuffer = null;
+            try {
+                if (previous != null) previous.close();
+            } finally {
+                if (previousRenderState != null) { previousRenderState.close(); previousRenderState = null; }
+            }
+        }
     }
 
     boolean ready() {
@@ -72,6 +97,7 @@ final class PaperCanvas {
      */
     static void blit(GuiGraphics g, int texture, ShaderInstance shader, float x0, float y0, float x1, float y1,
                      float u0, float v0, float u1, float v1, float alpha) {
+        try (var stateGuard = com.habitrain.core.client.render.ClientRenderState.capture()) {
         if (texture == 0 || alpha <= 0.002f) {
             return;
         }
@@ -88,20 +114,33 @@ final class PaperCanvas {
                 GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         RenderSystem.disableDepthTest();
         RenderSystem.disableCull();
-        Matrix4f matrix = g.pose().last().pose();
-        int color = PaperSheet.argb(alpha, alpha, alpha, alpha);
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-        buffer.addVertex(matrix, x0, y0, 0.0f).setUv(u0, v0).setColor(color);
-        buffer.addVertex(matrix, x0, y1, 0.0f).setUv(u0, v1).setColor(color);
-        buffer.addVertex(matrix, x1, y1, 0.0f).setUv(u1, v1).setColor(color);
-        buffer.addVertex(matrix, x1, y0, 0.0f).setUv(u1, v0).setColor(color);
-        MeshData mesh = buffer.build();
-        if (mesh != null) {
-            BufferUploader.drawWithShader(mesh);
+        try {
+            Matrix4f matrix = g.pose().last().pose();
+            int color = PaperSheet.argb(alpha, alpha, alpha, alpha);
+            BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+            MeshData mesh = null;
+            try {
+                buffer.addVertex(matrix, x0, y0, 0.0f).setUv(u0, v0).setColor(color);
+                buffer.addVertex(matrix, x0, y1, 0.0f).setUv(u0, v1).setColor(color);
+                buffer.addVertex(matrix, x1, y1, 0.0f).setUv(u1, v1).setColor(color);
+                buffer.addVertex(matrix, x1, y0, 0.0f).setUv(u1, v0).setColor(color);
+                mesh = buffer.build();
+                if (mesh != null) {
+                    BufferUploader.drawWithShader(mesh);
+                    mesh = null;
+                }
+            } finally {
+                if (mesh != null) {
+                    mesh.close();
+                }
+            }
+        } finally {
+            RenderSystem.enableCull();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
         }
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
+    
+        }
     }
 
     // ==================== 坐标换算 ====================

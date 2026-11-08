@@ -60,6 +60,50 @@ public final class RoleStateServiceImpl implements RoleStateApi {
     private final RoleStateSyncService syncService = new RoleStateSyncService();
     private volatile RoleStateStore store = new MemoryRoleStateStore();
     private volatile boolean frozen;
+    private final Map<UUID, PlayerCheckpoint> playerTransactions = new LinkedHashMap<>();
+
+    /** Internal role-change boundary; only this player's PLAYER slots are captured. */
+    public synchronized void beginPlayerTransaction(UUID playerId) {
+        if (playerTransactions.containsKey(playerId)) throw new IllegalStateException("State transaction already active");
+        Map<StateSlotKey, Object> memory = new LinkedHashMap<>();
+        transientValues.forEach((key, value) -> { if (playerId.equals(key.playerId())) memory.put(key, value); });
+        Map<StateSlotKey, StoredState> persistent = new LinkedHashMap<>();
+        for (StateSlotKey key : store.keys()) {
+            if (playerId.equals(key.playerId())) {
+                StoredState value = store.read(key);
+                if (value != null) persistent.put(key, value);
+            }
+        }
+        var migrations = migrationRequired.stream().filter(key -> playerId.equals(key.playerId()))
+                .collect(java.util.stream.Collectors.toSet());
+        playerTransactions.put(playerId, new PlayerCheckpoint(memory, persistent, migrations, new LinkedHashMap<>()));
+    }
+
+    public synchronized void finishPlayerTransaction(UUID playerId, boolean committed) {
+        PlayerCheckpoint checkpoint = playerTransactions.remove(playerId);
+        if (checkpoint == null) return;
+        if (committed) {
+            checkpoint.notifications().values().forEach(Runnable::run);
+            return;
+        }
+        transientValues.keySet().removeIf(key -> playerId.equals(key.playerId()));
+        transientValues.putAll(checkpoint.memory());
+        store.removeWhere(key -> playerId.equals(key.playerId()));
+        checkpoint.persistent().forEach((key, value) -> {
+            if (!store.write(key, value)) throw new IllegalStateException("Failed to restore role state " + key);
+        });
+        migrationRequired.removeIf(key -> playerId.equals(key.playerId()));
+        migrationRequired.addAll(checkpoint.migrations());
+    }
+
+    private record PlayerCheckpoint(Map<StateSlotKey, Object> memory, Map<StateSlotKey, StoredState> persistent,
+                                    Set<StateSlotKey> migrations, Map<StateSlotKey, Runnable> notifications) {}
+
+    private synchronized void publishOrDefer(StateSlotKey slot, Runnable notification) {
+        var checkpoint = slot.playerId() == null ? null : playerTransactions.get(slot.playerId());
+        if (checkpoint == null) notification.run();
+        else checkpoint.notifications().put(slot, notification);
+    }
 
     public RoleStateServiceImpl() {}
 
@@ -129,7 +173,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     @Override
     @SuppressWarnings("unchecked")
-    public @Nullable <T> RoleStateSpec<T> spec(RoleStateKey<T> key) {
+    public synchronized @Nullable <T> RoleStateSpec<T> spec(RoleStateKey<T> key) {
         if (key == null) {
             return null;
         }
@@ -144,14 +188,14 @@ public final class RoleStateServiceImpl implements RoleStateApi {
     }
 
     @Override
-    public Collection<RoleStateSpec<?>> specs() {
+    public synchronized Collection<RoleStateSpec<?>> specs() {
         return specs.values().stream()
                 .<RoleStateSpec<?>>map(ManagedDeclaration::declaration)
                 .toList();
     }
 
     @Override
-    public List<RoleStateSpec<?>> specsFor(RoleKey role) {
+    public synchronized List<RoleStateSpec<?>> specsFor(RoleKey role) {
         if (role == null) {
             return List.of();
         }
@@ -430,7 +474,23 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     @Override
     public synchronized void freeze() {
+        requireCoreCaller("RoleStateApi.freeze()");
         this.frozen = true;
+    }
+
+    private static void requireCoreCaller(String method) {
+        if (com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
+            return;
+        }
+        Class<?> caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                .walk(frames -> frames.skip(2)
+                        .map(StackWalker.StackFrame::getDeclaringClass)
+                        .findFirst()
+                        .orElse(null));
+        if (caller != null && caller.getName().startsWith("com.habitrain.core.")) {
+            return;
+        }
+        throw new IllegalStateException(method + " may only be called by habitrain_core lifecycle");
     }
 
     @Override
@@ -440,6 +500,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     /** Drops every stored value and (optionally) the schema table. Used by tests. */
     public synchronized void clear(boolean includingSpecs) {
+        playerTransactions.clear();
         transientValues.clear();
         store.clearAll();
         migrationRequired.clear();
@@ -535,14 +596,29 @@ public final class RoleStateServiceImpl implements RoleStateApi {
 
     /** Shared slot matcher for a spec, optionally narrowed to one world/player id. */
     private static Predicate<StateSlotKey> slotMatcher(RoleStateSpec<?> spec, @Nullable Object worldOrPlayer) {
-        String filter = worldOrPlayer == null ? null : String.valueOf(worldOrPlayer);
-        return key -> key.scope() == spec.scope()
-                && key.id().equals(spec.id())
-                && key.role().equals(spec.role())
-                && (filter == null || filter.equals(
-                        spec.scope() == StateScope.PLAYER
-                                ? String.valueOf(key.playerId())
-                                : key.worldKey()));
+        return key -> {
+            if (key.scope() != spec.scope()
+                    || !key.id().equals(spec.id())
+                    || !key.role().equals(spec.role())) {
+                return false;
+            }
+            if (worldOrPlayer == null) {
+                return true;
+            }
+            if (worldOrPlayer instanceof UUID playerId) {
+                return spec.scope() == StateScope.PLAYER && playerId.equals(key.playerId());
+            }
+            if (worldOrPlayer instanceof String worldKey) {
+                if (spec.scope() == StateScope.PLAYER) {
+                    // PLAYER slots do not carry a worldKey (they follow the player across
+                    // dimensions); round-end / world-state cleanup on PLAYER-scope specs with
+                    // ROUND/NONE/WORLD persistence applies to all player slots of that spec.
+                    return true;
+                }
+                return worldKey.equals(key.worldKey());
+            }
+            return false;
+        };
     }
 
     private void notifyRemoved(RoleStateSpec<?> spec, StateSlotKey slot) {
@@ -551,11 +627,11 @@ public final class RoleStateServiceImpl implements RoleStateApi {
                 || sync == com.habitrain.core.api.role.v2.state.SyncPolicy.SERVER_ONLY) {
             return;
         }
-        syncService.onRemoved(spec, slot);
+        publishOrDefer(slot, () -> syncService.onRemoved(spec, slot));
     }
 
     /** The registered spec owning a slot, or {@code null} for unknown/ghost slots. */
-    private @Nullable RoleStateSpec<?> specForSlot(StateSlotKey slot) {
+    private synchronized @Nullable RoleStateSpec<?> specForSlot(StateSlotKey slot) {
         if (slot == null) {
             return null;
         }
@@ -570,10 +646,16 @@ public final class RoleStateServiceImpl implements RoleStateApi {
     }
 
     /** Whether the spec's owning provider/entry passes the v2 config gate (audit P1-2). */
-    private boolean gateEnabled(RoleStateSpec<?> spec) {
+    private synchronized boolean gateEnabled(RoleStateSpec<?> spec) {
         ManagedDeclaration<RoleStateSpec<?>> decl = specs.get(StorageKey.of(spec));
-        return decl == null
-                || RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
+        if (decl == null) {
+            return true;
+        }
+        var snap = com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.current();
+        if (snap != null) {
+            return snap.isBehaviorEntryEnabled(decl.providerId(), decl.entryId());
+        }
+        return RoleExtensionConfigService.INSTANCE.gateFor(decl.providerId(), decl.entryId())
                 == RoleExtensionConfigService.EntryGate.ENABLED;
     }
 
@@ -659,7 +741,7 @@ public final class RoleStateServiceImpl implements RoleStateApi {
     }
 
     private void notifySync(RoleStateSpec<?> spec, StateSlotKey slot, @Nullable byte[] encoded) {
-        if (sendsValues(spec)) syncService.onChanged(spec, slot, encoded);
+        if (sendsValues(spec)) publishOrDefer(slot, () -> syncService.onChanged(spec, slot, encoded));
     }
 
     private Object readForDescribe(RoleStateSpec<?> spec, StateSlotKey slot) {

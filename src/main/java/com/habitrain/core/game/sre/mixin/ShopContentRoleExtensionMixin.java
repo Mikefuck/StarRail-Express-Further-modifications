@@ -25,15 +25,36 @@ public class ShopContentRoleExtensionMixin {
     private static void habitrain$transformResolvedShop(
             ResourceLocation roleId,
             CallbackInfoReturnable<List<ShopEntry>> cir) {
-        SRERole role = TMMRoles.getRole(roleId);
+        if (roleId == null) return;
+        SRERole raw = TMMRoles.getRole(roleId);
+        SRERole role = com.habitrain.core.game.sre.role.SreRoleResolver.resolveV2(roleId, raw);
+        if (role == null) role = raw;
         if (role == null) return;
         CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(role);
-        if (overlay == null || overlay.shopTransform() == null) return;
-        List<ShopEntry> baseline = cir.getReturnValue() == null
-                ? List.of() : List.copyOf(cir.getReturnValue());
-        List<ShopEntry> transformed = overlay.shopTransform().transform(role, getServer(), baseline);
-        cir.setReturnValue(List.copyOf(
-                Objects.requireNonNull(transformed, "v2 ShopTransform returned null")));
+        List<ShopEntry> baseline;
+        if (role != raw) {
+            List<ShopEntry> replEntries = role.getShopEntries();
+            baseline = replEntries == null ? List.of() : List.copyOf(replEntries);
+            if (overlay == null || overlay.shopTransform() == null) {
+                cir.setReturnValue(baseline);
+                return;
+            }
+        } else {
+            if (overlay == null || overlay.shopTransform() == null) return;
+            baseline = cir.getReturnValue() == null
+                    ? List.of() : List.copyOf(cir.getReturnValue());
+        }
+        try {
+            List<ShopEntry> transformed = overlay.shopTransform().transform(role, getServer(), baseline);
+            cir.setReturnValue(List.copyOf(
+                    Objects.requireNonNull(transformed, "v2 ShopTransform returned null")));
+        } catch (Throwable t) {
+            org.slf4j.LoggerFactory.getLogger("ShopContentRoleExtensionMixin")
+                    .error("v2 ShopTransform failed for {}", roleId, t);
+            if (role != raw) {
+                cir.setReturnValue(baseline);
+            }
+        }
     }
 
     private static MinecraftServer getServer() {

@@ -34,7 +34,7 @@ public class TaskPoolBuilder {
         List<String> builtinIds = builtinSreTaskIds == null
                 ? List.of() : new ArrayList<>(builtinSreTaskIds);
         Collections.sort(builtinIds);
-        PoolKey key = new PoolKey(modeId, mapName, categoryId, List.copyOf(builtinIds));
+        PoolKey key = new PoolKey(modeId, mapName != null ? mapName : "", categoryId, List.copyOf(builtinIds));
         List<TaskDefinition> cached = CACHE.computeIfAbsent(key, k -> List.copyOf(getAvailableDlcTasks(
                 mapName, currentCategory, activeMode, builtinSreTaskIds)));
         return filterForPlayer(cached, activeMode, player);
@@ -73,7 +73,8 @@ public class TaskPoolBuilder {
         Set<String> builtinIds = builtinSreTaskIds == null ? Set.of() : builtinSreTaskIds;
 
         return definitions.stream()
-                .filter(def -> def.isPoolEligible()
+                .filter(def -> def != null
+                        && def.isPoolEligible()
                         && !isBuiltinSreTask(def, builtinIds)
                         && mapEnabled.test(def.getFullId())
                         && isTaskAllowedForPool(def, currentCategory, activeMode))
@@ -82,7 +83,7 @@ public class TaskPoolBuilder {
 
     /** 历史兜底：按内置 SRE 任务 ID 清单排除空壳镜像定义（主判据是 {@link TaskDefinition#isPoolEligible()}）。 */
     public static boolean isBuiltinSreTask(TaskDefinition def, Set<String> builtinSreTaskIds) {
-        return builtinSreTaskIds.contains(def.getTaskId());
+        return def != null && builtinSreTaskIds != null && builtinSreTaskIds.contains(def.getTaskId());
     }
 
     public static boolean isTaskMapEnabled(String fullId, String mapName) {
@@ -95,18 +96,36 @@ public class TaskPoolBuilder {
      * {@link #filterForPlayer} 里通过 {@link GameMode#filterAvailableTasks} 施加一次。
      * <p>与 {@link TaskRegistry#getByCategory} 的区别：后者是「注册表查询」，
      * 只看分类不看游戏模式；本方法是「派发池判据」，还要考虑活动模式声明的分类。
+     * <p>API-TV-17：{@link TaskCategory#CUSTOM} 任务必须按其 {@code customCategory}、当前分类或所属
+     * {@code gameModeId} 匹配，不再无条件绕过模式的任务类别白名单；并对 {@code getTaskCategories()} 做空安全保护。
      */
     public static boolean isTaskAllowedForPool(TaskDefinition def, TaskCategory currentCategory,
                                                 @Nullable GameMode activeMode) {
+        if (def == null) {
+            return false;
+        }
         TaskCategory category = def.getCategory();
-        if (TaskCategory.ALL.equals(category)
-                || TaskCategory.CUSTOM.equals(category)
-                || category.equals(currentCategory)) {
+        if (TaskCategory.ALL.equals(category)) {
             return true;
         }
-
-        return activeMode != null
-                && activeMode.getTaskCategories().stream().anyMatch(category::equals);
+        TaskCategory effectiveCategory = TaskCategory.CUSTOM.equals(category) && def.getCustomCategory() != null
+                ? def.getCustomCategory()
+                : category;
+        if (effectiveCategory != null && effectiveCategory.equals(currentCategory)) {
+            return true;
+        }
+        if (activeMode != null) {
+            java.util.Collection<TaskCategory> modeCategories = activeMode.getTaskCategories();
+            if (modeCategories != null && effectiveCategory != null
+                    && modeCategories.stream().anyMatch(effectiveCategory::equals)) {
+                return true;
+            }
+            String taskModeId = def.getGameModeId();
+            if (taskModeId != null && !"sre:base".equals(taskModeId) && taskModeId.equals(activeMode.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<TaskDefinition> filterForPlayer(List<TaskDefinition> tasks,
@@ -136,6 +155,7 @@ public class TaskPoolBuilder {
     }
 
     public static void invalidate(String modeId) {
+        if (modeId == null) return;
         CACHE.keySet().removeIf(k -> k.modeId().equals(modeId));
     }
 }

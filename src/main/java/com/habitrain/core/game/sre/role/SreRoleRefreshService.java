@@ -24,8 +24,9 @@ public final class SreRoleRefreshService {
             if (mode instanceof RoleRotationRefreshAccess access) {
                 access.habitrain$refreshRoleExtensions(level);
             }
-        } catch (Throwable ignored) {
-            // The game mode is optional outside SRE-enabled worlds.
+        } catch (RuntimeException error) {
+            com.habitrain.core.HabiTrainCore.LOGGER.error(
+                    "Failed to refresh role cards in {}", level.dimension().location(), error);
         }
     }
 }

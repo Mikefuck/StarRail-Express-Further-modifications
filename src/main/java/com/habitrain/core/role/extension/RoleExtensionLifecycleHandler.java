@@ -28,7 +28,8 @@ public final class RoleExtensionLifecycleHandler {
     public static void publishSnapshotAfterRebuild() {
         RoleSnapshotId id = RoleSnapshotVersions.nextPublished();
         var compiled = RoleSnapshotCompiler.compile(id, TMMRoles.ROLES);
-        if (RoleSnapshotManager.INSTANCE.round() != null) {
+        if (RoleSnapshotManager.INSTANCE.round() != null
+                || RoleSnapshotManager.INSTANCE.lastEnded() != null) {
             RoleSnapshotManager.INSTANCE.queuePending(compiled);
         } else {
             RoleSnapshotManager.INSTANCE.setLobby(compiled);

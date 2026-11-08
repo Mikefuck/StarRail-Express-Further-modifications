@@ -32,9 +32,13 @@ class WrathNoisemakerKnockbackMixinTest {
     }
 
     @Test
-    void slothWakeAngerStillUsesTheProtectedAbility() throws Exception {
+    void slothWakeAlertsWithoutTheNoisemakerShockwave() throws Exception {
         ClassNode sloth = readClass("com/habitrain/core/game/sre/role/sins/component/SlothComponent");
-        assertEquals(1, countCalls(sloth, "wakeFromShieldBreak", "L" + NOISEMAKER + ";useAbility()V"));
+        assertEquals(0, countCalls(sloth, "wakeFromShieldBreak", "L" + NOISEMAKER + ";useAbility()V"));
+        assertEquals(1, countCalls(sloth, "wakeFromShieldBreak",
+                "Lnet/minecraft/server/level/ServerPlayer;addEffect(Lnet/minecraft/world/effect/MobEffectInstance;)Z"));
+        assertEquals(1, countCalls(sloth, "wakeFromShieldBreak",
+                "Lnet/minecraft/server/level/ServerLevel;playSound(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/BlockPos;Lnet/minecraft/sounds/SoundEvent;Lnet/minecraft/sounds/SoundSource;FF)V"));
     }
 
     private static ClassNode readClass(String name) throws Exception {

@@ -26,14 +26,7 @@ import java.util.UUID;
 public interface RoleCapabilityApi {
 
     static RoleCapabilityApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleCapabilityApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.capability();
+        return com.habitrain.core.api.spi.RoleSpi.capability();
     }
 
     Collection<RoleVoicePolicy> voices();

@@ -30,6 +30,9 @@ public final class SlothRole extends CustomWinnerRole {
 
     @Override
     public boolean didPlayerWin(ServerPlayer player, boolean original, WinStatus winStatus) {
+        if (original) {
+            return true;
+        }
         if (winStatus != WinStatus.CUSTOM || player == null) {
             return false;
         }

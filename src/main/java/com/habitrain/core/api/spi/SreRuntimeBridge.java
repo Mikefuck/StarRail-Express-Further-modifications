@@ -25,6 +25,10 @@ import java.util.Optional;
  * 内部并无 try/catch）以及 CoreSpi 的兜底策略都不一致，会误导第三方实现者以为异常会被吞掉。
  */
 public interface SreRuntimeBridge {
+    /** Reserve the single server match before invoking mode callbacks. Default preserves third-party bridges. */
+    default boolean reserveMatch(ServerLevel level) { return true; }
+    default void releaseMatch(ServerLevel level) {}
+    default void matchStarted(ServerLevel level) {}
 
     /**
      * 该维度是否已被 SRE 对局占用（STARTING / RUNNING，或状态读取失败）。

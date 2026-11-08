@@ -31,6 +31,8 @@ public final class RoleInstinctRule {
     }
 
     public static Builder of(String namespace, String path) {
+        Objects.requireNonNull(namespace, "namespace");
+        Objects.requireNonNull(path, "path");
         return new Builder().id(ResourceLocation.fromNamespaceAndPath(namespace, path));
     }
 
@@ -92,12 +94,20 @@ public final class RoleInstinctRule {
             return this;
         }
 
+        public Builder hide(boolean hide) {
+            this.hide = hide;
+            return this;
+        }
+
         public RoleInstinctRule build() {
             if (id == null) {
                 throw new IllegalStateException("RoleInstinctRule requires an id");
             }
             if (viewerRole == null) {
                 throw new IllegalStateException("RoleInstinctRule requires a viewerRole");
+            }
+            if (hide && color != null) {
+                throw new IllegalStateException("RoleInstinctRule cannot specify both color and hide()");
             }
             if (!hide && color == null) {
                 throw new IllegalStateException("RoleInstinctRule requires a color or hide()");

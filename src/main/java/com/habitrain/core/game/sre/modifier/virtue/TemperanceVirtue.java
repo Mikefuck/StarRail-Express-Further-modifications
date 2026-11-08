@@ -3,7 +3,10 @@ package com.habitrain.core.game.sre.modifier.virtue;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.modifier.HabiModifiers;
 import io.wifi.starrailexpress.cca.DynamicShopComponent;
+import io.wifi.starrailexpress.event.OnGameEnd;
+import io.wifi.starrailexpress.event.OnGameStarted;
 import io.wifi.starrailexpress.util.ShopEntry;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -34,8 +37,11 @@ public final class TemperanceVirtue {
                 TemperancePurchaseState.clearPlayer(player.getUUID());
             }
         });
+        OnGameStarted.EVENT.register(level -> clearAll());
+        OnGameEnd.EVENT.register((level, game) -> clearAll());
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> clearAll());
 
-        HabiTrainCore.LOGGER.info("[TemperanceVirtue] ModifierRemoved clear + shop mixin quote ready");
+        HabiTrainCore.LOGGER.info("[TemperanceVirtue] ModifierRemoved + round lifecycle clear + shop mixin quote ready");
     }
 
     public static boolean hasTemperance(Player player) {
@@ -69,11 +75,31 @@ public final class TemperanceVirtue {
     public static int temperanceQuote(Player player, String entryKey, int basePrice) {
         if (basePrice < 0) return basePrice;
         if (player == null || entryKey == null || !hasTemperance(player)) return basePrice;
-        Integer last = TemperancePurchaseState.getLastPrice(player.getUUID(), entryKey);
-        if (last == null) return basePrice;
         int floor = (int) Math.floor(basePrice * FLOOR_OF_BASE);
-        int decayed = (int) Math.floor(last * DECAY_OF_LAST);
-        return Math.max(floor, decayed);
+        Integer last = TemperancePurchaseState.getLastPrice(player.getUUID(), entryKey);
+        if (last != null) {
+            int decayed = (int) Math.floor(last * DECAY_OF_LAST);
+            return Math.max(floor, decayed);
+        }
+        // 客户端（或重连后）本地无 TemperancePurchaseState 记录时，从已同步的 DynamicShopComponent 购买次数推导当前折后价
+        try {
+            int sep = entryKey.indexOf('|');
+            String rawId = sep > 0 ? entryKey.substring(0, sep) : entryKey;
+            ResourceLocation itemId = ResourceLocation.tryParse(rawId);
+            if (itemId != null) {
+                DynamicShopComponent dyn = DynamicShopComponent.KEY.get(player);
+                int count = dyn != null ? dyn.getPurchaseCount(itemId) : 0;
+                if (count > 0) {
+                    int price = basePrice;
+                    for (int i = 0; i < count; i++) {
+                        price = Math.max(floor, (int) Math.floor(price * DECAY_OF_LAST));
+                    }
+                    return price;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return basePrice;
     }
 
     /**

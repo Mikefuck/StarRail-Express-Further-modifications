@@ -207,6 +207,15 @@ public final class SceneMapDropdown {
             return true;
         }
         if (panelBounds.contains(mouseX, mouseY) && mouseY >= rowsTop && !filteredEntries.isEmpty()) {
+            if (filteredEntries.size() > visibleRows && mouseX >= panelBounds.x() + panelBounds.width() - 6) {
+                int rowsHeight = Math.max(1, visibleRows * ROW_HEIGHT);
+                int maxOffset = Math.max(0, filteredEntries.size() - visibleRows);
+                double ratio = Math.max(0.0, Math.min(1.0, (mouseY - rowsTop) / rowsHeight));
+                scrollOffset = Math.max(0, Math.min(maxOffset, (int) Math.round(ratio * maxOffset)));
+                highlightedIndex = Math.max(scrollOffset,
+                        Math.min(highlightedIndex, scrollOffset + visibleRows - 1));
+                return true;
+            }
             int row = (int) ((mouseY - rowsTop) / ROW_HEIGHT);
             int index = scrollOffset + row;
             if (index >= 0 && index < filteredEntries.size()) {
@@ -248,24 +257,20 @@ public final class SceneMapDropdown {
             return false;
         }
         if (keyCode == 264) {
-            searchBox.setFocused(false);
             moveHighlight(1);
             return true;
         }
         if (keyCode == 265) {
-            searchBox.setFocused(false);
             moveHighlight(-1);
             return true;
         }
         if (keyCode == 268 && !filteredEntries.isEmpty()) {
-            searchBox.setFocused(false);
             highlightedIndex = 0;
             scrollOffset = 0;
             narrateHighlighted();
             return true;
         }
         if (keyCode == 269 && !filteredEntries.isEmpty()) {
-            searchBox.setFocused(false);
             highlightedIndex = filteredEntries.size() - 1;
             scrollOffset = Math.max(0, filteredEntries.size() - visibleRows);
             narrateHighlighted();
@@ -341,7 +346,7 @@ public final class SceneMapDropdown {
     private String selectedSummary() {
         for (SceneMapDropdownModel.Entry entry : entries) {
             if (entry.key().equals(selectedKey)) {
-                if (entry.key().equals("__default__")) return entry.label();
+                if (entry.key().equals(com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY)) return entry.label();
                 return entry.label().equals(entry.key())
                         ? entry.key() : entry.label() + " (" + entry.key() + ")";
             }
@@ -351,7 +356,7 @@ public final class SceneMapDropdown {
 
     private String detailLine(SceneMapDropdownModel.Entry entry) {
         StringBuilder detail = new StringBuilder();
-        if (!entry.key().equals("__default__")) detail.append(entry.key()).append("  ·  ");
+        if (!entry.key().equals(com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY)) detail.append(entry.key()).append("  ·  ");
         detail.append(Component.translatable(entry.enabled()
                 ? "screen.habitrain_core.scene_motion.map_scene_enabled"
                 : "screen.habitrain_core.scene_motion.map_scene_disabled").getString());

@@ -143,7 +143,7 @@ public final class RoleRuntimeOverlayApplier {
     }
 
     private static SRERole materialize(SRERole role, RoleBaseline baseline, CompiledModifyOverlay overlay) {
-        applyRoleFields(role, overlay);
+        applyRoleFields(role, baseline, overlay);
         linkRelations(role, overlay);
         replaceSkills(role.identifier(), overlay);
         RoleOverlayAccessor.set(role, overlay);
@@ -172,6 +172,14 @@ public final class RoleRuntimeOverlayApplier {
                 RoleBaseline baseline = RoleBaselineStore.getOrCapture(role);
                 materialize(role, baseline, overlay);
             }
+        }
+        try {
+            net.minecraft.server.MinecraftServer server =
+                    com.habitrain.core.role.state.RuntimeRoleServer.INSTANCE.server();
+            if (server != null) {
+                com.habitrain.core.game.sre.role.SreRoleRefreshService.refreshServer(server);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -236,16 +244,29 @@ public final class RoleRuntimeOverlayApplier {
      * not sufficient.  {@link RoleBaselineStore} captures the matching values
      * before the first write and restores them on a snapshot transition.
      */
-    private static void applyRoleFields(SRERole role, CompiledModifyOverlay overlay) {
+    private static void applyRoleFields(SRERole role, @Nullable RoleBaseline baseline,
+                                        CompiledModifyOverlay overlay) {
         role.setColor(overlay.color());
         role.setMoodType(overlay.mood());
         role.setInnocent(overlay.innocent());
         role.setCanUseKiller(overlay.canUseKiller());
         role.setVigilanteTeam(overlay.vigilanteTeam());
-        role.setDefaultMax(overlay.defaultMax());
-        role.setDefaultEnableChance(overlay.enableChance());
-        role.setDefaultEnableNeededPlayerCount(overlay.needPlayerCount());
-        role.setDefaultEnableMaxPlayerCount(overlay.maxPlayerCount());
+        if (baseline == null || overlay.defaultMax() != baseline.defaultMaxCount()
+                || role.defaultMaxCount != overlay.defaultMax()) {
+            role.setDefaultMax(overlay.defaultMax());
+        }
+        if (baseline == null || overlay.enableChance() != baseline.defaultEnableChance()
+                || role.defaultEnableChance != overlay.enableChance()) {
+            role.setDefaultEnableChance(overlay.enableChance());
+        }
+        if (baseline == null || overlay.needPlayerCount() != baseline.defaultEnableNeedPlayerCount()
+                || role.defaultEnableNeedPlayerCount != overlay.needPlayerCount()) {
+            role.setDefaultEnableNeededPlayerCount(overlay.needPlayerCount());
+        }
+        if (baseline == null || overlay.maxPlayerCount() != baseline.defaultEnableMaxPlayerCount()
+                || role.defaultEnableMaxPlayerCount != overlay.maxPlayerCount()) {
+            role.setDefaultEnableMaxPlayerCount(overlay.maxPlayerCount());
+        }
         role.setCanSeeCoin(overlay.canSeeCoin());
         role.setCanPickUpRevolver(overlay.canPickUpRevolver());
         role.setCanBeRandomedByOtherRoles(overlay.canBeRandomed());
@@ -283,10 +304,14 @@ public final class RoleRuntimeOverlayApplier {
                 overlay.flagsPatch().apply(role, null, out);
                 if (out.isInnocent != null) role.setInnocent(out.isInnocent);
                 if (out.canUseKiller != null) role.setCanUseKiller(out.canUseKiller);
-                if (out.isNeutrals != null) role.setNeutrals(out.isNeutrals);
                 if (out.isVigilanteTeam != null) role.setVigilanteTeam(out.isVigilanteTeam);
                 if (out.isNeutralForKiller != null) role.setNeutralForKiller(out.isNeutralForKiller);
                 if (out.isNeutralForInnocent != null) role.setNeutralForInnocent(out.isNeutralForInnocent);
+                if (out.isNeutrals != null) {
+                    role.setNeutrals(out.isNeutrals);
+                } else {
+                    role.setNeutrals(overlay.neutral());
+                }
                 if (out.canUseInstinct != null) role.setCanUseInstinct(out.canUseInstinct);
                 if (out.instinctNightVision != null) role.setInstinctNightVision(out.instinctNightVision);
                 if (out.canSeeTeammateKiller != null) role.setCanSeeTeammateKillerRole(out.canSeeTeammateKiller);

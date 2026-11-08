@@ -96,15 +96,16 @@ public record MapVoteProfilePayload(Map<String, MapProfile> profiles)
 
     private static Map<String, MapProfile> readProfiles(FriendlyByteBuf buf) {
         int size = buf.readVarInt();
-        if (size < 0 || size > MAX_PROFILES) {
+        if (size < 0 || size > MAX_PROFILES || size > buf.readableBytes()) {
             throw new DecoderException("Invalid map vote profile count: " + size);
         }
-        Map<String, MapProfile> map = new LinkedHashMap<>(size);
+        Map<String, MapProfile> map = new LinkedHashMap<>(Math.min(size, 16));
+        int totalPreview = 0;
         for (int i = 0; i < size; i++) {
             String id = buf.readUtf(128);
             String description = buf.readUtf(MAX_DESC_LEN);
             int tagCount = buf.readVarInt();
-            if (tagCount < 0 || tagCount > MAX_TAGS) {
+            if (tagCount < 0 || tagCount > MAX_TAGS || tagCount > buf.readableBytes()) {
                 throw new DecoderException("Invalid map vote tag count: " + tagCount);
             }
             List<String> tags = new ArrayList<>(tagCount);
@@ -114,9 +115,11 @@ public record MapVoteProfilePayload(Map<String, MapProfile> profiles)
             int minPlayers = buf.readVarInt();
             int maxPlayers = buf.readVarInt();
             int previewLen = buf.readVarInt();
-            if (previewLen < 0 || previewLen > MAX_PREVIEW_BYTES) {
+            if (previewLen < 0 || previewLen > MAX_PREVIEW_BYTES || previewLen > buf.readableBytes()
+                    || totalPreview + previewLen > MAX_TOTAL_PREVIEW_BYTES) {
                 throw new DecoderException("Invalid map vote preview length: " + previewLen);
             }
+            totalPreview += previewLen;
             byte[] preview = new byte[previewLen];
             buf.readBytes(preview);
             map.put(id, new MapProfile(description, tags, minPlayers, maxPlayers, preview));
@@ -125,9 +128,13 @@ public record MapVoteProfilePayload(Map<String, MapProfile> profiles)
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeVarInt(profiles.size());
+        List<Map.Entry<String, MapProfile>> entries = new ArrayList<>(profiles.entrySet());
+        if (entries.size() > MAX_PROFILES) {
+            entries = entries.subList(0, MAX_PROFILES);
+        }
+        buf.writeVarInt(entries.size());
         int totalPreview = 0;
-        for (Map.Entry<String, MapProfile> e : profiles.entrySet()) {
+        for (Map.Entry<String, MapProfile> e : entries) {
             MapProfile p = e.getValue();
             byte[] preview = p.previewBytes();
             if (preview.length > MAX_PREVIEW_BYTES) {
@@ -142,11 +149,18 @@ public record MapVoteProfilePayload(Map<String, MapProfile> profiles)
             }
             totalPreview += preview.length;
 
-            buf.writeUtf(e.getKey(), 128);
-            buf.writeUtf(p.description(), MAX_DESC_LEN);
+            String key = e.getKey() == null ? "" : e.getKey();
+            if (key.length() > 128) key = key.substring(0, 128);
+            String desc = p.description() == null ? "" : p.description();
+            if (desc.length() > MAX_DESC_LEN) desc = desc.substring(0, MAX_DESC_LEN);
+            buf.writeUtf(key, 128);
+            buf.writeUtf(desc, MAX_DESC_LEN);
             List<String> tags = p.tags();
-            buf.writeVarInt(tags.size());
-            for (String tag : tags) {
+            int tagLimit = Math.min(tags.size(), MAX_TAGS);
+            buf.writeVarInt(tagLimit);
+            for (int i = 0; i < tagLimit; i++) {
+                String tag = tags.get(i) == null ? "" : tags.get(i);
+                if (tag.length() > MAX_TAG_LEN) tag = tag.substring(0, MAX_TAG_LEN);
                 buf.writeUtf(tag, MAX_TAG_LEN);
             }
             buf.writeVarInt(p.minPlayers());

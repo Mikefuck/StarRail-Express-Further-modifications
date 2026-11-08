@@ -8,6 +8,8 @@ import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.server.level.ServerPlayer;
 
 public final class GreedEconomy {
+    private static final ThreadLocal<Boolean> BYPASS_INTERCEPT = ThreadLocal.withInitial(() -> false);
+
     private GreedEconomy() {}
 
     public static boolean isActive(ServerPlayer player) {
@@ -17,10 +19,20 @@ public final class GreedEconomy {
                 && GameUtils.isPlayerAliveAndSurvival(player);
     }
 
+    public static int interceptAddedIncome(ServerPlayer earner, int addedAmount) {
+        if (addedAmount <= 0 || Boolean.TRUE.equals(BYPASS_INTERCEPT.get())) return addedAmount;
+        return interceptIncome(earner, 0, addedAmount);
+    }
+
     public static int interceptIncome(ServerPlayer earner, int oldBalance, int requested) {
-        if (requested <= oldBalance || !isActive(earner)) return requested;
+        if (Boolean.TRUE.equals(BYPASS_INTERCEPT.get())) return requested;
+        if (earner == null || earner.level().isClientSide()) return requested;
+        if (earner.getServer() != null && !earner.getServer().isSameThread()) return requested;
+        if (requested <= oldBalance || !isActive(earner) || HabiRoles.isHabiRole(earner, SevenSins.GREED)) {
+            return requested;
+        }
         var role = SREGameWorldComponent.KEY.get(earner.level()).getRole(earner);
-        if (role.hasNoCoinSystem()) return requested;
+        if (role == null || role.hasNoCoinSystem()) return requested;
         var holders = earner.serverLevel().players().stream()
                 .filter(p -> p != earner && isActive(p) && HabiRoles.isHabiRole(p, SevenSins.GREED))
                 .toList();
@@ -28,7 +40,8 @@ public final class GreedEconomy {
         // One faction share is split between holders; injected duplicate roles cannot multiply the tax.
         boolean innocent = (role.isInnocent() || role.isVigilanteTeam())
                 && !role.isNeutrals() && !role.isNeutralForKiller();
-        int amount = GreedComponent.KEY.get(earner).tax(requested - oldBalance, innocent);
+        int delta = (int) Math.min(Integer.MAX_VALUE, (long) requested - oldBalance);
+        int amount = GreedComponent.KEY.get(earner).tax(delta, innocent);
         for (int i = 0; i < holders.size(); i++) {
             credit(holders.get(i), amount / holders.size() + (i < amount % holders.size() ? 1 : 0));
         }
@@ -37,7 +50,19 @@ public final class GreedEconomy {
 
     // Transfers are not newly earned income and must bypass the income interceptor.
     public static void credit(ServerPlayer player, int amount) {
+        if (player == null || amount <= 0) return;
         var shop = SREPlayerShopComponent.KEY.get(player);
+        var game = SREGameWorldComponent.KEY.get(player.level());
+        var role = game != null ? game.getRole(player) : null;
+        if (role != null && role.hasNoCoinSystem()) {
+            BYPASS_INTERCEPT.set(true);
+            try {
+                shop.addToBalance(amount);
+            } finally {
+                BYPASS_INTERCEPT.remove();
+            }
+            return;
+        }
         shop.balance = (int) Math.min(Integer.MAX_VALUE, (long) shop.balance + amount);
         shop.sync();
     }

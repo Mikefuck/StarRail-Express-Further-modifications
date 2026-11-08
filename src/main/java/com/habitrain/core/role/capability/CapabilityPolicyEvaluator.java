@@ -68,7 +68,7 @@ public final class CapabilityPolicyEvaluator {
                 && !ctx.withinDistance(policy.maxDistance())) {
             return VoiceDecision.BLOCK;
         }
-        if (listenerMatch && policy.isolateGroup() && !policy.hearWorld()) {
+        if ((speakerMatch || listenerMatch) && policy.isolateGroup() && !policy.hearWorld()) {
             if (ctx.sameGroup() || ctx.samePlayer()) {
                 return VoiceDecision.PASS;
             }

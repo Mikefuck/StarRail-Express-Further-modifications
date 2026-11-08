@@ -103,10 +103,24 @@ public final class SwiftWindComponent implements RoleComponent {
     public static boolean hasPsychoKnife(Player player) {
         ItemStack knife = HabiRoleItems.lookupItem(HabiRoleItems.THROWING_KNIFE_ID, 1);
         if (knife.isEmpty()) return false;
-        for (int slot = 0; slot < 9; slot++) {
-            if (player.getInventory().getItem(slot).is(knife.getItem())) return true;
+        Item item = knife.getItem();
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            if (player.getInventory().getItem(slot).is(item)) return true;
         }
-        return player.getOffhandItem().is(knife.getItem());
+        try {
+            if (player.containerMenu != null && player.containerMenu.getCarried().is(item)) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            if (player.level() != null && !player.level().getEntitiesOfClass(
+                    org.agmas.noellesroles.content.entity.ThrowingKnifeEntity.class,
+                    player.getBoundingBox().inflate(64.0D),
+                    entity -> entity.isAlive() && player.equals(entity.getOwner())).isEmpty()) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     public static void refreshPsychoKnifeCooldown(Player player) {
@@ -153,8 +167,10 @@ public final class SwiftWindComponent implements RoleComponent {
                 self.getCooldowns().addCooldown(item, THROWING_KNIFE_CD_SECONDS * 20);
             }
         }
-        // 累计 2 杀刷新逐风
+        // 累计 2 杀刷新逐风，刷新后重置计数避免后续每杀必刷（ROLE-SRE-13）
         if (knifeKills >= 2 || killCount >= 2) {
+            knifeKills = 0;
+            killCount = 0;
             refreshDashCooldown(self);
         }
         sync();
@@ -184,19 +200,32 @@ public final class SwiftWindComponent implements RoleComponent {
         horizontal = horizontal.normalize();
 
         Vec3 start = self.position();
-        // 碰撞：步进
+        // 碰撞：步进（同时检查脚部射线、头部射线与完整碰撞箱，防止钻入上半砖/吊顶导致窒息）
         double step = 0.25;
         int steps = (int) Math.ceil(DASH_BLOCKS / step);
         Vec3 pos = start;
+        double eyeOffset = Math.max(0.5, self.getEyeHeight());
         for (int i = 0; i < steps; i++) {
             Vec3 next = pos.add(horizontal.scale(step));
-            BlockHitResult hit = self.level().clip(new ClipContext(
+            BlockHitResult feetHit = self.level().clip(new ClipContext(
                     pos.add(0, 0.1, 0),
                     next.add(0, 0.1, 0),
                     ClipContext.Block.COLLIDER,
                     ClipContext.Fluid.NONE,
                     self));
-            if (hit.getType() != HitResult.Type.MISS) {
+            if (feetHit.getType() != HitResult.Type.MISS) {
+                break;
+            }
+            BlockHitResult headHit = self.level().clip(new ClipContext(
+                    pos.add(0, eyeOffset, 0),
+                    next.add(0, eyeOffset, 0),
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
+                    self));
+            if (headHit.getType() != HitResult.Type.MISS) {
+                break;
+            }
+            if (!self.level().noCollision(self, self.getBoundingBox().move(next.subtract(start)))) {
                 break;
             }
             pos = next;

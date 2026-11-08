@@ -8,24 +8,38 @@ import com.habitrain.core.api.role.v2.EffectiveRole;
 import com.habitrain.core.api.role.v2.RoleCatalogApi;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
+import com.habitrain.core.game.sre.mode.RepairModeManager;
+import com.habitrain.core.game.sre.role.sins.SevenSins;
+import com.habitrain.core.game.sre.role.sins.component.LustComponent;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
+import io.wifi.starrailexpress.SRE;
 import io.wifi.starrailexpress.api.CustomWinnerRole;
+import io.wifi.starrailexpress.api.SREGameModes;
 import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.cca.SREGameRoundEndComponent;
 import io.wifi.starrailexpress.cca.SREGameTimeComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.game.GameUtils;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import org.agmas.noellesroles.game.roles.neutral.mercenary.MercenaryPlayerComponent;
+import org.agmas.noellesroles.role.ModRoles;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * Builds a public {@link MatchSettlement} from SRE round-end state.
@@ -37,6 +51,16 @@ public final class MatchSettlementFactory {
     private MatchSettlementFactory() {}
 
     public static MatchSettlement fromEnd(ServerLevel level, @Nullable SREGameWorldComponent game) {
+        return fromEnd(level, game, false);
+    }
+
+    /** Called after upstream recordWinStats; an empty winner set is a valid final result. */
+    public static MatchSettlement fromRecordedStats(ServerLevel level, @Nullable SREGameWorldComponent game) {
+        return fromEnd(level, game, true);
+    }
+
+    private static MatchSettlement fromEnd(ServerLevel level, @Nullable SREGameWorldComponent game,
+                                            boolean statsRecorded) {
         String modeId = MatchStateAccess.modeId(level);
         if (modeId == null || modeId.isBlank()) {
             modeId = GameModeIds.canonical(detectModeFallback(game));
@@ -48,13 +72,13 @@ public final class MatchSettlementFactory {
         GameUtils.WinStatus winStatus = resolveWinStatus(roundEnd, game);
         MatchWinKind winKind = MatchWinKind.fromWinStatusName(winStatus == null ? null : winStatus.name());
         Set<UUID> participants = collectParticipants(level, roundEnd, game, modeId);
-        Set<UUID> winners = collectWinners(level, roundEnd, game, winStatus, modeId, participants);
+        Set<UUID> winners = collectWinners(level, roundEnd, game, winStatus, modeId, participants, statsRecorded);
         Map<UUID, MatchWinFaction> factions = new LinkedHashMap<>();
         for (UUID id : participants) {
-            factions.put(id, classifyFaction(id, level, game, winStatus, modeId));
+            factions.put(id, classifyFaction(id, level, roundEnd, game, winStatus, modeId));
         }
         for (UUID id : winners) {
-            factions.putIfAbsent(id, classifyFaction(id, level, game, winStatus, modeId));
+            factions.putIfAbsent(id, classifyFaction(id, level, roundEnd, game, winStatus, modeId));
         }
         return new MatchSettlement(modeId, winKind, matchKey, participants, winners, factions);
     }
@@ -62,29 +86,41 @@ public final class MatchSettlementFactory {
     public static String roundFingerprint(ServerLevel level) {
         String dim = "unknown";
         try {
-            dim = level.dimension().location().toString();
-        } catch (RuntimeException ignored) {
+            if (level != null && level.dimension() != null) {
+                dim = level.dimension().location().toString();
+            }
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to read dimension for roundFingerprint", e);
         }
         long startWorldTick = readStartWorldTick(level);
-        long startMillis = 0L;
-        try {
-            startMillis = GameUtils.startTime;
-        } catch (RuntimeException ignored) {
+        long startMillis = MvpScoreTracker.getRoundStartMillis(level);
+        if (startMillis == 0L) {
+            try {
+                startMillis = GameUtils.startTime;
+            } catch (RuntimeException e) {
+                LOGGER.warn("Failed to read GameUtils.startTime for roundFingerprint", e);
+            }
         }
         return dim + "|" + startWorldTick + "|" + startMillis;
     }
 
     private static long readStartWorldTick(ServerLevel level) {
+        long tracked = MvpScoreTracker.getRoundStartWorldTick(level);
+        if (tracked != 0L) {
+            return tracked;
+        }
         try {
             SREGameTimeComponent time = SREGameTimeComponent.KEY.get(level);
             if (time != null && time.getStartWorldTick() != 0L) {
                 return time.getStartWorldTick();
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            LOGGER.warn("SREGameTimeComponent unavailable in readStartWorldTick", e);
         }
         try {
-            return level.getGameTime();
+            return level != null ? level.getGameTime() : 0L;
         } catch (RuntimeException e) {
+            LOGGER.warn("Failed to read level.getGameTime() for roundFingerprint", e);
             return 0L;
         }
     }
@@ -93,7 +129,7 @@ public final class MatchSettlementFactory {
         try {
             return SREGameRoundEndComponent.KEY.get(level);
         } catch (RuntimeException t) {
-            LOGGER.debug("RoundEnd component unavailable: {}", t.toString());
+            LOGGER.warn("RoundEnd component unavailable", t);
             return null;
         }
     }
@@ -107,16 +143,8 @@ public final class MatchSettlementFactory {
                     return s;
                 }
             }
-        } catch (RuntimeException ignored) {
-        }
-        try {
-            if (game != null) {
-                GameUtils.WinStatus s = game.getLastWinStatus();
-                if (s != null) {
-                    return s;
-                }
-            }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to read WinStatus from SREGameRoundEndComponent", e);
         }
         return GameUtils.WinStatus.NONE;
     }
@@ -126,9 +154,17 @@ public final class MatchSettlementFactory {
             if (game != null && game.getGameMode() != null && game.getGameMode().identifier != null) {
                 return game.getGameMode().identifier.toString();
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to read fallback mode from SREGameWorldComponent", e);
         }
         return GameModeIds.MURDER;
+    }
+
+    private static boolean isExcludedRole(@Nullable SRERole role) {
+        if (role == null || role.identifier() == null) {
+            return false;
+        }
+        return role.identifier().equals(TMMRoles.DISCOVERY_CIVILIAN.identifier());
     }
 
     private static Set<UUID> collectParticipants(
@@ -140,7 +176,15 @@ public final class MatchSettlementFactory {
         if (roundEnd != null && roundEnd.players != null) {
             for (SREGameRoundEndComponent.RoundEndData data : roundEnd.players) {
                 if (data != null && data.player != null && data.player.getId() != null) {
-                    ids.add(data.player.getId());
+                    UUID id = data.player.getId();
+                    if (RepairModeManager.isRepairer(id)) {
+                        continue;
+                    }
+                    SRERole role = resolveRole(id, game);
+                    if (isExcludedRole(role)) {
+                        continue;
+                    }
+                    ids.add(id);
                 }
             }
         }
@@ -149,10 +193,16 @@ public final class MatchSettlementFactory {
             try {
                 Map<UUID, SRERole> roles = game.getRoles();
                 if (roles != null) {
-                    ids.addAll(roles.keySet());
+                    for (Map.Entry<UUID, SRERole> entry : roles.entrySet()) {
+                        UUID id = entry.getKey();
+                        if (id == null || RepairModeManager.isRepairer(id) || isExcludedRole(entry.getValue())) {
+                            continue;
+                        }
+                        ids.add(id);
+                    }
                 }
             } catch (RuntimeException t) {
-                LOGGER.debug("game role map unavailable: {}", t.toString());
+                LOGGER.warn("game role map unavailable", t);
             }
         }
         return ids;
@@ -164,8 +214,10 @@ public final class MatchSettlementFactory {
             SREGameWorldComponent game,
             GameUtils.WinStatus winStatus,
             String modeId,
-            Set<UUID> participants) {
+            Set<UUID> participants,
+            boolean statsRecorded) {
         Set<UUID> winners = new LinkedHashSet<>();
+        boolean anyRoundEndHasWin = false;
         if (roundEnd != null) {
             try {
                 if (roundEnd.players != null) {
@@ -174,68 +226,227 @@ public final class MatchSettlementFactory {
                             continue;
                         }
                         UUID id = data.player.getId();
-                        boolean didWin = false;
+                        if (RepairModeManager.isRepairer(id) || isExcludedRole(resolveRole(id, game))) {
+                            continue;
+                        }
+                        boolean didWin;
                         try {
                             didWin = roundEnd.didWin(id) || data.hasWin;
                         } catch (RuntimeException t) {
+                            LOGGER.warn("roundEnd.didWin failed for {}", id, t);
                             didWin = data.hasWin;
                         }
                         if (didWin) {
+                            anyRoundEndHasWin = true;
                             winners.add(id);
                         }
                     }
                 }
-                if (roundEnd.CustomWinnerPlayers != null) {
+                if (!statsRecorded && isCustomWinnerListApplicable(winStatus) && roundEnd.CustomWinnerPlayers != null) {
                     for (UUID custom : roundEnd.CustomWinnerPlayers) {
-                        if (custom != null) {
+                        if (custom != null && !RepairModeManager.isRepairer(custom)
+                                && !isExcludedRole(resolveRole(custom, game))) {
                             winners.add(custom);
                         }
                     }
                 }
             } catch (RuntimeException t) {
-                LOGGER.debug("collectWinners from roundEnd failed: {}", t.toString());
+                LOGGER.warn("collectWinners from roundEnd failed", t);
             }
         }
-        if (winners.isEmpty() && game != null && winStatus != null
+        if (!statsRecorded && !anyRoundEndHasWin && game != null && winStatus != null
                 && winStatus != GameUtils.WinStatus.NONE
                 && winStatus != GameUtils.WinStatus.NOT_MODIFY
                 && winStatus != GameUtils.WinStatus.NO_PLAYER) {
+            List<UUID> lustCandidates = new ArrayList<>();
             for (UUID id : participants) {
-                if (playerMatchesWinStatus(id, level, game, winStatus, modeId)) {
+                SRERole role = effectiveOf(resolveRole(id, game));
+                if (role != null && SevenSins.LUST_ID.equals(role.identifier())) {
+                    lustCandidates.add(id);
+                    continue;
+                }
+                if (playerMatchesWinStatus(id, level, roundEnd, game, winStatus, modeId, winners)) {
                     winners.add(id);
+                }
+            }
+            for (UUID lustId : lustCandidates) {
+                if (playerMatchesWinStatus(lustId, level, roundEnd, game, winStatus, modeId, winners)) {
+                    winners.add(lustId);
                 }
             }
         }
         return winners;
     }
 
+    private static boolean isCustomWinnerListApplicable(@Nullable GameUtils.WinStatus winStatus) {
+        return winStatus == GameUtils.WinStatus.CUSTOM
+                || winStatus == GameUtils.WinStatus.CUSTOM_COMPONENT
+                || winStatus == GameUtils.WinStatus.LOVERS;
+    }
+
+    private static boolean isSingleWinnerMode(SREGameWorldComponent game, String modeId) {
+        try {
+            if (game != null && game.getGameMode() != null
+                    && (game.getGameMode().onlyOneWinner() || game.getGameMode().isLooseEndMode())) {
+                return true;
+            }
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to inspect gameMode single-winner flags", e);
+        }
+        return GameModeIds.LOOSE_ENDS.equals(modeId);
+    }
+
     private static boolean playerMatchesWinStatus(
             UUID uuid,
             ServerLevel level,
+            @Nullable SREGameRoundEndComponent roundEnd,
             SREGameWorldComponent game,
             GameUtils.WinStatus winStatus,
-            String modeId) {
-        if (winStatus == null) {
+            String modeId,
+            Set<UUID> settledWinners) {
+        if (winStatus == null || uuid == null) {
             return false;
         }
-        MatchWinFaction faction = classifyFaction(uuid, level, game, winStatus, modeId);
-        if (winStatus.isInnocentWin()) {
-            return faction == MatchWinFaction.PASSENGER;
+        SRERole role = effectiveOf(resolveRole(uuid, game));
+        if (role == null || isExcludedRole(role)) {
+            return false;
         }
-        if (winStatus.isKillerWin()) {
-            return faction == MatchWinFaction.KILLER;
+        if (isSingleWinnerMode(game, modeId)) {
+            try {
+                return uuid.equals(game.getLooseEndWinner());
+            } catch (RuntimeException e) {
+                LOGGER.warn("Failed to read looseEndWinner", e);
+                return false;
+            }
         }
-        if (winStatus == GameUtils.WinStatus.CUSTOM
-                || winStatus == GameUtils.WinStatus.CUSTOM_COMPONENT
-                || winStatus == GameUtils.WinStatus.LOVERS
-                || winStatus == GameUtils.WinStatus.GAMBLER
-                || winStatus == GameUtils.WinStatus.RECORDER
-                || winStatus == GameUtils.WinStatus.LOOSE_END
-                || winStatus == GameUtils.WinStatus.NIAN_SHOU) {
-            SRERole role = effectiveOf(resolveRole(uuid, game));
-            return faction == MatchWinFaction.NEUTRAL || role instanceof CustomWinnerRole;
+
+        ServerPlayer onlinePlayer = resolveOnlinePlayer(level, uuid);
+        ResourceLocation roleId = role.identifier();
+        String rolePath = roleId != null ? roleId.getPath() : "";
+        String roleFull = roleId != null ? roleId.toString() : "";
+        boolean isWinner = false;
+
+        switch (winStatus) {
+            case CUSTOM:
+            case CUSTOM_COMPONENT:
+                if (roundEnd != null && roundEnd.CustomWinnerPlayers != null
+                        && roundEnd.CustomWinnerPlayers.contains(uuid)) {
+                    isWinner = true;
+                } else if (roundEnd != null && roundEnd.CustomWinnerID != null
+                        && !roundEnd.CustomWinnerID.isBlank()
+                        && (roundEnd.CustomWinnerID.equals(rolePath) || roundEnd.CustomWinnerID.equals(roleFull))) {
+                    isWinner = true;
+                } else if (roundEnd != null && roundEnd.CustomWinnerExtraRoleIds != null
+                        && (roundEnd.CustomWinnerExtraRoleIds.contains(rolePath)
+                        || roundEnd.CustomWinnerExtraRoleIds.contains(roleFull))) {
+                    isWinner = true;
+                } else if (onlinePlayer != null && roundEnd != null) {
+                    try {
+                        for (Predicate<Map.Entry<Player, String>> pred : GameUtils.CustomWinnersPredicates) {
+                            if (pred != null && pred.test(Map.entry(onlinePlayer, roundEnd.CustomWinnerID))) {
+                                isWinner = true;
+                                break;
+                            }
+                        }
+                    } catch (RuntimeException e) {
+                        LOGGER.warn("CustomWinnersPredicates evaluation failed for {}", uuid, e);
+                    }
+                }
+                break;
+            case GAMBLER:
+                isWinner = "gambler".equals(rolePath);
+                break;
+            case KILLERS:
+                if (role.winWithKiller()) {
+                    isWinner = true;
+                } else if (onlinePlayer != null && ModRoles.MERCENARY_ID.equals(roleId)) {
+                    isWinner = checkMercenaryFollowWin(onlinePlayer, winStatus);
+                }
+                break;
+            case LOOSE_END:
+                try {
+                    boolean looseEndsMode = GameModeIds.LOOSE_ENDS.equals(modeId)
+                            || (SRE.GAME != null && SRE.GAME.identifier != null
+                            && SRE.GAME.identifier.equals(SREGameModes.LOOSE_ENDS.identifier));
+                    if (looseEndsMode) {
+                        isWinner = game != null && uuid.equals(game.getLooseEndWinner());
+                    } else {
+                        isWinner = TMMRoles.LOOSE_END.identifier().equals(roleId);
+                    }
+                } catch (RuntimeException e) {
+                    LOGGER.warn("LOOSE_END win check failed for {}", uuid, e);
+                }
+                break;
+            case NIAN_SHOU:
+                isWinner = "nianshou".equals(rolePath);
+                break;
+            case LOVERS:
+                isWinner = roundEnd != null && roundEnd.CustomWinnerPlayers != null
+                        && roundEnd.CustomWinnerPlayers.contains(uuid);
+                break;
+            case TIME:
+            case PASSENGERS:
+                if (role.winWithInnocent()) {
+                    isWinner = true;
+                } else if (onlinePlayer != null && ModRoles.MERCENARY_ID.equals(roleId)) {
+                    isWinner = checkMercenaryFollowWin(onlinePlayer, winStatus);
+                }
+                break;
+            case RECORDER:
+                isWinner = "recorder".equals(rolePath);
+                break;
+            default:
+                break;
         }
-        return false;
+
+        if (onlinePlayer != null && role instanceof CustomWinnerRole cwr) {
+            try {
+                isWinner = cwr.didPlayerWin(onlinePlayer, isWinner, winStatus);
+            } catch (RuntimeException e) {
+                LOGGER.warn("CustomWinnerRole.didPlayerWin failed for {}", uuid, e);
+            }
+        }
+
+        if (!isWinner && onlinePlayer != null && SevenSins.LUST_ID.equals(roleId)) {
+            try {
+                LustComponent lust = LustComponent.KEY.maybeGet(onlinePlayer).orElse(null);
+                if (lust != null && lust.selected() != null && settledWinners.contains(lust.selected())) {
+                    isWinner = true;
+                }
+            } catch (RuntimeException e) {
+                LOGGER.warn("Lust follow win fallback check failed for {}", uuid, e);
+            }
+        }
+
+        return isWinner;
+    }
+
+    private static boolean checkMercenaryFollowWin(ServerPlayer player, GameUtils.WinStatus winStatus) {
+        try {
+            var mercenary = MercenaryPlayerComponent.KEY.maybeGet(player).orElse(null);
+            return mercenary != null && mercenary.canFollowFactionWin(winStatus);
+        } catch (RuntimeException e) {
+            LOGGER.warn("Mercenary follow win check failed for {}", player.getUUID(), e);
+            return false;
+        }
+    }
+
+    private static @Nullable ServerPlayer resolveOnlinePlayer(@Nullable ServerLevel level, UUID uuid) {
+        if (level == null || uuid == null) {
+            return null;
+        }
+        try {
+            Player inLevel = level.getPlayerByUUID(uuid);
+            if (inLevel instanceof ServerPlayer sp) {
+                return sp;
+            }
+            if (level.getServer() != null) {
+                return level.getServer().getPlayerList().getPlayer(uuid);
+            }
+        } catch (RuntimeException e) {
+            LOGGER.warn("resolveOnlinePlayer failed for {}", uuid, e);
+        }
+        return null;
     }
 
     static MatchWinFaction classifyFaction(
@@ -244,18 +455,35 @@ public final class MatchSettlementFactory {
             SREGameWorldComponent game,
             GameUtils.WinStatus winStatus,
             String modeId) {
+        return classifyFaction(uuid, level, level != null ? readRoundEnd(level) : null, game, winStatus, modeId);
+    }
+
+    static MatchWinFaction classifyFaction(
+            UUID uuid,
+            ServerLevel level,
+            @Nullable SREGameRoundEndComponent roundEnd,
+            SREGameWorldComponent game,
+            GameUtils.WinStatus winStatus,
+            String modeId) {
+        if (winStatus == GameUtils.WinStatus.LOVERS
+                && roundEnd != null
+                && roundEnd.CustomWinnerPlayers != null
+                && roundEnd.CustomWinnerPlayers.contains(uuid)) {
+            return MatchWinFaction.NEUTRAL;
+        }
 
         SRERole role = effectiveOf(resolveRole(uuid, game));
         if (role != null) {
+            boolean notInnocent = !role.isInnocent();
             return MatchWinFaction.fromRoleFlags(
                     role.isNeutrals(),
                     role instanceof CustomWinnerRole,
                     role.isNeutralForInnocent(),
                     role.isNeutralForKiller(),
-                    role.isKiller(),
-                    role.isKillerTeam(),
-                    role.isCanUseKiller(),
-                    role.isMafiaTeam());
+                    role.isKiller() && notInnocent,
+                    role.isKillerTeam() && notInnocent,
+                    role.isCanUseKiller() && notInnocent,
+                    role.isMafiaTeam() && notInnocent);
         }
         if (winStatus != null) {
             if (winStatus.isKillerWin()) {
@@ -278,7 +506,8 @@ public final class MatchSettlementFactory {
         }
         try {
             return game.getRole(uuid);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to resolve role for {}", uuid, e);
             return null;
         }
     }
@@ -313,3 +542,4 @@ public final class MatchSettlementFactory {
         return raw;
     }
 }
+

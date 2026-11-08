@@ -46,6 +46,7 @@ class RoleStateApiTest {
         store = new RoleStateServiceImpl();
         ((RoleStateServiceImpl) RoleStateApi.instance()).clear(true);
         RoleExtensionConfigService.INSTANCE.resetForTests();
+        com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.clear();
     }
 
     @AfterEach

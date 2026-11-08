@@ -44,8 +44,10 @@ public final class HumilityVirtue {
         for (ServerPlayer other : level.players()) {
             if (other == completer) continue;
             if (!other.isAlive() || other.isSpectator()) continue;
+            if (com.habitrain.core.game.sre.mode.RepairModeManager.isRepairer(other)) continue;
+            if (com.habitrain.core.game.sre.rest.EliminatedRestAreaService.isResting(other)) continue;
             if (other.distanceToSqr(completer) > rangeSq) continue;
-            other.displayClientMessage(Component.literal("谢谢"), true);
+            other.displayClientMessage(Component.translatable("message.habitrain_core.virtue.humility.thanks"), false);
         }
         HabiTrainCore.LOGGER.debug("[Humility] {} completed task — nearby thanks",
                 completer.getGameProfile().getName());

@@ -80,10 +80,13 @@ public abstract class TicketShopItemMixin extends Button implements AppleShopPri
         int width = font.width(amount);
         float scale = Math.min(1.0f, 32.0f / (width + 6));
         graphics.pose().pushPose();
-        graphics.pose().translate(widget.getX() + 8 - width * scale / 2, widget.getY() - 14, 400);
-        graphics.pose().scale(scale, scale, 1);
-        graphics.fill(-2, -2, width + 2, font.lineHeight + 2, 0xE0100010);
-        graphics.drawString(font, amount, 0, 0, 0xFFFFFFFF);
-        graphics.pose().popPose();
+        try {
+            graphics.pose().translate(widget.getX() + 8 - width * scale / 2, widget.getY() - 14, 400);
+            graphics.pose().scale(scale, scale, 1);
+            graphics.fill(-2, -2, width + 2, font.lineHeight + 2, 0xE0100010);
+            graphics.drawString(font, amount, 0, 0, 0xFFFFFFFF);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 }

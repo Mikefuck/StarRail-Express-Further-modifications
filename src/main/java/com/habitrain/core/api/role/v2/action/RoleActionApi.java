@@ -26,14 +26,7 @@ import java.util.UUID;
 public interface RoleActionApi {
 
     static RoleActionApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleActionApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.action();
+        return com.habitrain.core.api.spi.RoleSpi.action();
     }
 
     /** The spec bound to {@code id}, or {@code null} if it was never registered. */

@@ -19,12 +19,25 @@ public class TaskSaveController {
         this.remoteEditable = remoteEditable;
     }
 
-    public void syncFields(EditBox goldField, EditBox emotionField, EditBox weightField, EditBox mapField) {
+    public boolean syncFields(EditBox goldField, EditBox emotionField, EditBox weightField, EditBox mapField) {
         try {
             var candidate = com.habitrain.core.config.TaskNumericDraft.parse(goldField.getValue(), emotionField.getValue(), weightField.getValue());
             var maps = TaskMapFilterEditor.parseMapList(mapField != null ? mapField.getValue() : "");
-            candidate.apply(cfg); cfg.enabledMaps = maps; validationError = null;
-        } catch (IllegalArgumentException error) { validationError = error.getMessage(); }
+            candidate.apply(cfg);
+            cfg.enabledMaps = maps;
+            validationError = null;
+            return true;
+        } catch (IllegalArgumentException error) {
+            validationError = error.getMessage();
+            showMessage("§c" + validationError + "，未保存");
+            return false;
+        }
+    }
+
+    public boolean syncAndSave(EditBox goldField, EditBox emotionField, EditBox weightField, EditBox mapField) {
+        if (!canEditNow()) return false;
+        if (!syncFields(goldField, emotionField, weightField, mapField)) return false;
+        return saveCurrent();
     }
 
     public void resetDefault() {
@@ -46,12 +59,13 @@ public class TaskSaveController {
         saveCurrent();
     }
 
-    public void saveCurrent() {
-        if (!canEditNow()) return;
-        if (validationError != null) { showMessage("§c" + validationError + "，未保存"); return; }
+    public boolean saveCurrent() {
+        if (!canEditNow()) return false;
         ConfigManager.getInstance().setTaskConfig(def.getFullId(), cfg);
         com.habitrain.core.client.InstinctColorHelper.markDirty();
-        com.habitrain.core.client.config.ClientConfigSubmission.show(ConfigManager.getInstance().save());
+        var result = ConfigManager.getInstance().save();
+        com.habitrain.core.client.config.ClientConfigSubmission.show(result);
+        return result.successful() || result.status() == com.habitrain.core.config.ConfigSaveResult.Status.SUBMITTING;
     }
 
     private boolean canEditNow() {

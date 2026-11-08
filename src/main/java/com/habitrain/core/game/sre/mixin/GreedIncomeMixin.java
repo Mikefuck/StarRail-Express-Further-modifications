@@ -15,9 +15,9 @@ public abstract class GreedIncomeMixin {
     @Shadow @Final private Player player;
     @Shadow public int balance;
 
-    @ModifyVariable(method = "setBalance", at = @At("HEAD"), argsOnly = true)
+    @ModifyVariable(method = "addToBalance", at = @At("HEAD"), argsOnly = true, remap = false)
     private int habitrain$shareIncome(int amount) {
-        return player instanceof ServerPlayer serverPlayer
-                ? GreedEconomy.interceptIncome(serverPlayer, balance, amount) : amount;
+        return amount > 0 && player instanceof ServerPlayer serverPlayer
+                ? GreedEconomy.interceptAddedIncome(serverPlayer, amount) : amount;
     }
 }

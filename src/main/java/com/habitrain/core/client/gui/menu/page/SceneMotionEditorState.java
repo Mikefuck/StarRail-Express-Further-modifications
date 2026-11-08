@@ -7,9 +7,7 @@ import com.habitrain.core.api.scene.model.SceneProfileDraft;
 import com.habitrain.core.config.ConfigManager;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Owns the editable scene profiles and their background variants.
@@ -20,11 +18,12 @@ final class SceneMotionEditorState {
     private final Map<String, SceneProfileDraft> drafts = new LinkedHashMap<>();
     private final Map<String, LinkedHashMap<String, SceneProfileDraft>> backgroundDrafts = new LinkedHashMap<>();
     private final Map<String, LinkedHashMap<String, String>> backgroundNames = new LinkedHashMap<>();
-    private final Set<String> pendingDeletedAssetKeys = new LinkedHashSet<>();
+    private final Map<String, SceneProfile> inheritedBaselines = new LinkedHashMap<>();
 
     void loadFromConfig() {
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
         drafts.clear();
+        inheritedBaselines.clear();
         backgroundDrafts.clear();
         backgroundNames.clear();
         for (Map.Entry<String, SceneProfile> entry : settings.profiles.entrySet()) {
@@ -55,6 +54,23 @@ final class SceneMotionEditorState {
                         key -> new SceneProfileDraft(defaultProfile.copyForNewProfile()));
             }
         }
+        drafts.forEach((key, draft) -> {
+            if (!settings.profiles.containsKey(key) && !SceneMotionSettings.DEFAULT_MAP_KEY.equals(key)) {
+                inheritedBaselines.put(key, draft.toProfile());
+            }
+        });
+    }
+
+    boolean shouldPersist(String key, SceneProfile profile) {
+        return !java.util.Objects.equals(inheritedBaselines.get(key), profile);
+    }
+
+    void ensureInheritedDraft(String key, SceneProfile profile) {
+        if (!drafts.containsKey(key)) {
+            SceneProfileDraft draft = new SceneProfileDraft(profile);
+            drafts.put(key, draft);
+            inheritedBaselines.put(key, draft.toProfile());
+        }
     }
 
     Map<String, SceneProfileDraft> drafts() {
@@ -67,9 +83,5 @@ final class SceneMotionEditorState {
 
     Map<String, LinkedHashMap<String, String>> backgroundNames() {
         return backgroundNames;
-    }
-
-    Set<String> pendingDeletedAssetKeys() {
-        return pendingDeletedAssetKeys;
     }
 }

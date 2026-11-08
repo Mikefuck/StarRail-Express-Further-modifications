@@ -14,22 +14,21 @@ import java.util.stream.Collectors;
  * 新增: 按 GameMode 查询。
  * 仅 habitrain_core 的 SERVER_STARTED bootstrap 可 freeze()；外部调用会被忽略。
  *
- * <h2>线程契约（审核 A-06）</h2>
+ * <h2>线程契约（审核 A-06 & API-TV-10）</h2>
  * <p>与 {@link GameModeRegistry} 保持同一策略：
  * <ul>
  *   <li>写操作（{@link #register}、{@link #freeze}、{@link #resetLifecycle}）只在
  *       模组初始化 / 服务器启动 / 停服阶段由服务器线程调用；</li>
+ *   <li>{@code frozen} 为 {@code volatile}，且对 {@code REGISTRY} 的读写均通过同步块保护；</li>
  *   <li>只读查询（{@link #getAll()}、{@link #getAllIds()}、{@link #get(String)} 等）
  *       返回<b>不可变快照</b>而非活视图，因此可以在任意线程安全遍历，
- *       不会因为并发的注册抛出 {@code ConcurrentModificationException}；</li>
- *   <li>{@code REGISTRY} 本身不是并发容器：读快照期间若有线程并发 {@code register}，
- *       仍属调用方违约（快照本身不会损坏，但结果可能不包含刚注册的项）。</li>
+ *       不会因为并发的注册抛出 {@code ConcurrentModificationException}。</li>
  * </ul>
  */
 public class TaskRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("TaskRegistry");
     private static final Map<String, TaskDefinition> REGISTRY = new LinkedHashMap<>();
-    private static boolean frozen = false;
+    private static volatile boolean frozen = false;
 
     public static void register(TaskDefinition definition) {
         if (definition == null) {
@@ -37,11 +36,18 @@ public class TaskRegistry {
         }
         if (frozen) throw new IllegalStateException("Task registry is frozen!");
         String fullId = definition.getFullId();
-        if (REGISTRY.containsKey(fullId)) throw new IllegalArgumentException("Task '" + fullId + "' is already registered!");
-        REGISTRY.put(fullId, definition);
+        synchronized (REGISTRY) {
+            if (frozen) throw new IllegalStateException("Task registry is frozen!");
+            if (REGISTRY.containsKey(fullId)) {
+                throw new IllegalArgumentException("Task '" + fullId + "' is already registered!");
+            }
+            REGISTRY.put(fullId, definition);
+        }
     }
 
     public static TaskDefinition register(String modId, String taskId, Consumer<TaskDefinition.Builder> builder) {
+        Objects.requireNonNull(builder, "builder consumer must not be null");
+        if (frozen) throw new IllegalStateException("Task registry is frozen!");
         TaskDefinition.Builder b = new TaskDefinition.Builder(modId, taskId);
         builder.accept(b);
         TaskDefinition def = b.build();
@@ -57,19 +63,43 @@ public class TaskRegistry {
      * {@code ConcurrentModificationException}，与已修好的
      * {@link GameModeRegistry#getAll()} 语义不一致。
      */
-    public static Collection<TaskDefinition> getAll() { return List.copyOf(REGISTRY.values()); }
+    public static Collection<TaskDefinition> getAll() {
+        synchronized (REGISTRY) {
+            return List.copyOf(REGISTRY.values());
+        }
+    }
 
     /** @return 该 fullId 的任务定义，未注册时为 {@code null}。 */
     public static @org.jetbrains.annotations.Nullable TaskDefinition get(String fullId) {
-        return fullId == null ? null : REGISTRY.get(fullId);
+        if (fullId == null) {
+            return null;
+        }
+        synchronized (REGISTRY) {
+            return REGISTRY.get(fullId);
+        }
     }
 
     /** 全部已注册 ID 的<b>快照</b>（审核 A-06）。 */
-    public static Set<String> getAllIds() { return Set.copyOf(REGISTRY.keySet()); }
+    public static Set<String> getAllIds() {
+        synchronized (REGISTRY) {
+            return Set.copyOf(REGISTRY.keySet());
+        }
+    }
 
-    public static boolean isRegistered(String fullId) { return fullId != null && REGISTRY.containsKey(fullId); }
+    public static boolean isRegistered(String fullId) {
+        if (fullId == null) {
+            return false;
+        }
+        synchronized (REGISTRY) {
+            return REGISTRY.containsKey(fullId);
+        }
+    }
 
-    public static int size() { return REGISTRY.size(); }
+    public static int size() {
+        synchronized (REGISTRY) {
+            return REGISTRY.size();
+        }
+    }
 
     /**
      * 按 GameMode ID 查询属于某个模式的所有任务。
@@ -88,7 +118,7 @@ public class TaskRegistry {
      */
     public static List<TaskDefinition> getByGameMode(String gameModeId) {
         Objects.requireNonNull(gameModeId, "gameModeId must not be null (see TaskRegistry javadoc / audit A-06)");
-        return REGISTRY.values().stream()
+        return getAll().stream()
                 .filter(def -> gameModeId.equals(def.getGameModeId()))
                 .collect(Collectors.toList());
     }
@@ -100,10 +130,15 @@ public class TaskRegistry {
      * {@link TaskDefinition#isPoolEligible()}。派发池的等价判据见
      * {@code TaskPoolBuilder.isTaskAllowedForPool}（它额外把当前分类与
      * {@link GameMode#getTaskCategories()} 计入）。
+     *
+     * <p>API-TV-10：{@code category == null} 时安全返回空列表，避免 NPE。</p>
      */
     public static List<TaskDefinition> getByCategory(TaskCategory category) {
-        return REGISTRY.values().stream()
-                .filter(def -> def.getCategory().equals(category)
+        if (category == null) {
+            return List.of();
+        }
+        return getAll().stream()
+                .filter(def -> category.equals(def.getCategory())
                         || category.equals(def.getCustomCategory())
                         || TaskCategory.ALL.equals(def.getCategory()))
                 .toList();

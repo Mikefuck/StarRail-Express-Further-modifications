@@ -17,7 +17,7 @@ import net.minecraft.server.level.ServerPlayer;
  */
 public class GameLifecycleHandler {
     /** 记录上一tick是否处于游戏中（全局，不受多世界影响） */
-    private static boolean wasGameActive = false;
+    private static volatile boolean wasGameActive = false;
     private static volatile MinecraftServer lastServer;
 
     /**
@@ -46,26 +46,37 @@ public class GameLifecycleHandler {
         wasGameActive = false;
     }
 
+    /**
+     * CORE-07：服务器停止时彻底重置静态生命周期状态并释放 MinecraftServer 引用，
+     * 防止 IntegratedServer 内存泄漏及进入新存档首 tick 误触发 handleGameEnd。
+     */
+    public static void resetLifecycleState() {
+        wasGameActive = false;
+        lastServer = null;
+    }
+
     private static void handleGameEnd(MinecraftServer server) {
         try {
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                // per-player try-catch：单个玩家清理失败不应跳过后续玩家
-                // 和全局清理，避免跨局状态泄漏。
-                try {
-                    TaskManager.getInstance().cancelAllTrackedTasks(player);
+            if (server != null) {
+                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                    // per-player try-catch：单个玩家清理失败不应跳过后续玩家
+                    // 和全局清理，避免跨局状态泄漏。
                     try {
-                        BuiltInRegistries.MOB_EFFECT.getHolder(
-                                        ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles"))
-                                .ifPresent(player::removeEffect);
-                    } catch (Exception ignored) {}
+                        TaskManager.getInstance().cancelAllTrackedTasks(player);
+                        try {
+                            BuiltInRegistries.MOB_EFFECT.getHolder(
+                                            ResourceLocation.fromNamespaceAndPath("noellesroles", "noellesroles"))
+                                    .ifPresent(player::removeEffect);
+                        } catch (Exception ignored) {}
 
-                    // 七宗罪 + 既有角色 CCA 局终清空（仅在线玩家；离线残留由 JOIN 再清）。
-                    try {
-                        HabiComponents.clearAll(player);
-                    } catch (Throwable ignored) {}
-                } catch (Exception pe) {
-                    HabiTrainCore.LOGGER.error("清理玩家 {} 的效果时出错，继续处理其他玩家",
-                            player.getName().getString(), pe);
+                        // 七宗罪 + 既有角色 CCA 局终清空（仅在线玩家；离线残留由 JOIN 再清）。
+                        try {
+                            HabiComponents.clearAll(player);
+                        } catch (Throwable ignored) {}
+                    } catch (Exception pe) {
+                        HabiTrainCore.LOGGER.error("清理玩家 {} 的效果时出错，继续处理其他玩家",
+                                player.getName().getString(), pe);
+                    }
                 }
             }
         } finally {
@@ -78,13 +89,12 @@ public class GameLifecycleHandler {
             } catch (Throwable ignored) {}
             // 清除任务池缓存，确保下一局任务重新计算
             TaskPoolBuilder.invalidateAll();
-            // 兜底清空活跃/假任务，防止非内置模式或异常路径泄漏到下一局
-            TaskManager.getInstance().clearAllActiveTasks();
+            // API-TV-13：将仍残留的离线玩家活跃任务转入 pendingReclaim 队列后再清空活动表，
+            // 确保中途掉线的玩家在重连进服时仍会回收上局发放的任务道具。
+            TaskManager.getInstance().endAllActiveTasks(server);
 
             // 重置背包翻找任务状态（下一局可以再次刷新）
-            if (BackpackQuestState.getInstance() != null) {
-                BackpackQuestState.getInstance().resetAll();
-            }
+            BackpackQuestState.getInstance().resetAll();
             // 清除所有背包翻找动作（防止残留状态影响下一局）
             BackpackSearchHandler.clearAllSearches();
 

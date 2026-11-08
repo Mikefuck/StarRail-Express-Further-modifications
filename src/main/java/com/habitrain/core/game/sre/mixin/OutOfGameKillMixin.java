@@ -38,16 +38,17 @@ public class OutOfGameKillMixin {
     private static void habitrain$blockKillOutsideMatch(Player victim, boolean spawnBody, Player killer,
                                                          ResourceLocation deathReason, boolean forceDeath,
                                                          CallbackInfo ci) {
-        if (forceDeath || victim == null) return;
+        if (victim == null) return;
         Level level = victim.level();
         if (level == null || level.isClientSide()) return;
         try {
             SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game != null && !game.isRunning()) {
+            if (game == null || game.getGameStatus() != SREGameWorldComponent.GameStatus.ACTIVE) {
                 ci.cancel();
             }
-        } catch (Throwable ignored) {
-            // 组件不可用时不拦，避免误伤正常对局路径
+        } catch (RuntimeException | LinkageError error) {
+            ci.cancel();
+            com.habitrain.core.HabiTrainCore.LOGGER.error("无法确认对局状态，已拒绝击杀", error);
         }
     }
 }

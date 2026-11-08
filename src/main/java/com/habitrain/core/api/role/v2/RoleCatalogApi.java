@@ -18,17 +18,9 @@ import java.util.Optional;
  */
 public interface RoleCatalogApi {
 
-    /** The process-wide catalog instance. */
+    /** The process-wide catalog instance (cached lazily inside {@code RoleSpi}). */
     static RoleCatalogApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    /** Lazily-bound default instance; avoids initializing {@code TMMRoles} on class load. */
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleCatalogApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.catalog();
+        return com.habitrain.core.api.spi.RoleSpi.catalog();
     }
 
     /**

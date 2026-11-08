@@ -1,0 +1,3 @@
+{
+  "message.serverutils.motd.constant": "MOTD常量：\n%%player_count%% 玩家人数；\n%%max_player%% 最大玩家数；\n%%sre_packet_version%% 列车网络协议版本；\n%%sre_version%% 列车版本"
+}

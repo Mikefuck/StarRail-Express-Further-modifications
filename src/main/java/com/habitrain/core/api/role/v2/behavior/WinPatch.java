@@ -24,6 +24,12 @@ public record WinPatch(
     public WinPatch {
         op = op == null ? WinPatchOp.NO_CHANGE : op;
         winners = winners == null ? List.of() : List.copyOf(winners);
+        if (op == WinPatchOp.DECLARE_FACTION_WIN && (faction == null || faction.isBlank())) {
+            throw new IllegalArgumentException("DECLARE_FACTION_WIN requires a non-blank faction");
+        }
+        if (op == WinPatchOp.DECLARE_CUSTOM && (customId == null || customId.isBlank())) {
+            throw new IllegalArgumentException("DECLARE_CUSTOM requires a non-blank customId");
+        }
     }
 
     public static WinPatch noChange() {
@@ -31,10 +37,12 @@ public record WinPatch(
     }
 
     public static WinPatch addWinners(UUID... ids) {
+        java.util.Objects.requireNonNull(ids, "ids");
         return new WinPatch(WinPatchOp.ADD_WINNER, List.of(ids), null, null, null);
     }
 
     public static WinPatch removeWinners(UUID... ids) {
+        java.util.Objects.requireNonNull(ids, "ids");
         return new WinPatch(WinPatchOp.REMOVE_WINNER, List.of(ids), null, null, null);
     }
 
@@ -43,10 +51,16 @@ public record WinPatch(
     }
 
     public static WinPatch declareFaction(String faction) {
+        if (faction == null || faction.isBlank()) {
+            throw new IllegalArgumentException("faction must not be null or blank");
+        }
         return new WinPatch(WinPatchOp.DECLARE_FACTION_WIN, List.of(), faction, null, null);
     }
 
     public static WinPatch declareCustom(String customId, List<UUID> winners, @Nullable String reason) {
+        if (customId == null || customId.isBlank()) {
+            throw new IllegalArgumentException("customId must not be null or blank");
+        }
         return new WinPatch(WinPatchOp.DECLARE_CUSTOM, winners, null, customId, reason);
     }
 

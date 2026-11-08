@@ -42,8 +42,10 @@ public final class SceneRenderSettings {
 
     public static SceneRenderSettings fromJson(JsonObject json) {
         if (json == null) return createDefault();
-        double distance = json.has("maxDistanceBlocks") ? json.get("maxDistanceBlocks").getAsDouble() : DEFAULT_DISTANCE;
-        boolean translucent = !json.has("renderTranslucent") || json.get("renderTranslucent").getAsBoolean();
+        double distance = json.has("maxDistanceBlocks") && json.get("maxDistanceBlocks").isJsonPrimitive()
+                ? json.get("maxDistanceBlocks").getAsDouble() : DEFAULT_DISTANCE;
+        boolean translucent = !json.has("renderTranslucent") || !json.get("renderTranslucent").isJsonPrimitive()
+                || json.get("renderTranslucent").getAsBoolean();
         return new SceneRenderSettings(distance, translucent);
     }
 

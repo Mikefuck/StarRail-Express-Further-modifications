@@ -30,6 +30,7 @@ public class InGameMinigamesPage implements ConfigPage {
 
     private final List<QuestMinigame> minigames = new ArrayList<>();
     private final EditBox searchBox;
+    private final EditBoxInputRouter inputRouter;
     private String searchText = "";
     private ScrollArea area;
     private ConfigManager snapshot;
@@ -44,6 +45,7 @@ public class InGameMinigamesPage implements ConfigPage {
         this.font = font;
         this.editable = editable;
         this.searchBox = new EditBox(font, 0, 0, 10, 14, Component.literal(""));
+        this.inputRouter = new EditBoxInputRouter(this.searchBox);
         this.area = new ScrollArea(0, 0, 0, 0);
         this.searchBox.setMaxLength(64);
         this.searchBox.setHint(Component.literal("搜索小游戏..."));
@@ -72,31 +74,33 @@ public class InGameMinigamesPage implements ConfigPage {
         searchBox.render(g, mx, my, delta);
 
         int listY = y + HEADER_H;
-        int listH = h - HEADER_H;
+        int listH = Math.max(1, h - HEADER_H);
         area.setBounds(x, listY, w, listH);
         cardHits.clear();
-        g.enableScissor(x, listY, x + w, listY + listH);
-
-        int cy = area.getContentY();
-        int colW = (w - CARD_GAP) / COLUMNS;
         int filtered = 0, enabled = 0, idx = 0;
-        for (QuestMinigame mg : minigames) {
-            String dn = mg.displayName() != null ? mg.displayName().getString() : mg.id();
-            if (!matches(dn, mg.id())) continue;
-            filtered++;
-            MinigameConfigEntry cfg = snapshot.getMinigameConfig(mg.id());
-            boolean on = cfg == null || cfg.enabled;
-            if (on) enabled++;
-            int col = idx % COLUMNS, row = idx / COLUMNS;
-            int cx = x + col * (colW + CARD_GAP);
-            int cardY = cy + row * (CARD_H + CARD_GAP);
-            drawCard(g, mg, dn, cfg, cx, cardY, colW, mx, my);
-            idx++;
+        g.enableScissor(x, listY, x + w, listY + listH);
+        try {
+            int cy = area.getContentY();
+            int colW = (w - CARD_GAP) / COLUMNS;
+            for (QuestMinigame mg : minigames) {
+                String dn = mg.displayName() != null ? mg.displayName().getString() : mg.id();
+                if (!matches(dn, mg.id())) continue;
+                filtered++;
+                MinigameConfigEntry cfg = snapshot.getMinigameConfig(mg.id());
+                boolean on = cfg == null || cfg.enabled;
+                if (on) enabled++;
+                int col = idx % COLUMNS, row = idx / COLUMNS;
+                int cx = x + col * (colW + CARD_GAP);
+                int cardY = cy + row * (CARD_H + CARD_GAP);
+                drawCard(g, mg, dn, cfg, cx, cardY, colW, mx, my);
+                idx++;
+            }
+            int totalRows = (idx + COLUMNS - 1) / COLUMNS;
+            area.setContentHeight(totalRows * (CARD_H + CARD_GAP));
+            area.render(g);
+        } finally {
+            g.disableScissor();
         }
-        int totalRows = (idx + COLUMNS - 1) / COLUMNS;
-        area.setContentHeight(totalRows * (CARD_H + CARD_GAP));
-        area.render(g);
-        g.disableScissor();
 
         String stats = "§7" + enabled + "/" + filtered + " 已启用 §8| §7总计 " + minigames.size();
         g.drawString(font, stats, x + w - font.width(stats) - 8, y + 10, 0xFF888888, false);
@@ -115,7 +119,7 @@ public class InGameMinigamesPage implements ConfigPage {
         StringBuilder reward = new StringBuilder();
         if (cfg != null) {
             if (cfg.hasGoldReward) reward.append("§6金").append(cfg.goldReward).append(" ");
-            if (cfg.hasEmotionReward) reward.append("§b情").append(String.format("%.1f", cfg.emotionReward));
+            if (cfg.hasEmotionReward) reward.append("§b情").append(String.format(Locale.ROOT, "%.1f", cfg.emotionReward));
         }
         if (reward.length() > 0) g.drawString(font, reward.toString(), x + 8, y + 34, 0xFFAAAAAA, false);
 
@@ -136,26 +140,30 @@ public class InGameMinigamesPage implements ConfigPage {
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         if (!sreAvailable()) return false;
-        if (searchBox.mouseClicked(mx, my, btn)) return true;
-        for (CardHit hit : cardHits) {
-            if (my < hit.y() || my >= hit.y() + hit.h()) continue;
-            if (PillToggle.hit(mx, my, hit.toggleX(), hit.toggleY(), hit.toggleW(), hit.toggleH())) {
-                MenuSounds.playClick();
-                if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
-                if (cfg == null) cfg = MinigameConfigEntry.createDefault();
-                cfg.enabled = !cfg.enabled;
-                ConfigManager.getInstance().setMinigameConfig(hit.mg().id(), cfg);
-                return true;
-            }
-            if (PillToggle.hit(mx, my, hit.editX(), hit.editY(), hit.editW(), hit.editH())) {
-                MenuSounds.playClick();
-                if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
-                MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
-                if (cfg == null) cfg = MinigameConfigEntry.createDefault();
-                ConfigManager.getInstance().putMinigameConfig(hit.mg().id(), cfg);
-                Minecraft.getInstance().setScreen(new MinigameEditScreen(root, hit.mg(), cfg));
-                return true;
+        if (inputRouter.mouseClicked(mx, my, btn)) return true;
+        int listY = y + HEADER_H;
+        int listH = Math.max(1, h - HEADER_H);
+        if (my >= listY && my < listY + listH) {
+            for (CardHit hit : cardHits) {
+                if (my < hit.y() || my >= hit.y() + hit.h()) continue;
+                if (PillToggle.hit(mx, my, hit.toggleX(), hit.toggleY(), hit.toggleW(), hit.toggleH())) {
+                    MenuSounds.playClick();
+                    if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
+                    MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
+                    if (cfg == null) cfg = MinigameConfigEntry.createDefault();
+                    cfg.enabled = !cfg.enabled;
+                    ConfigManager.getInstance().setMinigameConfig(hit.mg().id(), cfg);
+                    return true;
+                }
+                if (PillToggle.hit(mx, my, hit.editX(), hit.editY(), hit.editW(), hit.editH())) {
+                    MenuSounds.playClick();
+                    if (!editable) { MenuPermissions.showDeniedMessage(); return true; }
+                    MinigameConfigEntry cfg = ConfigManager.getInstance().getMinigameConfig(hit.mg().id());
+                    if (cfg == null) cfg = MinigameConfigEntry.createDefault();
+                    ConfigManager.getInstance().putMinigameConfig(hit.mg().id(), cfg);
+                    Minecraft.getInstance().setScreen(new MinigameEditScreen(root, hit.mg(), cfg));
+                    return true;
+                }
             }
         }
         return area.mouseClicked(mx, my, btn);
@@ -164,6 +172,6 @@ public class InGameMinigamesPage implements ConfigPage {
     @Override public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) { return area.mouseDragged(my); }
     @Override public boolean mouseReleased(double mx, double my, int btn) { return area.mouseReleased(); }
     @Override public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) { return area.mouseScrolled(sy); }
-    @Override public boolean keyPressed(int key, int scan, int mod) { return searchBox.isFocused() && searchBox.keyPressed(key, scan, mod); }
-    @Override public boolean charTyped(char ch, int mod) { return searchBox.isFocused() && searchBox.charTyped(ch, mod); }
+    @Override public boolean keyPressed(int key, int scan, int mod) { return inputRouter.keyPressed(key, scan, mod); }
+    @Override public boolean charTyped(char ch, int mod) { return inputRouter.charTyped(ch, mod); }
 }

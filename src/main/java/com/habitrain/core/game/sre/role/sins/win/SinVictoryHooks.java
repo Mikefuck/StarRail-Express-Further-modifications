@@ -77,7 +77,7 @@ public final class SinVictoryHooks {
             return out;
         }
         for (ServerPlayer player : level.players()) {
-            if (player == null || player.isSpectator()) continue;
+            if (!com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(player)) continue;
             SRERole role = game.getRole(player);
             if (role == null) continue;
             if (SevenSins.PRIDE_ID.equals(role.getIdentifier())) {
@@ -99,7 +99,7 @@ public final class SinVictoryHooks {
             return out;
         }
         for (ServerPlayer player : level.players()) {
-            if (player == null || player.isSpectator()) continue;
+            if (!com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(player)) continue;
             SRERole role = game.getRole(player);
             if (role == null) continue;
             if (SevenSins.SLOTH_ID.equals(role.getIdentifier())) {
@@ -213,7 +213,7 @@ public final class SinVictoryHooks {
             return out;
         }
         for (ServerPlayer player : level.players()) {
-            if (player == null || player.isSpectator()) continue;
+            if (!com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(player)) continue;
             SRERole role = game.getRole(player);
             if (role == null) continue;
             if (SevenSins.GREED_ID.equals(role.getIdentifier())) {

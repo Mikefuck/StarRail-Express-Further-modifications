@@ -20,6 +20,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Exercises the real adapters used by Fabric/SRE, with only role lookup substituted. */
 class RoleParticipantDispatchTest {
+
+    @org.junit.jupiter.api.BeforeAll
+    static void bootstrapGameTypes() {
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+    }
     private static final RoleKey A = RoleKey.of("habitrain_core", "participant_a");
     private static final RoleKey B = RoleKey.of("habitrain_core", "participant_b");
     private static final ResourceLocation REASON = ResourceLocation.parse("sre:gun");

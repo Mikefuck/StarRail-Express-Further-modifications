@@ -31,8 +31,10 @@ public final class RoleManifestHashes {
 
     /**
      * The full gameplay definition hash (audit P1-4): covers the compiled
-     * entries WITH their declaration content plus hooks, action schemas, state
+     * declarations WITH their content plus hooks, action schemas, state
      * schemas and voice/chat policies. See {@link RoleManifestDefinitionCollector}.
+     * Runtime enabled/conflict statuses belong to the server snapshot rather
+     * than this compatibility fingerprint.
      */
     public static String definitionHash() {
         return RoleManifestDefinitionCollector.definitionHash();

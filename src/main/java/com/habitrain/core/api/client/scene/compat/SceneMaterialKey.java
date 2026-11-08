@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -165,9 +166,13 @@ public record SceneMaterialKey(
     private static RenderType createRenderType(SceneMaterialKey key) {
         ResourceLocation texture = key.textureOrAtlasId();
         String name = "scene_mat_" + texture.getNamespace() + "_" + texture.getPath().replace('/', '_')
-                + "_" + key.blendMode().name().toLowerCase()
-                + "_" + key.primitiveMode().name().toLowerCase()
-                + (key.cull() ? "_cull" : "_nocull");
+                + "_" + key.uvSpace().name().toLowerCase(Locale.ROOT)
+                + "_" + key.blendMode().name().toLowerCase(Locale.ROOT)
+                + "_" + key.primitiveMode().name().toLowerCase(Locale.ROOT)
+                + "_" + key.shaderFamily().name().toLowerCase(Locale.ROOT)
+                + (key.cull() ? "_cull" : "_nocull")
+                + (key.mipmap() ? "_mip" : "_nomip")
+                + (key.emissive() ? "_emissive" : "");
 
         RenderStateShard.ShaderStateShard shaderShard = switch (key.shaderFamily()) {
             case TRANSLUCENT -> RenderStateShard.RENDERTYPE_TRANSLUCENT_SHADER;
@@ -186,6 +191,10 @@ public record SceneMaterialKey(
             case ADDITIVE -> RenderStateShard.ADDITIVE_TRANSPARENCY;
         };
 
+        RenderStateShard.WriteMaskStateShard writeMaskShard = key.blendMode() == BlendMode.ADDITIVE
+                ? RenderStateShard.COLOR_WRITE
+                : RenderStateShard.COLOR_DEPTH_WRITE;
+
         RenderStateShard.CullStateShard cullShard = key.cull()
                 ? RenderStateShard.CULL
                 : RenderStateShard.NO_CULL;
@@ -199,15 +208,16 @@ public record SceneMaterialKey(
                 DefaultVertexFormat.BLOCK,
                 key.vertexFormatMode(),
                 131072,
-                false,
+                !key.isTranslucent() && !key.emissive(),
                 key.isTranslucent(),
                 RenderType.CompositeState.builder()
                         .setShaderState(shaderShard)
                         .setTextureState(textureShard)
                         .setTransparencyState(transparencyShard)
+                        .setWriteMaskState(writeMaskShard)
                         .setCullState(cullShard)
                         .setLightmapState(RenderStateShard.LIGHTMAP)
-                        .createCompositeState(false)
+                        .createCompositeState(!key.isTranslucent())
         );
     }
 }

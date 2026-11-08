@@ -7,6 +7,8 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
+import java.util.Locale;
+
 /**
  * S2C 网络包 - 分片请求未被满足时的确定性回答。
  *
@@ -66,7 +68,7 @@ public final class SceneAssetChunkStatusS2C implements CustomPacketPayload {
 
     public SceneAssetChunkStatusS2C(String sha256, long transferId, long requestId,
                                     long chunkOffset, Status status, int retryAfterMillis) {
-        this.sha256 = sha256 != null ? sha256.trim().toLowerCase() : "";
+        this.sha256 = sha256 != null ? sha256.trim().toLowerCase(Locale.ROOT) : "";
         this.transferId = transferId;
         this.requestId = Math.max(0L, requestId);
         this.chunkOffset = chunkOffset;

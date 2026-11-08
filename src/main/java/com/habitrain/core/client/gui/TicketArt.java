@@ -573,6 +573,14 @@ final class TicketArt {
         return (float) Math.max(minimum, Math.max(1L, Math.round(scale * guiScale)) / guiScale);
     }
 
+    /** Shrink by at least one screen pixel; rounding 2.5 back to 3 at GUI scale 1
+     * must never keep a text-fitting loop at the same value forever. */
+    static float smallerCrisp(float scale) {
+        double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
+        float step = (float) Math.max(0.5, 1.0 / Math.max(1.0, guiScale));
+        return crisp(scale - step);
+    }
+
     /** 纯 ASCII（英文副标签、数字）可以缩得更小：只需每个字形像素占整数个屏幕像素。 */
     static float crispAscii(float scale) {
         double guiScale = Minecraft.getInstance().getWindow().getGuiScale();

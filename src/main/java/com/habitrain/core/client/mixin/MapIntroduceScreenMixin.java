@@ -71,12 +71,30 @@ public abstract class MapIntroduceScreenMixin extends Screen {
                                 int colorTL, int colorTR, int colorBL, int colorBR) {
     }
 
+    private static Field habitrain$selectedField;
+    private static boolean habitrain$selectedFieldResolved;
+    private static java.lang.reflect.Method habitrain$getEntryColorMethod;
+    private static boolean habitrain$getEntryColorMethodResolved;
+    private static Field habitrain$mapEntryIdField;
+    private static boolean habitrain$mapEntryIdFieldResolved;
+    private static Field habitrain$entryMapField;
+    private static boolean habitrain$entryMapFieldResolved;
+    private static Field habitrain$entryItemField;
+    private static boolean habitrain$entryItemFieldResolved;
+    private static Field habitrain$entryNameField;
+    private static boolean habitrain$entryNameFieldResolved;
+
     private Object habitrain$getSelected() {
         try {
-            Field f = MapIntroduceScreen.class.getDeclaredField("selected");
-            f.setAccessible(true);
-            return f.get(this);
+            if (!habitrain$selectedFieldResolved) {
+                Field f = MapIntroduceScreen.class.getDeclaredField("selected");
+                f.setAccessible(true);
+                habitrain$selectedField = f;
+                habitrain$selectedFieldResolved = true;
+            }
+            return habitrain$selectedField != null ? habitrain$selectedField.get(this) : null;
         } catch (Exception e) {
+            habitrain$selectedFieldResolved = true;
             return null;
         }
     }
@@ -84,10 +102,15 @@ public abstract class MapIntroduceScreenMixin extends Screen {
     private int habitrain$getEntryColor(Object entry) {
         if (entry == null) return 0xFF5EB7D8;
         try {
-            java.lang.reflect.Method m = MapIntroduceScreen.class.getDeclaredMethod("getEntryColor", entry.getClass());
-            m.setAccessible(true);
-            return (int) m.invoke(this, entry);
+            if (!habitrain$getEntryColorMethodResolved) {
+                java.lang.reflect.Method m = MapIntroduceScreen.class.getDeclaredMethod("getEntryColor", entry.getClass());
+                m.setAccessible(true);
+                habitrain$getEntryColorMethod = m;
+                habitrain$getEntryColorMethodResolved = true;
+            }
+            return habitrain$getEntryColorMethod != null ? (int) habitrain$getEntryColorMethod.invoke(this, entry) : 0xFF5EB7D8;
         } catch (Exception e) {
+            habitrain$getEntryColorMethodResolved = true;
             return 0xFF5EB7D8;
         }
     }
@@ -107,10 +130,18 @@ public abstract class MapIntroduceScreenMixin extends Screen {
         ClientMapIntroCache.requestSyncIfNeeded();
     }
 
-    @Inject(method = "updateFromPacket", at = @At("RETURN"), remap = false)
+    @Inject(method = "updateFromPacket", at = @At("HEAD"), cancellable = true, remap = false)
     private void habitrain$syncToCache(MapIntroSyncPayload payload, CallbackInfo ci) {
         if (payload != null) {
+            boolean hadMarker = ClientMapIntroCache.hasMergeMarker(payload.maps());
             ClientMapIntroCache.update(payload);
+            if (hadMarker) {
+                MapIntroSyncPayload sanitized = ClientMapIntroCache.getLatestPayload();
+                if (sanitized != null && sanitized != payload) {
+                    updateFromPacket(sanitized);
+                    ci.cancel();
+                }
+            }
         }
     }
 
@@ -240,24 +271,27 @@ public abstract class MapIntroduceScreenMixin extends Screen {
         detailScrollOffset = net.minecraft.util.Mth.clamp(detailScrollOffset, 0, maxDetailScroll);
 
         g.enableScissor(contentX, rightContentY, contentX + contentW, rightContentY + rightContentH);
-        if (decoded != null) {
-            int previewX = contentX + 2;
-            int previewY = rightContentY - detailScrollOffset;
-            g.fill(previewX, previewY, previewX + previewW, previewY + previewH, 0xD81A1008);
-            habitrain$drawTextureCover(g, decoded.texture(), previewX + 1, previewY + 1,
-                    previewW - 2, previewH - 2, decoded.width(), decoded.height(), 255);
-            g.renderOutline(previewX, previewY, previewW, previewH, 0xFF8B6914);
-            g.fill(previewX + 1, previewY + 1, previewX + previewW - 1, previewY + 2, 0x33FFE8C0);
-        }
-
-        int textY = rightContentY + imageBlockH - detailScrollOffset;
-        for (int i = 0; i < detailLines.size(); i++) {
-            int lineY = textY + i * lineH;
-            if (lineY + lineH > rightContentY && lineY < rightContentY + rightContentH) {
-                g.drawString(font, detailLines.get(i), contentX, lineY, 0xFFFFF4DC, false);
+        try {
+            if (decoded != null) {
+                int previewX = contentX + 2;
+                int previewY = rightContentY - detailScrollOffset;
+                g.fill(previewX, previewY, previewX + previewW, previewY + previewH, 0xD81A1008);
+                habitrain$drawTextureCover(g, decoded.texture(), previewX + 1, previewY + 1,
+                        previewW - 2, previewH - 2, decoded.width(), decoded.height(), 255);
+                g.renderOutline(previewX, previewY, previewW, previewH, 0xFF8B6914);
+                g.fill(previewX + 1, previewY + 1, previewX + previewW - 1, previewY + 2, 0x33FFE8C0);
             }
+
+            int textY = rightContentY + imageBlockH - detailScrollOffset;
+            for (int i = 0; i < detailLines.size(); i++) {
+                int lineY = textY + i * lineH;
+                if (lineY + lineH > rightContentY && lineY < rightContentY + rightContentH) {
+                    g.drawString(font, detailLines.get(i), contentX, lineY, 0xFFFFF4DC, false);
+                }
+            }
+        } finally {
+            g.disableScissor();
         }
-        g.disableScissor();
 
         renderVScrollbar(g, rightX + rightW - panelPad - scrollW, rightContentY, rightContentH,
                 detailScrollOffset, maxDetailScroll, totalContentH, mouseX, mouseY, false);
@@ -288,10 +322,15 @@ public abstract class MapIntroduceScreenMixin extends Screen {
     private static String habitrain$getMapEntryId(Object mapEntry) {
         if (mapEntry == null) return "";
         try {
-            Field f = mapEntry.getClass().getDeclaredField("id");
-            f.setAccessible(true);
-            return (String) f.get(mapEntry);
+            if (!habitrain$mapEntryIdFieldResolved) {
+                Field f = mapEntry.getClass().getDeclaredField("id");
+                f.setAccessible(true);
+                habitrain$mapEntryIdField = f;
+                habitrain$mapEntryIdFieldResolved = true;
+            }
+            return habitrain$mapEntryIdField != null ? (String) habitrain$mapEntryIdField.get(mapEntry) : "";
         } catch (Exception e) {
+            habitrain$mapEntryIdFieldResolved = true;
             return "";
         }
     }
@@ -299,10 +338,15 @@ public abstract class MapIntroduceScreenMixin extends Screen {
     private static Object habitrain$getEntryMap(Object entry) {
         if (entry == null) return null;
         try {
-            Field f = entry.getClass().getDeclaredField("map");
-            f.setAccessible(true);
-            return f.get(entry);
+            if (!habitrain$entryMapFieldResolved) {
+                Field f = entry.getClass().getDeclaredField("map");
+                f.setAccessible(true);
+                habitrain$entryMapField = f;
+                habitrain$entryMapFieldResolved = true;
+            }
+            return habitrain$entryMapField != null ? habitrain$entryMapField.get(entry) : null;
         } catch (Exception e) {
+            habitrain$entryMapFieldResolved = true;
             return null;
         }
     }
@@ -310,10 +354,15 @@ public abstract class MapIntroduceScreenMixin extends Screen {
     private static Object habitrain$getEntryItem(Object entry) {
         if (entry == null) return null;
         try {
-            Field f = entry.getClass().getDeclaredField("item");
-            f.setAccessible(true);
-            return f.get(entry);
+            if (!habitrain$entryItemFieldResolved) {
+                Field f = entry.getClass().getDeclaredField("item");
+                f.setAccessible(true);
+                habitrain$entryItemField = f;
+                habitrain$entryItemFieldResolved = true;
+            }
+            return habitrain$entryItemField != null ? habitrain$entryItemField.get(entry) : null;
         } catch (Exception e) {
+            habitrain$entryItemFieldResolved = true;
             return null;
         }
     }
@@ -321,10 +370,15 @@ public abstract class MapIntroduceScreenMixin extends Screen {
     private static Component habitrain$getEntryName(Object entry) {
         if (entry == null) return Component.empty();
         try {
-            Field f = entry.getClass().getDeclaredField("name");
-            f.setAccessible(true);
-            return (Component) f.get(entry);
+            if (!habitrain$entryNameFieldResolved) {
+                Field f = entry.getClass().getDeclaredField("name");
+                f.setAccessible(true);
+                habitrain$entryNameField = f;
+                habitrain$entryNameFieldResolved = true;
+            }
+            return habitrain$entryNameField != null ? (Component) habitrain$entryNameField.get(entry) : Component.empty();
         } catch (Exception e) {
+            habitrain$entryNameFieldResolved = true;
             return Component.empty();
         }
     }

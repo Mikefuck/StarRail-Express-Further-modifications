@@ -7,6 +7,8 @@ import io.wifi.starrailexpress.game.GameUtils;
 import net.minecraft.server.level.ServerLevel;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -33,8 +35,18 @@ public final class SREGameStateProvider implements GameStateProvider {
         }
         SREGameRoundEndComponent roundEnd = SREGameRoundEndComponent.KEY.get(level);
         if (roundEnd != null) {
-            roundEnd.CustomWinnerID = customWinnerId;
-            roundEnd.CustomWinnerPlayers.add(winnerPlayerId);
+            String normalizedId = customWinnerId == null ? "" : customWinnerId;
+            if (roundEnd.CustomWinnerPlayers == null) {
+                roundEnd.CustomWinnerPlayers = new ArrayList<>();
+            } else if ((roundEnd.getWinStatus() != GameUtils.WinStatus.CUSTOM
+                    && roundEnd.getWinStatus() != GameUtils.WinStatus.CUSTOM_COMPONENT)
+                    || !Objects.equals(roundEnd.CustomWinnerID, normalizedId)) {
+                roundEnd.CustomWinnerPlayers.clear();
+            }
+            roundEnd.CustomWinnerID = normalizedId;
+            if (winnerPlayerId != null && !roundEnd.CustomWinnerPlayers.contains(winnerPlayerId)) {
+                roundEnd.CustomWinnerPlayers.add(winnerPlayerId);
+            }
             roundEnd.setWinStatus(GameUtils.WinStatus.CUSTOM);
             roundEnd.sync();
         }
@@ -47,3 +59,4 @@ public final class SREGameStateProvider implements GameStateProvider {
                 && status != SREGameWorldComponent.GameStatus.INACTIVE;
     }
 }
+

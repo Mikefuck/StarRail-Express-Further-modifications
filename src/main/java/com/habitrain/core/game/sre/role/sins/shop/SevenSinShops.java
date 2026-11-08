@@ -1,5 +1,6 @@
 package com.habitrain.core.game.sre.role.sins.shop;
 
+import com.habitrain.core.game.sre.role.HabiRoleItems;
 import io.wifi.starrailexpress.cca.SREPlayerShopComponent;
 import io.wifi.starrailexpress.game.KillerKnifeShopEntry;
 import io.wifi.starrailexpress.index.TMMItems;
@@ -7,6 +8,7 @@ import io.wifi.starrailexpress.util.ShopEntry;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -29,12 +31,15 @@ public final class SevenSinShops {
     public static final int PRIDE_LOCKPICK_PRICE = 100;
 
     public static final int GLUTTONY_FOOD_PRICE = 5;
+    public static final int GLUTTONY_GOLDEN_APPLE_PRICE = 75;
     public static final int GLUTTONY_MILK_PRICE = 300;
     public static final int GLUTTONY_HONEY_PRICE = 100;
 
     public static final int LUST_INCENSE_PRICE = 100;
     public static final int LUST_BOTTLE_PRICE = 350;
     public static final int LUST_STIMULANT_PRICE = 150;
+
+    private static volatile List<ShopEntry> cachedGluttonyShop;
 
     public static List<ShopEntry> empty() {
         return new ArrayList<>();
@@ -84,22 +89,31 @@ public final class SevenSinShops {
     }
 
     /**
-     * 暴食店：扫描 {@link BuiltInRegistries#ITEM} 中带 {@link DataComponents#FOOD} 的物品 @5；
-     * 奶桶 300、蜜瓶 100（覆盖食物价）。每次调用返回新列表。
+     * 暴食店：上架常规食物（排除紫颂果、附魔金苹果及特殊技能食物），按合理价格区间定价；
+     * 奶桶 300、蜜瓶 100（覆盖食物价）。缓存构建结果以避免每 tick 遍历全注册表。
      */
     public static List<ShopEntry> gluttonyShop() {
+        List<ShopEntry> cached = cachedGluttonyShop;
+        if (cached != null && !cached.isEmpty()) {
+            return new ArrayList<>(cached);
+        }
         List<ShopEntry> shop = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
             if (item == null || item == Items.AIR) continue;
+            if (isExcludedGluttonyItem(item)) continue;
             ItemStack stack = item.getDefaultInstance();
-            boolean food = stack.get(DataComponents.FOOD) != null;
+            if (isSpecialRoleFoodStack(stack)) continue;
+            FoodProperties food = stack.get(DataComponents.FOOD);
             int price;
             if (item == Items.MILK_BUCKET) {
                 price = GLUTTONY_MILK_PRICE;
             } else if (item == Items.HONEY_BOTTLE) {
                 price = GLUTTONY_HONEY_PRICE;
-            } else if (food) {
-                price = GLUTTONY_FOOD_PRICE;
+            } else if (item == Items.GOLDEN_APPLE) {
+                price = GLUTTONY_GOLDEN_APPLE_PRICE;
+            } else if (food != null) {
+                int nutritionPrice = Math.clamp(food.nutrition() * 2, GLUTTONY_FOOD_PRICE, 25);
+                price = !food.effects().isEmpty() ? Math.max(15, nutritionPrice) : GLUTTONY_FOOD_PRICE;
             } else {
                 continue;
             }
@@ -121,7 +135,26 @@ public final class SevenSinShops {
         if (!hasHoney) {
             shop.add(new ShopEntry(Items.HONEY_BOTTLE.getDefaultInstance(), GLUTTONY_HONEY_PRICE, ShopEntry.Type.TOOL));
         }
+        if (!shop.isEmpty()) {
+            cachedGluttonyShop = List.copyOf(shop);
+        }
         return shop;
+    }
+
+    private static boolean isExcludedGluttonyItem(Item item) {
+        return item == Items.CHORUS_FRUIT || item == Items.ENCHANTED_GOLDEN_APPLE;
+    }
+
+    private static boolean isSpecialRoleFoodStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return true;
+        if (HabiRoleItems.isRedApple(stack)
+                || HabiRoleItems.isPepperSpray(stack)
+                || HabiRoleItems.isBouquet(stack)
+                || HabiRoleItems.isScapegoatKnife(stack)
+                || HabiRoleItems.hasFlag(stack, HabiRoleItems.TAG_LUST_INCENSE)) {
+            return true;
+        }
+        return stack.has(DataComponents.CUSTOM_DATA) || stack.has(DataComponents.CUSTOM_NAME);
     }
 
     /** Incense is a consumable; stimulant applies immediately on purchase. */

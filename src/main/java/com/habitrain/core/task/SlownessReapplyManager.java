@@ -1,8 +1,10 @@
 package com.habitrain.core.task;
 
+import com.habitrain.core.misc.EffectOwnershipTracker;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -17,15 +19,17 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 每 tick 重新施加缓慢，对抗 betel-nut-mod 等每 tick 清除效果的逻辑。
  * <p>
- * 条目在 {@code expireAtGameTime} 到期后自动 unregister 并移除缓慢，
+ * 条目在 {@code expireAtGameTime} 到期后自动 unregister 并按所有权安全移除缓慢，
  * 避免任务成功完成路径未走 onRemove 时永久 re-apply（如 repair_wiring）。
  */
 public class SlownessReapplyManager {
 
+    private static final String DEFAULT_SOURCE_KEY = "slowness_reapply";
+
     /**
      * @param amplifier       缓慢 amplifier（0=I）
      * @param duration        每次 re-apply 写入的效果时长（tick）
-     * @param sourceTag       来源标识（调试用）
+     * @param sourceTag       来源标识（调试与所有权追踪用）
      * @param expireAtGameTime 世界 gameTime 到期时刻（含）；到期后自动移除
      */
     public record EffectSpec(int amplifier, int duration, ResourceLocation sourceTag, long expireAtGameTime) {
@@ -37,6 +41,29 @@ public class SlownessReapplyManager {
 
     private static final Map<ResourceKey<Level>, Map<UUID, EffectSpec>> activeEntries = new ConcurrentHashMap<>();
     private static boolean registered = false;
+
+    private static String ownerKey(EffectSpec spec) {
+        if (spec == null || spec.sourceTag() == null) {
+            return DEFAULT_SOURCE_KEY;
+        }
+        return "reapply:" + spec.sourceTag();
+    }
+
+    /**
+     * API-TV-16：仅当所有权全部释放且玩家当前缓慢等级不超过本规格时才剥除缓慢，
+     * 避免误删其他职业/技能施加的更高等级缓慢效果。
+     */
+    private static void releaseAndRemoveSlowness(UUID playerId, ServerPlayer player, EffectSpec spec) {
+        boolean canRemove = EffectOwnershipTracker.release(playerId, MobEffects.MOVEMENT_SLOWDOWN, ownerKey(spec));
+        if (!canRemove || player == null || player.isRemoved()) {
+            return;
+        }
+        MobEffectInstance existing = player.getEffect(MobEffects.MOVEMENT_SLOWDOWN);
+        if (existing != null && spec != null && existing.getAmplifier() > spec.amplifier()) {
+            return;
+        }
+        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+    }
 
     public static void registerTickHandler() {
         if (registered) return;
@@ -52,20 +79,17 @@ public class SlownessReapplyManager {
                 long now = level.getGameTime();
                 for (Iterator<Map.Entry<UUID, EffectSpec>> it = levelMap.entrySet().iterator(); it.hasNext(); ) {
                     Map.Entry<UUID, EffectSpec> entry = it.next();
-                    ServerPlayer player = (ServerPlayer) level.getPlayerByUUID(entry.getKey());
+                    UUID playerId = entry.getKey();
+                    ServerPlayer player = (ServerPlayer) level.getPlayerByUUID(playerId);
                     EffectSpec spec = entry.getValue();
                     if (now >= spec.expireAtGameTime()) {
-                        if (player != null) {
-                            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                        }
                         it.remove();
+                        releaseAndRemoveSlowness(playerId, player, spec);
                         continue;
                     }
                     if (player == null || player.isRemoved() || player.isDeadOrDying() || player.isSpectator()) {
-                        if (player != null && !player.isRemoved()) {
-                            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                        }
                         it.remove();
+                        releaseAndRemoveSlowness(playerId, player, spec);
                         continue;
                     }
                     // 已有足够剩余时长则跳过，减少每 tick new MobEffectInstance
@@ -96,8 +120,8 @@ public class SlownessReapplyManager {
                                 ResourceLocation sourceTag) {
         if (level == null || playerId == null) return;
         long expireAt = level.getGameTime() + Math.max(1, durationTicks);
-        activeEntries.computeIfAbsent(level.dimension(), k -> new ConcurrentHashMap<>())
-                .put(playerId, new EffectSpec(amplifier, durationTicks, sourceTag, expireAt));
+        EffectSpec spec = new EffectSpec(amplifier, durationTicks, sourceTag, expireAt);
+        register(level.dimension(), playerId, spec);
     }
 
     /**
@@ -105,16 +129,47 @@ public class SlownessReapplyManager {
      */
     public static void register(ResourceKey<Level> levelKey, UUID playerId, EffectSpec spec) {
         if (levelKey == null || playerId == null || spec == null) return;
-        activeEntries.computeIfAbsent(levelKey, k -> new ConcurrentHashMap<>()).put(playerId, spec);
-    }
-
-    public static void unregisterAllLevels(UUID playerId) {
-        for (var levelMap : activeEntries.values()) {
-            levelMap.remove(playerId);
+        EffectOwnershipTracker.claim(playerId, MobEffects.MOVEMENT_SLOWDOWN, ownerKey(spec));
+        EffectSpec prev = activeEntries.computeIfAbsent(levelKey, k -> new ConcurrentHashMap<>()).put(playerId, spec);
+        if (prev != null && !ownerKey(prev).equals(ownerKey(spec))) {
+            EffectOwnershipTracker.release(playerId, MobEffects.MOVEMENT_SLOWDOWN, ownerKey(prev));
         }
     }
 
+    public static void unregisterAllLevels(UUID playerId) {
+        if (playerId == null) return;
+        MinecraftServer server = GameLifecycleHandler.peekServer();
+        ServerPlayer player = server != null && server.getPlayerList() != null
+                ? server.getPlayerList().getPlayer(playerId)
+                : null;
+        unregisterAllLevels(playerId, player);
+    }
+
+    public static void unregisterAllLevels(UUID playerId, ServerPlayer player) {
+        if (playerId == null) return;
+        for (var levelMap : activeEntries.values()) {
+            EffectSpec removed = levelMap.remove(playerId);
+            if (removed != null) {
+                releaseAndRemoveSlowness(playerId, player, removed);
+            }
+        }
+    }
+
+    /**
+     * API-TV-16：局终清理全部条目时，同时为在线玩家安全移除残留的缓慢效果。
+     */
     public static void clearAll() {
+        MinecraftServer server = GameLifecycleHandler.peekServer();
+        for (var levelMap : activeEntries.values()) {
+            for (var entry : levelMap.entrySet()) {
+                UUID playerId = entry.getKey();
+                EffectSpec spec = entry.getValue();
+                ServerPlayer player = server != null && server.getPlayerList() != null
+                        ? server.getPlayerList().getPlayer(playerId)
+                        : null;
+                releaseAndRemoveSlowness(playerId, player, spec);
+            }
+        }
         activeEntries.clear();
     }
 }

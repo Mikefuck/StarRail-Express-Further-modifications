@@ -35,6 +35,55 @@ class RoleProfileParityTest {
     private static final ResourceLocation TARGET = ResourceLocation.parse("sre:vigilante");
 
     @Test
+    void namedBuildersKeepIndependentFlagsAndExplicitEmptySkillReplacement() {
+        var role = ManagedSRERole.from(minimalDef(RoleKey.of(ID)));
+        var baseline = EffectiveRoleProfile.from(RoleKey.of(ID), role, EffectiveRole.Source.ADDED);
+        var opposing = new java.util.ArrayList<>(List.of(RoleKey.of("test", "opponent")));
+        com.habitrain.core.api.role.v2.patch.NamePatch callback =
+                (original, server) -> net.minecraft.network.chat.Component.literal("named");
+        var changed = baseline.toBuilder()
+                .innocent(false).canUseKiller(true).neutral(false).vigilanteTeam(true)
+                .canSeeCoin(true).canPickUpRevolver(false).canBeRandomed(true)
+                .neutralForKiller(false).neutralForInnocent(true).mafiaTeam(false)
+                .defaultMax(2).enableChance(4321).needPlayerCount(3).maxPlayerCount(17)
+                .opposingKeys(opposing).opposingTwoWay(false)
+                .skills(List.of()).skillsSpecified(true).namePatch(callback).build();
+        opposing.clear();
+        assertEquals(List.of(RoleKey.of("test", "opponent")), changed.opposingKeys());
+        var overlay = changed.toOverlay().toBuilder().build();
+        assertFalse(overlay.innocent());
+        assertTrue(overlay.canUseKiller());
+        assertFalse(overlay.neutral());
+        assertTrue(overlay.vigilanteTeam());
+        assertTrue(overlay.canSeeCoin());
+        assertFalse(overlay.canPickUpRevolver());
+        assertTrue(overlay.canBeRandomed());
+        assertFalse(overlay.neutralForKiller());
+        assertTrue(overlay.neutralForInnocent());
+        assertFalse(overlay.mafiaTeam());
+        assertEquals(2, overlay.defaultMax());
+        assertEquals(4321, overlay.enableChance());
+        assertEquals(3, overlay.needPlayerCount());
+        assertEquals(17, overlay.maxPlayerCount());
+        assertFalse(overlay.opposingTwoWay());
+        assertTrue(overlay.hasSkills(), "explicit empty replacement must still clear old skills");
+        org.junit.jupiter.api.Assertions.assertSame(callback, overlay.namePatch());
+        assertEquals(changed, baseline.withOverlay(overlay));
+        assertEquals(changed, changed.toBuilder().build());
+    }
+
+    @Test
+    void profileFlagsRemainFrozenAfterTheRuntimeRoleChanges() {
+        ManagedSRERole role = ManagedSRERole.from(minimalDef(RoleKey.of(ID)));
+        role.getFlags().add("test.original");
+        EffectiveRoleProfile profile = EffectiveRoleProfile.from(RoleKey.of(ID), role, EffectiveRole.Source.ADDED);
+        role.getFlags().remove("test.original");
+        role.getFlags().add("test.later");
+        assertTrue(profile.flags().contains("test.original"));
+        assertFalse(profile.flags().contains("test.later"));
+    }
+
+    @Test
     void managedRoleAppliesVisibilityAndFactionExtras() {
         RoleDefinition def = RoleDefinition.builder(ID)
                 .presentation(RolePresentation.builder().color(0x11).build())

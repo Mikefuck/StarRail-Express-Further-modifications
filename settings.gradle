@@ -7,3 +7,45 @@ pluginManagement {
 }
 
 rootProject.name = "habitrain_core"
+
+// Clean up disowned Fabric Loom lock files left by abruptly terminated builds so Loom
+// does not get stuck in an infinite "ACQUIRED_PREVIOUS_OWNER_DISOWNED -> rebuild cache" loop.
+def userLoomCache = new File(gradle.gradleUserHomeDir, "caches/fabric-loom")
+def projectLoomCache = new File(settingsDir, ".gradle/loom-cache")
+[userLoomCache, projectLoomCache].each { dir ->
+    if (!dir.isDirectory()) return
+    dir.eachFileRecurse { f ->
+        if (!f.isFile() || !(f.name == ".lock" || f.name.endsWith(".lock") || f.name.endsWith(".pid"))) return
+        try {
+            def text = f.getText("UTF-8").trim()
+            def matcher = (text =~ /(\d+)/)
+            if (matcher.find()) {
+                long pid = Long.parseLong(matcher.group(1))
+                if (ProcessHandle.of(pid).map { it.isAlive() }.orElse(false)) return
+            }
+            f.delete()
+        } catch (Throwable ignored) {
+        }
+    }
+}
+def cachedManifest = new File(userLoomCache, "mojang_versions_manifest.json")
+def fallbackManifest = new File(projectLoomCache, "mojang_versions_manifest.json")
+if (fallbackManifest.isFile() && fallbackManifest.length() > 0L) {
+    if (!cachedManifest.isFile() || cachedManifest.length() == 0L) {
+        cachedManifest.parentFile.mkdirs()
+        java.nio.file.Files.copy(fallbackManifest.toPath(), cachedManifest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+    cachedManifest.setLastModified(System.currentTimeMillis())
+}
+def cachedMcInfo = new File(userLoomCache, "1.21.1/mojang_minecraft_info.json")
+def fallbackMcInfo = new File(projectLoomCache, "mojang_minecraft_info.json")
+if (fallbackMcInfo.isFile() && fallbackMcInfo.length() > 0L) {
+    if (!cachedMcInfo.isFile() || cachedMcInfo.length() == 0L) {
+        cachedMcInfo.parentFile.mkdirs()
+        java.nio.file.Files.copy(fallbackMcInfo.toPath(), cachedMcInfo.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+    cachedMcInfo.setLastModified(System.currentTimeMillis())
+}
+if (!gradle.startParameter.projectProperties.containsKey("online")) {
+    gradle.startParameter.offline = true
+}

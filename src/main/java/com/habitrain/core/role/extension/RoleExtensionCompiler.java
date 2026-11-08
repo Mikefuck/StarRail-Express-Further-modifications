@@ -83,6 +83,7 @@ public final class RoleExtensionCompiler {
     public static final String FIELD_OCCUPATION = "relation.occupation";
     public static final String FIELD_OPPOSING = "relation.opposing";
     public static final String FIELD_RELATED = "relation.related";
+    public static final String FIELD_SKILLS = "skills";
 
     /**
      * Folds the given patches (in application order) into a pure-data
@@ -112,18 +113,47 @@ public final class RoleExtensionCompiler {
                 buildFieldMask(base.identifier(), patches);
         FoldedState s = fold(base, patches.stream().map(ConfiguredPatch::patch).toList(),
                 baseline, fieldMask);
-        return new CompiledModifyOverlay(
-                s.color(), s.mood(),
-                s.colorProvider(), s.flagsPatch(), s.spawnInfoPatch(),
-                s.namePatch(), s.descriptionPatch(), s.simpleDescriptionPatch(),
-                s.defaultItemsPatch(), s.shopPatch(), s.shopTransform(), s.winConditionHook(),
-                s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
-                s.defaultMax(), s.enableChance(), s.needPlayerCount(), s.maxPlayerCount(),
-                s.canSeeCoin(), s.canPickUpRevolver(), s.canBeRandomed(), s.maxSprintTime(), s.canSeeTime(),
-                s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
-                s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
-                s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), opposingTwoWayOf(base), s.skills(), s.skillsSpecified());
+        return CompiledModifyOverlay.builder(s.mood(), s.specialMapRole())
+                .color(s.color())
+                .colorProvider(s.colorProvider())
+                .flagsPatch(s.flagsPatch())
+                .spawnInfoPatch(s.spawnInfoPatch())
+                .namePatch(s.namePatch())
+                .descriptionPatch(s.descriptionPatch())
+                .simpleDescriptionPatch(s.simpleDescriptionPatch())
+                .defaultItemsPatch(s.defaultItemsPatch())
+                .shopPatch(s.shopPatch())
+                .shopTransform(s.shopTransform())
+                .winConditionHook(s.winConditionHook())
+                .innocent(s.innocent())
+                .canUseKiller(s.canUseKiller())
+                .neutral(s.neutral())
+                .vigilanteTeam(s.vigilanteTeam())
+                .defaultMax(s.defaultMax())
+                .enableChance(s.enableChance())
+                .needPlayerCount(s.needPlayerCount())
+                .maxPlayerCount(s.maxPlayerCount())
+                .canSeeCoin(s.canSeeCoin())
+                .canPickUpRevolver(s.canPickUpRevolver())
+                .canBeRandomed(s.canBeRandomed())
+                .maxSprintTime(s.maxSprintTime())
+                .canSeeTime(s.canSeeTime())
+                .neutralForKiller(s.neutralForKiller())
+                .neutralForInnocent(s.neutralForInnocent())
+                .mafiaTeam(s.mafiaTeam())
+                .canUseInstinct(s.canUseInstinct())
+                .instinctNightVision(s.instinctNightVision())
+                .canSeeTeammateKiller(s.canSeeTeammateKiller())
+                .otherModeRole(s.otherModeRole())
+                .hiddenForRotation(s.hiddenForRotation())
+                .occupiedRoleCount(s.occupiedRoleCount())
+                .occupationKeys(s.occupation())
+                .opposingKeys(s.opposing())
+                .relatedKeys(s.related())
+                .opposingTwoWay(opposingTwoWayOf(base))
+                .skills(s.skills())
+                .skillsSpecified(s.skillsSpecified())
+                .build();
     }
 
     /** Internal fold used by the plain overload (no conflict-winner masking). */
@@ -134,18 +164,47 @@ public final class RoleExtensionCompiler {
             return null;
         }
         FoldedState s = fold(base, patches, baseline, fieldMask);
-        return new CompiledModifyOverlay(
-                s.color(), s.mood(),
-                s.colorProvider(), s.flagsPatch(), s.spawnInfoPatch(),
-                s.namePatch(), s.descriptionPatch(), s.simpleDescriptionPatch(),
-                s.defaultItemsPatch(), s.shopPatch(), s.shopTransform(), s.winConditionHook(),
-                s.innocent(), s.canUseKiller(), s.neutral(), s.vigilanteTeam(),
-                s.defaultMax(), s.enableChance(), s.needPlayerCount(), s.maxPlayerCount(),
-                s.canSeeCoin(), s.canPickUpRevolver(), s.canBeRandomed(), s.maxSprintTime(), s.canSeeTime(),
-                s.neutralForKiller(), s.neutralForInnocent(), s.mafiaTeam(),
-                s.canUseInstinct(), s.instinctNightVision(), s.canSeeTeammateKiller(),
-                s.otherModeRole(), s.hiddenForRotation(), s.occupiedRoleCount(), s.specialMapRole(),
-                s.occupation(), s.opposing(), s.related(), opposingTwoWayOf(base), s.skills(), s.skillsSpecified());
+        return CompiledModifyOverlay.builder(s.mood(), s.specialMapRole())
+                .color(s.color())
+                .colorProvider(s.colorProvider())
+                .flagsPatch(s.flagsPatch())
+                .spawnInfoPatch(s.spawnInfoPatch())
+                .namePatch(s.namePatch())
+                .descriptionPatch(s.descriptionPatch())
+                .simpleDescriptionPatch(s.simpleDescriptionPatch())
+                .defaultItemsPatch(s.defaultItemsPatch())
+                .shopPatch(s.shopPatch())
+                .shopTransform(s.shopTransform())
+                .winConditionHook(s.winConditionHook())
+                .innocent(s.innocent())
+                .canUseKiller(s.canUseKiller())
+                .neutral(s.neutral())
+                .vigilanteTeam(s.vigilanteTeam())
+                .defaultMax(s.defaultMax())
+                .enableChance(s.enableChance())
+                .needPlayerCount(s.needPlayerCount())
+                .maxPlayerCount(s.maxPlayerCount())
+                .canSeeCoin(s.canSeeCoin())
+                .canPickUpRevolver(s.canPickUpRevolver())
+                .canBeRandomed(s.canBeRandomed())
+                .maxSprintTime(s.maxSprintTime())
+                .canSeeTime(s.canSeeTime())
+                .neutralForKiller(s.neutralForKiller())
+                .neutralForInnocent(s.neutralForInnocent())
+                .mafiaTeam(s.mafiaTeam())
+                .canUseInstinct(s.canUseInstinct())
+                .instinctNightVision(s.instinctNightVision())
+                .canSeeTeammateKiller(s.canSeeTeammateKiller())
+                .otherModeRole(s.otherModeRole())
+                .hiddenForRotation(s.hiddenForRotation())
+                .occupiedRoleCount(s.occupiedRoleCount())
+                .occupationKeys(s.occupation())
+                .opposingKeys(s.opposing())
+                .relatedKeys(s.related())
+                .opposingTwoWay(opposingTwoWayOf(base))
+                .skills(s.skills())
+                .skillsSpecified(s.skillsSpecified())
+                .build();
     }
 
     /**
@@ -180,6 +239,10 @@ public final class RoleExtensionCompiler {
             Set<String> masked = new HashSet<>();
             for (String field : fieldsSetBy(patch)) {
                 String winner = RoleExtensionConfigService.INSTANCE.winnerFor(target, field);
+                if (winner == null && patch.target() != null) {
+                    winner = RoleExtensionConfigService.INSTANCE.winnerFor(
+                            patch.target().location(), field);
+                }
                 if (winner != null && !winner.equals(entryId)) {
                     masked.add(field);
                 }
@@ -232,6 +295,7 @@ public final class RoleExtensionCompiler {
         if (patch.occupation() != null) out.add(FIELD_OCCUPATION);
         if (patch.opposing() != null) out.add(FIELD_OPPOSING);
         if (patch.related() != null) out.add(FIELD_RELATED);
+        if (patch.skills() != null) out.add(FIELD_SKILLS);
         return Collections.unmodifiableSet(out);
     }
 
@@ -286,9 +350,54 @@ public final class RoleExtensionCompiler {
         for (RolePatch patch : patches) {
             Set<String> masked = fieldMask == null ? null : fieldMask.apply(patch);
             if (patch.color() != null && allows(masked, FIELD_COLOR)) color = patch.color().color();
-            if (patch.colorProvider() != null && allows(masked, FIELD_COLOR_PROVIDER)) colorProvider = patch.colorProvider();
-            if (patch.flagsPatch() != null && allows(masked, FIELD_FLAGS_PATCH)) flagsPatch = patch.flagsPatch();
-            if (patch.spawnInfoPatch() != null && allows(masked, FIELD_SPAWN_PATCH)) spawnInfoPatch = patch.spawnInfoPatch();
+            if (patch.colorProvider() != null && allows(masked, FIELD_COLOR_PROVIDER)) {
+                colorProvider = patch.colorProvider();
+                try {
+                    color = colorProvider.getColor(base, null);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (patch.flagsPatch() != null && allows(masked, FIELD_FLAGS_PATCH)) {
+                flagsPatch = patch.flagsPatch();
+                try {
+                    com.habitrain.core.api.role.v2.patch.FlagsPatch.MutableFlagsPatch out =
+                            new com.habitrain.core.api.role.v2.patch.FlagsPatch.MutableFlagsPatch();
+                    flagsPatch.apply(base, null, out);
+                    if (out.isInnocent != null) innocent = out.isInnocent;
+                    if (out.canUseKiller != null) canUseKiller = out.canUseKiller;
+                    if (out.isVigilanteTeam != null) vigilanteTeam = out.isVigilanteTeam;
+                    if (out.isNeutralForKiller != null) {
+                        neutralForKiller = out.isNeutralForKiller;
+                        if (out.isNeutralForKiller && out.isNeutrals == null) {
+                            neutral = true;
+                        }
+                    }
+                    if (out.isNeutralForInnocent != null) {
+                        neutralForInnocent = out.isNeutralForInnocent;
+                        if (out.isNeutralForInnocent && out.isNeutrals == null) {
+                            neutral = true;
+                        }
+                    }
+                    if (out.isNeutrals != null) neutral = out.isNeutrals;
+                    if (out.canUseInstinct != null) canUseInstinct = out.canUseInstinct;
+                    if (out.instinctNightVision != null) instinctNightVision = out.instinctNightVision;
+                    if (out.canSeeTeammateKiller != null) canSeeTeammateKiller = out.canSeeTeammateKiller;
+                } catch (Throwable ignored) {
+                }
+            }
+            if (patch.spawnInfoPatch() != null && allows(masked, FIELD_SPAWN_PATCH)) {
+                spawnInfoPatch = patch.spawnInfoPatch();
+                try {
+                    com.habitrain.core.api.role.v2.patch.SpawnInfoPatch.MutableSpawnInfoPatch out =
+                            new com.habitrain.core.api.role.v2.patch.SpawnInfoPatch.MutableSpawnInfoPatch();
+                    spawnInfoPatch.apply(base, null, out);
+                    if (out.defaultMax != null) defaultMax = out.defaultMax;
+                    if (out.defaultEnableChance != null) enableChance = out.defaultEnableChance;
+                    if (out.defaultEnableNeededPlayerCount != null) needPlayerCount = out.defaultEnableNeededPlayerCount;
+                    if (out.defaultEnableMaxPlayerCount != null) maxPlayerCount = out.defaultEnableMaxPlayerCount;
+                } catch (Throwable ignored) {
+                }
+            }
             if (patch.mood() != null && allows(masked, FIELD_MOOD)) mood = patch.mood().mood();
             if (patch.namePatch() != null && allows(masked, FIELD_NAME)) namePatch = patch.namePatch();
             if (patch.descriptionPatch() != null && allows(masked, FIELD_DESCRIPTION)) descriptionPatch = patch.descriptionPatch();
@@ -451,13 +560,17 @@ public final class RoleExtensionCompiler {
         }
         return switch (patch.op()) {
             case APPEND -> {
-                List<RoleKey> next = new ArrayList<>(current);
+                java.util.LinkedHashSet<RoleKey> next = new java.util.LinkedHashSet<>(current);
                 next.addAll(patch.keys());
                 yield List.copyOf(next);
             }
             case REMOVE -> current.stream().filter(k -> !patch.keys().contains(k)).toList();
-            case REPLACE_ALL -> List.copyOf(patch.keys());
-            case REPLACE_MATCHING_IDS -> List.copyOf(patch.keys());
+            case REPLACE_ALL -> List.copyOf(new java.util.LinkedHashSet<>(patch.keys()));
+            case REPLACE_MATCHING_IDS -> {
+                java.util.LinkedHashSet<RoleKey> next = new java.util.LinkedHashSet<>(current);
+                next.addAll(patch.keys());
+                yield List.copyOf(next);
+            }
         };
     }
 

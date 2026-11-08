@@ -73,7 +73,7 @@ final class TransitionFx {
         int count = 0;
         for (int i = 0; i < text.length(); ) {
             int codePoint = text.codePointAt(i);
-            total += font.width(new String(Character.toChars(codePoint)));
+            total += font.width(Character.toString(codePoint));
             count++;
             i += Character.charCount(codePoint);
         }
@@ -95,20 +95,26 @@ final class TransitionFx {
         }
         int drawColor = withAlpha(color, alpha);
         g.pose().pushPose();
-        g.pose().translate(centerX, top + (1.0f - t) * rise, 0.0f);
-        g.pose().scale(scale, scale, 1.0f);
-        float cursor = -trackedWidth(font, text, tracking) / 2.0f;
-        for (int i = 0; i < text.length(); ) {
-            int codePoint = text.codePointAt(i);
-            String glyph = new String(Character.toChars(codePoint));
-            g.pose().pushPose();
-            g.pose().translate(cursor, 0.0f, 0.0f);
-            g.drawString(font, glyph, 0, 0, drawColor, false);
+        try {
+            g.pose().translate(centerX, top + (1.0f - t) * rise, 0.0f);
+            g.pose().scale(scale, scale, 1.0f);
+            float cursor = -trackedWidth(font, text, tracking) / 2.0f;
+            for (int i = 0; i < text.length(); ) {
+                int codePoint = text.codePointAt(i);
+                String glyph = Character.toString(codePoint);
+                g.pose().pushPose();
+                try {
+                    g.pose().translate(cursor, 0.0f, 0.0f);
+                    g.drawString(font, glyph, 0, 0, drawColor, false);
+                } finally {
+                    g.pose().popPose();
+                }
+                cursor += font.width(glyph) + tracking;
+                i += Character.charCount(codePoint);
+            }
+        } finally {
             g.pose().popPose();
-            cursor += font.width(glyph) + tracking;
-            i += Character.charCount(codePoint);
         }
-        g.pose().popPose();
     }
 
     /** 同排双语标签（主文字 + 小号宽字距副文字）的整体宽度；副文字为空时只算主文字。 */

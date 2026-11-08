@@ -16,6 +16,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -24,17 +25,23 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.agmas.harpymodloader.component.WorldModifierComponent;
 import org.agmas.noellesroles.init.ModEffects;
+import org.jetbrains.annotations.Nullable;
 import org.ladysnake.cca.api.v3.component.ComponentKey;
 import org.ladysnake.cca.api.v3.component.ComponentRegistry;
 import org.ladysnake.cca.api.v3.component.tick.ServerTickingComponent;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Owner-only role state and the individually authorized highlights of every player. */
 public final class LustComponent implements RoleComponent, ServerTickingComponent {
     public static final ComponentKey<LustComponent> KEY =
             ComponentRegistry.getOrCreate(HabiTrainCore.id("sin_lust"), LustComponent.class);
     public record CharmEntry(UUID id, String name, boolean alive, boolean online) {}
+
+    /** Server-private charmed player registry per level; never broadcast via WorldModifierComponent. */
+    private static final Map<ServerLevel, Set<UUID>> CHARMED_BY_LEVEL = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Set<UUID> SACRIFICING_LUST = ConcurrentHashMap.newKeySet();
 
     private final Player player;
     private boolean initialized;
@@ -44,12 +51,14 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     private UUID revivalToken;
     private long selectedDiedAt;
     private Vec3 deathPosition;
+    private boolean deathUnsafePosition;
     private long nauseaAt;
     private List<CharmEntry> roster = List.of();
     private final Set<UUID> highlights = new HashSet<>();
 
     public LustComponent(Player player) { this.player = player; }
     @Override public Player getPlayer() { return player; }
+    @Override public boolean shouldSyncWith(ServerPlayer recipient) { return player == recipient; }
     public boolean isInitialized() { return initialized; }
     public UUID selected() { return selected; }
     public UUID revivalToken() { return revivalToken; }
@@ -74,6 +83,39 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         if (!player.level().isClientSide()) KEY.sync(player);
     }
 
+    public static void resetRound(ServerLevel level) {
+        if (level != null) {
+            CHARMED_BY_LEVEL.remove(level);
+            for (ServerPlayer player : level.players()) {
+                KEY.get(player).clear();
+            }
+        }
+    }
+
+    public static void addCharmed(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return;
+        CHARMED_BY_LEVEL.computeIfAbsent(level, k -> ConcurrentHashMap.newKeySet()).add(playerId);
+    }
+
+    public static Set<UUID> getCharmed(ServerLevel level) {
+        if (level == null) return Set.of();
+        Set<UUID> result = new HashSet<>(CHARMED_BY_LEVEL.getOrDefault(level, Set.of()));
+        if (HabiModifiers.CHARMED != null) {
+            try {
+                result.addAll(WorldModifierComponent.getInstance(level).getAllWithModifier(HabiModifiers.CHARMED));
+            } catch (Throwable ignored) {}
+        }
+        return Set.copyOf(result);
+    }
+
+    public static boolean isCharmed(ServerLevel level, UUID playerId) {
+        if (level == null || playerId == null) return false;
+        Set<UUID> set = CHARMED_BY_LEVEL.get(level);
+        if (set != null && set.contains(playerId)) return true;
+        return HabiModifiers.CHARMED != null
+                && WorldModifierComponent.getInstance(level).isModifier(playerId, HabiModifiers.CHARMED);
+    }
+
     /** The upstream room map is fixed at opening, before anybody can move rooms. */
     public void startRound() {
         if (initialized || !(player instanceof ServerPlayer self)
@@ -84,14 +126,12 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         initialized = true;
         Integer room = GameUtils.roomToPlayer.get(self.getUUID());
         if (room != null) {
-            var modifiers = WorldModifierComponent.getInstance(self);
             for (ServerPlayer other : self.serverLevel().players()) {
                 if (other != self && isAliveParticipant(other)
                         && room.equals(GameUtils.roomToPlayer.get(other.getUUID()))) {
-                    modifiers.addModifier(other.getUUID(), HabiModifiers.CHARMED, false);
+                    addCharmed(self.serverLevel(), other.getUUID());
                 }
             }
-            modifiers.sync();
         }
         refreshViews(self.serverLevel());
         KEY.sync(self);
@@ -105,7 +145,11 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     }
 
     public static boolean isCharmed(Player player) {
-        return player != null && HabiModifiers.CHARMED != null
+        if (player == null) return false;
+        if (player.level() instanceof ServerLevel serverLevel) {
+            return isCharmed(serverLevel, player.getUUID());
+        }
+        return HabiModifiers.CHARMED != null
                 && WorldModifierComponent.getInstance(player).isModifier(player, HabiModifiers.CHARMED);
     }
 
@@ -163,17 +207,36 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
 
     /** Called after confirmed death; the prompt is tied to this particular death. */
     public static void onPlayerDeath(Player victim) {
-        if (!(victim.level() instanceof ServerLevel level)) return;
+        onPlayerDeath(victim, null);
+    }
+
+    public static void onPlayerDeath(Player victim, @Nullable ResourceLocation reason) {
+        if (victim == null || !(victim.level() instanceof ServerLevel level)) return;
+        if (SACRIFICING_LUST.contains(victim.getUUID())) {
+            refreshViews(level);
+            return;
+        }
+        boolean fellOut = reason != null && reason.equals(GameConstants.DeathReasons.FELL_OUT_OF_TRAIN);
+        boolean unsafePos = fellOut || isUnsafeRevivePosition(level, victim.position());
         for (ServerPlayer self : level.players()) {
             if (!HabiRoles.isHabiRole(self, SevenSins.LUST) || !isAliveParticipant(self)) continue;
             LustComponent state = KEY.get(self);
             if (!victim.getUUID().equals(state.selected) || state.revivalToken != null) continue;
             state.selectedDiedAt = level.getGameTime();
             state.deathPosition = victim.position();
+            state.deathUnsafePosition = unsafePos;
             state.revivalToken = UUID.randomUUID();
             KEY.sync(self);
         }
         refreshViews(level);
+    }
+
+    private static boolean isUnsafeRevivePosition(ServerLevel level, Vec3 pos) {
+        if (level == null || pos == null) return true;
+        net.minecraft.core.BlockPos blockPos = net.minecraft.core.BlockPos.containing(pos);
+        if (blockPos.getY() <= level.getMinBuildHeight()) return true;
+        return level.getBlockState(blockPos.below()).isAir()
+                && level.getBlockState(blockPos.below(2)).isAir();
     }
 
     public static void answerRevival(ServerPlayer self, UUID token, boolean accept) {
@@ -183,12 +246,24 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         Player target = state.selected == null ? null : self.getServer().getPlayerList().getPlayer(state.selected);
         boolean allowed = LustPolicy.canRevive(state.selectedDiedAt, self.level().getGameTime())
                 && target instanceof ServerPlayer && !isAliveParticipant(target)
-                && WorldModifierComponent.getInstance(self).isModifier(state.selected, HabiModifiers.CHARMED)
+                && isCharmed(self.serverLevel(), state.selected)
                 && state.deathPosition != null;
-        Vec3 pos = state.deathPosition;
+        Vec3 pos = (state.deathUnsafePosition || state.deathPosition == null || isUnsafeRevivePosition(self.serverLevel(), state.deathPosition))
+                ? self.position()
+                : state.deathPosition;
         state.clearRevival();
         KEY.sync(self);
         if (!accept || !allowed) return;
+        // Clear any other Lust player's revival token for the same target to prevent double-sacrifice.
+        for (ServerPlayer otherLust : self.serverLevel().players()) {
+            if (otherLust != self) {
+                LustComponent otherState = KEY.get(otherLust);
+                if (target.getUUID().equals(otherState.selected) && otherState.revivalToken != null) {
+                    otherState.clearRevival();
+                    KEY.sync(otherLust);
+                }
+            }
+        }
         // Revive first so sacrificing the last ally cannot finish the round in between.
         ServerPlayer revived = (ServerPlayer) target;
         if (revived.serverLevel() != self.serverLevel()) {
@@ -197,7 +272,12 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         GameUtils.revivePlayer(revived, pos.x, pos.y, pos.z);
         self.serverLevel().getEntities(TMMEntities.PLAYER_BODY,
                 body -> revived.getUUID().equals(body.getPlayerUuid())).forEach(net.minecraft.world.entity.Entity::discard);
-        GameUtils.forceKillPlayer(self, true, null, GameConstants.DeathReasons.GENERIC);
+        SACRIFICING_LUST.add(self.getUUID());
+        try {
+            GameUtils.forceKillPlayer(self, true, null, GameConstants.DeathReasons.GENERIC);
+        } finally {
+            SACRIFICING_LUST.remove(self.getUUID());
+        }
         refreshViews(self.serverLevel());
     }
 
@@ -205,6 +285,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         revivalToken = null;
         selectedDiedAt = 0;
         deathPosition = null;
+        deathUnsafePosition = false;
     }
 
     public static boolean canUseIncense(Player self) {
@@ -221,7 +302,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
         var candidates = incenseTargets(self);
         if (candidates.isEmpty()) return false;
         ServerPlayer target = candidates.get(self.getRandom().nextInt(candidates.size()));
-        WorldModifierComponent.getInstance(self).addModifier(target.getUUID(), HabiModifiers.CHARMED);
+        addCharmed(self.serverLevel(), target.getUUID());
         refreshViews(self.serverLevel());
         return true;
     }
@@ -240,14 +321,30 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     /** Each viewer only receives the UUIDs their relationship permits them to see. */
     public static void refreshViews(ServerLevel level) {
         List<ServerPlayer> players = level.players();
-        List<ServerPlayer> owners = players.stream().filter(p ->
-                HabiRoles.isHabiRole(p, SevenSins.LUST) && isAliveParticipant(p)).toList();
+        List<ServerPlayer> owners = List.of();
+        for (ServerPlayer p : players) {
+            if (HabiRoles.isHabiRole(p, SevenSins.LUST) && isAliveParticipant(p)) {
+                if (owners.isEmpty()) owners = new ArrayList<>();
+                owners.add(p);
+            }
+        }
+        Set<UUID> charmedIds = getCharmed(level);
+        if (owners.isEmpty() && charmedIds.isEmpty()) {
+            for (ServerPlayer viewer : players) {
+                LustComponent state = KEY.get(viewer);
+                if (!state.highlights.isEmpty() || !state.roster.isEmpty()) {
+                    state.highlights.clear();
+                    state.roster = List.of();
+                    KEY.sync(viewer);
+                }
+            }
+            return;
+        }
         Map<UUID, String> knownNames = new HashMap<>();
         for (ServerPlayer owner : owners) {
             for (CharmEntry entry : KEY.get(owner).roster) knownNames.put(entry.id(), entry.name());
         }
-        List<CharmEntry> marked = HabiModifiers.CHARMED == null ? List.of()
-                : WorldModifierComponent.getInstance(level).getAllWithModifier(HabiModifiers.CHARMED).stream()
+        List<CharmEntry> marked = charmedIds.stream()
                 .map(id -> {
                     Player target = level.getServer().getPlayerList().getPlayer(id);
                     return target == null
@@ -297,7 +394,7 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
             Player target = selected == null ? null : self.getServer().getPlayerList().getPlayer(selected);
             if (!isAliveParticipant(self) || !LustPolicy.canRevive(selectedDiedAt, now)
                     || target == null || isAliveParticipant(target)
-                    || !WorldModifierComponent.getInstance(self).isModifier(selected, HabiModifiers.CHARMED)) {
+                    || !isCharmed(self.serverLevel(), selected)) {
                 clearRevival();
                 KEY.sync(self);
             }
@@ -348,15 +445,9 @@ public final class LustComponent implements RoleComponent, ServerTickingComponen
     }
 
     @Override public void writeToNbt(CompoundTag tag, HolderLookup.Provider registries) {
-        writeToSyncNbt(tag, registries);
-        tag.putLong("NauseaAt", nauseaAt);
-        if (deathPosition != null) {
-            tag.putDouble("DeathX", deathPosition.x); tag.putDouble("DeathY", deathPosition.y); tag.putDouble("DeathZ", deathPosition.z);
-        }
+        // Round-local state only; do not persist across server restarts or matches.
     }
     @Override public void readFromNbt(CompoundTag tag, HolderLookup.Provider registries) {
-        readFromSyncNbt(tag, registries);
-        nauseaAt = tag.getLong("NauseaAt");
-        deathPosition = tag.contains("DeathX") ? new Vec3(tag.getDouble("DeathX"), tag.getDouble("DeathY"), tag.getDouble("DeathZ")) : null;
+        // Ignore stale playerdata from prior sessions.
     }
 }

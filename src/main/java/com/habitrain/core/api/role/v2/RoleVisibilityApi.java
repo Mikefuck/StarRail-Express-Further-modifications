@@ -67,6 +67,7 @@ public final class RoleVisibilityApi {
         if (roles == null || roles.isEmpty()) {
             return out;
         }
+        java.util.Set<net.minecraft.resources.ResourceLocation> seen = new java.util.HashSet<>();
         for (SRERole role : roles) {
             if (role == null || role.identifier() == null) {
                 continue;
@@ -78,7 +79,11 @@ public final class RoleVisibilityApi {
             if (!isVisible(resolved)) {
                 continue;
             }
-            out.add(resolved);
+            // ROLE-API-05：当源列表中同时包含被替换角色与替换角色（或别名重定向到同一角色）时，
+            // 按解析后的有效角色 identifier 去重，防止替换角色在候选池中被重复计入两次。
+            if (seen.add(resolved.identifier())) {
+                out.add(resolved);
+            }
         }
         return out;
     }

@@ -1,12 +1,12 @@
 {
   "backpack_search": {
-    "subtitle": "翻找背包",
+    "subtitle": "subtitles.habitrain_core.backpack_search",
     "sounds": [
       "habitrain_core:backpack_search"
     ]
   },
   "mike_code_edit": {
-    "subtitle": "代码修改",
+    "subtitle": "subtitles.habitrain_core.mike_code_edit",
     "sounds": [
       "habitrain_core:mike_code_edit"
     ]
@@ -18,7 +18,7 @@
     ]
   },
   "look_my_eyes": {
-    "subtitle": "对视",
+    "subtitle": "subtitles.habitrain_core.look_my_eyes",
     "sounds": [
       "minecraft:entity.player.levelup"
     ]

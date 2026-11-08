@@ -34,8 +34,8 @@ public record RoleHandshakeReportPayload(
 
     public static final Type<RoleHandshakeReportPayload> TYPE =
             new Type<>(HabiTrainCore.id("role_handshake_report"));
-    private static final int MAX_PROVIDERS = 1024;
-    private static final int MAX_EXTENSION_PROVIDERS = 1024;
+    private static final int MAX_PROVIDERS = 256;
+    private static final int MAX_EXTENSION_PROVIDERS = 256;
     public static final StreamCodec<FriendlyByteBuf, RoleHandshakeReportPayload> CODEC =
             StreamCodec.ofMember(RoleHandshakeReportPayload::write, RoleHandshakeReportPayload::new);
 
@@ -72,10 +72,10 @@ public record RoleHandshakeReportPayload(
 
     private static Map<String, String> readProviders(FriendlyByteBuf buf) {
         int count = buf.readVarInt();
-        if (count < 0 || count > MAX_PROVIDERS) {
+        if (count < 0 || count > MAX_PROVIDERS || count > buf.readableBytes() / 2) {
             throw new DecoderException("Invalid role provider count: " + count);
         }
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>(Math.min(count, 16));
         for (int i = 0; i < count; i++) {
             out.put(buf.readUtf(128), buf.readUtf(64));
         }
@@ -84,10 +84,10 @@ public record RoleHandshakeReportPayload(
 
     private static Set<String> readProviderIds(FriendlyByteBuf buf) {
         int count = buf.readVarInt();
-        if (count < 0 || count > MAX_EXTENSION_PROVIDERS) {
+        if (count < 0 || count > MAX_EXTENSION_PROVIDERS || count > buf.readableBytes()) {
             throw new DecoderException("Invalid client extension provider count: " + count);
         }
-        Set<String> out = new java.util.LinkedHashSet<>();
+        Set<String> out = new java.util.LinkedHashSet<>(Math.min(count, 16));
         for (int i = 0; i < count; i++) {
             out.add(buf.readUtf(128));
         }

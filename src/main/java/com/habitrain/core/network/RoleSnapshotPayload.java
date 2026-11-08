@@ -89,9 +89,11 @@ public record RoleSnapshotPayload(
     }
 
     private void write(FriendlyByteBuf buf) {
-        buf.writeVarInt(entries == null ? 0 : entries.size());
+        int entryLimit = entries == null ? 0 : Math.min(entries.size(), MAX_ENTRIES);
+        buf.writeVarInt(entryLimit);
         if (entries != null) {
-            for (EntryRow row : entries) {
+            for (int i = 0; i < entryLimit; i++) {
+                EntryRow row = entries.get(i);
                 buf.writeUtf(row.entryId() == null ? "" : row.entryId(), 256);
                 buf.writeUtf(row.providerId() == null ? "" : row.providerId(), 128);
                 buf.writeUtf(row.operation() == null ? "" : row.operation(), 32);
@@ -120,10 +122,10 @@ public record RoleSnapshotPayload(
 
     private static List<EntryRow> readEntries(FriendlyByteBuf buf) {
         int n = buf.readVarInt();
-        if (n < 0 || n > MAX_ENTRIES) {
+        if (n < 0 || n > MAX_ENTRIES || n > buf.readableBytes() / 5) {
             throw new DecoderException("Invalid snapshot entry count: " + n);
         }
-        List<EntryRow> rows = new ArrayList<>(n);
+        List<EntryRow> rows = new ArrayList<>(Math.min(n, 64));
         for (int i = 0; i < n; i++) {
             rows.add(new EntryRow(
                     buf.readUtf(256),
@@ -151,9 +153,11 @@ public record RoleSnapshotPayload(
     }
 
     private static void writeStrings(FriendlyByteBuf buf, @Nullable List<String> values, int maxLen) {
-        buf.writeVarInt(values == null ? 0 : values.size());
+        int limit = values == null ? 0 : Math.min(values.size(), MAX_ENTRIES);
+        buf.writeVarInt(limit);
         if (values != null) {
-            for (String value : values) {
+            for (int i = 0; i < limit; i++) {
+                String value = values.get(i);
                 buf.writeUtf(value == null ? "" : value, maxLen);
             }
         }
@@ -161,10 +165,10 @@ public record RoleSnapshotPayload(
 
     private static List<String> readStrings(FriendlyByteBuf buf, int maxLen) {
         int n = buf.readVarInt();
-        if (n < 0 || n > MAX_ENTRIES) {
+        if (n < 0 || n > MAX_ENTRIES || n > buf.readableBytes()) {
             throw new DecoderException("Invalid gameplay id count: " + n);
         }
-        List<String> out = new ArrayList<>(n);
+        List<String> out = new ArrayList<>(Math.min(n, 64));
         for (int i = 0; i < n; i++) {
             out.add(buf.readUtf(maxLen));
         }

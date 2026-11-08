@@ -15,18 +15,27 @@ import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
 public final class ClientConfigSubmission {
+    private static final long TIMEOUT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
     private static String pendingId;
     private static String submittedJson;
     private static long startedAt;
+    private static java.util.function.Consumer<ConfigSaveResult> completion;
     private ClientConfigSubmission() {}
     public static void init() {
-        ClientPlayNetworking.registerGlobalReceiver(ConfigResultPayload.TYPE, (result, context) -> context.client().execute(() -> accept(result)));
+        ClientPlayNetworking.registerGlobalReceiver(ConfigResultPayload.TYPE, (result, context) -> {
+            var expected = context.player().connection;
+            context.client().execute(() -> {
+                if (com.habitrain.core.client.ClientConnectionSession.isCurrent(expected)
+                        && context.client().getConnection() == expected && expected.getConnection().isConnected()) accept(result);
+            });
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (pendingId != null && System.currentTimeMillis() - startedAt >= 15_000) {
-                clear(); show(ConfigSaveResult.failed("服务器未确认保存，草稿已保留，请稍后重试"));
+            if (pendingId != null && System.nanoTime() - startedAt >= TIMEOUT_NANOS) {
+                finish(ConfigSaveResult.failed("服务器未确认保存，草稿已保留，请稍后重试"));
             }
         });
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                finish(ConfigSaveResult.failed("连接已断开，草稿未确认保存")));
     }
     public static ConfigSaveResult submit(String baseJson, String draftJson, long baseRevision) {
         if (pendingId != null) return new ConfigSaveResult(ConfigSaveResult.Status.SUBMITTING, "正在等待服务器确认");
@@ -40,7 +49,7 @@ public final class ClientConfigSubmission {
             request.addProperty("protocol", ConfigPatch.PROTOCOL); request.addProperty("requestId", id); request.addProperty("baseRevision", baseRevision); request.add("patch", patch);
             String wire = ConfigUpdateScope.attachToConfigJson(request.toString(), scope, sceneMap);
             if (wire.getBytes(StandardCharsets.UTF_8).length > ConfigPatch.MAX_BYTES) return ConfigSaveResult.failed("本次修改超过网络大小限制，请分次保存");
-            pendingId = id; submittedJson = draftJson; startedAt = System.currentTimeMillis();
+            pendingId = id; submittedJson = draftJson; startedAt = System.nanoTime();
             try { ClientPlayNetworking.send(new ConfigUpdatePayload(wire)); }
             catch (RuntimeException error) { clear(); return ConfigSaveResult.failed("配置提交失败：" + error.getMessage()); }
             return new ConfigSaveResult(ConfigSaveResult.Status.SUBMITTING, "正在提交服务器配置");
@@ -48,13 +57,29 @@ public final class ClientConfigSubmission {
     }
     private static void accept(ConfigResultPayload result) {
         if (!java.util.Objects.equals(pendingId, result.requestId())) return;
-        String submitted = submittedJson; clear();
+        String submitted = submittedJson;
         boolean success = result.status() == ConfigSaveResult.Status.SAVED || result.status() == ConfigSaveResult.Status.NO_CHANGE;
         ConfigManager.getInstance().acknowledgeClient(result.authoritativeJson(), result.revision(), success, submitted);
         if (result.status() == ConfigSaveResult.Status.CONFLICT) ConfigManager.getInstance().markClientConfigConflict();
-        show(new ConfigSaveResult(result.status(), result.message()));
+        finish(new ConfigSaveResult(result.status(), result.message()));
     }
-    public static void clear() { pendingId = null; submittedJson = null; startedAt = 0; }
+    public static boolean isPending() { return pendingId != null; }
+
+    /** Register only after initiating a new submission on the client thread. */
+    public static void onCompletion(java.util.function.Consumer<ConfigSaveResult> callback) {
+        if (pendingId == null || completion != null) throw new IllegalStateException("No available configuration submission");
+        completion = java.util.Objects.requireNonNull(callback);
+    }
+
+    private static void finish(ConfigSaveResult result) {
+        var callback = completion;
+        boolean hadPending = pendingId != null;
+        clear();
+        if (hadPending) show(result);
+        if (callback != null) callback.accept(result);
+    }
+
+    public static void clear() { pendingId = null; submittedJson = null; startedAt = 0; completion = null; }
     public static void show(ConfigSaveResult result) {
         var player = Minecraft.getInstance().player;
         if (player != null) player.displayClientMessage(Component.literal((result.successful() ? "§a" : result.status() == ConfigSaveResult.Status.SUBMITTING ? "§e" : "§c") + result.message()), true);

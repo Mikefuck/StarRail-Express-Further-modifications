@@ -17,6 +17,9 @@ public abstract class LustPenaltyCommandMixin {
     @Redirect(method = "lambda$register$3", at = @At(value = "INVOKE",
             target = "Lorg/agmas/noellesroles/component/DeathPenaltyComponent;init()V"))
     private static void habitrain$exemptOnlyLust(DeathPenaltyComponent penalty) {
+        if (penalty != null) {
+            penalty.init();
+        }
         LustRestrictionService.adminExempt(penalty);
     }
 

@@ -29,12 +29,14 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -125,6 +127,8 @@ public final class SceneAssetCache {
     private volatile Boolean cacheDirHasFiles;
     private volatile long partialCacheQuotaBytes =
             SceneClientPerformanceRules.quotaBytes(SceneClientPerformanceRules.DEFAULT_PARTIAL_CACHE_QUOTA_MIB);
+    private long lastPartialSweepNanos;
+    private volatile boolean shuttingDown;
     private volatile long partialExpiryMillis =
             SceneClientPerformanceRules.expiryMillis(SceneClientPerformanceRules.DEFAULT_PARTIAL_EXPIRY_HOURS);
 
@@ -207,7 +211,9 @@ public final class SceneAssetCache {
     public void getOrFetchAsset(SceneAssetDescriptor descriptor,
                                  SceneAssetDownloadQueue.Priority priority,
                                  Consumer<SceneAssetCodec.AssetData> onComplete) {
-        if (descriptor == null || !descriptor.isValid()) {
+        if (shuttingDown) { invokeQuietly(onComplete, null); return; }
+        if (descriptor == null || !descriptor.isValid()
+                || !ScenePartialStore.isValidSha256(descriptor.sha256())) {
             invokeQuietly(onComplete, null);
             return;
         }
@@ -237,8 +243,8 @@ public final class SceneAssetCache {
             return;
         }
 
-        // 2. 增量：服务端确认过"当前这版有一枚从 base 到它的补丁"，且本地确实持有那个 base。
-        //    这条判定要碰文件系统，所以整体挪到 IO 线程——拿不准就原样走下面的全量链路。
+        // 2. 增量：服务端确认过"当前这版有一枚从 base 到它的补丁"，立即登记进 registry 防止并发重复请求，
+        //    并将 baseSha256 加入 pinnedHashes 保护，避免下载期间底稿被配额淘汰误删。
         boolean diskCacheExists = assetFile(sha256).isFile();
         long generation = registry.generation();
         if (!diskCacheExists && deltaProbes.await(sha256, () -> {
@@ -246,22 +252,11 @@ public final class SceneAssetCache {
             else getOrFetchAsset(descriptor, priority, onComplete);
         })) return;
         SceneAssetDeltaOfferS2C offer = deltaOffers.get(sha256);
-        if (!diskCacheExists && registry.find(sha256) == null && deltaNegotiationEnabled
-                && offer != null && offer.hasDelta() && !deltaDisabled.contains(sha256)) {
-            IO_EXECUTOR.execute(() -> {
-                boolean baseExists = assetFile(offer.baseSha256()).isFile();
-                onClientThread(() -> {
-                    if (!registry.isCurrent(generation)) {
-                        invokeQuietly(onComplete, null);
-                        return;
-                    }
-                    if (baseExists) beginDeltaOrFallback(descriptor, offer, priority, onComplete);
-                    else {
-                        deltaDisabled.add(sha256);
-                        fullDownload(descriptor, priority, onComplete);
-                    }
-                });
-            });
+        if (!diskCacheExists && deltaNegotiationEnabled
+                && offer != null && offer.hasDelta() && !deltaDisabled.contains(sha256)
+                && ScenePartialStore.isValidSha256(offer.baseSha256())
+                && ScenePartialStore.isValidSha256(offer.patchSha256())) {
+            beginDeltaOrFallback(descriptor, offer, priority, onComplete);
             return;
         }
 
@@ -296,6 +291,7 @@ public final class SceneAssetCache {
         if (descriptor == null || !descriptor.isValid() || mapKey == null || mapKey.isBlank()) return;
         if (serverProtocolVersion < SceneProtocol.DELTA_NEGOTIATION_VERSION) return;
         String target = descriptor.sha256();
+        if (!ScenePartialStore.isValidSha256(target)) return;
         if (memoryCache.containsKey(target) || assetFile(target).isFile()) return;
         if (deltaOffers.containsKey(target) || deltaDisabled.contains(target)) return;
         // 全新安装手里不可能有 base，问了也只是一次白跑往返。
@@ -311,7 +307,12 @@ public final class SceneAssetCache {
 
     /** 服务端对探测的回答。{@code NO_DELTA} 也要记下来，否则每次清单都要重问一遍。 */
     public void acceptDeltaOffer(SceneAssetDeltaOfferS2C offer) {
-        if (offer == null || offer.targetSha256().isBlank()) return;
+        if (offer == null || !ScenePartialStore.isValidSha256(offer.targetSha256())) return;
+        if (offer.hasDelta() && (!ScenePartialStore.isValidSha256(offer.baseSha256())
+                || !ScenePartialStore.isValidSha256(offer.patchSha256()))) {
+            deltaProbes.complete(offer.targetSha256());
+            return;
+        }
         deltaOffers.put(offer.targetSha256(), offer);
         deltaProbes.complete(offer.targetSha256());
         if (offer.hasDelta()) {
@@ -342,14 +343,26 @@ public final class SceneAssetCache {
     }
 
     private File assetFile(String sha256) {
-        return new File(cacheDir, sha256 + CACHED_SUFFIX);
+        return resolveCacheFile(sha256, CACHED_SUFFIX);
     }
 
     private File patchFile(String sha256) {
-        return new File(cacheDir, sha256 + PATCH_SUFFIX);
+        return resolveCacheFile(sha256, PATCH_SUFFIX);
     }
 
-    /** 回到客户端线程后登记补丁链路；底稿存在性已在 IO 线程检查。 */
+    private File resolveCacheFile(String sha256, String suffix) {
+        if (!ScenePartialStore.isValidSha256(sha256)) {
+            throw new IllegalArgumentException("Invalid scene asset SHA-256");
+        }
+        Path root = cacheDir.toPath().toAbsolutePath().normalize();
+        Path resolved = root.resolve(sha256.toLowerCase(Locale.ROOT) + suffix).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new IllegalArgumentException("Scene cache file path escapes cache directory");
+        }
+        return resolved.toFile();
+    }
+
+    /** 登记补丁链路并固定底稿；底稿存在性在 IO 线程进一步复核。 */
     private void beginDeltaOrFallback(SceneAssetDescriptor descriptor, SceneAssetDeltaOfferS2C offer,
                                       SceneAssetDownloadQueue.Priority priority,
                                       Consumer<SceneAssetCodec.AssetData> onComplete) {
@@ -359,24 +372,42 @@ public final class SceneAssetCache {
             invokeQuietly(onComplete, memory);
             return;
         }
-        if (deltaDisabled.contains(target) || registry.find(target) != null
-                || offer.patchBytes() > MAX_SINGLE_ASSET_BYTES) {
-            // 另一条回调可能已经回退全量，不能重新启动补丁。
+        if (deltaDisabled.contains(target) || offer.patchBytes() > MAX_SINGLE_ASSET_BYTES) {
             deltaDisabled.add(target);
             fullDownload(descriptor, priority, onComplete);
             return;
         }
+        AssetTransferRegistry.AssetEntry existing = registry.find(target);
+        if (existing != null && existing.state() != AssetTransferRegistry.State.FAILED
+                && existing.patchTarget() == null) {
+            // 已有整文件链路在推进，直接并入该链路。
+            fullDownload(descriptor, priority, onComplete);
+            return;
+        }
+        pinnedHashes.add(offer.baseSha256());
         AssetTransferRegistry.PatchTarget patchTarget =
-                new AssetTransferRegistry.PatchTarget(offer.baseSha256(), descriptor);
+                new AssetTransferRegistry.PatchTarget(offer.baseSha256(), descriptor, priority);
         File patch = patchFile(offer.patchSha256());
         AssetTransferRegistry.Acquire acquire = registry.acquire(
                 offer.patchSha256(), offer.patchBytes(), patch.isFile(), patchTarget, onComplete);
         switch (acquire.action()) {
-            case REJECTED -> { }
-            case JOINED -> queue.hintPriority(offer.patchSha256(), priority);
+            case REJECTED -> releaseBasePinIfUnused(offer.baseSha256());
+            case JOINED -> queue.hintPriority(acquire.entry().sha256(), priority);
             case START_DISK_LOAD -> IO_EXECUTOR.execute(() -> loadPatchFromDisk(acquire.entry()));
             case START_DOWNLOAD -> startDownload(acquire.entry(), priority);
         }
+    }
+
+    private void releaseBasePinIfUnused(String baseSha256) {
+        if (baseSha256 == null) return;
+        for (AssetTransferRegistry.AssetEntry active : registry.snapshot()) {
+            if (active.state() != AssetTransferRegistry.State.FAILED
+                    && active.patchTarget() != null
+                    && baseSha256.equalsIgnoreCase(active.patchTarget().baseSha256())) {
+                return;
+            }
+        }
+        pinnedHashes.remove(baseSha256);
     }
 
     /** 常规整文件链路的入口，被增量路径复用（探测无果、补丁失败回退时）。 */
@@ -395,6 +426,11 @@ public final class SceneAssetCache {
 
     private void loadPatchFromDisk(AssetTransferRegistry.AssetEntry entry) {
         if (entry == null || entry.patchTarget() == null) return;
+        String baseSha256 = entry.patchTarget().baseSha256();
+        if (!memoryCache.containsKey(baseSha256) && !assetFile(baseSha256).isFile()) {
+            fallbackToFullAsset(entry, "本地底稿不存在");
+            return;
+        }
         File patch = patchFile(entry.sha256());
         if (!registry.transition(entry, AssetTransferRegistry.State.DECODING)) return;
         if (!applyPatch(entry, patch.toPath(), false)) {
@@ -429,12 +465,7 @@ public final class SceneAssetCache {
             }
 
             pinnedHashes.add(patchTarget.baseSha256());
-            SceneAssetCodec.AssetData base;
-            try {
-                base = loadBaseAsset(patchTarget.baseSha256());
-            } finally {
-                pinnedHashes.remove(patchTarget.baseSha256());
-            }
+            SceneAssetCodec.AssetData base = loadBaseAsset(patchTarget.baseSha256());
             if (base == null) {
                 throw new IOException("Scene patch base is missing or corrupted");
             }
@@ -467,10 +498,14 @@ public final class SceneAssetCache {
 
             SceneAssetCodec.AssetData loaded = merged;
             onClientThread(() -> {
-                if (!isLive(entry)) return;
+                if (!isLive(entry)) {
+                    releaseBasePinIfUnused(patchTarget.baseSha256());
+                    return;
+                }
                 queue.onDownloadComplete(entry);
                 putMemory(patchTarget.target().sha256(), loaded);
                 List<Consumer<SceneAssetCodec.AssetData>> waiters = registry.completeSuccess(entry);
+                releaseBasePinIfUnused(patchTarget.baseSha256());
                 AssetTransferRegistry.fireWaiters(waiters, loaded);
             });
             LOGGER.info("场景资产走增量下载: target={}, base={}, 补丁 {} 字节",
@@ -518,6 +553,7 @@ public final class SceneAssetCache {
         AssetTransferRegistry.PatchTarget patchTarget = entry.patchTarget();
         if (patchTarget == null) return;
         SceneAssetDescriptor target = patchTarget.target();
+        SceneAssetDownloadQueue.Priority priority = patchTarget.priority();
         deltaDisabled.add(target.sha256());
         LOGGER.warn("增量补丁回退整文件下载: target={}, 原因={}", shortHash(target.sha256()), reason);
 
@@ -525,8 +561,9 @@ public final class SceneAssetCache {
         writePipeline.abandon(entry);
         List<Consumer<SceneAssetCodec.AssetData>> waiters = registry.detachWaiters(entry);
         registry.completeFailure(entry);
+        releaseBasePinIfUnused(patchTarget.baseSha256());
         for (Consumer<SceneAssetCodec.AssetData> waiter : waiters) {
-            fullDownload(target, SceneAssetDownloadQueue.Priority.PREFETCH, waiter);
+            fullDownload(target, priority, waiter);
         }
     }
 
@@ -558,8 +595,8 @@ public final class SceneAssetCache {
                 seedIndex.reject(entry.sha256());
                 return false;
             }
-            byte[] bytes = Files.readAllBytes(seed.toPath());
-            if (!SceneAssetCodec.calculateSha256(bytes).equalsIgnoreCase(entry.sha256())) {
+            String actualHash = SceneSeedIndex.calculateFileSha256(seed.toPath(), MAX_SINGLE_ASSET_BYTES);
+            if (actualHash == null || !actualHash.equalsIgnoreCase(entry.sha256())) {
                 LOGGER.warn("预置场景资产内容与哈希不符，已跳过: {}", seed.getName());
                 seedIndex.reject(entry.sha256());
                 return false;
@@ -592,6 +629,13 @@ public final class SceneAssetCache {
     private void prepareDownload(AssetTransferRegistry.AssetEntry entry,
                                  SceneAssetDownloadQueue.Priority priority) {
         if (!isLive(entry)) return;
+        if (entry.patchTarget() != null) {
+            String baseSha256 = entry.patchTarget().baseSha256();
+            if (!memoryCache.containsKey(baseSha256) && !assetFile(baseSha256).isFile()) {
+                fallbackToFullAsset(entry, "本地底稿不存在");
+                return;
+            }
+        }
         if (!partialResumeEnabled) partialStore.discard(entry.sha256());
         // 预置目录优先于网络：整合包已经把资产随包发下去了，再从游戏服务器下一遍是纯浪费。
         if (trySeedImport(entry)) {
@@ -796,8 +840,14 @@ public final class SceneAssetCache {
 
     /** 由客户端 tick 驱动：检查分片请求超时并推进队列。 */
     public void tick() {
+        if (shuttingDown) return;
         deltaProbes.tick();
         queue.tick();
+        long now = System.nanoTime();
+        if (lastPartialSweepNanos == 0L || now - lastPartialSweepNanos >= 30_000_000_000L) {
+            lastPartialSweepNanos = now;
+            schedulePartialSweep();
+        }
     }
 
     // ---- 写线程事件 ----
@@ -862,6 +912,7 @@ public final class SceneAssetCache {
         LOGGER.warn("场景资产下载失败: hash={}, 原因={}", shortHash(entry.sha256()), reason);
         writePipeline.suspend(entry);
         List<Consumer<SceneAssetCodec.AssetData>> waiters = registry.completeFailure(entry);
+        schedulePartialSweep();
         AssetTransferRegistry.fireWaiters(waiters, null);
     }
 
@@ -898,7 +949,7 @@ public final class SceneAssetCache {
     private void loadDiskCache(AssetTransferRegistry.AssetEntry entry) {
         if (!isLive(entry)) return;
         String sha256 = entry.sha256();
-        File cachedFile = new File(cacheDir, sha256 + CACHED_SUFFIX);
+        File cachedFile = assetFile(sha256);
         SceneAssetCodec.AssetData data = null;
         try (InputStream fis = Files.newInputStream(cachedFile.toPath())) {
             long length = cachedFile.length();
@@ -976,7 +1027,7 @@ public final class SceneAssetCache {
                 return;
             }
             data = SceneAssetCodec.decode(fullBytes);
-            File finalFile = new File(cacheDir, sha256 + CACHED_SUFFIX);
+            File finalFile = assetFile(sha256);
             Files.move(dataFile, finalFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             moved = true;
             long now = System.currentTimeMillis();
@@ -1033,8 +1084,16 @@ public final class SceneAssetCache {
     private void evictMemoryIfNeeded(String justAddedHash) {
         if (!memoryBudget.isOverQuota()) return;
         Set<String> protectedHashes = new HashSet<>();
-        protectedHashes.addAll(registry.snapshot().stream()
-                .map(AssetTransferRegistry.AssetEntry::sha256).toList());
+        for (AssetTransferRegistry.AssetEntry entry : registry.snapshot()) {
+            protectedHashes.add(entry.sha256());
+            if (entry.patchTarget() != null) {
+                protectedHashes.add(entry.patchTarget().baseSha256());
+                if (entry.patchTarget().target() != null) {
+                    protectedHashes.add(entry.patchTarget().target().sha256());
+                }
+            }
+        }
+        protectedHashes.addAll(pinnedHashes);
         protectedHashes.addAll(SceneRenderRuntime.getInstance().activeAssetHashes());
         if (justAddedHash != null) protectedHashes.add(justAddedHash);
 
@@ -1092,6 +1151,12 @@ public final class SceneAssetCache {
         protectedHashes.addAll(SceneRenderRuntime.getInstance().activeAssetHashes());
         for (AssetTransferRegistry.AssetEntry entry : registry.snapshot()) {
             protectedHashes.add(entry.sha256());
+            if (entry.patchTarget() != null) {
+                protectedHashes.add(entry.patchTarget().baseSha256());
+                if (entry.patchTarget().target() != null) {
+                    protectedHashes.add(entry.patchTarget().target().sha256());
+                }
+            }
         }
         // 正在被应用的补丁的底：删了它，那枚补丁立刻变成废纸，还得再下一次整份。
         protectedHashes.addAll(pinnedHashes);
@@ -1156,8 +1221,48 @@ public final class SceneAssetCache {
         deltaDisabled.clear();
         pinnedHashes.clear();
         cacheDirHasFiles = null;
+        schedulePartialSweep();
         IO_EXECUTOR.execute(() -> cacheIndex.flush());
         AssetTransferRegistry.fireWaiters(orphaned, null);
+    }
+
+    private void schedulePartialSweep() {
+        IO_EXECUTOR.execute(() -> {
+            writePipeline.awaitIdle(1_000L);
+            Set<String> active = new HashSet<>();
+            for (AssetTransferRegistry.AssetEntry entry : registry.snapshot()) {
+                if (entry.state() != AssetTransferRegistry.State.AVAILABLE
+                        && entry.state() != AssetTransferRegistry.State.FAILED) {
+                    active.add(entry.sha256());
+                }
+            }
+            partialStore.sweep(System.currentTimeMillis(), partialCacheQuotaBytes, partialExpiryMillis, active);
+        });
+    }
+
+    /** 客户端停机收尾：刷写未落盘的断点检查点与缓存热度索引，并执行部分下载配额清理。 */
+    public void shutdown() {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        queue.resetAll();
+        List<AssetTransferRegistry.AssetEntry> invalidated = registry.invalidateAll();
+        deltaProbes.reset();
+        if (partialResumeEnabled) {
+            writePipeline.closeAll();
+        } else {
+            for (AssetTransferRegistry.AssetEntry entry : invalidated) {
+                writePipeline.abandon(entry);
+            }
+        }
+        writePipeline.awaitIdle(2_000L);
+        try {
+            IO_EXECUTOR.submit(() -> {
+                cacheIndex.flush();
+                partialStore.sweep(System.currentTimeMillis(), partialCacheQuotaBytes, partialExpiryMillis);
+            }).get(2_000L, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            LOGGER.debug("客户端停机刷写场景缓存索引超时或异常", e);
+        }
     }
 
     public SceneAssetCodec.AssetData getFromMemory(String sha256) {

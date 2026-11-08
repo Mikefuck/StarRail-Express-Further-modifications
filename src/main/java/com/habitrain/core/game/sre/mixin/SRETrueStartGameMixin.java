@@ -27,6 +27,43 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(value = GameUtils.class, remap = false)
 public abstract class SRETrueStartGameMixin {
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method = {"startGame", "trueStartGame"})
+    private static void habitrain$releaseFailedStart(ServerLevel world, GameMode gameMode, int time,
+            com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        try {
+            original.call(world, gameMode, time);
+        } catch (RuntimeException | Error failure) {
+            try {
+                var gate = com.habitrain.core.game.sre.match.ServerMatchContext.GATE;
+                String dimension = com.habitrain.core.game.sre.match.ServerMatchContext.dimension(world);
+                if (gate.owns(dimension) && gate.snapshot().phase()
+                        == com.habitrain.core.game.sre.match.SingleMatchGate.Phase.STARTING) {
+                    GameUtils.isStartingGame = false;
+                    GameUtils.serverTaskQueue.clear();
+                    MapVoteLoadCoordinator.reset(world);
+                    gate.release(dimension);
+                    com.habitrain.core.game.sre.mode.ForcedReadyJoinGate.clear();
+                }
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+    @Inject(method = "startGame", at = @At("HEAD"), cancellable = true)
+    private static void habitrain$reserveNative(ServerLevel world, GameMode gameMode, int time, CallbackInfo ci) {
+        if (io.wifi.starrailexpress.SRE.isLobby || GameUtils.isStartingGame
+                || SREGameWorldComponent.KEY.get(world).getGameStatus() != SREGameWorldComponent.GameStatus.INACTIVE
+                || !com.habitrain.core.game.sre.match.ServerMatchContext.GATE.nativeStart(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(world))) {
+            HabiTrainCore.LOGGER.warn("Refused duplicate/cross-dimension SRE start in {}", world.dimension().location());
+            ci.cancel();
+        }
+    }
+    @Inject(method = "trueStartGame", at = @At("HEAD"), cancellable = true)
+    private static void habitrain$reserveDirectNative(ServerLevel world, GameMode gameMode, int time, CallbackInfo ci) {
+        if (!com.habitrain.core.game.sre.match.ServerMatchContext.GATE.nativeConfirm(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(world))) ci.cancel();
+    }
+
     @Inject(method = "trueStartGame", at = @At("RETURN"))
     private static void habitrain$confirmGameStart(ServerLevel world, GameMode gameMode, int time,
                                                    CallbackInfo ci) {
@@ -37,6 +74,10 @@ public abstract class SRETrueStartGameMixin {
             if (gw != null && gw.getGameStatus()
                     == SREGameWorldComponent.GameStatus.STARTING) {
                 started = true;
+            }
+            if (!started) {
+                com.habitrain.core.game.sre.match.ServerMatchContext.release(world);
+                com.habitrain.core.game.sre.mode.ForcedReadyJoinGate.clear();
             }
             MapVoteLoadCoordinator.onGameStartConfirmed(world, started);
         } catch (Throwable t) {

@@ -5,14 +5,19 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.habitrain.core.persist.AtomicJsonFiles;
 import com.habitrain.core.api.scene.asset.SceneAssetCodec;
+import com.habitrain.core.api.scene.asset.SceneAssetDescriptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -43,18 +48,34 @@ public final class SceneDeltaStore {
     /**
      * 一条补丁的元数据。
      *
-     * @param baseSha256  补丁的底——客户端必须持有这份资产才能应用
-     * @param patchSha256 补丁文件自身的 SHA-256（同时也是分片传输的授权键与文件名）
-     * @param patchBytes  补丁压缩后字节数
+     * @param baseSha256   补丁的底——客户端必须持有这份资产才能应用
+     * @param targetSha256 补丁生成的目标资产 SHA-256（防直接覆盖资产后旧补丁与当前正式资产失配）
+     * @param patchSha256  补丁文件自身的 SHA-256（同时也是分片传输的授权键与文件名）
+     * @param patchBytes   补丁压缩后字节数
      */
-    public record DeltaInfo(String baseSha256, String patchSha256, long patchBytes, long createdAt) {
+    public record DeltaInfo(String baseSha256, String targetSha256, String patchSha256, long patchBytes, long createdAt) {
         public DeltaInfo {
             baseSha256 = normalize(baseSha256);
+            targetSha256 = normalize(targetSha256);
             patchSha256 = normalize(patchSha256);
         }
 
+        public DeltaInfo(String baseSha256, String patchSha256, long patchBytes, long createdAt) {
+            this(baseSha256, "", patchSha256, patchBytes, createdAt);
+        }
+
         public boolean isValid() {
-            return baseSha256.matches(HASH_PATTERN) && patchSha256.matches(HASH_PATTERN) && patchBytes > 0;
+            return baseSha256.matches(HASH_PATTERN)
+                    && (targetSha256.isEmpty() || targetSha256.matches(HASH_PATTERN))
+                    && patchSha256.matches(HASH_PATTERN)
+                    && patchBytes > 0;
+        }
+
+        public boolean matchesTarget(String expectedTargetSha256) {
+            String norm = normalize(expectedTargetSha256);
+            if (!norm.matches(HASH_PATTERN)) return false;
+            // Legacy entries without a target cannot prove that their patch produces this version.
+            return targetSha256.equals(norm);
         }
 
         public String shortPatch() {
@@ -63,31 +84,44 @@ public final class SceneDeltaStore {
     }
 
     /** 暂存期产出的补丁：先落在 {@code staging/<stagingId>.hpatch}，发布时才搬进 deltas/。 */
-    public record PatchBlob(String baseSha256, String patchSha256, byte[] bytes) {
+    public record PatchBlob(String baseSha256, String targetSha256, String patchSha256, byte[] bytes) {
+        public PatchBlob(String baseSha256, String patchSha256, byte[] bytes) {
+            this(baseSha256, "", patchSha256, bytes);
+        }
+
         public boolean isValid() {
             return baseSha256 != null && baseSha256.matches(HASH_PATTERN)
+                    && (targetSha256 == null || targetSha256.isEmpty() || targetSha256.matches(HASH_PATTERN))
                     && patchSha256 != null && patchSha256.matches(HASH_PATTERN)
                     && bytes != null && bytes.length > 0;
         }
     }
 
-    private File boundRoot;
+    private volatile SceneAssetStore.StorageLocation boundLocation;
+    private long indexRevision;
     private final Map<String, DeltaInfo> index = new ConcurrentHashMap<>();
 
     private SceneDeltaStore() {}
 
     private static String normalize(String hash) {
-        return hash != null ? hash.trim().toLowerCase() : "";
+        return hash != null ? hash.trim().toLowerCase(Locale.ROOT) : "";
     }
 
     /** 补丁目录跟随 {@link SceneAssetStore} 的世界绑定，避免再多一处初始化顺序。 */
     private File deltaDir() {
-        File root = SceneAssetStore.getInstance().getStorageDir();
-        if (root == null) return null;
-        if (!root.equals(boundRoot)) {
-            boundRoot = root;
-            index.clear();
-            loadIndex(new File(root, DIR_NAME));
+        SceneAssetStore.StorageLocation owner = SceneAssetStore.getInstance().currentLocation();
+        if (owner == null) return null;
+        File root = owner.storage();
+        if (owner != boundLocation) {
+            synchronized (this) {
+                if (owner != boundLocation) {
+                    if (!SceneAssetStore.getInstance().isCurrent(owner)) return null;
+                    boundLocation = owner;
+                    indexRevision++;
+                    index.clear();
+                    loadIndex(new File(root, DIR_NAME));
+                }
+            }
         }
         return new File(root, DIR_NAME);
     }
@@ -104,12 +138,22 @@ public final class SceneDeltaStore {
         for (String mapKey : root.keySet()) {
             if (!root.get(mapKey).isJsonObject()) continue;
             JsonObject entry = root.getAsJsonObject(mapKey);
-            String base = entry.has("baseSha256") ? entry.get("baseSha256").getAsString() : "";
-            String patch = entry.has("patchSha256") ? entry.get("patchSha256").getAsString() : "";
-            long bytes = entry.has("patchBytes") ? entry.get("patchBytes").getAsLong() : 0L;
-            long created = entry.has("createdAt") ? entry.get("createdAt").getAsLong() : 0L;
-            DeltaInfo info = new DeltaInfo(base, patch, bytes, created);
-            if (info.isValid() && patchFile(info.patchSha256()).isFile()) {
+            String base = entry.has("baseSha256") && entry.get("baseSha256").isJsonPrimitive()
+                    ? entry.get("baseSha256").getAsString() : "";
+            String target = entry.has("targetSha256") && entry.get("targetSha256").isJsonPrimitive()
+                    ? entry.get("targetSha256").getAsString() : "";
+            String patch = entry.has("patchSha256") && entry.get("patchSha256").isJsonPrimitive()
+                    ? entry.get("patchSha256").getAsString() : "";
+            long bytes = entry.has("patchBytes") && entry.get("patchBytes").isJsonPrimitive()
+                    ? entry.get("patchBytes").getAsLong() : 0L;
+            long created = entry.has("createdAt") && entry.get("createdAt").isJsonPrimitive()
+                    ? entry.get("createdAt").getAsLong() : 0L;
+            DeltaInfo info = new DeltaInfo(base, target, patch, bytes, created);
+            SceneAssetDescriptor currentAsset = SceneAssetStore.getInstance().getDescriptor(mapKey);
+            boolean matchesLive = currentAsset == null || !currentAsset.isValid()
+                    || info.matchesTarget(currentAsset.sha256());
+            File pFile = patchFile(info.patchSha256());
+            if (info.isValid() && matchesLive && pFile != null && pFile.isFile()) {
                 index.put(mapKey, info);
             }
         }
@@ -125,6 +169,9 @@ public final class SceneDeltaStore {
         for (Map.Entry<String, DeltaInfo> e : index.entrySet()) {
             JsonObject entry = new JsonObject();
             entry.addProperty("baseSha256", e.getValue().baseSha256());
+            if (!e.getValue().targetSha256().isEmpty()) {
+                entry.addProperty("targetSha256", e.getValue().targetSha256());
+            }
             entry.addProperty("patchSha256", e.getValue().patchSha256());
             entry.addProperty("patchBytes", e.getValue().patchBytes());
             entry.addProperty("createdAt", e.getValue().createdAt());
@@ -140,10 +187,8 @@ public final class SceneDeltaStore {
         if (dir == null) return null;
         DeltaInfo info = index.get(mapKey);
         if (info == null) return null;
-        if (!patchFile(info.patchSha256()).isFile()) {
-            index.remove(mapKey);
-            return null;
-        }
+        SceneAssetDescriptor live = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        if (live != null && !info.matchesTarget(live.sha256())) return null;
         return info;
     }
 
@@ -160,62 +205,151 @@ public final class SceneDeltaStore {
      *
      * <p>纯附加操作——返回 false 只意味着"这次不提供增量"，正式资产不受影响。</p>
      */
-    public synchronized boolean publish(String mapKey, DeltaInfo info, File stagedPatch) {
-        if (mapKey == null || mapKey.isBlank() || info == null || !info.isValid()) return false;
+    static final class PreparedPublication implements AutoCloseable {
+        final SceneAssetStore.StorageLocation owner;
+        final long revision;
+        final String mapKey, targetSha;
+        final DeltaInfo info, previous;
+        final ScenePreparedIndex preparedIndex;
+        PreparedPublication(SceneAssetStore.StorageLocation owner, long revision, String mapKey, String targetSha,
+                            DeltaInfo info, DeltaInfo previous, ScenePreparedIndex preparedIndex) {
+            this.owner = owner; this.revision = revision; this.mapKey = mapKey;
+            this.targetSha = targetSha; this.info = info; this.previous = previous; this.preparedIndex = preparedIndex;
+        }
+        @Override public void close() throws IOException { preparedIndex.close(); }
+    }
+
+    PreparedPublication preparePublication(SceneAssetStore.StorageLocation owner, String mapKey,
+                                            DeltaInfo info, File stagedPatch, String targetSha) {
+        if (owner == null || mapKey == null || mapKey.isBlank()
+                || !SceneAssetStore.getInstance().isCurrent(owner)) return null;
         File dir = deltaDir();
-        if (dir == null || stagedPatch == null || !stagedPatch.isFile()) return false;
-        if (stagedPatch.length() != info.patchBytes()) {
-            LOGGER.warn("拒绝发布增量补丁：暂存文件长度不符 mapKey={}, 期望={}, 实际={}",
-                    mapKey, info.patchBytes(), stagedPatch.length());
-            return false;
+        long revision;
+        Map<String, DeltaInfo> before;
+        synchronized (this) {
+            if (dir == null || boundLocation != owner) return null;
+            revision = indexRevision;
+            before = new LinkedHashMap<>(index);
         }
         try {
-            if (!dir.exists()) Files.createDirectories(dir.toPath());
-            byte[] bytes = Files.readAllBytes(stagedPatch.toPath());
-            String actual = SceneAssetCodec.calculateSha256(bytes);
-            if (!actual.equalsIgnoreCase(info.patchSha256())) {
-                LOGGER.warn("拒绝发布增量补丁：SHA-256 不符 mapKey={}, 期望={}, 实际={}",
-                        mapKey, info.shortPatch(), actual);
-                return false;
+            Files.createDirectories(dir.toPath());
+            DeltaInfo resolved = null;
+            if (info != null) {
+                if (!info.isValid() || targetSha != null && !info.matchesTarget(targetSha) || stagedPatch == null) return null;
+                byte[] bytes = Files.readAllBytes(stagedPatch.toPath());
+                if (bytes.length != info.patchBytes()
+                        || !SceneAssetCodec.calculateSha256(bytes).equalsIgnoreCase(info.patchSha256())) return null;
+                var patch = com.habitrain.core.api.scene.asset.SceneAssetDelta.decode(bytes);
+                String targetHash = targetSha == null ? info.targetSha256() : targetSha;
+                if (!patch.baseSha256().equalsIgnoreCase(info.baseSha256())
+                        || !patch.targetSha256().equalsIgnoreCase(targetHash)) return null;
+                resolved = new DeltaInfo(info.baseSha256(), targetSha == null ? info.targetSha256() : targetSha, info.patchSha256(), info.patchBytes(), info.createdAt());
+                Path target = dir.toPath().resolve(resolved.patchSha256() + PATCH_SUFFIX);
+                Path temp = Files.createTempFile(dir.toPath(), ".delta-promote-", ".tmp");
+                try {
+                    Files.write(temp, bytes);
+                    try (var channel = java.nio.channels.FileChannel.open(temp, java.nio.file.StandardOpenOption.WRITE)) {
+                        channel.force(true);
+                    }
+                    ScenePreparedIndex.move(temp, target);
+                } finally { Files.deleteIfExists(temp); }
             }
+            Map<String, DeltaInfo> after = new LinkedHashMap<>(before);
+            if (resolved == null) after.remove(mapKey); else after.put(mapKey, resolved);
+            ScenePreparedIndex prepared = ScenePreparedIndex.prepare(dir.toPath().resolve(INDEX_FILE_NAME),
+                    deltaJson(before), deltaJson(after), GSON);
+            return new PreparedPublication(owner, revision, mapKey, targetSha, resolved, before.get(mapKey), prepared);
+        } catch (Exception failure) {
+            LOGGER.warn("准备场景增量补丁失败，将使用全量下载: mapKey=" + mapKey, failure);
+            return null;
+        }
+    }
 
-            DeltaInfo previous = index.get(mapKey);
-            Path target = patchFile(info.patchSha256()).toPath();
-            Files.move(stagedPatch.toPath(), target, StandardCopyOption.REPLACE_EXISTING);
+    private static JsonObject deltaJson(Map<String, DeltaInfo> entries) {
+        JsonObject root = new JsonObject();
+        entries.forEach((key, info) -> {
+            JsonObject value = new JsonObject();
+            value.addProperty("baseSha256", info.baseSha256());
+            value.addProperty("targetSha256", info.targetSha256());
+            value.addProperty("patchSha256", info.patchSha256());
+            value.addProperty("patchBytes", info.patchBytes());
+            value.addProperty("createdAt", info.createdAt());
+            root.add(key, value);
+        });
+        return root;
+    }
 
-            index.put(mapKey, info);
-            if (!saveIndex()) {
-                LOGGER.warn("增量补丁索引写入失败，回退为不提供增量: mapKey={}", mapKey);
-                if (previous != null) {
-                    index.put(mapKey, previous);
-                } else {
-                    index.remove(mapKey);
-                }
-                return false;
-            }
-            // 上一枚补丁连同它的文件一起清掉：一个 mapKey 只保留最新一版，客户端也只可能用到它。
-            if (previous != null && !previous.patchSha256().equalsIgnoreCase(info.patchSha256())) {
-                deletePatchFile(previous.patchSha256());
-            }
-            LOGGER.info("已发布场景增量补丁: mapKey={}, base={}, patch={}, 补丁 {} 字节",
-                    mapKey, shortHash(info.baseSha256()), info.shortPatch(), info.patchBytes());
+    synchronized boolean commitPublication(PreparedPublication prepared) {
+        if (prepared == null || boundLocation != prepared.owner || indexRevision != prepared.revision
+                || !SceneAssetStore.getInstance().isCurrent(prepared.owner)) return false;
+        SceneAssetDescriptor live = SceneAssetStore.getInstance().getDescriptor(prepared.mapKey);
+        if (prepared.targetSha != null && (live == null || !live.sha256().equalsIgnoreCase(prepared.targetSha))) return false;
+        if (prepared.targetSha == null && live != null && prepared.info != null && !prepared.info.matchesTarget(live.sha256())) return false;
+        try {
+            prepared.preparedIndex.commit();
+            if (prepared.info == null) index.remove(prepared.mapKey); else index.put(prepared.mapKey, prepared.info);
+            indexRevision++;
             return true;
-        } catch (Exception e) {
-            LOGGER.error("发布场景增量补丁失败: mapKey=" + mapKey, e);
+        } catch (IOException failure) {
+            LOGGER.warn("提交场景补丁索引失败，将使用全量下载", failure);
+            return false;
+        }
+    }
+
+    synchronized void finishPublication(PreparedPublication prepared) {
+        if (prepared == null || prepared.previous == null || boundLocation != prepared.owner
+                || !SceneAssetStore.getInstance().isCurrent(prepared.owner)) return;
+        String previousSha = prepared.previous.patchSha256();
+        if (index.values().stream().anyMatch(info -> previousSha.equalsIgnoreCase(info.patchSha256()))) return;
+        try { Files.deleteIfExists(prepared.owner.storage().toPath().resolve(DIR_NAME).resolve(previousSha + PATCH_SUFFIX)); }
+        catch (IOException failure) { LOGGER.warn("清理旧场景补丁失败", failure); }
+    }
+
+    public boolean publish(String mapKey, DeltaInfo info, File stagedPatch) {
+        SceneAssetDescriptor live = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        if (info == null) return false;
+        try (PreparedPublication prepared = preparePublication(SceneAssetStore.getInstance().currentLocation(),
+                mapKey, info, stagedPatch, live == null ? null : live.sha256())) {
+            if (!commitPublication(prepared)) return false;
+            finishPublication(prepared);
+            Files.deleteIfExists(stagedPatch.toPath());
+            return true;
+        } catch (IOException failure) {
+            LOGGER.warn("清理场景补丁暂存文件失败", failure);
             return false;
         }
     }
 
     /** 暂存期的补丁文件：与暂存资产同目录，随暂存会话一起被丢弃。 */
     public File stagedPatchFile(String stagingId) {
-        File stagingDir = SceneAssetStore.getInstance().getStagingDir();
-        if (stagingDir == null || stagingId == null || stagingId.isBlank()) return null;
-        return new File(stagingDir, stagingId + PATCH_SUFFIX);
+        return stagedPatchFile(SceneAssetStore.getInstance().currentLocation(), stagingId);
+    }
+
+    File stagedPatchFile(SceneAssetStore.StorageLocation owner, String stagingId) {
+        File stagingDir = owner == null ? null : owner.staging();
+        if (stagingDir == null || !isValidStagingId(stagingId)) return null;
+        Path dirPath = stagingDir.toPath().normalize();
+        Path resolved = dirPath.resolve(stagingId.toLowerCase(Locale.ROOT) + PATCH_SUFFIX).normalize();
+        if (!resolved.getParent().equals(dirPath)) return null;
+        return resolved.toFile();
+    }
+
+    private static boolean isValidStagingId(String stagingId) {
+        if (stagingId == null || stagingId.isBlank()) return false;
+        try {
+            return UUID.fromString(stagingId).toString().equalsIgnoreCase(stagingId);
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     /** 把刚生成的补丁写进暂存目录（带 SHA-256 自校验）。 */
     public boolean stageDelta(String stagingId, PatchBlob blob) {
-        File target = stagedPatchFile(stagingId);
+        return stageDelta(SceneAssetStore.getInstance().currentLocation(), stagingId, blob);
+    }
+
+    boolean stageDelta(SceneAssetStore.StorageLocation owner, String stagingId, PatchBlob blob) {
+        File target = stagedPatchFile(owner, stagingId);
         if (target == null || blob == null || !blob.isValid()) return false;
         try {
             if (!target.getParentFile().exists()) Files.createDirectories(target.getParentFile().toPath());
@@ -239,13 +373,20 @@ public final class SceneDeltaStore {
         if (mapKey == null || mapKey.isBlank()) return;
         if (deltaDir() == null) return;
         DeltaInfo previous = index.remove(mapKey);
+        indexRevision++;
         if (previous != null) {
             saveIndex();
-            deletePatchFile(previous.patchSha256());
+            deletePatchFileIfUnreferenced(previous.patchSha256());
         }
     }
 
-    private void deletePatchFile(String patchSha256) {
+    private void deletePatchFileIfUnreferenced(String patchSha256) {
+        if (patchSha256 == null) return;
+        for (DeltaInfo info : index.values()) {
+            if (info != null && info.patchSha256().equalsIgnoreCase(patchSha256)) {
+                return;
+            }
+        }
         File file = patchFile(patchSha256);
         if (file == null || !file.isFile()) return;
         try {

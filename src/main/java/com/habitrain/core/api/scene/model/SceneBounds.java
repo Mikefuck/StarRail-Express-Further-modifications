@@ -46,10 +46,24 @@ public final class SceneBounds {
         int minX = Math.min(p1.getX(), p2.getX());
         int minY = Math.min(p1.getY(), p2.getY());
         int minZ = Math.min(p1.getZ(), p2.getZ());
-        int maxX = Math.max(p1.getX(), p2.getX()) + 1;
-        int maxY = Math.max(p1.getY(), p2.getY()) + 1;
-        int maxZ = Math.max(p1.getZ(), p2.getZ()) + 1;
+        int maxX = saturatedAdd(Math.max(p1.getX(), p2.getX()), 1);
+        int maxY = saturatedAdd(Math.max(p1.getY(), p2.getY()), 1);
+        int maxZ = saturatedAdd(Math.max(p1.getZ(), p2.getZ()), 1);
         return new SceneBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static int saturatedAdd(int a, int b) {
+        long r = (long) a + (long) b;
+        if (r > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (r < Integer.MIN_VALUE) return Integer.MIN_VALUE;
+        return (int) r;
+    }
+
+    private static int saturatedSub(int a, int b) {
+        long r = (long) a - (long) b;
+        if (r > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        if (r < Integer.MIN_VALUE) return Integer.MIN_VALUE;
+        return (int) r;
     }
 
     public int minX() { return minX; }
@@ -59,21 +73,31 @@ public final class SceneBounds {
     public int maxY() { return maxY; }
     public int maxZ() { return maxZ; }
 
-    public int sizeX() { return maxX - minX; }
-    public int sizeY() { return maxY - minY; }
-    public int sizeZ() { return maxZ - minZ; }
+    public int sizeX() { return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, (long) maxX - (long) minX)); }
+    public int sizeY() { return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, (long) maxY - (long) minY)); }
+    public int sizeZ() { return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, (long) maxZ - (long) minZ)); }
 
     public long volume() {
-        return (long) sizeX() * sizeY() * sizeZ();
+        if (isEmpty()) return 0L;
+        long sx = (long) maxX - (long) minX;
+        long sy = (long) maxY - (long) minY;
+        long sz = (long) maxZ - (long) minZ;
+        try {
+            return Math.multiplyExact(Math.multiplyExact(sx, sy), sz);
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
     }
 
     public boolean isEmpty() {
-        return sizeX() <= 0 || sizeY() <= 0 || sizeZ() <= 0;
+        return maxX <= minX || maxY <= minY || maxZ <= minZ;
     }
 
     public SceneBounds inflate(int amount) {
-        if (isEmpty()) return this;
-        return new SceneBounds(minX - amount, minY - amount, minZ - amount, maxX + amount, maxY + amount, maxZ + amount);
+        if (isEmpty() || amount <= 0) return this;
+        return new SceneBounds(
+                saturatedSub(minX, amount), saturatedSub(minY, amount), saturatedSub(minZ, amount),
+                saturatedAdd(maxX, amount), saturatedAdd(maxY, amount), saturatedAdd(maxZ, amount));
     }
 
     public int minSectionX() { return SectionPos.blockToSectionCoord(minX); }
@@ -84,16 +108,20 @@ public final class SceneBounds {
     public int maxSectionY() { return isEmpty() ? minSectionY() : SectionPos.blockToSectionCoord(maxY - 1); }
     public int maxSectionZ() { return isEmpty() ? minSectionZ() : SectionPos.blockToSectionCoord(maxZ - 1); }
 
-    public int sectionCountX() { return isEmpty() ? 0 : maxSectionX() - minSectionX() + 1; }
-    public int sectionCountY() { return isEmpty() ? 0 : maxSectionY() - minSectionY() + 1; }
-    public int sectionCountZ() { return isEmpty() ? 0 : maxSectionZ() - minSectionZ() + 1; }
+    public int sectionCountX() { return isEmpty() ? 0 : (int) Math.min(Integer.MAX_VALUE, (long) maxSectionX() - (long) minSectionX() + 1L); }
+    public int sectionCountY() { return isEmpty() ? 0 : (int) Math.min(Integer.MAX_VALUE, (long) maxSectionY() - (long) minSectionY() + 1L); }
+    public int sectionCountZ() { return isEmpty() ? 0 : (int) Math.min(Integer.MAX_VALUE, (long) maxSectionZ() - (long) minSectionZ() + 1L); }
 
     public int sectionsX() { return sectionCountX(); }
     public int sectionsY() { return sectionCountY(); }
     public int sectionsZ() { return sectionCountZ(); }
 
     public int totalSections() {
-        return sectionCountX() * sectionCountY() * sectionCountZ();
+        if (isEmpty()) return 0;
+        long xy = (long) sectionCountX() * (long) sectionCountY();
+        if (xy >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        long xyz = xy * (long) sectionCountZ();
+        return (int) Math.min(Integer.MAX_VALUE, xyz);
     }
 
     public AABB toAABB() {
@@ -135,20 +163,31 @@ public final class SceneBounds {
         if (json.has("min") && json.get("min").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("min");
             if (arr.size() >= 3) {
-                minX = arr.get(0).getAsInt();
-                minY = arr.get(1).getAsInt();
-                minZ = arr.get(2).getAsInt();
+                minX = getIntAt(arr, 0, 0);
+                minY = getIntAt(arr, 1, 0);
+                minZ = getIntAt(arr, 2, 0);
             }
         }
         if (json.has("maxExclusive") && json.get("maxExclusive").isJsonArray()) {
             JsonArray arr = json.getAsJsonArray("maxExclusive");
             if (arr.size() >= 3) {
-                maxX = arr.get(0).getAsInt();
-                maxY = arr.get(1).getAsInt();
-                maxZ = arr.get(2).getAsInt();
+                maxX = getIntAt(arr, 0, 0);
+                maxY = getIntAt(arr, 1, 0);
+                maxZ = getIntAt(arr, 2, 0);
             }
         }
         return new SceneBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static int getIntAt(JsonArray arr, int index, int fallback) {
+        if (index < 0 || index >= arr.size() || arr.get(index) == null || !arr.get(index).isJsonPrimitive()) {
+            return fallback;
+        }
+        try {
+            return arr.get(index).getAsInt();
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     @Override

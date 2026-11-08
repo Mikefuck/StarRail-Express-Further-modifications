@@ -152,6 +152,12 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         lastPouchResyncTick = -1;
         estateDistributed = false;
         incomeRemainder = 0;
+        if (!player.level().isClientSide()) {
+            try {
+                KEY.sync(player);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     /**
@@ -244,7 +250,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         // Reconcile inventory clicks before checking the hand insertion and its capacity.
         resyncFromPhysicalPouch(self);
         if (GreedPouchItem.storedCount(findOwnPouch(self)) >= GreedPouchItem.CAPACITY) {
-            self.displayClientMessage(Component.literal("贪婪收纳袋已满（32/32件）"), true);
+            self.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.full"), true);
             return true;
         }
 
@@ -315,7 +321,7 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
 
         if (!isGreed) return;
 
-        if (!pouchGiven && targetCount > 0) {
+        if ((!pouchGiven || findOwnPouch(sp).isEmpty()) && targetCount > 0) {
             givePouch(sp);
         }
         if (targetCount <= 0 && pouchGiven) {
@@ -468,6 +474,38 @@ public final class GreedComponent implements RoleComponent, ServerTickingCompone
         } catch (Throwable ignored) {
         }
         return ItemStack.EMPTY;
+    }
+
+    /**
+     * Ensures the player holds exactly one copy of their bound pouch after death/drop loops finish.
+     */
+    public static void ensureSingleBoundPouch(ServerPlayer self, ItemStack backupCopy, int preferredSlot) {
+        if (self == null || backupCopy == null || backupCopy.isEmpty()) return;
+        if (!GreedPouchItem.isBoundPouchOf(self, backupCopy)) return;
+        var inv = self.getInventory();
+        int foundCount = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (GreedPouchItem.isBoundPouchOf(self, s)) {
+                foundCount++;
+                if (foundCount > 1) {
+                    inv.setItem(i, ItemStack.EMPTY);
+                }
+            }
+        }
+        if (foundCount == 0) {
+            ItemStack restored = backupCopy.copy();
+            if (preferredSlot >= 0 && preferredSlot < inv.getContainerSize() && inv.getItem(preferredSlot).isEmpty()) {
+                inv.setItem(preferredSlot, restored);
+            } else if (!inv.add(restored)) {
+                ItemStack displaced = inv.getItem(0);
+                if (!displaced.isEmpty()) {
+                    self.drop(displaced, false, false);
+                }
+                inv.setItem(0, restored);
+            }
+            inv.setChanged();
+        }
     }
 
     @Override

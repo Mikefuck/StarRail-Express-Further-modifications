@@ -40,9 +40,12 @@ public final class SceneMotionSettings {
     }
 
     public SceneProfile getProfile(String mapKey) {
-        if (mapKey == null || mapKey.isBlank()) mapKey = defaultMapKey;
-        SceneProfile profile = profiles.get(mapKey);
-        if (profile == null && LOBBY_MAP_KEY.equals(mapKey)) {
+        String key = resolvedMapKey(mapKey);
+        SceneProfile profile = profiles.get(key);
+        if (profile == null && !key.equals(mapKey) && mapKey != null) {
+            profile = profiles.get(mapKey);
+        }
+        if (profile == null && LOBBY_MAP_KEY.equals(key)) {
             return createLobbyProfile();
         }
         if (profile == null) {
@@ -52,12 +55,16 @@ public final class SceneMotionSettings {
     }
 
     public SceneProfile getOrCreateProfile(String mapKey) {
-        if (mapKey == null || mapKey.isBlank()) mapKey = defaultMapKey;
-        return profiles.computeIfAbsent(mapKey, k -> {
+        String key = resolvedMapKey(mapKey);
+        return profiles.computeIfAbsent(key, k -> {
             if (LOBBY_MAP_KEY.equals(k)) return createLobbyProfile();
             SceneProfile def = profiles.get(DEFAULT_MAP_KEY);
             return def != null ? def.copyForNewProfile() : SceneProfile.createDefault();
         });
+    }
+
+    private String resolvedMapKey(String mapKey) {
+        return SceneBackgroundKey.normalizeMapKey(mapKey == null || mapKey.isBlank() ? defaultMapKey : mapKey);
     }
 
     public Map<String, SceneProfile> getAllProfiles() {
@@ -72,7 +79,7 @@ public final class SceneMotionSettings {
     }
 
     public SceneProfile getBackgroundProfile(String mapKey, String backgroundId) {
-        String map = SceneBackgroundKey.normalizeMapKey(mapKey);
+        String map = resolvedMapKey(mapKey);
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id)) return getProfile(map);
         SceneBackgroundConfig background = backgrounds.getOrDefault(map, new LinkedHashMap<>()).get(id);
@@ -83,12 +90,12 @@ public final class SceneMotionSettings {
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id)) return "默认设置";
         SceneBackgroundConfig background = backgrounds
-                .getOrDefault(SceneBackgroundKey.normalizeMapKey(mapKey), new LinkedHashMap<>()).get(id);
+                .getOrDefault(resolvedMapKey(mapKey), new LinkedHashMap<>()).get(id);
         return background != null ? background.getName() : id;
     }
 
     public List<ResolvedBackground> getResolvedBackgrounds(String mapKey) {
-        String map = SceneBackgroundKey.normalizeMapKey(mapKey);
+        String map = resolvedMapKey(mapKey);
         List<ResolvedBackground> result = new ArrayList<>();
         result.add(new ResolvedBackground(SceneBackgroundKey.DEFAULT_ID, "默认设置", getProfile(map), true));
         LinkedHashMap<String, SceneBackgroundConfig> additional = backgrounds.get(map);
@@ -100,7 +107,7 @@ public final class SceneMotionSettings {
     }
 
     public boolean putBackground(String mapKey, String backgroundId, SceneBackgroundConfig config) {
-        String map = SceneBackgroundKey.normalizeMapKey(mapKey);
+        String map = resolvedMapKey(mapKey);
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id) || config == null) return false;
         LinkedHashMap<String, SceneBackgroundConfig> mapBackgrounds =
@@ -111,7 +118,7 @@ public final class SceneMotionSettings {
     }
 
     public boolean removeBackground(String mapKey, String backgroundId) {
-        String map = SceneBackgroundKey.normalizeMapKey(mapKey);
+        String map = resolvedMapKey(mapKey);
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id)) return false;
         LinkedHashMap<String, SceneBackgroundConfig> mapBackgrounds = backgrounds.get(map);
@@ -161,13 +168,13 @@ public final class SceneMotionSettings {
 
         json = SceneMotionMigration.migrateToCurrent(json);
 
-        if (json.has("schemaVersion")) {
+        if (json.has("schemaVersion") && json.get("schemaVersion").isJsonPrimitive()) {
             settings.schemaVersion = json.get("schemaVersion").getAsInt();
         }
-        if (json.has("enabled")) {
+        if (json.has("enabled") && json.get("enabled").isJsonPrimitive()) {
             settings.enabled = json.get("enabled").getAsBoolean();
         }
-        if (json.has("defaultMapKey")) {
+        if (json.has("defaultMapKey") && json.get("defaultMapKey").isJsonPrimitive()) {
             settings.defaultMapKey = json.get("defaultMapKey").getAsString();
         }
 
@@ -176,7 +183,7 @@ public final class SceneMotionSettings {
             settings.profiles.clear();
             for (Map.Entry<String, com.google.gson.JsonElement> e : profObj.entrySet()) {
                 if (e.getValue().isJsonObject()) {
-                    settings.profiles.put(e.getKey(), SceneProfile.fromJson(e.getValue().getAsJsonObject()));
+                    settings.profiles.put(SceneBackgroundKey.normalizeMapKey(e.getKey()), SceneProfile.fromJson(e.getValue().getAsJsonObject()));
                 }
             }
             if (!settings.profiles.containsKey(DEFAULT_MAP_KEY)) {
@@ -196,7 +203,7 @@ public final class SceneMotionSettings {
                         mapBackgrounds.put(id, SceneBackgroundConfig.fromJson(entry.getValue().getAsJsonObject()));
                     }
                 }
-                if (!mapBackgrounds.isEmpty()) settings.backgrounds.put(mapEntry.getKey(), mapBackgrounds);
+                if (!mapBackgrounds.isEmpty()) settings.backgrounds.put(SceneBackgroundKey.normalizeMapKey(mapEntry.getKey()), mapBackgrounds);
             }
         }
         return settings;

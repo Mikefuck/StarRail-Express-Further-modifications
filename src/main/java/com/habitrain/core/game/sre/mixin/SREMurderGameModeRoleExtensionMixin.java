@@ -64,4 +64,22 @@ public abstract class SREMurderGameModeRoleExtensionMixin {
     private SRERole habitrain$resolveLooseEnd() {
         return SreRoleResolver.resolveOrOriginal(TMMRoles.LOOSE_END);
     }
+
+    @Redirect(
+            method = "assignRolesToPlayers",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lorg/agmas/harpymodloader/commands/RoleCountManager;getVigilanteCount(I)I"
+            ),
+            require = 1,
+            remap = false
+    )
+    private static int habitrain$resolveVigilanteCount(int playerCount) {
+        int forced = org.agmas.harpymodloader.commands.RoleCountManager.forcedVigilanteCount;
+        if (forced >= 0) {
+            return Math.min(forced, playerCount);
+        }
+        int divisor = Math.max(1, com.habitrain.core.config.ConfigManager.getInstance().getSheriffCountDivisor());
+        return playerCount / divisor;
+    }
 }

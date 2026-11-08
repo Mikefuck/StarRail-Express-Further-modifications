@@ -42,7 +42,7 @@ public final class SceneAssetManifestS2C implements CustomPacketPayload {
             long comp = buf.readLong();
             int sections = buf.readInt();
             int version = buf.readInt();
-            String fp = ScenePacketIo.readId(buf);
+            String fp = ScenePacketIo.readFingerprint(buf);
             long created = buf.readLong();
             SceneAssetDescriptor desc = new SceneAssetDescriptor(hash, uncomp, comp, sections, version, fp, created);
             return new SceneAssetManifestS2C(map, desc, protocol);
@@ -57,7 +57,7 @@ public final class SceneAssetManifestS2C implements CustomPacketPayload {
             buf.writeLong(payload.descriptor.compressedSize());
             buf.writeInt(payload.descriptor.sectionCount());
             buf.writeInt(payload.descriptor.dataVersion());
-            ScenePacketIo.writeId(buf, payload.descriptor.fingerprint());
+            ScenePacketIo.writeFingerprint(buf, payload.descriptor.fingerprint());
             buf.writeLong(payload.descriptor.createdAt());
         }
     };

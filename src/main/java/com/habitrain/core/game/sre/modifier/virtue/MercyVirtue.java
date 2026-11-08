@@ -27,6 +27,7 @@ public final class MercyVirtue {
             if (!(killer instanceof ServerPlayer killerSp)) return true;
             if (!(dead.level() instanceof ServerLevel level)) return true;
             if (!hasMercy(dead)) return true;
+            if (!SinRoleRules.isGoodAligned(level, dead)) return true;
             if (!SinRoleRules.isGoodAligned(level, killerSp)) return true;
 
             // Only cancel death after mercy is successfully consumed.
@@ -49,8 +50,8 @@ public final class MercyVirtue {
             }
 
             dead.setHealth(dead.getMaxHealth());
-            dead.displayClientMessage(Component.literal("§b[宽容] 善意护住了你一次……"), true);
-            killerSp.displayClientMessage(Component.literal("§e[宽容] 对方的宽容抵消了这次击杀。"), true);
+            dead.displayClientMessage(Component.translatable("message.habitrain_core.virtue.mercy.saved"), true);
+            killerSp.displayClientMessage(Component.translatable("message.habitrain_core.virtue.mercy.blocked"), true);
             HabiTrainCore.LOGGER.info("[Mercy] cancelled kill {} -> {} (modifier consumed)",
                     killerSp.getGameProfile().getName(), dead.getGameProfile().getName());
             return false;

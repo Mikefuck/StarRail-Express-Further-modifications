@@ -41,6 +41,6 @@ public interface RestAreaBridge {
      * @return {@code true} 表示必须按休息中处理
      */
     default boolean isResting(ServerPlayer player) {
-        return player != null;
+        return false;
     }
 }

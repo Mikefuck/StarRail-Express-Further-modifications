@@ -37,18 +37,49 @@ public class ConfigMenuScreen extends Screen {
         MenuTheme.ACCENT_MINT, MenuTheme.ACCENT_BLUE,
         MenuTheme.ACCENT_AMBER, MenuTheme.TEXT_SECONDARY
     };
-    private static final String[][] SUB_LABELS = {
-        {"小游戏", "数值平衡", "环境", "移动场景"},
-        {"投票", "大厅环境", "光影白名单", Component.translatable("screen.habitrain_core.title_panorama.tab").getString(), Component.translatable("screen.habitrain_core.scene_performance.tab").getString()},
-        {"任务配置", "角色扩展"},
-        {}
-    };
-    private static final String[][] PAGE_HINTS = {
-        {"管理小游戏任务池、奖励与出现条件", "调整核心数值与全局对局开关", "控制对局、结算和动态天气", "配置列车窗外移动场景与几何资产"},
-        {"配置模式和地图投票流程", "设置大厅时间、天气与雾效", "限制服务器允许使用的光影包", Component.translatable("screen.habitrain_core.title_panorama.page_hint").getString(), Component.translatable("screen.habitrain_core.scene_performance.page_hint").getString()},
-        {"按模式管理任务并编辑奖励与地图", "管理 v2 角色扩展 provider/entry 与冲突裁决"},
-        {"兼容、耐久与服务端自动行为"}
-    };
+    private static String[] subLabels(int top) {
+        return switch (top) {
+            case TOP_IN_GAME -> new String[]{"小游戏", "数值平衡", "环境", "移动场景"};
+            case TOP_OUT_GAME -> new String[]{
+                "投票", "大厅环境", "光影白名单",
+                Component.translatable("screen.habitrain_core.title_panorama.tab").getString(),
+                Component.translatable("screen.habitrain_core.scene_performance.tab").getString()
+            };
+            case TOP_MODE -> new String[]{"任务配置", "角色扩展"};
+            default -> new String[0];
+        };
+    }
+
+    private static String subLabel(int top, int sub) {
+        String[] labels = subLabels(top);
+        return (sub >= 0 && sub < labels.length) ? labels[sub] : "";
+    }
+
+    private static String pageHint(int top, int sub) {
+        return switch (top) {
+            case TOP_IN_GAME -> switch (sub) {
+                case 0 -> "管理小游戏任务池、奖励与出现条件";
+                case 1 -> "调整核心数值与全局对局开关";
+                case 2 -> "控制对局、结算和动态天气";
+                case 3 -> "配置列车窗外移动场景与几何资产";
+                default -> "";
+            };
+            case TOP_OUT_GAME -> switch (sub) {
+                case 0 -> "配置模式和地图投票流程";
+                case 1 -> "设置大厅时间、天气与雾效";
+                case 2 -> "限制服务器允许使用的光影包";
+                case 3 -> Component.translatable("screen.habitrain_core.title_panorama.page_hint").getString();
+                case 4 -> Component.translatable("screen.habitrain_core.scene_performance.page_hint").getString();
+                default -> "";
+            };
+            case TOP_MODE -> switch (sub) {
+                case 0 -> "按模式管理任务并编辑奖励与地图";
+                case 1 -> "管理 v2 角色扩展 provider/entry 与冲突裁决";
+                default -> "";
+            };
+            default -> "兼容、耐久与服务端自动行为";
+        };
+    }
 
     public enum AccessMode {
         FULL,
@@ -101,9 +132,28 @@ public class ConfigMenuScreen extends Screen {
         ConfigUpdateContext.setCurrentScope(configUpdateScope());
         this.remoteEditable = MenuPermissions.canEditRemoteConfigs(configUpdateScope());
         this.saveBar = new SaveBar(remoteEditable);
-        for (int i = 0; i < SUB_LABELS.length; i++) {
-            if (SUB_LABELS[i].length > 0) subBars[i] = new SubTabBar(SUB_LABELS[i], TOP_ACCENTS[i]);
+        rebuildSubBars();
+    }
+
+    private void rebuildSubBars() {
+        for (int i = 0; i < subBars.length; i++) {
+            String[] labels = subLabels(i);
+            subBars[i] = labels.length > 0 ? new SubTabBar(labels, TOP_ACCENTS[i]) : null;
         }
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance().reset();
+        ConfigManager.getInstance().beginClientEditing();
+        rebuildSubBars();
+    }
+
+    @Override
+    public void removed() {
+        ConfigManager.getInstance().endClientEditing();
+        super.removed();
     }
 
     /** 公共 DLC 客户端桥接（抽奖优先反射本方法）：直接打开投票页。 */
@@ -259,8 +309,11 @@ public class ConfigMenuScreen extends Screen {
         MenuTheme.panel(g, contentX, contentY, contentW, contentH);
 
         g.enableScissor(contentX + 1, contentY + 1, contentX + contentW - 1, contentY + contentH - 1);
-        page.render(g, mx, my, delta, contentX + 1, contentY + 1, contentW - 2, contentH - 2);
-        g.disableScissor();
+        try {
+            page.render(g, mx, my, delta, contentX + 1, contentY + 1, contentW - 2, contentH - 2);
+        } finally {
+            g.disableScissor();
+        }
 
         if (showSaveBar) {
             saveBar.render(g, font, contentX, contentW, height, accent,
@@ -325,7 +378,7 @@ public class ConfigMenuScreen extends Screen {
     private int renderTaskSettingsOnlySubBar(GuiGraphics g, int x, int w, int mx, int my) {
         int tabW = Math.max(60, Math.min(132, w));
         boolean hover = MenuTheme.inBounds(mx, my, x, HEADER_H, tabW, SubTabBar.H);
-        MenuTheme.chip(g, font, SUB_LABELS[TOP_MODE][0], x, HEADER_H,
+        MenuTheme.chip(g, font, subLabel(TOP_MODE, 0), x, HEADER_H,
                 tabW, SubTabBar.H, TOP_ACCENTS[TOP_MODE], true);
         if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_MODE]);
         return -1;
@@ -334,7 +387,7 @@ public class ConfigMenuScreen extends Screen {
     private int renderMapVoteOnlySubBar(GuiGraphics g, int x, int w, int mx, int my) {
         int tabW = Math.max(60, Math.min(132, w));
         boolean hover = MenuTheme.inBounds(mx, my, x, HEADER_H, tabW, SubTabBar.H);
-        MenuTheme.chip(g, font, SUB_LABELS[TOP_OUT_GAME][0], x, HEADER_H,
+        MenuTheme.chip(g, font, subLabel(TOP_OUT_GAME, 0), x, HEADER_H,
                 tabW, SubTabBar.H, TOP_ACCENTS[TOP_OUT_GAME], true);
         if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_OUT_GAME]);
         return -1;
@@ -343,7 +396,7 @@ public class ConfigMenuScreen extends Screen {
     private int renderSceneSettingsOnlySubBar(GuiGraphics g, int x, int w, int mx, int my) {
         int tabW = Math.max(60, Math.min(132, w));
         boolean hover = MenuTheme.inBounds(mx, my, x, HEADER_H, tabW, SubTabBar.H);
-        MenuTheme.chip(g, font, SUB_LABELS[TOP_IN_GAME][3], x, HEADER_H,
+        MenuTheme.chip(g, font, subLabel(TOP_IN_GAME, 3), x, HEADER_H,
                 tabW, SubTabBar.H, TOP_ACCENTS[TOP_IN_GAME], true);
         if (hover) MenuTheme.outline(g, x, HEADER_H, tabW, SubTabBar.H, TOP_ACCENTS[TOP_IN_GAME]);
         return -1;
@@ -383,15 +436,15 @@ public class ConfigMenuScreen extends Screen {
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "任务点设置";
         if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) return "移动场景";
         if (topTab == TOP_OTHER) return "其他设置";
-        return SUB_LABELS[topTab][subTab];
+        return subLabel(topTab, subTab);
     }
 
     private String activePageHint() {
         if (accessMode == AccessMode.TASK_SETTINGS_ONLY) return "仅开放任务点设置，其他设置已锁定";
-        if (accessMode == AccessMode.MAP_VOTE_ONLY) return PAGE_HINTS[TOP_OUT_GAME][0];
+        if (accessMode == AccessMode.MAP_VOTE_ONLY) return pageHint(TOP_OUT_GAME, 0);
         if (accessMode == AccessMode.SCENE_SETTINGS_ONLY) return "管理员道具专用入口，仅编辑服务端当前地图";
-        if (topTab == TOP_OTHER) return PAGE_HINTS[TOP_OTHER][0];
-        return PAGE_HINTS[topTab][subTab];
+        if (topTab == TOP_OTHER) return pageHint(TOP_OTHER, 0);
+        return pageHint(topTab, subTab);
     }
 
     private int activeAccent() {
@@ -423,7 +476,20 @@ public class ConfigMenuScreen extends Screen {
         if (!isScreenAllowed()) return false;
         if (currentPage().canSave() && ConfigManager.getInstance().hasClientConfigConflict()
                 && MenuTheme.inBounds(mx, my, contentX() + Math.max(0, contentW() - 226), height - SaveBar.HEIGHT + 10, 122, 22)) {
-            ConfigManager.getInstance().reloadClientDraft(); pages = null; return true;
+            if (pages != null && pages[TOP_IN_GAME][3] instanceof com.habitrain.core.client.gui.menu.page.SceneMotionPage scenePage
+                    && scenePage.hasSessionContext()) {
+                pendingSceneSession = new PendingSceneSession(
+                        scenePage.getSelectedMapKey(),
+                        scenePage.getSelectedBackgroundId(),
+                        scenePage.getRuntimeMapKey(),
+                        scenePage.getSelectionMapKey(),
+                        null,
+                        scenePage.getCurrentSessionBounds(),
+                        scenePage.getCurrentDescriptor());
+            }
+            ConfigManager.getInstance().reloadClientDraft();
+            pages = null;
+            return true;
         }
         int navW = navWidth();
         for (int i = 0; i < TOP_LABELS.length; i++) {
@@ -464,7 +530,7 @@ public class ConfigMenuScreen extends Screen {
             return true;
         }
 
-        if (my >= contentY() && my < contentY() + contentH()) {
+        if (MenuTheme.inBounds(mx, my, contentX(), contentY(), contentW(), contentH())) {
             return currentPage().mouseClicked(mx, my, btn,
                     contentX() + 1, contentY() + 1, contentW() - 2, contentH() - 2);
         }

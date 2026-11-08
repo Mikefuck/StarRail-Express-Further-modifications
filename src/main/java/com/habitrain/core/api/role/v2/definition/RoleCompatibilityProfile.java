@@ -39,23 +39,30 @@ public record RoleCompatibilityProfile(
 
     public static final class Builder {
         private @Nullable ComponentKey<? extends RoleComponent> componentKey;
-        private boolean canSeeCoin;
-        private boolean canPickUpRevolver;
-        private boolean canBeRandomed;
+        private boolean canSeeCoin = true;
+        private boolean canPickUpRevolver = true;
+        private boolean canBeRandomed = true;
         private boolean otherModeRole;
         private SRERole.SpecialMapRoleMap specialMapRole = SRERole.SpecialMapRoleMap.ALL;
         private boolean hiddenForRotation;
         private int occupiedRoleCount = 1;
 
-        public Builder componentKey(ComponentKey<? extends RoleComponent> key) {
-            this.componentKey = Objects.requireNonNull(key, "componentKey");
+        public Builder componentKey(@Nullable ComponentKey<? extends RoleComponent> key) {
+            this.componentKey = key;
             return this;
         }
 
         public Builder canSeeCoin() { this.canSeeCoin = true; return this; }
+        public Builder canSeeCoin(boolean value) { this.canSeeCoin = value; return this; }
+
         public Builder canPickUpRevolver() { this.canPickUpRevolver = true; return this; }
+        public Builder canPickUpRevolver(boolean value) { this.canPickUpRevolver = value; return this; }
+
         public Builder canBeRandomed() { this.canBeRandomed = true; return this; }
+        public Builder canBeRandomed(boolean value) { this.canBeRandomed = value; return this; }
+
         public Builder otherModeRole() { this.otherModeRole = true; return this; }
+        public Builder otherModeRole(boolean value) { this.otherModeRole = value; return this; }
 
         public Builder specialMapRole(SRERole.SpecialMapRoleMap map) {
             this.specialMapRole = Objects.requireNonNull(map, "specialMapRole");
@@ -63,6 +70,7 @@ public record RoleCompatibilityProfile(
         }
 
         public Builder hiddenForRotation() { this.hiddenForRotation = true; return this; }
+        public Builder hiddenForRotation(boolean value) { this.hiddenForRotation = value; return this; }
 
         public Builder occupiedRoleCount(int count) {
             this.occupiedRoleCount = count;

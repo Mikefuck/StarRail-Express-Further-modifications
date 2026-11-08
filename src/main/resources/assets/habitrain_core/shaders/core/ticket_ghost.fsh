@@ -47,7 +47,8 @@ float coverage(vec2 uv) {
 }
 
 void main() {
-    vec2 size = GhostRect.zw - GhostRect.xy;
+    vec2 rawSize = GhostRect.zw - GhostRect.xy;
+    vec2 size = sign(rawSize) * max(abs(rawSize), vec2(1e-5));
     vec2 local = (texCoord0 - GhostRect.xy) / size;
 
     // 横向撕裂：随机几条横带整体错位
@@ -78,9 +79,10 @@ void main() {
     float sides = smoothstep(0.0, 0.05, local.x) * (1.0 - smoothstep(0.95, 1.0, local.x)) * smoothstep(0.0, 0.03, local.y);
     float mask = shown * sink * sides;
 
-    // 显影：先是近乎全黑的剪影，再透出暗淡、偏冷、去色的细节
-    float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 col = mix(tex.rgb, vec3(lum) * Tint.rgb, Tint.a);
+    // 显影：画布内容已经是预乘 alpha（tex.rgb = rgb * tex.a），先解预乘再调色，防止二次乘以 tex.a 产生黑边
+    vec3 unpremul = tex.a > 0.001 ? tex.rgb / tex.a : vec3(0.0);
+    float lum = dot(unpremul, vec3(0.299, 0.587, 0.114));
+    vec3 col = mix(unpremul, vec3(lum) * Tint.rgb, Tint.a);
     col *= mix(0.03, 0.78, Develop * Develop);
     col *= 0.9 + 0.1 * sin(gl_FragCoord.y * 1.3 + Time * 3.0);
 

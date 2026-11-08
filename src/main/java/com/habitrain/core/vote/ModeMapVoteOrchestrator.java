@@ -61,19 +61,34 @@ public final class ModeMapVoteOrchestrator {
     /** 最近一次 start 失败的可读原因（审核 C7/M-13）。 */
     private static final ConcurrentMap<ResourceKey<Level>, String> LAST_FAILURE = new ConcurrentHashMap<>();
 
-    static {
-        com.habitrain.core.task.ClearableHandlerRegistry.register(ModeMapVoteOrchestrator::resetAll);
-    }
-
     private ModeMapVoteOrchestrator() {}
 
     private static final class Session {
         Phase phase = Phase.IDLE;
         ModeMapVoteConfig config;
+        com.habitrain.core.game.sre.match.SingleMatchGate.Snapshot reservation;
         @Nullable String selectedModeId;
         @Nullable String selectedMapId;
         @Nullable String selectedModeDisplay;
         int phaseDurationSeconds;
+    }
+
+    /**
+     * API-TV-19：将显示名（及可选后缀，如人数未推荐标记）裁剪至网络契约上限（64 字符）以内，
+     * 防止地图/模式名拼接后缀后超出 {@link OptionVoteManager#MAX_WIRE_ID_LENGTH} 导致二阶段投票启动失败。
+     */
+    static String fitWireDisplayName(@Nullable String baseName, @Nullable String suffix) {
+        String safeBase = baseName == null ? "" : baseName;
+        String safeSuffix = suffix == null ? "" : suffix;
+        int maxLen = OptionVoteManager.MAX_WIRE_ID_LENGTH;
+        if (safeSuffix.length() >= maxLen) {
+            return safeSuffix.substring(0, maxLen);
+        }
+        int maxBase = maxLen - safeSuffix.length();
+        if (safeBase.length() > maxBase) {
+            safeBase = maxBase > 1 ? safeBase.substring(0, maxBase - 1) + "…" : safeBase.substring(0, maxBase);
+        }
+        return safeBase + safeSuffix;
     }
 
     public static boolean start(ServerLevel level, ModeMapVoteConfig config) {
@@ -112,12 +127,12 @@ public final class ModeMapVoteOrchestrator {
         // Config LinkedHashMap order first, then any registry ids not yet present.
         LinkedHashSet<String> orderedModeIds = new LinkedHashSet<>();
         for (String fullId : settings.modes.keySet()) {
-            if (isModeAllowed(cfg, settings, fullId)) {
+            if (isModeAllowed(cfg, settings, fullId) && OptionVoteManager.isValidWireId(fullId)) {
                 orderedModeIds.add(fullId);
             }
         }
         for (String fullId : registryModeIds) {
-            if (isModeAllowed(cfg, settings, fullId)) {
+            if (isModeAllowed(cfg, settings, fullId) && OptionVoteManager.isValidWireId(fullId)) {
                 orderedModeIds.add(fullId);
             }
         }
@@ -125,7 +140,8 @@ public final class ModeMapVoteOrchestrator {
 
         List<VoteOption> options = new ArrayList<>();
         for (String fullId : modeIds) {
-            options.add(new VoteOption(fullId, resolveModeDisplayName(settings, fullId)));
+            String display = fitWireDisplayName(resolveModeDisplayName(settings, fullId), null);
+            options.add(new VoteOption(fullId, display));
         }
         if (options.isEmpty()) {
             return fail(level, "没有可通过配置过滤的候选模式");
@@ -140,18 +156,19 @@ public final class ModeMapVoteOrchestrator {
         session.config = cfg;
         session.phase = Phase.MODE_VOTING;
         session.phaseDurationSeconds = duration;
+        if (!com.habitrain.core.game.sre.match.ServerMatchContext.GATE.vote(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level))) return fail(level, "服务器已有另一局投票、加载或对局");
+        session.reservation = com.habitrain.core.game.sre.match.ServerMatchContext.GATE.snapshot();
         SESSIONS.put(level.dimension(), session);
         clearFailure(level);
 
-        // 只有一个可投票模式：跳过模式投票，直接选定该模式进入地图投票。
+        // API-TV-19：只有一个可投票模式时跳过模式投票，并真实返回地图阶段/直开结果而非盲目返回 true。
         if (options.size() == 1) {
             String onlyId = options.get(0).id();
             session.selectedModeId = onlyId;
             session.selectedModeDisplay = options.get(0).displayName();
             LOGGER.info("[ModeMapVote] single mode option, skipping mode vote, mode={} dim={}",
                     onlyId, level.dimension().location());
-            beginMapVote(level, session, onlyId, false);
-            return true;
+            return beginMapVote(level, session, onlyId, false);
         }
 
         // title/description are client-localized via voteId; wire strings are placeholders only
@@ -165,7 +182,8 @@ public final class ModeMapVoteOrchestrator {
                 result -> onModeResolved(level, result)
         );
         if (!started) {
-            SESSIONS.remove(level.dimension());
+            com.habitrain.core.game.sre.match.ServerMatchContext.GATE.releaseVote(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
+            SESSIONS.remove(level.dimension(), session);
             return fail(level, "选项投票层拒绝发起模式投票（可能已存在 active 投票）");
         }
 
@@ -201,13 +219,13 @@ public final class ModeMapVoteOrchestrator {
         String winnerId = result != null ? result.winnerId() : null;
         if (winnerId == null || winnerId.isBlank()) {
             LOGGER.info("[ModeMapVote] mode vote had no valid winner; cancelled");
-            clearSession(level);
+            clearSession(level, session);
             return;
         }
 
         session.selectedModeId = winnerId;
         ModeMapVoteSettings settings = ConfigManager.getInstance().getModeMapVoteSettings();
-        session.selectedModeDisplay = resolveModeDisplayName(settings, winnerId);
+        session.selectedModeDisplay = fitWireDisplayName(resolveModeDisplayName(settings, winnerId), null);
 
         LOGGER.info("[ModeMapVote] mode selected={} randomPick={}",
                 winnerId, result != null && result.randomPick());
@@ -216,13 +234,12 @@ public final class ModeMapVoteOrchestrator {
     }
 
     /** 模式已选定，进入地图投票阶段；单模式跳过模式投票时也走这里。 */
-    private static void beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
-        if (!validateSelectedMode(level, session, winnerId)) return;
+    private static boolean beginMapVote(ServerLevel level, Session session, String winnerId, boolean randomPick) {
+        if (!validateSelectedMode(level, session, winnerId)) return false;
         // 修机：上游 startGame 丢弃 Areas / 投票图，用地图投票会把将被丢弃的图告诉玩家。
         if (isRepairModeId(winnerId)) {
             LOGGER.info("[ModeMapVote] repair mode skips map vote (upstream auto manor) mode={}", winnerId);
-            finishRepairWithoutVotedMap(level, session);
-            return;
+            return finishRepairWithoutVotedMap(level, session);
         }
 
         var discovered = SREIntegration.discoverServerMaps(level);
@@ -243,7 +260,10 @@ public final class ModeMapVoteOrchestrator {
 
         List<String> candidateIds = new ArrayList<>();
         for (String mapId : available) {
-            if (mapId == null || mapId.isBlank()) continue;
+            // API-TV-19：过滤空 ID、保留 ID 以及超出选项投票网络层 64 字符上限的 mapId
+            if (!OptionVoteManager.isValidWireId(mapId) || MapVoteProfileStore.isReservedMapId(mapId)) {
+                continue;
+            }
             MapVoteEntry mapEntry = settings.maps.get(mapId);
             // missing entry = enabled
             if (mapEntry != null && !mapEntry.enabled) {
@@ -264,8 +284,8 @@ public final class ModeMapVoteOrchestrator {
 
         if (candidateIds.isEmpty()) {
             LOGGER.info("[ModeMapVote] no available maps after mode={}; ending", winnerId);
-            clearSession(level);
-            return;
+            clearSession(level, session);
+            return fail(level, "所选模式没有可用的候选地图: " + winnerId);
         }
 
         Random rng = new Random(level.getRandom().nextLong());
@@ -285,21 +305,24 @@ public final class ModeMapVoteOrchestrator {
                     settings.playerCountOrDefault().drawCount);
         }
 
-        // 剔除 SRE 会把 map_vote 目录自身枚举成候选地图的保留 id（如 "map_vote/maps"）
+        // 剔除 SRE 会把 map_vote 目录自身枚举成候选地图的保留 id（如 "map_vote/maps"）及超长 id
         List<String> filteredIds = new ArrayList<>();
         for (String mapId : effectiveIds) {
-            if (!MapVoteProfileStore.isReservedMapId(mapId)) {
+            if (OptionVoteManager.isValidWireId(mapId) && !MapVoteProfileStore.isReservedMapId(mapId)) {
                 filteredIds.add(mapId);
             }
         }
         effectiveIds = filteredIds;
+        if (effectiveIds.isEmpty()) {
+            clearSession(level, session);
+            return fail(level, "过滤后没有有效的候选地图: " + winnerId);
+        }
 
         List<VoteOption> mapOptions = new ArrayList<>();
         for (String mapId : effectiveIds) {
-            String name = resolveMapDisplayName(settings, mapId);
-            if (notRecommended.contains(mapId)) {
-                name = name + MapPlayerCountService.NOT_RECOMMENDED_MARK;
-            }
+            String baseName = resolveMapDisplayName(settings, mapId);
+            String suffix = notRecommended.contains(mapId) ? MapPlayerCountService.NOT_RECOMMENDED_MARK : null;
+            String name = fitWireDisplayName(baseName, suffix);
             mapOptions.add(new VoteOption(mapId, name));
         }
 
@@ -322,8 +345,8 @@ public final class ModeMapVoteOrchestrator {
         );
         if (!started) {
             LOGGER.warn("[ModeMapVote] failed to start map vote after mode={}", winnerId);
-            clearSession(level);
-            return;
+            clearSession(level, session);
+            return fail(level, "无法启动地图投票阶段: " + winnerId);
         }
 
         // 磁盘 I/O 与图片读取移出服务端 tick；完成后回到服务端线程确认投票仍有效并分片发送。
@@ -363,6 +386,7 @@ public final class ModeMapVoteOrchestrator {
 
         LOGGER.info("[ModeMapVote] map vote started mode={} options={} duration={}s",
                 winnerId, mapOptions.size(), duration);
+        return true;
     }
 
     private static void onMapResolved(ServerLevel level, VoteResult result) {
@@ -374,7 +398,7 @@ public final class ModeMapVoteOrchestrator {
         String winnerId = result != null ? result.winnerId() : null;
         if (winnerId == null || winnerId.isBlank()) {
             LOGGER.info("[ModeMapVote] map vote had no valid winner; cancelled");
-            clearSession(level);
+            clearSession(level, session);
             return;
         }
 
@@ -383,10 +407,27 @@ public final class ModeMapVoteOrchestrator {
         finishWithMap(level, session, winnerId, result != null && result.randomPick());
     }
 
+    /**
+     * API-TV-18：仅对走上游 SRE {@code GameUtils.startGame -> trueStartGame} 管线的模式启用
+     * {@link MapVoteLoadCoordinator} 加载遮罩；纯自定义 {@link GameModeRegistry} 模式直接开局，
+     * 不会触发 {@code trueStartGame}，若开启加载遮罩会导致全体客户端永久卡在 0% 加载黑屏。
+     */
+    static boolean usesSreLoadCoordinator(@Nullable String modeId) {
+        if (modeId == null || modeId.isBlank()) {
+            return false;
+        }
+        if (com.habitrain.core.api.GameModeIds.MURDER.equals(modeId)
+                || com.habitrain.core.api.GameModeIds.REGISTRY_MURDER.equals(modeId)
+                || isRepairModeId(modeId)) {
+            return true;
+        }
+        return GameModeRegistry.get(modeId) instanceof SreOriginalModeProxy;
+    }
+
     /** Load map then start mode; shared by map vote result and DIRECT_PICK. */
     private static void finishWithMap(ServerLevel level, Session session, String mapId, boolean randomPick) {
         if (session == null || mapId == null || mapId.isBlank()) {
-            clearSession(level);
+            clearSession(level, session);
             return;
         }
         if (!validateSelectedMode(level, session, session.selectedModeId)) return;
@@ -400,7 +441,7 @@ public final class ModeMapVoteOrchestrator {
         if (RepairModeManager.isMapLocked(mapId)) {
             LOGGER.warn("[ModeMapVote] abort start: map is repair-locked map={} mode={}",
                     mapId, session.selectedModeId);
-            clearSession(level);
+            clearSession(level, session);
             return;
         }
 
@@ -411,7 +452,7 @@ public final class ModeMapVoteOrchestrator {
         boolean loaded = SREModeStartAdapter.loadMap(level, mapId);
         if (!loaded) {
             LOGGER.warn("[ModeMapVote] map load failed map={} randomPick={}", mapId, randomPick);
-            clearSession(level);
+            clearSession(level, session);
             return;
         }
 
@@ -419,44 +460,56 @@ public final class ModeMapVoteOrchestrator {
         String modeId = session.selectedModeId;
         if (!validateSelectedMode(level, session, modeId)) return;
 
-        // 开局加载协调：地图重置开始即进入协调，客户端进入「加载」转场阶段；
-        // 真正开局（trueStartGame）时由 SRETrueStartGameMixin 广播开局确认。
-        MapVoteLoadCoordinator.beginLoad(level, mapId, modeId);
+        // API-TV-18：仅 SRE 模式开启 MapVoteLoadCoordinator 加载遮罩
+        boolean useLoadCoordinator = usesSreLoadCoordinator(modeId);
+        if (useLoadCoordinator) {
+            MapVoteLoadCoordinator.beginLoad(level, mapId, modeId);
+        }
 
         boolean started = SREModeStartAdapter.startMode(level, modeId);
         if (!started) {
             LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (map kept)", modeId, mapId);
-            MapVoteLoadCoordinator.reset(level);
+            if (useLoadCoordinator) {
+                MapVoteLoadCoordinator.reset(level);
+            }
         } else {
-            LOGGER.info("[ModeMapVote] started mode={} map={} (loading)", modeId, mapId);
+            LOGGER.info("[ModeMapVote] started mode={} map={} (loading={})", modeId, mapId, useLoadCoordinator);
         }
 
-        clearSession(level);
+        clearSession(level, session);
     }
 
     /** Repair escape: no map vote / no loadMap; coordinator UI uses auto-manor id. */
-    private static void finishRepairWithoutVotedMap(ServerLevel level, Session session) {
+    private static boolean finishRepairWithoutVotedMap(ServerLevel level, Session session) {
         if (session == null) {
-            clearSession(level);
-            return;
+            clearSession(level, null);
+            return false;
         }
         String modeId = session.selectedModeId;
-        if (!validateSelectedMode(level, session, modeId)) return;
+        if (!validateSelectedMode(level, session, modeId)) return false;
         session.selectedMapId = REPAIR_LAUNCH_MAP_ID;
         session.phase = Phase.STARTING_MODE;
         session.phaseDurationSeconds = 0;
 
-        MapVoteLoadCoordinator.beginLoad(level, REPAIR_LAUNCH_MAP_ID, modeId);
+        boolean useLoadCoordinator = usesSreLoadCoordinator(modeId);
+        if (useLoadCoordinator) {
+            MapVoteLoadCoordinator.beginLoad(level, REPAIR_LAUNCH_MAP_ID, modeId);
+        }
         boolean started = SREModeStartAdapter.startMode(level, modeId);
         if (!started) {
             LOGGER.warn("[ModeMapVote] startMode failed mode={} map={} (repair auto manor)",
                     modeId, REPAIR_LAUNCH_MAP_ID);
-            MapVoteLoadCoordinator.reset(level);
+            if (useLoadCoordinator) {
+                MapVoteLoadCoordinator.reset(level);
+            }
+            clearSession(level, session);
+            return fail(level, "启动修机模式失败: " + modeId);
         } else {
-            LOGGER.info("[ModeMapVote] started mode={} map={} (repair auto manor, loading)",
-                    modeId, REPAIR_LAUNCH_MAP_ID);
+            LOGGER.info("[ModeMapVote] started mode={} map={} (repair auto manor, loading={})",
+                    modeId, REPAIR_LAUNCH_MAP_ID, useLoadCoordinator);
         }
-        clearSession(level);
+        clearSession(level, session);
+        return true;
     }
 
     static boolean isRepairModeId(@Nullable String modeId) {
@@ -464,7 +517,10 @@ public final class ModeMapVoteOrchestrator {
             return false;
         }
         String id = modeId.toLowerCase(Locale.ROOT);
-        return id.contains("sre:repair") || id.contains("repair_escape");
+        net.minecraft.resources.ResourceLocation parsed = net.minecraft.resources.ResourceLocation.tryParse(id);
+        return com.habitrain.core.api.GameModeIds.REPAIR.equals(id)
+                || com.habitrain.core.api.GameModeIds.REGISTRY_REPAIR.equals(id)
+                || parsed != null && "repair_escape".equals(parsed.getPath());
     }
 
     public static boolean cancel(ServerLevel level) {
@@ -473,6 +529,9 @@ public final class ModeMapVoteOrchestrator {
         if (session == null || session.phase == Phase.IDLE) {
             return false;
         }
+        // Release before the cancellation callback: it may immediately open a replacement vote.
+        // This also guarantees release if broadcasting the cancellation throws.
+        com.habitrain.core.game.sre.match.ServerMatchContext.GATE.releaseVote(session.reservation);
         OptionVoteManager.cancel(level);
         LOGGER.info("[ModeMapVote] cancelled phase={} dim={}",
                 session.phase, level.dimension().location());
@@ -501,6 +560,7 @@ public final class ModeMapVoteOrchestrator {
 
     public static void reset(ServerLevel level) {
         if (level == null) return;
+        com.habitrain.core.game.sre.match.ServerMatchContext.GATE.releaseVote(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
         SESSIONS.remove(level.dimension());
         LAST_FAILURE.remove(level.dimension());
     }
@@ -524,8 +584,17 @@ public final class ModeMapVoteOrchestrator {
         return OptionVoteManager.remainingSeconds(level);
     }
 
-    private static void clearSession(ServerLevel level) {
-        SESSIONS.remove(level.dimension());
+    private static void clearSession(ServerLevel level, @Nullable Session expected) {
+        if (level == null) return;
+        if (expected != null) {
+            if (SESSIONS.remove(level.dimension(), expected)) {
+                com.habitrain.core.game.sre.match.ServerMatchContext.GATE.releaseVote(
+                        expected.reservation);
+            }
+        } else {
+            com.habitrain.core.game.sre.match.ServerMatchContext.GATE.releaseVote(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
+            SESSIONS.remove(level.dimension());
+        }
     }
 
     /**
@@ -600,7 +669,7 @@ public final class ModeMapVoteOrchestrator {
         for (ServerPlayer player : level.players()) {
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal(reason));
         }
-        clearSession(level);
+        clearSession(level, session);
         return false;
     }
 }

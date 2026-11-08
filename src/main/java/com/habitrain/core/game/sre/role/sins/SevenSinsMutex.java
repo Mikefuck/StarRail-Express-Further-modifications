@@ -24,6 +24,14 @@ public final class SevenSinsMutex {
 
     static void beforeAssign(ServerLevel level, Map<Player, SRERole> map) {
         if (map == null || map.isEmpty()) return;
+        boolean hasAnySin = false;
+        for (SRERole role : map.values()) {
+            if (SevenSins.isSin(role)) {
+                hasAnySin = true;
+                break;
+            }
+        }
+        if (!hasAnySin) return;
         Map<UUID, SRERole> forced = readForcedRoles();
 
         // Natural Lust needs at least 24 opening participants; forced roles remain available for testing.
@@ -135,31 +143,17 @@ public final class SevenSinsMutex {
         if (type == civilian.getRoleType()) return civilian;
 
         // Neutrals / other: prefer a non-sin same-type role that is not loose-end / other-mode.
-        // Pool comes from the v2 catalog  so v2-added roles join the pool (audit P2-1).
-        SRERole candidate =
+        // Pool comes from the v2 catalog so v2-added roles join the pool (audit P2-1).
+        List<SRERole> candidates =
                 com.habitrain.core.role.catalog.RoleCatalogConsumer.visiblePool().stream()
                 .filter(role -> role != null && !SevenSins.isSin(role))
                 .filter(role -> role.getRoleType() == type)
                 .filter(role -> role != looseEnd)
-                .filter(role -> {
-                    try {
-                        return !role.isOtherModeRole();
-                    } catch (Throwable t) {
-                        return true;
-                    }
-                })
-                .filter(role -> !SREDisableManager.isRoleDisabled(role))
-                .filter(role -> {
-                    try {
-                        return role.canBeRandomedDefination();
-                    } catch (Throwable t) {
-                        return true;
-                    }
-                })
-                .sorted(Comparator.comparing(role -> role.getIdentifier().toString()))
-                .findFirst()
-                .orElse(null);
-        if (candidate != null) return candidate;
+                .filter(com.habitrain.core.game.sre.role.SreRolePoolFilter::isCurrentModeRandomizable)
+                .toList();
+        if (!candidates.isEmpty()) {
+            return candidates.get(java.util.concurrent.ThreadLocalRandom.current().nextInt(candidates.size()));
+        }
 
         // Last resort for neutrals: civilian, never loose_end.
         return civilian;

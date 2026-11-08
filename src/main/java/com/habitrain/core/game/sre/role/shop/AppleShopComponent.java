@@ -39,8 +39,11 @@ public final class AppleShopComponent implements RoleComponent, ServerTickingCom
     public void apply(String role, List<ShopEntry> entries,
                       Map<Integer, ApplePriceState.Quote<AppleShopSignature>> quotes) {
         shopSize = entries.size();
-        state.apply(role, player.level().getGameTime() + SnakeFruitPricePolicy.DURATION_TICKS,
-                player.getRandom().nextLong(), player.getRandom().nextLong(), false, quotes);
+        long now = player.level().getGameTime();
+        state.applyWithSecret(role, now + SnakeFruitPricePolicy.DURATION_TICKS,
+                player.getRandom().nextLong(), player.getRandom().nextLong() | 1L,
+                player.getRandom().nextLong(), false, quotes);
+        state.advanceSyncedFrame(now);
         sync();
     }
 
@@ -145,9 +148,12 @@ public final class AppleShopComponent implements RoleComponent, ServerTickingCom
             clear();
             return;
         }
-        if (state.settle(player.level().getGameTime())) {
+        long now = player.level().getGameTime();
+        if (state.settle(now)) {
             sync();
             player.displayClientMessage(Component.translatable("message.habitrain_core.snake_fruit.settled"), true);
+        } else if (state.advanceSyncedFrame(now)) {
+            sync();
         }
     }
 

@@ -35,7 +35,10 @@ public class RoleExtensionsPage implements ConfigPage {
     private List<EntryRow> entries = new ArrayList<>();
     private String handshakeStatus = "…";
     private String handshakeMessage = "";
-    private int payloadGeneration = -1;
+    private RoleSnapshotPayload lastPayload;
+    private boolean configValid;
+    private boolean submitting;
+    private long submittedAt;
 
     private double scrollOffset = 0;
     private static final int ROW_H = 22;
@@ -58,25 +61,41 @@ public class RoleExtensionsPage implements ConfigPage {
     public void refresh() {
         RoleSnapshotPayload payload = RoleSnapshotState.INSTANCE.get();
         if (payload == null) {
+            configValid = false;
+            submitting = false;
+            lastPayload = null;
+            providers.clear();
+            entries.clear();
             return;
         }
-        int gen = System.identityHashCode(payload);
-        if (gen == payloadGeneration) {
+        handshakeStatus = RoleHandshakeState.INSTANCE.status().name();
+        handshakeMessage = configValid ? (RoleHandshakeState.INSTANCE.message() == null ? "" : RoleHandshakeState.INSTANCE.message())
+                : "尚未接收有效的角色配置";
+        if (submitting && payload == lastPayload && System.nanoTime() - submittedAt > 15_000_000_000L) {
+            submitting = false;
+            lastPayload = null;
+            com.habitrain.core.client.gui.menu.TaskSaveController.showMessage("§c服务器未确认角色配置，请检查权限或保存错误后重试");
+        }
+        if (payload == lastPayload) {
             return;
         }
-        payloadGeneration = gen;
         try {
             section = RoleExtensionConfigService.parseSection(payload.configJson());
+            configValid = true;
         } catch (RuntimeException e) {
-            section = RoleExtensionConfigSection.createDefault();
+            configValid = false;
+            handshakeMessage = "服务端角色配置无法解析，请重新连接后重试";
+            com.habitrain.core.HabiTrainCore.LOGGER.warn("Cannot parse authoritative role configuration snapshot", e);
         }
+        lastPayload = payload;
+        submitting = false;
 
         providers.clear();
         var manifest = RoleHandshakeState.INSTANCE.serverManifest();
         if (manifest != null) {
             for (var p : manifest.providers()) {
                 providers.add(new ProviderRow(p.providerId(), p.version(),
-                        p.requiredClient(), RoleExtensionConfigService.INSTANCE.isProviderEnabled(p.providerId())));
+                        p.requiredClient(), section.isProviderEnabled(p.providerId())));
             }
         }
         for (var e : section.providers().entrySet()) {
@@ -94,7 +113,7 @@ public class RoleExtensionsPage implements ConfigPage {
         entries.sort((a, b) -> a.entryId.compareTo(b.entryId));
 
         handshakeStatus = RoleHandshakeState.INSTANCE.status().name();
-        handshakeMessage = RoleHandshakeState.INSTANCE.message() == null
+        if (configValid) handshakeMessage = RoleHandshakeState.INSTANCE.message() == null
                 ? "" : RoleHandshakeState.INSTANCE.message();
     }
 
@@ -117,27 +136,35 @@ public class RoleExtensionsPage implements ConfigPage {
                 x + 8, bannerY + 4, bannerColor, false);
 
         int listY = bannerY + 24;
-        int listH = h - (listY - y) - 4;
+        int footerReserve = 16;
+        int listH = Math.max(1, h - (listY - y) - footerReserve);
         List<Row> rows = buildRows();
         int totalH = rows.size() * (ROW_H + ROW_GAP);
         int maxScroll = Math.max(0, totalH - listH);
         scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
 
         g.enableScissor(x, listY, x + w, listY + listH);
-        int rowY = listY - (int) scrollOffset;
-        for (Row row : rows) {
-            if (rowY + ROW_H > listY && rowY < listY + listH) {
-                renderRow(g, x + 4, rowY, w - 8, row);
+        try {
+            int rowY = listY - (int) scrollOffset;
+            for (Row row : rows) {
+                if (rowY + ROW_H > listY && rowY < listY + listH) {
+                    renderRow(g, x + 4, rowY, w - 8, row);
+                }
+                rowY += ROW_H + ROW_GAP;
             }
-            rowY += ROW_H + ROW_GAP;
+        } finally {
+            g.disableScissor();
         }
-        g.disableScissor();
         if (maxScroll > 0) {
             MenuTheme.drawScrollbar(g, x + w - 6, listY, listH, scrollOffset, maxScroll, 4);
         }
 
-        if (!editable) {
-            g.drawString(font, "§c仅 OP 可修改（普通客户端只读）", x + 4, y + h - 12, 0xFFC25555, false);
+        if (!configValid) {
+            g.drawString(font, "§c尚未收到有效的服务端角色配置，仅只读", x + 4, y + h - 12, 0xFFC25555, false);
+        } else if (submitting) {
+            g.drawString(font, "§e正在等待服务器确认角色配置…", x + 4, y + h - 12, 0xFFD4A55A, false);
+        } else if (!editable || !canSubmitNow()) {
+            g.drawString(font, "§c需 OP 4 及菜单授权；操作间隔至少 2 秒", x + 4, y + h - 12, 0xFFC25555, false);
         } else if (!"OK".equals(handshakeStatus)) {
             g.drawString(font, "§c握手未通过，仅只读", x + 4, y + h - 12, 0xFFC25555, false);
         }
@@ -156,7 +183,9 @@ public class RoleExtensionsPage implements ConfigPage {
         g.drawString(font, fit(row.label, statusX - x - 10), x + 6, y + (ROW_H - font.lineHeight) / 2, 0xFFFFFFFF, false);
         g.drawString(font, statusText, statusX, y + (ROW_H - font.lineHeight) / 2, statusColor(row.status), false);
         if (editable && row.toggleKey != null) {
-            boolean on = row.status.startsWith("on") || row.status.startsWith("ACTIVE");
+            boolean on = row.toggleKey.startsWith("provider:")
+                    ? section.isProviderEnabled(row.toggleKey.substring("provider:".length()))
+                    : section.isEntryEnabled(row.toggleKey.substring("entry:".length()));
             PillToggle.render(g, font, x + w - 52, y, 48, ROW_H - 2, on, "开", "关");
         }
     }
@@ -174,10 +203,11 @@ public class RoleExtensionsPage implements ConfigPage {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (!editable || !"OK".equals(handshakeStatus)) {
+        refresh();
+        if (btn != 0 || !editable || !configValid || submitting || !"OK".equals(handshakeStatus)
+                || !canSubmitNow()) {
             return false;
         }
-        refresh();
 
         int headerY = y + 4;
         if (PillToggle.hit(mx, my, x + w - 150, headerY, 66, 14)) {
@@ -195,13 +225,18 @@ public class RoleExtensionsPage implements ConfigPage {
 
         int bannerY = headerY + 22;
         int listY = bannerY + 24;
+        int footerReserve = 16;
+        int listH = Math.max(1, h - (listY - y) - footerReserve);
+        if (my < listY || my >= listY + listH) {
+            return false;
+        }
         List<Row> rows = buildRows();
         int rowIndex = (int) ((my - listY + scrollOffset) / (ROW_H + ROW_GAP));
         if (rowIndex >= 0 && rowIndex < rows.size()) {
             Row row = rows.get(rowIndex);
             if (!row.header && row.toggleKey != null) {
                 int rowVisualY = listY + rowIndex * (ROW_H + ROW_GAP) - (int) scrollOffset;
-                if (MenuTheme.inBounds(mx, my, x + w - 52, rowVisualY, 48, ROW_H - 2)) {
+                if (MenuTheme.inBounds(mx, my, x + w - 56, rowVisualY, 48, ROW_H - 2)) {
                     MenuSounds.playClick();
                     toggleRow(row.toggleKey);
                     return true;
@@ -214,10 +249,10 @@ public class RoleExtensionsPage implements ConfigPage {
     private void toggleRow(String key) {
         String id = key.substring(key.indexOf(':') + 1);
         if (key.startsWith("provider:")) {
-            boolean current = RoleExtensionConfigService.INSTANCE.isProviderEnabled(id);
+            boolean current = section.isProviderEnabled(id);
             section.setProviderEnabled(id, !current);
         } else {
-            boolean current = RoleExtensionConfigService.INSTANCE.isEntryEnabled(id);
+            boolean current = section.isEntryEnabled(id);
             section.setEntryEnabled(id, !current);
         }
         sendConfig();
@@ -225,8 +260,23 @@ public class RoleExtensionsPage implements ConfigPage {
 
     private void sendConfig() {
         String json = RoleExtensionConfigService.toJsonString(section);
-        com.habitrain.core.client.network.PayloadSenders.sendRoleConfigUpdate(json);
-        payloadGeneration = -1; // 等待服务端回推后 refresh
+        try {
+            com.habitrain.core.client.network.PayloadSenders.sendRoleConfigUpdate(json);
+            submitting = true;
+            submittedAt = System.nanoTime();
+        } catch (RuntimeException error) {
+            lastPayload = null;
+            refresh();
+            com.habitrain.core.client.gui.menu.TaskSaveController.showMessage("§c角色配置发送失败，请重试");
+        }
+    }
+
+    private boolean canSubmitNow() {
+        var client = net.minecraft.client.Minecraft.getInstance();
+        return client.getConnection() != null && client.player != null && client.player.hasPermissions(4)
+                && com.habitrain.core.client.gui.menu.MenuPermissions.canEditRemoteConfigs(
+                        com.habitrain.core.network.ConfigUpdateScope.FULL_MOD_MENU)
+                && System.nanoTime() - submittedAt >= 2_000_000_000L;
     }
 
     private List<Row> buildRows() {
@@ -241,14 +291,13 @@ public class RoleExtensionsPage implements ConfigPage {
         for (ProviderRow p : providers) {
             rows.add(Row.item(p.id + (p.version.isBlank() ? "" : "@" + p.version)
                     + (p.requiredClient ? " [必需]" : ""),
-                    p.enabled ? "on" : "off", "provider:" + p.id, null));
+                    section.isProviderEnabled(p.id) ? "on" : "off", "provider:" + p.id, null));
         }
         rows.add(Row.header("entries (" + entries.size() + ")"));
         for (EntryRow e : entries) {
-            boolean on = "ACTIVE".equals(e.status);
             rows.add(Row.item(e.entryId + "  [" + e.operation + "]",
                     e.status + (e.enabledSource() == null ? "" : " via " + e.enabledSource()),
-                    on ? null : "entry:" + e.entryId, e.message));
+                    "entry:" + e.entryId, e.message));
         }
         return rows;
     }
@@ -264,7 +313,8 @@ public class RoleExtensionsPage implements ConfigPage {
                                   int x, int y, int w, int h) {
         int bannerY = y + 4 + 22;
         int listY = bannerY + 24;
-        int listH = h - (listY - y) - 4;
+        int footerReserve = 16;
+        int listH = Math.max(1, h - (listY - y) - footerReserve);
         int totalH = buildRows().size() * (ROW_H + ROW_GAP);
         int maxScroll = Math.max(0, totalH - listH);
         scrollOffset = Math.max(0, Math.min(scrollOffset - sy * 12, maxScroll));

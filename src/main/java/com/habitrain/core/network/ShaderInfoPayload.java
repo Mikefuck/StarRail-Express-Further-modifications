@@ -54,12 +54,21 @@ public class ShaderInfoPayload implements CustomPacketPayload {
         public ShaderInfoPayload decode(ByteBuf buf) {
             int len = buf.readInt();
             if (len < 0) throw new DecoderException("Negative shader report length");
-            if (len > MAX_STRING_LENGTH) {
-                throw new DecoderException("ShaderInfo payload 过大: " + len + " > " + MAX_STRING_LENGTH);
+            if (len > MAX_STRING_LENGTH || len > buf.readableBytes()) {
+                throw new DecoderException("ShaderInfo payload 过大或越界: " + len + " > " + MAX_STRING_LENGTH);
             }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
-            return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8), buf.readableBytes() >= 8 ? buf.readLong() : -1);
+            int remaining = buf.readableBytes();
+            long rev;
+            if (remaining == 0) {
+                rev = -1L;
+            } else if (remaining == 8) {
+                rev = buf.readLong();
+            } else {
+                throw new DecoderException("Unexpected trailing bytes in ShaderInfoPayload: " + remaining);
+            }
+            return new ShaderInfoPayload(new String(bytes, StandardCharsets.UTF_8), rev);
         }
 
         @Override

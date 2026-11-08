@@ -59,6 +59,7 @@ public class InGameEnvPage implements ConfigPage {
     private EditBox goodTickField;
     private EditBox otherTickField;
     private EditBox minPlayersField;
+    private final EnvProfile previewMapProfile = EnvProfile.createMatchDefault();
 
     private ScrollArea area;
     private final SubTabBar subTabBar = new SubTabBar(SUB_LABELS, ACCENT);
@@ -150,6 +151,7 @@ public class InGameEnvPage implements ConfigPage {
         }
     }
 
+    /** 只读获取当前选中的 profile，浏览未配置地图时不向 matchMaps 插入空条目。 */
     private EnvProfile currentProfile() {
         EnvironmentSettings s = settings();
         if (subTab == SUB_MATCH) {
@@ -158,12 +160,20 @@ public class InGameEnvPage implements ConfigPage {
                 return s.matchDefaultProfile;
             }
             EnvProfile p = s.matchMaps.get(selectedMapId);
-            if (p == null) {
-                p = EnvProfile.createMatchDefault();
-                s.matchMaps.put(selectedMapId, p);
-                dirty();
+            return p != null ? p : previewMapProfile;
+        }
+        return null;
+    }
+
+    /** 用户实际编辑地图环境时才物化写入 matchMaps。 */
+    private EnvProfile writableCurrentProfile() {
+        EnvironmentSettings s = settings();
+        if (subTab == SUB_MATCH) {
+            if (selectedMapId == null) {
+                if (s.matchDefaultProfile == null) s.matchDefaultProfile = EnvProfile.createMatchDefault();
+                return s.matchDefaultProfile;
             }
-            return p;
+            return s.matchMaps.computeIfAbsent(selectedMapId, k -> EnvProfile.createMatchDefault());
         }
         return null;
     }
@@ -196,22 +206,64 @@ public class InGameEnvPage implements ConfigPage {
     /** 所有改动先进入草稿；服务器确认提交后生效，这里只标记环境脏。 */
     @Override public void save() { ConfigManager.getInstance().markEnvironmentDirty(); }
 
-    /** 提交聚焦的 profile tick/fog 文本框到当前 profile（保存/切页/关闭前调用）。 */
+    /** 提交聚焦的文本框到当前配置（保存/切页/关闭/失焦前调用）。 */
     @Override public void flushPending() {
-        EnvEditorShared.flushFocusedFields(profileTickField, profileFogEndField, currentProfile(), editable);
         if (!editable) return;
+        if (subTab == SUB_MATCH && ((profileTickField != null && profileTickField.isFocused())
+                || (profileFogEndField != null && profileFogEndField.isFocused()))) {
+            EnvProfile existing = currentProfile();
+            boolean shouldMaterialize = selectedMapId == null || settings().matchMaps.containsKey(selectedMapId);
+            if (!shouldMaterialize && existing != null) {
+                if (profileFogEndField != null && profileFogEndField.isFocused()) {
+                    try {
+                        float v = Math.max(0, Float.parseFloat(profileFogEndField.getValue().trim()));
+                        if (Float.compare(existing.fogEnd, v) != 0) shouldMaterialize = true;
+                    } catch (NumberFormatException ignored) {}
+                }
+                if (profileTickField != null && profileTickField.isFocused()) {
+                    try {
+                        int v = EnvTimeSpec.clampTick(Integer.parseInt(profileTickField.getValue().trim()));
+                        int cur = existing.time != null ? existing.time.tick : 6000;
+                        if (cur != v) shouldMaterialize = true;
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            if (shouldMaterialize) {
+                EnvEditorShared.flushFocusedFields(profileTickField, profileFogEndField, writableCurrentProfile(), editable);
+            }
+        }
         flushRuleTick(goodTickField, settings().goodWin);
         flushRuleTick(otherTickField, settings().otherWin);
+        if (minPlayersField != null && minPlayersField.isFocused()) {
+            try {
+                int v = Math.max(1, Integer.parseInt(minPlayersField.getValue().trim()));
+                if (settings().lowPlayerRainMinPlayers != v) {
+                    settings().lowPlayerRainMinPlayers = v;
+                    dirty();
+                }
+                minPlayersField.setValue(String.valueOf(settings().clampedMinPlayers()));
+            } catch (NumberFormatException ignored) {}
+        }
     }
 
     private void flushRuleTick(EditBox field, PostMatchTimeRule rule) {
         if (field == null || rule == null || !field.isFocused()) return;
         if (rule.time == null) rule.time = EnvTimeSpec.createDefault();
         try {
-            rule.time.tick = EnvTimeSpec.clampTick(Integer.parseInt(field.getValue().trim()));
-            rule.time.mode = EnvTimeSpec.Mode.TICK;
-            ConfigManager.getInstance().markEnvironmentDirty();
+            int v = EnvTimeSpec.clampTick(Integer.parseInt(field.getValue().trim()));
+            if (rule.time.tick != v || rule.time.mode != EnvTimeSpec.Mode.TICK) {
+                rule.time.tick = v;
+                rule.time.mode = EnvTimeSpec.Mode.TICK;
+                ConfigManager.getInstance().markEnvironmentDirty();
+            }
         } catch (NumberFormatException ignored) {}
+    }
+
+    private static void parkBox(EditBox box) {
+        if (box != null) {
+            box.setX(-10000);
+            box.setY(-10000);
+        }
     }
 
     // ---------------- 渲染 ----------------
@@ -222,28 +274,43 @@ public class InGameEnvPage implements ConfigPage {
         buttonHits.clear();
         mapHits.clear();
 
+        if (subTab != SUB_MATCH) {
+            parkBox(profileTickField);
+            parkBox(profileFogEndField);
+        }
+        if (subTab != SUB_POST) {
+            parkBox(goodTickField);
+            parkBox(otherTickField);
+        }
+        if (subTab != SUB_RAIN) {
+            parkBox(minPlayersField);
+        }
+
         subHitThisFrame = subTabBar.render(g, font, x, y, w, subTab, mx, my);
         int contentY = y + SubTabBar.H + 4;
-        int contentH = h - SubTabBar.H - 4;
+        int contentH = Math.max(1, h - SubTabBar.H - 4 - (!editable ? 16 : 0));
         area.setBounds(x, contentY, w, contentH);
 
         g.enableScissor(x, contentY, x + w, contentY + contentH);
-        int contentStartY = area.getContentY();
-        int cy = contentStartY + 6;
-        int labelX = x + PAD;
-        int innerW = w - PAD * 2 - 6;
+        try {
+            int contentStartY = area.getContentY();
+            int cy = contentStartY + 6;
+            int labelX = x + PAD;
+            int innerW = w - PAD * 2 - 6;
 
-        switch (subTab) {
-            case SUB_MATCH -> cy = renderMatch(g, mx, my, delta, labelX, cy, innerW);
-            case SUB_POST -> cy = renderPost(g, mx, my, delta, labelX, cy, innerW);
-            case SUB_RAIN -> cy = renderRain(g, mx, my, delta, labelX, cy, innerW);
-            default -> {}
+            switch (subTab) {
+                case SUB_MATCH -> cy = renderMatch(g, mx, my, delta, labelX, cy, innerW);
+                case SUB_POST -> cy = renderPost(g, mx, my, delta, labelX, cy, innerW);
+                case SUB_RAIN -> cy = renderRain(g, mx, my, delta, labelX, cy, innerW);
+                default -> {}
+            }
+
+            cy += 8;
+            area.setContentHeight(cy - contentStartY);
+            area.render(g);
+        } finally {
+            g.disableScissor();
         }
-
-        cy += 8;
-        area.setContentHeight(cy - contentStartY);
-        area.render(g);
-        g.disableScissor();
 
         if (!editable) {
             g.drawString(font, Component.literal("§c只读模式：联机服务器中仅 OP 可修改"),
@@ -365,6 +432,11 @@ public class InGameEnvPage implements ConfigPage {
         cy += ROW_H;
 
         if (isPreset) {
+            if (tickBox != null) {
+                tickBox.setFocused(false);
+                tickBox.setX(-10000);
+                tickBox.setY(-10000);
+            }
             if (time.preset == null) time.preset = EnvTimeSpec.Preset.DAY;
             g.drawString(font, "预设:", labelX, cy + 2, MenuTheme.TEXT_SECONDARY, false);
             int preX = labelX + 40;
@@ -436,10 +508,11 @@ public class InGameEnvPage implements ConfigPage {
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         ensureWidgetsInitialized();
 
-        // 内层子 Tab 切换（滚动归零 + 强制同步字段 + 失焦）
+        // 内层子 Tab 切换（先提交焦点字段，滚动归零 + 强制同步字段 + 失焦）
         if (MenuTheme.inBounds(mx, my, x, y, w, SubTabBar.H)) {
             if (subHitThisFrame >= 0) playClick();
             if (subHitThisFrame >= 0 && subHitThisFrame != subTab) {
+                flushPending();
                 subTab = subHitThisFrame;
                 area.reset();
                 syncFieldsFromSettings(true);
@@ -449,8 +522,11 @@ public class InGameEnvPage implements ConfigPage {
         }
 
         int contentY = y + SubTabBar.H + 4;
-        int contentH = h - SubTabBar.H - 4;
+        int contentH = Math.max(1, h - SubTabBar.H - 4 - (!editable ? 16 : 0));
         if (my < contentY || my >= contentY + contentH) return false;
+
+        // 失焦前先刷入已修改的聚焦输入框，避免下一帧被旧模型值覆盖
+        flushPending();
 
         // EditBoxes first（手动边界；停靠哨兵坐标的框自然落在边界外）
         EnvEditorShared.unfocusAll(profileTickField, profileFogEndField, goodTickField, otherTickField, minPlayersField);
@@ -471,24 +547,11 @@ public class InGameEnvPage implements ConfigPage {
                     minPlayersField.getWidth(), minPlayersField.getHeight(), minPlayersField, editable)) return true;
         }
 
-        // 地图列表选择
+        // 地图列表选择（仅浏览不脏写 matchMaps；实际改动控件时才物化）
         for (MapRowHit hit : mapHits) {
             if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
                 playClick();
                 selectedMapId = hit.mapId();
-                if (selectedMapId != null) {
-                    EnvironmentSettings s = settings();
-                    if (!s.matchMaps.containsKey(selectedMapId)) {
-                        if (!editable) {
-                            MenuPermissions.showDeniedMessage();
-                            selectedMapId = null;
-                            return true;
-                        }
-                        s.matchMaps.put(selectedMapId, EnvProfile.createMatchDefault());
-                        dirty();
-                    }
-                }
-                // 刷新新选择的 profile 字段
                 EnvProfile p = currentProfile();
                 if (p != null && p.time != null) {
                     profileTickField.setValue(String.valueOf(EnvTimeSpec.clampTick(p.time.tick)));
@@ -542,7 +605,7 @@ public class InGameEnvPage implements ConfigPage {
         EditBox tickField = profileTickField;
         if (action.startsWith("good:")) tickField = goodTickField;
         else if (action.startsWith("other:")) tickField = otherTickField;
-        EnvProfile profile = currentProfile();
+        EnvProfile profile = action.startsWith("profile:") ? writableCurrentProfile() : currentProfile();
         EnvEditorShared.applyTimeOrToggle(action, settings(), profile, buttonHits, font, 0,
                 tickField, profileFogEndField, editable, this::dirty);
         return true;

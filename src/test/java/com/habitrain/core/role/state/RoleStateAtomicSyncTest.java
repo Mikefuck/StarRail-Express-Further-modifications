@@ -31,6 +31,48 @@ class RoleStateAtomicSyncTest {
     }
     private static byte[] bytes(String value) { return value.getBytes(StandardCharsets.UTF_8); }
 
+    @Test void roleChangeRollbackRestoresOnlyItsPlayerAndPublishesNoSpeculativeRemoval() {
+        var key = service.register(spec("rollback", 1, Codec.INT, 64, Persistence.ROUND));
+        UUID other = UUID.randomUUID();
+        service.set(key, OWNER, 7);
+        service.set(key, other, 9);
+        messages.clear();
+        service.beginPlayerTransaction(OWNER);
+        service.reset(OWNER, ROLE, ResetCause.ROLE_LOST);
+        service.set(key, OWNER, 3);
+        service.set(key, other, 10);
+        assertEquals(1, messages.size(), "other player still publishes immediately");
+        service.finishPlayerTransaction(OWNER, false);
+        assertEquals(7, service.get(key, OWNER));
+        assertEquals(10, service.get(key, other));
+        assertEquals(1, messages.size(), "rolled back values must not reach clients");
+    }
+
+    @Test void committedRoleChangePublishesOnlyTheFinalValueForEachSlot() {
+        var key = service.register(spec("commit", 1, Codec.INT, 64, Persistence.PERMANENT));
+        service.set(key, OWNER, 7);
+        messages.clear();
+        service.beginPlayerTransaction(OWNER);
+        service.reset(OWNER, ROLE, ResetCause.ROLE_LOST);
+        service.set(key, OWNER, 3);
+        assertTrue(messages.isEmpty());
+        service.finishPlayerTransaction(OWNER, true);
+        assertEquals(3, service.get(key, OWNER));
+        assertEquals(1, messages.size());
+        assertFalse(messages.getFirst().removed());
+    }
+
+    @Test void rollbackRestoresPersistentBytesAfterRoleReset() {
+        var key = service.register(spec("persistent_rollback", 1, Codec.INT, 64, Persistence.PERMANENT));
+        service.set(key, OWNER, 42);
+        messages.clear();
+        service.beginPlayerTransaction(OWNER);
+        service.reset(OWNER, ROLE, ResetCause.ROLE_LOST);
+        service.finishPlayerTransaction(OWNER, false);
+        assertEquals(42, service.get(key, OWNER));
+        assertTrue(messages.isEmpty());
+    }
+
     @Test void rejectedTransientEncodingDoesNotChangeValueOrSendRevision() {
         Codec<Integer> codec = Codec.INT.xmap(i -> i, i -> {
             if (i == 99) throw new IllegalArgumentException("rejected");

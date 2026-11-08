@@ -125,7 +125,7 @@ public final class SceneAssetDelta {
             this.sourceBounds = sourceBounds != null ? sourceBounds : SceneBounds.EMPTY;
             this.haloBounds = haloBounds != null ? haloBounds : this.sourceBounds;
             this.fingerprint = fingerprint != null ? fingerprint : "";
-            this.targetSectionCount = Math.max(0, targetSectionCount);
+            this.targetSectionCount = targetSectionCount;
             this.removedKeys = removedKeys != null
                     ? List.copyOf(removedKeys) : Collections.emptyList();
             this.changedSections = changedSections != null
@@ -134,7 +134,7 @@ public final class SceneAssetDelta {
                 this.retainedFlags = retainedFlags.clone();
             } else {
                 // 缺省：前 (targetSectionCount - changed) 个保留、其余变更——只在测试里手工构造时用到。
-                this.retainedFlags = new boolean[this.targetSectionCount];
+                this.retainedFlags = new boolean[Math.max(0, this.targetSectionCount)];
                 int retained = Math.max(0, this.targetSectionCount - this.changedSections.size());
                 for (int i = 0; i < retained && i < this.retainedFlags.length; i++) {
                     this.retainedFlags[i] = true;
@@ -176,7 +176,7 @@ public final class SceneAssetDelta {
     }
 
     private static String normalizeHash(String hash) {
-        return hash != null ? hash.trim().toLowerCase() : "";
+        return hash != null ? hash.trim().toLowerCase(java.util.Locale.ROOT) : "";
     }
 
     // ---- 生成 ----
@@ -199,16 +199,18 @@ public final class SceneAssetDelta {
         if (!base.fingerprint.equals(target.fingerprint)) return null;
         if (base.dataVersion != target.dataVersion) return null;
         if (!base.dimensionId.equals(target.dimensionId)) return null;
-        if (!baseSha256.matches(HASH_PATTERN) || !targetSha256.matches(HASH_PATTERN)) return null;
+        if (!SceneAssetDescriptor.isValidSha256(baseSha256)
+                || !SceneAssetDescriptor.isValidSha256(targetSha256)) return null;
         if (target.sections.size() > SceneLimits.MAX_DECODE_SECTIONS) return null;
 
         Map<SectionKey, SceneAssetCodec.SectionData> baseByKey = indexByKey(base.sections);
-        if (baseByKey == null) return null;
+        Map<SectionKey, SceneAssetCodec.SectionData> targetByKey = indexByKey(target.sections);
+        if (baseByKey == null || targetByKey == null) return null;
 
         List<SectionKey> removed = new ArrayList<>();
         for (SectionKey key : baseByKey.keySet()) {
             // 目标里没有这个 Section：它被删掉了（选区变小、区块变空都走这条）。
-            if (!containsKey(target.sections, key)) {
+            if (!targetByKey.containsKey(rebase(key, base.sourceBounds, target.sourceBounds))) {
                 removed.add(key);
             }
         }
@@ -218,7 +220,8 @@ public final class SceneAssetDelta {
         int index = 0;
         for (SceneAssetCodec.SectionData section : target.sections) {
             SectionKey key = new SectionKey(section.relX, section.relY, section.relZ);
-            SceneAssetCodec.SectionData baseSection = baseByKey.get(key);
+            SceneAssetCodec.SectionData baseSection = baseByKey.get(
+                    rebase(key, target.sourceBounds, base.sourceBounds));
             boolean retained = baseSection != null && sameContent(baseSection, section);
             retainedFlags[index++] = retained;
             if (!retained) {
@@ -226,7 +229,8 @@ public final class SceneAssetDelta {
             }
         }
 
-        if (removed.isEmpty() && changed.isEmpty()) return null;
+        if (removed.isEmpty() && changed.isEmpty()
+                && base.sourceBounds.equals(target.sourceBounds) && base.haloBounds.equals(target.haloBounds)) return null;
         if (removed.size() + changed.size() > SceneLimits.MAX_DECODE_SECTIONS) return null;
 
         sortKeys(removed);
@@ -268,13 +272,11 @@ public final class SceneAssetDelta {
         return map;
     }
 
-    private static boolean containsKey(List<SceneAssetCodec.SectionData> sections, SectionKey key) {
-        for (SceneAssetCodec.SectionData section : sections) {
-            if (section.relX == key.relX() && section.relY == key.relY() && section.relZ == key.relZ()) {
-                return true;
-            }
-        }
-        return false;
+    /** Removed keys use the base origin; changed and retained sections use the target origin. */
+    private static SectionKey rebase(SectionKey key, SceneBounds from, SceneBounds to) {
+        return new SectionKey(key.relX() + from.minSectionX() - to.minSectionX(),
+                key.relY() + from.minSectionY() - to.minSectionY(),
+                key.relZ() + from.minSectionZ() - to.minSectionZ());
     }
 
     /** 两个 Section 的内容是否一致（调色板、索引、两种光照）。 */
@@ -301,7 +303,7 @@ public final class SceneAssetDelta {
             if (left.relX != right.relX || left.relY != right.relY || left.relZ != right.relZ) return false;
             if (!sameContent(left, right)) return false;
         }
-        return a.blockPayloads.size() == b.blockPayloads.size();
+        return java.util.Objects.equals(a.blockPayloads, b.blockPayloads);
     }
 
     // ---- 应用 ----
@@ -329,6 +331,13 @@ public final class SceneAssetDelta {
         if (!base.blockPayloads.isEmpty()) {
             throw new IOException("Scene delta cannot be applied to a base carrying block payloads");
         }
+        validateForEncode(delta);
+        Map<SectionKey, SceneAssetCodec.SectionData> baseByKey = indexByKey(base.sections);
+        if (baseByKey == null) throw new IOException("Duplicate sections in scene delta base");
+        Set<SectionKey> removedKeys = new HashSet<>(delta.removedKeys());
+        if (!baseByKey.keySet().containsAll(removedKeys)) {
+            throw new IOException("Scene delta removes a section missing from the base");
+        }
 
         // 保留池：base 里既没被删除、也没被替换掉的 Section，保持 base 的原顺序。
         Set<SectionKey> changedKeys = new HashSet<>();
@@ -338,8 +347,14 @@ public final class SceneAssetDelta {
         List<SceneAssetCodec.SectionData> retainedPool = new ArrayList<>();
         for (SceneAssetCodec.SectionData section : base.sections) {
             SectionKey key = new SectionKey(section.relX, section.relY, section.relZ);
-            if (delta.removedKeys().contains(key) || changedKeys.contains(key)) continue;
-            retainedPool.add(section);
+            SectionKey targetKey = rebase(key, base.sourceBounds, delta.sourceBounds());
+            if (removedKeys.contains(key) || changedKeys.contains(targetKey)) continue;
+            if (!SceneAssetCodec.sectionIntersectsBounds(delta.sourceBounds(), delta.haloBounds(),
+                    targetKey.relX(), targetKey.relY(), targetKey.relZ())) {
+                throw new IOException("Retained section lies outside target halo");
+            }
+            retainedPool.add(new SceneAssetCodec.SectionData(targetKey.relX(), targetKey.relY(), targetKey.relZ(),
+                    section.palette, section.blockIndices, section.skyLight, section.blockLight));
         }
 
         int targetCount = delta.targetSectionCount();
@@ -394,7 +409,7 @@ public final class SceneAssetDelta {
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (GZIPOutputStream gzos = new GZIPOutputStream(baos);
-             DataOutputStream dos = new DataOutputStream(gzos)) {
+             DataOutputStream dos = new DataOutputStream(new SceneWriteLimit(gzos, MAX_PATCH_UNCOMPRESSED_BYTES))) {
             dos.writeInt(MAGIC);
             dos.writeInt(PATCH_VERSION);
             dos.writeUTF(delta.baseSha256());
@@ -428,6 +443,7 @@ public final class SceneAssetDelta {
             dos.writeLong(crc.getValue());
             dos.flush();
         }
+        if (baos.size() > MAX_PATCH_BYTES) throw new IOException("Scene encoded patch exceeds compressed byte budget");
         return baos.toByteArray();
     }
 
@@ -445,18 +461,26 @@ public final class SceneAssetDelta {
             throw new IOException("Invalid delta target section count: " + delta.targetSectionCount());
         }
         int touched = delta.touchedSectionCount();
-        if (touched <= 0 || touched > SceneLimits.MAX_DECODE_SECTIONS) {
+        if (touched < 0 || touched > SceneLimits.MAX_DECODE_SECTIONS) {
             throw new IOException("Invalid delta section count: " + touched);
         }
         Set<SectionKey> seen = new HashSet<>();
         for (SectionKey key : delta.removedKeys()) {
             if (!seen.add(key)) throw new IOException("Duplicate removed section in delta: " + key);
-            if (!SceneAssetCodec.sectionIntersectsBounds(delta.sourceBounds(), delta.haloBounds(),
-                    key.relX(), key.relY(), key.relZ())) {
-                throw new IOException("Removed section lies outside captured halo: " + key);
+            if (!isPlausibleRelativeSection(key.relX(), key.relY(), key.relZ())) {
+                throw new IOException("Removed section coordinate out of plausible range: " + key);
             }
         }
+        // The two lists belong to different coordinate systems when the source moved.
+        seen.clear();
+        if (delta.retainedFlags.length != delta.targetSectionCount()
+                || delta.retainedCount() + delta.changedSections().size() != delta.targetSectionCount()) {
+            throw new IOException("Scene delta retained/changed split does not match target section count");
+        }
+        SceneReadBudget budget = new SceneReadBudget();
+        budget.sections(delta.changedSections().size());
         for (SceneAssetCodec.SectionData section : delta.changedSections()) {
+            budget.palette(section.palette.size());
             SectionKey key = new SectionKey(section.relX, section.relY, section.relZ);
             if (!seen.add(key)) throw new IOException("Duplicate changed section in delta: " + key);
             if (!SceneAssetCodec.sectionIntersectsBounds(delta.sourceBounds(), delta.haloBounds(),
@@ -468,6 +492,7 @@ public final class SceneAssetDelta {
             }
             for (String entry : section.palette) {
                 SceneAssetCodec.requireStringLength("palette entry", entry, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
+                budget.string(entry);
             }
             if (!SceneAssetCodec.AIR_BLOCK_ID.equals(section.palette.get(0))) {
                 throw new IOException("Delta requires palette slot 0 to be air in section " + key);
@@ -616,13 +641,13 @@ public final class SceneAssetDelta {
             if (removedCount < 0 || removedCount > SceneLimits.MAX_DECODE_SECTIONS) {
                 throw new IOException("Invalid delta removed count: " + removedCount);
             }
-            List<SectionKey> removed = new ArrayList<>(removedCount);
+            List<SectionKey> removed = new ArrayList<>(Math.min(removedCount, 1024));
             for (int i = 0; i < removedCount; i++) {
                 int rx = SceneAssetCodec.readIntCrc(dis, crc, scratch);
                 int ry = SceneAssetCodec.readIntCrc(dis, crc, scratch);
                 int rz = SceneAssetCodec.readIntCrc(dis, crc, scratch);
-                if (!SceneAssetCodec.sectionIntersectsBounds(sourceBounds, haloBounds, rx, ry, rz)) {
-                    throw new IOException("Removed section lies outside captured halo: " + rx + "," + ry + "," + rz);
+                if (!isPlausibleRelativeSection(rx, ry, rz)) {
+                    throw new IOException("Removed section coordinate out of plausible range: " + rx + "," + ry + "," + rz);
                 }
                 SectionKey key = new SectionKey(rx, ry, rz);
                 if (!seen.add(key)) {
@@ -636,9 +661,12 @@ public final class SceneAssetDelta {
                     || removedCount + changedCount > SceneLimits.MAX_DECODE_SECTIONS) {
                 throw new IOException("Invalid delta changed count: " + changedCount);
             }
-            List<SceneAssetCodec.SectionData> changed = new ArrayList<>(changedCount);
+            seen.clear();
+            SceneReadBudget budget = new SceneReadBudget();
+            budget.sections(changedCount);
+            List<SceneAssetCodec.SectionData> changed = new ArrayList<>(Math.min(changedCount, 1024));
             for (int i = 0; i < changedCount; i++) {
-                changed.add(readSection(dis, crc, scratch, seen, sourceBounds, haloBounds, i));
+                changed.add(readSection(dis, crc, scratch, seen, sourceBounds, haloBounds, i, budget));
             }
 
             long expectedCrc = dis.readLong();
@@ -666,7 +694,7 @@ public final class SceneAssetDelta {
 
     private static SceneAssetCodec.SectionData readSection(DataInputStream dis, CRC32 crc, byte[] scratch,
                                                            Set<SectionKey> seen, SceneBounds sourceBounds,
-                                                           SceneBounds haloBounds, int index) throws IOException {
+                                                           SceneBounds haloBounds, int index, SceneReadBudget budget) throws IOException {
         int rx = SceneAssetCodec.readIntCrc(dis, crc, scratch);
         int ry = SceneAssetCodec.readIntCrc(dis, crc, scratch);
         int rz = SceneAssetCodec.readIntCrc(dis, crc, scratch);
@@ -682,10 +710,12 @@ public final class SceneAssetDelta {
         if (paletteSize <= 0 || paletteSize > 4096) {
             throw new IOException("Invalid palette size in delta section " + index + ": " + paletteSize);
         }
-        List<String> palette = new ArrayList<>(paletteSize);
+        budget.palette(paletteSize);
+        List<String> palette = new ArrayList<>(Math.min(paletteSize, 256));
         for (int p = 0; p < paletteSize; p++) {
             String entry = dis.readUTF();
             SceneAssetCodec.requireStringLength("palette entry", entry, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
+            budget.string(entry);
             palette.add(entry);
         }
         if (!SceneAssetCodec.AIR_BLOCK_ID.equals(palette.get(0))) {
@@ -719,6 +749,12 @@ public final class SceneAssetDelta {
         return "补丁[base=" + shortHash(delta.baseSha256()) + " → target=" + shortHash(delta.targetSha256())
                 + ", 删除 " + delta.removedKeys().size() + " / 变更 " + delta.changedSections().size()
                 + " / 共 " + delta.targetSectionCount() + " Section]";
+    }
+
+    private static boolean isPlausibleRelativeSection(int rx, int ry, int rz) {
+        int max = SceneLimits.MAX_AXIS_CHUNKS + 2;
+        return rx >= -2 && ry >= -2 && rz >= -2
+                && rx <= max && ry <= max && rz <= max;
     }
 
     private static String shortHash(String hash) {

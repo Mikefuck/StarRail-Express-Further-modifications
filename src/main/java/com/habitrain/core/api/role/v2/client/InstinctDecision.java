@@ -8,6 +8,16 @@ import org.jetbrains.annotations.Nullable;
  */
 public record InstinctDecision(Kind kind, @Nullable Integer color) {
 
+    public InstinctDecision {
+        java.util.Objects.requireNonNull(kind, "kind");
+        if (kind == Kind.CUSTOM && color == null) {
+            throw new IllegalArgumentException("CUSTOM InstinctDecision requires a non-null color");
+        }
+        if (kind != Kind.CUSTOM && color != null) {
+            throw new IllegalArgumentException(kind + " InstinctDecision must not carry a color");
+        }
+    }
+
     public enum Kind { PASS, CUSTOM, HIDE }
 
     public static InstinctDecision pass() {

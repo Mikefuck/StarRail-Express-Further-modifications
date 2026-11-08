@@ -37,7 +37,7 @@ public final class ConfigUpdateAccessPolicy {
                                     boolean dedicatedServer, boolean menuGateEnabled,
                                     boolean menuGateAllowed) {
         if (!hasOp2) return false;
-        if (scope != ConfigUpdateScope.FULL_MOD_MENU) return true;
+        if (scope == ConfigUpdateScope.BACKPACK_TASKS || scope == ConfigUpdateScope.BACKPACK_MAP_VOTE) return true;
         return !dedicatedServer || !menuGateEnabled || menuGateAllowed;
     }
 
@@ -62,7 +62,7 @@ public final class ConfigUpdateAccessPolicy {
      * The scope comes from the client, so it narrows the request but never grants privilege.
      */
     public static String filterConfigJson(ConfigUpdateScope scope, String configJson) {
-        JsonElement parsed = JsonParser.parseString(configJson == null ? "{}" : configJson);
+        JsonElement parsed = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(configJson == null ? "{}" : configJson));
         if (!parsed.isJsonObject()) {
             throw new IllegalArgumentException("Configuration update root must be an object");
         }
@@ -101,12 +101,13 @@ public final class ConfigUpdateAccessPolicy {
      * 管理员场景道具只能替换服务端当前地图的一个 profile。其余 profile 与全局字段
      * 从服务端权威配置复制，客户端伪造的 mapKey 或 profiles 不会越权生效。
      */
+    @Deprecated(forRemoval = false)
     public static String filterAdminSceneProfile(String configJson, String currentMapKey,
                                                  JsonObject authoritativeSceneMotion) {
         if (currentMapKey == null || currentMapKey.isBlank()) {
             throw new IllegalArgumentException("Current map key is unavailable");
         }
-        JsonElement parsed = JsonParser.parseString(configJson == null ? "{}" : configJson);
+        JsonElement parsed = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(configJson == null ? "{}" : configJson));
         if (!parsed.isJsonObject()) throw new IllegalArgumentException("Configuration update root must be an object");
         JsonObject source = parsed.getAsJsonObject();
         JsonObject submittedScene = source.has("sceneMotion") && source.get("sceneMotion").isJsonObject()
@@ -157,13 +158,64 @@ public final class ConfigUpdateAccessPolicy {
         String requested = requestedMapKey == null ? "" : requestedMapKey.trim();
         if (requested.isBlank()) requested = current;
         if (requested.isBlank()) throw new IllegalArgumentException("Scene map key is unavailable");
-        if ("__default__".equals(requested)
+        if (com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY.equals(requested)
                 || com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY.equals(requested)
                 || requested.equals(current)
                 || configuredMapKeys != null && configuredMapKeys.contains(requested)) {
             return requested;
         }
         throw new IllegalArgumentException("Scene map key is not configured");
+    }
+
+    /**
+     * Collects scene background asset keys present in {@code before} that were removed in {@code next}.
+     */
+    public static java.util.Set<String> collectRemovedBackgroundAssets(JsonObject before, JsonObject next) {
+        java.util.Set<String> removed = collectBackgroundAssets(before);
+        removed.removeAll(collectBackgroundAssets(next));
+        return removed;
+    }
+
+    private static java.util.Set<String> collectBackgroundAssets(JsonObject root) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        if (root == null || !root.has("sceneMotion") || !root.get("sceneMotion").isJsonObject()) return keys;
+        JsonObject sm = root.getAsJsonObject("sceneMotion");
+        if (!sm.has("backgrounds") || !sm.get("backgrounds").isJsonObject()) return keys;
+        for (var mapEntry : sm.getAsJsonObject("backgrounds").entrySet()) {
+            if (mapEntry.getValue() != null && mapEntry.getValue().isJsonObject()) {
+                for (String bgId : mapEntry.getValue().getAsJsonObject().keySet()) {
+                    keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.assetKey(mapEntry.getKey(), bgId));
+                }
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Enforces MenuGate restrictions before a patch is persisted:
+     * - BACKPACK_MAP_VOTE cannot add or remove keys in /modeMapVote/maps when MenuGate is blocked.
+     * - ADMIN_SCENE_TOOL cannot remove any scene background assets when MenuGate is blocked.
+     */
+    public static void validateMenuGateScopedMutation(
+            JsonObject before, JsonObject next, ConfigUpdateScope scope, boolean menuGateBlocked) {
+        if (!menuGateBlocked) return;
+        if (scope == ConfigUpdateScope.BACKPACK_MAP_VOTE) {
+            JsonObject beforeMmv = before != null && before.has("modeMapVote") && before.get("modeMapVote").isJsonObject()
+                    ? before.getAsJsonObject("modeMapVote") : null;
+            JsonObject nextMmv = next != null && next.has("modeMapVote") && next.get("modeMapVote").isJsonObject()
+                    ? next.getAsJsonObject("modeMapVote") : null;
+            JsonObject beforeMaps = beforeMmv != null && beforeMmv.has("maps") && beforeMmv.get("maps").isJsonObject()
+                    ? beforeMmv.getAsJsonObject("maps") : new JsonObject();
+            JsonObject nextMaps = nextMmv != null && nextMmv.has("maps") && nextMmv.get("maps").isJsonObject()
+                    ? nextMmv.getAsJsonObject("maps") : new JsonObject();
+            if (!nextMaps.keySet().equals(beforeMaps.keySet())) {
+                throw new IllegalArgumentException("未获完整菜单门控授权时，不能新增或删除地图键");
+            }
+        } else if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
+            if (!collectRemovedBackgroundAssets(before, next).isEmpty()) {
+                throw new IllegalArgumentException("未获完整菜单门控授权时，不能删除场景背景资产");
+            }
+        }
     }
 
     private static void validateAdminProfile(JsonObject profile) {
@@ -279,18 +331,24 @@ public final class ConfigUpdateAccessPolicy {
     }
 
     private static void validateFinite(JsonElement element) {
+        validateFinite(element, 0);
+    }
+
+    private static void validateFinite(JsonElement element, int depth) {
+        if (depth > 32) throw new IllegalArgumentException("Configuration nesting depth exceeded");
         if (element == null || element.isJsonNull()) return;
         if (element.isJsonArray()) {
-            for (JsonElement child : element.getAsJsonArray()) validateFinite(child);
+            for (JsonElement child : element.getAsJsonArray()) validateFinite(child, depth + 1);
         } else if (element.isJsonObject()) {
-            for (var entry : element.getAsJsonObject().entrySet()) validateFinite(entry.getValue());
+            for (var entry : element.getAsJsonObject().entrySet()) validateFinite(entry.getValue(), depth + 1);
         } else if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
             double value = element.getAsDouble();
             if (!Double.isFinite(value)) throw new IllegalArgumentException("Non-finite number is not allowed");
         }
     }
 
-    private static void validateSceneMotion(JsonObject scene) {
+    public static void validateSceneMotion(JsonObject scene) {
+        if (scene == null) return;
         validateFinite(scene);
         if (scene.has("schemaVersion") && scene.get("schemaVersion").getAsInt() != 1
                 && scene.get("schemaVersion").getAsInt() != 2
@@ -331,7 +389,7 @@ public final class ConfigUpdateAccessPolicy {
         }
         for (var entry : backgrounds.entrySet()) {
             if (entry.getKey() == null || !entry.getKey().matches("[a-z0-9_.-]{1,48}")
-                    || "__default__".equals(entry.getKey()) || !entry.getValue().isJsonObject()) {
+                    || com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY.equals(entry.getKey()) || !entry.getValue().isJsonObject()) {
                 throw new IllegalArgumentException("Invalid background id");
             }
             JsonObject background = entry.getValue().getAsJsonObject();

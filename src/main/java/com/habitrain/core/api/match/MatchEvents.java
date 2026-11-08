@@ -28,29 +28,40 @@ public final class MatchEvents {
 
     private MatchEvents() {}
 
-    public static final Event<Started> STARTED = EventFactory.createArrayBacked(
+    public static final Event<Started> STARTED = createStartedEvent();
+    public static final Event<RoundEnded> ROUND_ENDED = createRoundEndedEvent();
+
+    static Event<Started> createStartedEvent() {
+        return EventFactory.createArrayBacked(
             Started.class,
             listeners -> level -> {
                 for (Started listener : listeners) {
                     try {
                         listener.onMatchStarted(level);
+                    } catch (VirtualMachineError | ThreadDeath | LinkageError fatal) {
+                        throw fatal;
                     } catch (Throwable t) {
                         LOGGER.error("MatchEvents.STARTED listener failed", t);
                     }
                 }
             });
+    }
 
-    public static final Event<RoundEnded> ROUND_ENDED = EventFactory.createArrayBacked(
+    static Event<RoundEnded> createRoundEndedEvent() {
+        return EventFactory.createArrayBacked(
             RoundEnded.class,
             listeners -> (level, settlement) -> {
                 for (RoundEnded listener : listeners) {
                     try {
                         listener.onRoundEnded(level, settlement);
+                    } catch (VirtualMachineError | ThreadDeath | LinkageError fatal) {
+                        throw fatal;
                     } catch (Throwable t) {
                         LOGGER.error("MatchEvents.ROUND_ENDED listener failed", t);
                     }
                 }
             });
+    }
 
     @FunctionalInterface
     public interface Started {

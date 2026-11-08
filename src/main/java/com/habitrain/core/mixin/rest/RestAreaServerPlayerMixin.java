@@ -11,28 +11,22 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * A resting player has Adventure movement in the post-game area, but remains a
- * spectator to all server-side SRE checks until an upstream revival completes.
+ * Tracks physical spectator-to-adventure transitions for rest-area revival and
+ * Lust restriction hooks without overriding vanilla {@link ServerPlayer#isSpectator()}.
  */
 @Mixin(ServerPlayer.class)
 public abstract class RestAreaServerPlayerMixin {
     @Unique private boolean habitrain$wasPhysicalSpectator;
     @Unique private boolean habitrain$wasResting;
 
-    @Inject(method = "isSpectator", at = @At("HEAD"), cancellable = true)
-    private void habitrain$keepRestingPlayersEliminated(CallbackInfoReturnable<Boolean> cir) {
-        if (EliminatedRestAreaService.isResting((ServerPlayer) (Object) this)) {
-            cir.setReturnValue(true);
-        }
-    }
-
     @Inject(method = "setGameMode", at = @At("HEAD"))
     private void habitrain$restoreMatchWorldBeforeUpstreamRevival(GameType gameType,
             CallbackInfoReturnable<Boolean> cir) {
-        habitrain$wasPhysicalSpectator = ((ServerPlayer) (Object) this).gameMode.getGameModeForPlayer() == GameType.SPECTATOR;
-        habitrain$wasResting = EliminatedRestAreaService.isResting((ServerPlayer) (Object) this);
+        ServerPlayer player = (ServerPlayer) (Object) this;
+        habitrain$wasPhysicalSpectator = player.gameMode.getGameModeForPlayer() == GameType.SPECTATOR;
+        habitrain$wasResting = EliminatedRestAreaService.isResting(player);
         if (gameType == GameType.ADVENTURE) {
-            EliminatedRestAreaService.prepareUpstreamRevival((ServerPlayer) (Object) this);
+            EliminatedRestAreaService.prepareUpstreamRevival(player);
         }
     }
 
@@ -40,10 +34,13 @@ public abstract class RestAreaServerPlayerMixin {
     // is a no-op unless prepareUpstreamRevival marked REVIVING for this UUID.
     @Inject(method = "setGameMode", at = @At("RETURN"))
     private void habitrain$completeUpstreamRevival(GameType gameType, CallbackInfoReturnable<Boolean> cir) {
-        if (gameType == GameType.ADVENTURE) {
-            EliminatedRestAreaService.finishUpstreamRevival((ServerPlayer) (Object) this);
-        }
         ServerPlayer player = (ServerPlayer) (Object) this;
+        if (gameType == GameType.ADVENTURE) {
+            EliminatedRestAreaService.finishUpstreamRevival(player);
+            if (habitrain$wasPhysicalSpectator && !EliminatedRestAreaService.isEnteringRest(player)) {
+                EliminatedRestAreaService.clearEliminatedOnSpectatorToAdventureRevival(player);
+            }
+        }
         if ((habitrain$wasPhysicalSpectator || habitrain$wasResting)
                 && (gameType == GameType.ADVENTURE || gameType == GameType.SURVIVAL)
                 && player.isAlive() && !EliminatedRestAreaService.isEnteringRest(player)) {

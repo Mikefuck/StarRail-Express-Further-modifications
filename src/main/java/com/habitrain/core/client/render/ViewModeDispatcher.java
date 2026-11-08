@@ -1,7 +1,7 @@
 package com.habitrain.core.client.render;
 
 import com.habitrain.core.HabiTrainCore;
-import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
+import com.habitrain.core.client.cache.ClientTaskBlockCache;
 import com.habitrain.core.game.sre.task.CustomTaskBlockIndexLimits;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
@@ -32,18 +32,23 @@ public final class ViewModeDispatcher {
         if (!GameRunningCache.isGameRunning()) {
             return;
         }
-        if (CustomTaskBlockCache.isEmpty()) {
+        if (ClientTaskBlockCache.isEmpty()) {
             return;
         }
 
         var level = renderContext.world();
         Map<Integer, Color> colors = TypeColorMapper.buildTypeColorMap();
         int renderedCount = 0;
-        for (BlockPos pos : CustomTaskBlockCache.keySet()) {
-            Set<Integer> typeIds = CustomTaskBlockCache.get(pos);
-            Block block = CustomTaskBlockCache.getBlockAt(pos);
-            if (block == null && level != null) {
+        for (BlockPos pos : ClientTaskBlockCache.keySet()) {
+            Set<Integer> typeIds = ClientTaskBlockCache.get(pos);
+            Block block = ClientTaskBlockCache.getBlockAt(pos);
+            if (block == null && level != null && level.hasChunkAt(pos)) {
                 block = level.getBlockState(pos).getBlock();
+            }
+            if (block == null
+                    || block == net.minecraft.world.level.block.Blocks.AIR
+                    || block == net.minecraft.world.level.block.Blocks.VOID_AIR) {
+                continue;
             }
             if (!CustomTaskBlockIndexLimits.shouldDrawSpectatorOverlay(block, typeIds)) {
                 continue;

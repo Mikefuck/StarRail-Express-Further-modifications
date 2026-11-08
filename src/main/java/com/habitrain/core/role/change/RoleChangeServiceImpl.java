@@ -59,6 +59,28 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
     private volatile StateResetHook stateResetter = RoleChangeServiceImpl::resetState;
     /** Per-transaction live data needed only after the reversible commit succeeds. */
     private final Map<UUID, PendingEffects> pendingEffects = new ConcurrentHashMap<>();
+    /** Reentrancy guard per player UUID (ROLE-RT-01). */
+    private final java.util.Set<UUID> inFlightPlayers = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, java.util.Set<RoleKey>> pendingCooldownClears = new ConcurrentHashMap<>();
+
+    static {
+        com.habitrain.core.task.ClearableHandlerRegistry.register(() -> {
+            try {
+                if (RoleChangeApi.instance() instanceof RoleChangeServiceImpl impl) {
+                    impl.clearSessionState();
+                }
+            } catch (Throwable failure) {
+                com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(failure);
+                LOGGER.error("Failed to clear role-change session state", failure);
+            }
+        });
+    }
+
+    public void clearSessionState() {
+        timelines.clear();
+        pendingEffects.clear();
+        inFlightPlayers.clear();
+    }
 
     private final RoleChangeTransaction<ServerPlayer> transaction;
 
@@ -114,13 +136,23 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         try {
             RoleStateApi.instance().reset(player, role, cause);
         } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
             LOGGER.warn("role-state reset {} for {} failed", cause, role, t);
         }
     }
 
     /** Test-visible timeline for one player. */
     public List<RoleHistoryEntry> recordedTimeline(UUID playerId) {
-        return List.copyOf(timelines.getOrDefault(playerId, List.of()));
+        if (playerId == null) {
+            return List.of();
+        }
+        List<RoleHistoryEntry> list = timelines.get(playerId);
+        if (list == null) {
+            return List.of();
+        }
+        synchronized (list) {
+            return List.copyOf(list);
+        }
     }
 
     public void recordTimeline(@Nullable UUID playerId, @Nullable RoleKey role, RoleChangeCause cause) {
@@ -138,14 +170,18 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                 if (er != null && er.role() != null) {
                     try {
                         display = er.role().getName().getString();
-                    } catch (Throwable ignored) {
+                    } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+                        LOGGER.debug("Failed to resolve role display name for {}", role, e);
                     }
                     if (er.role().identifier() != null) {
                         provider = er.role().identifier().getNamespace();
                     }
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+            LOGGER.debug("Failed to read snapshot metadata for timeline {}", role, e);
         }
         // try 块内被重新赋值的变量不是 effectively final，lambda 捕获前先拷贝一份。
         final RoleSnapshotId snapRef = snap;
@@ -153,9 +189,11 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         final String providerRef = provider;
         timelines.compute(playerId, (id, list) -> {
             List<RoleHistoryEntry> entries = list == null ? new ArrayList<>() : list;
-            entries.add(new RoleHistoryEntry(role, cause, System.currentTimeMillis(), snapRef, displayRef, providerRef));
-            if (entries.size() > MAX_TIMELINE_ENTRIES) {
-                entries.subList(0, entries.size() - MAX_TIMELINE_ENTRIES).clear();
+            synchronized (entries) {
+                entries.add(new RoleHistoryEntry(role, cause, System.currentTimeMillis(), snapRef, displayRef, providerRef));
+                if (entries.size() > MAX_TIMELINE_ENTRIES) {
+                    entries.subList(0, entries.size() - MAX_TIMELINE_ENTRIES).clear();
+                }
             }
             return entries;
         });
@@ -179,6 +217,26 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         lostNotifier.accept(previous, player);
         // Reset after onLost so the hook can still read the departing role's state.
         stateResetter.reset(player, previous, ResetCause.ROLE_LOST);
+        clearActionCooldowns(player, previous);
+    }
+
+    private void clearActionCooldowns(@Nullable ServerPlayer player, @Nullable RoleKey role) {
+        if (player == null) {
+            return;
+        }
+        if (inFlightPlayers.contains(player.getUUID())) {
+            if (role != null) pendingCooldownClears.computeIfAbsent(player.getUUID(), id -> new java.util.LinkedHashSet<>()).add(role);
+            return;
+        }
+        try {
+            if (com.habitrain.core.api.role.v2.action.RoleActionApi.instance()
+                    instanceof com.habitrain.core.role.action.RoleActionServiceImpl actionSvc) {
+                actionSvc.clearCooldownsForRole(player.getUUID(), role);
+            }
+        } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+            LOGGER.debug("Failed to clear action cooldowns for {}", role, e);
+        }
     }
 
     /**
@@ -200,10 +258,27 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
     @Override
     public RoleChangeResult assign(ServerPlayer player, RoleKey role, RoleChangeOptions options) {
         RoleKey canonical = canonicalize(role);
-        RoleChangeTransaction.Result r = transaction.assign(
-                player, canonical, RoleChangeCause.ASSIGN,
-                options.reinitialize(), options.recordTimeline(), options.addStats());
-        return r.toPublic();
+        if (options == null) {
+            return new RoleChangeResult(false, "options are required", canonical, RoleChangeCause.ASSIGN, "VALIDATE");
+        }
+        UUID playerId = player == null ? null : player.getUUID();
+        if (playerId != null && !inFlightPlayers.add(playerId)) {
+            LOGGER.warn("Rejected reentrant role assign for player {} -> {}", playerId, canonical);
+            return RoleChangeResult.failure("reentrant role change is not allowed", RoleChangeCause.ASSIGN, "VALIDATE");
+        }
+        boolean committed = false;
+        try {
+            RoleChangeTransaction.Result r = transaction.assign(
+                    player, canonical, RoleChangeCause.ASSIGN,
+                    options.reinitialize(), options.recordTimeline(), options.addStats());
+            com.habitrain.core.role.behavior.RuntimeHookGates.INSTANCE.invalidate();
+            committed = r.success();
+            return r.toPublic();
+        } finally {
+            if (playerId != null) {
+                finishTransition(playerId, committed);
+            }
+        }
     }
 
     @Override
@@ -227,15 +302,64 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                         "SAFETY_CHECK");
             }
         }
-        RoleChangeTransaction.Result r = transaction.assign(
-                player, canonical, cause, options.reinitialize(),
-                options.recordTimeline(), options.addStats());
-        return r.toPublic();
+        UUID playerId = player == null ? null : player.getUUID();
+        if (playerId != null && !inFlightPlayers.add(playerId)) {
+            LOGGER.warn("Rejected reentrant role transform for player {} -> {}", playerId, canonical);
+            return RoleChangeResult.failure("reentrant role change is not allowed", cause, "VALIDATE");
+        }
+        boolean committed = false;
+        try {
+            RoleChangeTransaction.Result r = transaction.assign(
+                    player, canonical, cause, options.reinitialize(),
+                    options.recordTimeline(), options.addStats());
+            com.habitrain.core.role.behavior.RuntimeHookGates.INSTANCE.invalidate();
+            committed = r.success();
+            return r.toPublic();
+        } finally {
+            if (playerId != null) {
+                finishTransition(playerId, committed);
+            }
+        }
     }
 
     @Override
     public RoleChangeResult remove(ServerPlayer player, RoleChangeCause cause) {
-        return transaction.remove(player, cause).toPublic();
+        UUID playerId = player == null ? null : player.getUUID();
+        if (playerId != null && !inFlightPlayers.add(playerId)) {
+            LOGGER.warn("Rejected reentrant role remove for player {}", playerId);
+            return RoleChangeResult.failure("reentrant role change is not allowed", cause, "VALIDATE");
+        }
+        boolean committed = false;
+        try {
+            RoleChangeResult res = transaction.remove(player, cause).toPublic();
+            com.habitrain.core.role.behavior.RuntimeHookGates.INSTANCE.invalidate();
+            committed = res.success();
+            return res;
+        } finally {
+            if (playerId != null) {
+                finishTransition(playerId, committed);
+            }
+        }
+    }
+
+    private void finishTransition(UUID playerId, boolean committed) {
+        try {
+            ((com.habitrain.core.role.state.RoleStateServiceImpl) RoleStateApi.instance())
+                    .finishPlayerTransaction(playerId, committed);
+            var roles = pendingCooldownClears.remove(playerId);
+            if (committed && roles != null) {
+                var actions = (com.habitrain.core.role.action.RoleActionServiceImpl)
+                        com.habitrain.core.api.role.v2.action.RoleActionApi.instance();
+                roles.forEach(role -> actions.clearCooldownsForRole(playerId, role));
+            }
+        } catch (Throwable failure) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(failure);
+            LOGGER.error("Failed to finalize managed role state for {} (committed={})", playerId, committed, failure);
+        } finally {
+            pendingCooldownClears.remove(playerId);
+            pendingEffects.remove(playerId);
+            inFlightPlayers.remove(playerId);
+        }
     }
 
     @Override
@@ -252,10 +376,26 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                 SRERole r = game == null ? null : game.getRole(player);
                 if (r != null && r.identifier() != null) {
                     role = RoleKey.of(r.identifier());
+                    faction = deriveFactionName(r);
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+                LOGGER.debug("current(player) role lookup failed for {}", id, e);
+            }
         }
         return new RoleView(id, role, faction);
+    }
+
+    private static @Nullable String deriveFactionName(@Nullable SRERole r) {
+        if (r == null) {
+            return null;
+        }
+        for (com.habitrain.core.api.role.v2.RoleFaction f : com.habitrain.core.api.role.v2.RoleFaction.values()) {
+            if (f.matches(r)) {
+                return f.name();
+            }
+        }
+        return null;
     }
 
     @Override
@@ -264,8 +404,12 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             return List.of();
         }
         List<RoleHistoryEntry> recorded = timelines.get(player.getUUID());
-        if (recorded != null && !recorded.isEmpty()) {
-            return List.copyOf(recorded);
+        if (recorded != null) {
+            synchronized (recorded) {
+                if (!recorded.isEmpty()) {
+                    return List.copyOf(recorded);
+                }
+            }
         }
         RoleView view = current(player);
         return view == null || view.role() == null ? List.of()
@@ -289,14 +433,20 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             SRERole old = game.getRoles().get(player.getUUID());
             game.getRoles().remove(player.getUUID());
             game.syncRoles();
-            if (old != null) {
-                try {
-                    org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
-                            .removeModdedRole(player, old);
-                } catch (Throwable ignoredEx) {}
+                if (old != null) {
+                    try {
+                        org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
+                                .removeModdedRole(player, old);
+                    } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+                        LOGGER.warn("ModdedRoleRemoved listener failed for {}", player.getUUID(), e);
+                    }
+                }
+            } catch (Throwable e) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
+                LOGGER.warn("clearSreRole failed for {}", player.getUUID(), e);
             }
-        } catch (Throwable ignoredEx) {}
-    }
+        }
 
     /** The catalog-based resolver used by core at runtime. */
     public static SRERole resolveViaCatalog(RoleKey key) {
@@ -319,7 +469,9 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         try {
             RoleKey canonical = RoleCatalogApi.instance().canonicalize(requested.location());
             return canonical == null ? requested : canonical;
-        } catch (Throwable ignored) {
+        } catch (Throwable failure) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(failure);
+            LOGGER.warn("Failed to canonicalize requested role {}", requested, failure);
             return requested;
         }
     }
@@ -336,19 +488,23 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             if (player == null || !(player.level() instanceof ServerLevel level)) {
                 return RoleChangeTransaction.Captured.none();
             }
-            SRERole old = null;
-            try {
-                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-                old = game == null ? null : game.getRole(player);
-            } catch (Throwable ignored) {}
+            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
+            if (game == null) throw new IllegalStateException("Cannot capture role: SRE world component is missing");
+            SRERole old = game.getRole(player);
             String faction = null;
-
+            ((com.habitrain.core.role.state.RoleStateServiceImpl) RoleStateApi.instance())
+                    .beginPlayerTransaction(player.getUUID());
             return new RoleChangeTransaction.Captured(old, faction);
         }
 
         @Override
         public void updateSre(ServerPlayer player, @Nullable SRERole role) {
-            if (role == null) sreClearer.accept(player, null);
+            if (role == null) {
+                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.serverLevel());
+                if (game == null) throw new IllegalStateException("Missing SRE game component");
+                SRERole old = game.getRoles().remove(player.getUUID());
+                pendingEffects.put(player.getUUID(), new PendingEffects(old, null, false, false));
+            }
             // Assignments are staged in updateMode; effects publish only after commit.
         }
 
@@ -370,6 +526,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             }
             // Clear any stale managed state left from a previous life of this role.
             stateResetter.reset(player, roleKey, ResetCause.ROLE_ASSIGNED);
+            clearActionCooldowns(player, roleKey);
         }
 
         @Override
@@ -380,6 +537,7 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
             SpecialRoleExitCleanup.clear(player);
             lostNotifier.accept(oldRoleKey, player);
             stateResetter.reset(player, oldRoleKey, ResetCause.ROLE_LOST);
+            clearActionCooldowns(player, oldRoleKey);
         }
 
         @Override
@@ -402,7 +560,18 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
 
         @Override
         public void syncClient(ServerPlayer player) {
-            // gameWorld.syncRoles() inside reassignRole pushes client-visible role state.
+            PendingEffects effects = pendingEffects.remove(player.getUUID());
+            if (effects != null && effects.newRole() == null) {
+                SREGameWorldComponent game = SREGameWorldComponent.KEY.get(player.serverLevel());
+                if (effects.oldRole() != null) {
+                    try {
+                        org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
+                                .removeModdedRole(player, effects.oldRole());
+                    } finally {
+                        game.syncRoles();
+                    }
+                } else game.syncRoles();
+            }
         }
 
         @Override
@@ -421,20 +590,16 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
                         game.syncRoles();
                     }
                 } else {
-                    sreClearer.accept(player, null);
+                    if (game != null) game.getRoles().remove(id);
                 }
             } catch (Throwable t) {
+            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(t);
                 LOGGER.warn("role change rollback failed for {}", id, t);
-            }
-            if (attemptedRole != null && attemptedRole.getIdentifier() != null) {
-                try {
-                    stateResetter.reset(player, RoleKey.of(attemptedRole.getIdentifier()), ResetCause.ROLE_ASSIGNED);
-                } catch (Throwable ignored) {}
             }
         }
     }
 
-    private record PendingEffects(@Nullable SRERole oldRole, SRERole newRole,
+    private record PendingEffects(@Nullable SRERole oldRole, @Nullable SRERole newRole,
                                   boolean recordTimeline, boolean addStats) {
     }
 }

@@ -38,6 +38,11 @@ public final class DlcTaskTracker {
 
     private DlcTaskTracker() {}
 
+    /** Releases all task-instance observations on server shutdown. */
+    public static void clearAll() {
+        TRACK_STATES.clear();
+    }
+
     private static TrackState state(UUID playerId) {
         return TRACK_STATES.computeIfAbsent(playerId, k -> new TrackState());
     }

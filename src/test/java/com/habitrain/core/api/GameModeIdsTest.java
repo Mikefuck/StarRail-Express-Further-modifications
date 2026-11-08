@@ -26,4 +26,28 @@ class GameModeIdsTest {
         assertTrue(GameModeIds.isMurder("sre:murder"));
         assertFalse(GameModeIds.isMurder("habitrain:blackout"));
     }
+
+    @Test
+    void thirdPartyNamesContainingBuiltInWordsKeepTheirIdentity() {
+        for (String id : java.util.List.of("addon:ship_repair", "addon:murder_party", "addon:blackout_plus",
+                "ship_repair", "ShipRepairGameMode", "MurderMysteryGameMode", "BlackoutChallenge")) {
+            assertEquals(id, GameModeIds.canonical(id));
+            assertFalse(GameModeIds.isBlackout(id));
+            assertFalse(GameModeIds.isRepair(id));
+            assertFalse(GameModeIds.isMurder(id));
+        }
+        assertEquals(GameModeIds.REPAIR, GameModeIds.canonical("net.exmo.sre.repair.RepairEscapeGameMode"));
+    }
+
+    @Test
+    void builtInAliasesDoNotDependOnTurkishOrAzeriLocale() {
+        var original = java.util.Locale.getDefault();
+        try {
+            for (String tag : java.util.List.of("tr-TR", "az-AZ")) {
+                java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag));
+                assertEquals(GameModeIds.REPAIR, GameModeIds.canonical("SRE:REPAIR"));
+                assertEquals(GameModeIds.MURDER, GameModeIds.canonical("SREMURDERGAMEMODE"));
+            }
+        } finally { java.util.Locale.setDefault(original); }
+    }
 }

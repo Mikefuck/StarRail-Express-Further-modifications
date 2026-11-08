@@ -8,11 +8,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
 /** A disconnect can clear the SRE cache while the last world frame is still rendering. */
-@Mixin(value = WheelBlockEntityRenderer.class, remap = false)
+@Mixin(WheelBlockEntityRenderer.class)
 public abstract class WheelRenderDisconnectMixin {
-    @WrapOperation(method = "render",
+    @WrapOperation(method = "render(Lio/wifi/starrailexpress/content/block_entity/WheelBlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
             at = @At(value = "INVOKE",
-                    target = "Lio/wifi/starrailexpress/cca/SRETrainWorldComponent;getTime()F"))
+                    target = "Lio/wifi/starrailexpress/cca/SRETrainWorldComponent;getTime()F",
+                    remap = false))
     private static float habitrain$timeDuringDisconnect(SRETrainWorldComponent train, Operation<Float> original) {
         // Guard the captured receiver, not the static field at method entry: the
         // Netty disconnect callback can clear that field between check and use.

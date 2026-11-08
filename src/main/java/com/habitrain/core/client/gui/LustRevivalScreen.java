@@ -33,10 +33,12 @@ public final class LustRevivalScreen extends Screen {
         if (client.player.isSpectator() || !HabiRoles.isHabiRole(client.player, SevenSins.LUST)
                 || SREGameWorldComponent.KEY.get(client.level).getGameStatus() != SREGameWorldComponent.GameStatus.ACTIVE) return;
         if (!state.revivalToken().equals(seenToken)) {
-            seenToken = state.revivalToken();
+            UUID nextToken = state.revivalToken();
             String name = state.roster().stream().filter(e -> e.id().equals(state.selected()))
                     .map(LustComponent.CharmEntry::name).findFirst().orElse("?");
-            client.setScreen(new LustRevivalScreen(seenToken, name));
+            LustRevivalScreen prompt = new LustRevivalScreen(nextToken, name);
+            client.setScreen(prompt);
+            if (client.screen == prompt) seenToken = nextToken;
         }
     }
 
@@ -49,12 +51,30 @@ public final class LustRevivalScreen extends Screen {
     }
 
     private void answer(boolean accept) {
-        if (!answered) ClientPlayNetworking.send(new LustActionPayload(
-                accept ? LustActionPayload.REVIVE : LustActionPayload.DECLINE, token));
-        answered = true;
-        minecraft.setScreen(null);
+        if (!answered) {
+            answered = true;
+            if (minecraft != null && minecraft.getConnection() != null) {
+                ClientPlayNetworking.send(new LustActionPayload(
+                        accept ? LustActionPayload.REVIVE : LustActionPayload.DECLINE, token));
+            }
+        }
+        if (minecraft != null && minecraft.screen == this) {
+            minecraft.setScreen(null);
+        }
     }
     @Override public void onClose() { answer(false); }
+    @Override public void removed() {
+        try {
+            if (!answered) {
+                answered = true;
+                if (minecraft != null && minecraft.getConnection() != null) {
+                    ClientPlayNetworking.send(new LustActionPayload(LustActionPayload.DECLINE, token));
+                }
+            }
+        } finally {
+            super.removed();
+        }
+    }
     @Override public boolean isPauseScreen() { return false; }
     @Override public void tick() {
         if (minecraft.player == null || minecraft.player.isSpectator()) { minecraft.setScreen(null); return; }

@@ -10,6 +10,7 @@ import com.habitrain.core.client.gui.menu.MenuPermissions;
 import com.habitrain.core.client.gui.menu.MenuSounds;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.TaskEditScreen;
+import com.habitrain.core.client.gui.menu.ui.EditBoxInputRouter;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.ConfigQueryService;
 import com.habitrain.core.config.TaskConfigEntry;
@@ -63,6 +64,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     private String searchText = "";
 
     private EditBox searchBox;
+    private EditBoxInputRouter inputRouter;
     private double sidebarScroll = 0;
     private double contentScroll = 0;
     private boolean draggingSidebar = false;
@@ -87,6 +89,11 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
         this.root = root;
         this.font = font;
         this.editable = editable;
+        this.searchBox = new EditBox(font, 0, 0, SIDEBAR_W - 12, 14, Component.literal(""));
+        this.searchBox.setMaxLength(64);
+        this.searchBox.setHint(Component.literal("搜索任务..."));
+        this.searchBox.setResponder(t -> { searchText = t == null ? "" : t.trim().toLowerCase(Locale.ROOT); contentScroll = 0; });
+        this.inputRouter = new EditBoxInputRouter(this.searchBox);
         rebuildSections();
         if (!sections.isEmpty()) selectedGroup = sections.keySet().iterator().next();
     }
@@ -181,6 +188,7 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
             searchBox.setMaxLength(64);
             searchBox.setHint(Component.literal("搜索任务..."));
             searchBox.setResponder(t -> { searchText = t == null ? "" : t.trim().toLowerCase(Locale.ROOT); contentScroll = 0; });
+            inputRouter = new EditBoxInputRouter(searchBox);
         }
         searchBox.setX(sidebarX + 6);
         searchBox.setY(y + 6);
@@ -189,66 +197,72 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
         // 侧边栏：模式列表
         int sidebarListY = y + HEADER_H;
-        int sidebarListH = h - HEADER_H;
+        int sidebarListH = Math.max(1, h - HEADER_H);
         sidebarHits.clear();
         g.enableScissor(sidebarX, sidebarListY, sidebarX + SIDEBAR_W, sidebarListY + sidebarListH);
-        int rowY = sidebarListY - (int) sidebarScroll;
-        for (var section : sections.values()) {
-            boolean selected = section.groupKey().equals(selectedGroup);
-            boolean hover = MenuTheme.inBounds(mx, my, sidebarX, rowY, SIDEBAR_W, ROW_H);
-            int bg = selected ? MenuTheme.BG_ROW_SELECTED : (hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_PANEL);
-            g.fill(sidebarX, rowY, sidebarX + SIDEBAR_W, rowY + ROW_H, bg);
-            if (selected) g.fill(sidebarX, rowY, sidebarX + 3, rowY + ROW_H, section.accent());
-            int enabled = countEnabled(section.tasks());
-            String label = section.title() + " §7" + enabled + "/" + section.tasks().size();
-            g.drawString(font, label, sidebarX + 8, rowY + (ROW_H - font.lineHeight) / 2,
-                    selected ? 0xFFFFFFFF : MenuTheme.TEXT_PRIMARY, false);
-            sidebarHits.add(new RowHit(section.groupKey(), sidebarX, rowY, SIDEBAR_W, ROW_H));
-            rowY += ROW_H;
+        try {
+            int rowY = sidebarListY - (int) sidebarScroll;
+            for (var section : sections.values()) {
+                boolean selected = section.groupKey().equals(selectedGroup);
+                boolean hover = MenuTheme.inBounds(mx, my, sidebarX, rowY, SIDEBAR_W, ROW_H);
+                int bg = selected ? MenuTheme.BG_ROW_SELECTED : (hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_PANEL);
+                g.fill(sidebarX, rowY, sidebarX + SIDEBAR_W, rowY + ROW_H, bg);
+                if (selected) g.fill(sidebarX, rowY, sidebarX + 3, rowY + ROW_H, section.accent());
+                int enabled = countEnabled(section.tasks());
+                String label = section.title() + " §7" + enabled + "/" + section.tasks().size();
+                g.drawString(font, label, sidebarX + 8, rowY + (ROW_H - font.lineHeight) / 2,
+                        selected ? 0xFFFFFFFF : MenuTheme.TEXT_PRIMARY, false);
+                sidebarHits.add(new RowHit(section.groupKey(), sidebarX, rowY, SIDEBAR_W, ROW_H));
+                rowY += ROW_H;
+            }
+            // 滚动条
+            int sidebarContentH = rowY + (int) sidebarScroll - sidebarListY;
+            maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
+            sidebarScroll = Mth.clamp(sidebarScroll, 0, maxSidebarScroll);
+            MenuTheme.drawScrollbar(g, sidebarX + SIDEBAR_W - 4, sidebarListY, sidebarListH, sidebarScroll, maxSidebarScroll, 3);
+        } finally {
+            g.disableScissor();
         }
-        // 滚动条
-        int sidebarContentH = rowY + (int) sidebarScroll - sidebarListY;
-        maxSidebarScroll = Math.max(0, sidebarContentH - sidebarListH);
-        sidebarScroll = Mth.clamp(sidebarScroll, 0, maxSidebarScroll);
-        MenuTheme.drawScrollbar(g, sidebarX + SIDEBAR_W - 4, sidebarListY, sidebarListH, sidebarScroll, maxSidebarScroll, 3);
-        g.disableScissor();
 
         // 内容区：任务列表
         TaskGroup section = sections.get(selectedGroup);
         if (section == null) return;
         taskHits.clear();
         g.enableScissor(contentX, y, contentX + contentW, y + h);
-        int cy = y - (int) contentScroll;
+        try {
+            int cy = y - (int) contentScroll;
 
-        // 内容标题
-        g.drawString(font, Component.literal("§l" + section.title()), contentX + 6, cy + 4, 0xFFFFFFFF, false);
-        cy += HEADER_H;
+            // 内容标题
+            g.drawString(font, Component.literal("§l" + section.title()), contentX + 6, cy + 4, 0xFFFFFFFF, false);
+            cy += HEADER_H;
 
-        // 按 category 分组
-        Map<String, List<TaskDefinition>> groups = new LinkedHashMap<>();
-        for (TaskDefinition def : section.tasks()) {
-            if (!matchesSearch(def)) continue;
-            String label = categoryGroupLabel(def.getCategory());
-            groups.computeIfAbsent(label, k -> new ArrayList<>()).add(def);
-        }
-        if (groups.isEmpty()) {
-            g.drawString(font, Component.literal("§7无匹配任务"), contentX + 6, cy + 8, 0xFF888888, false);
-        }
-        for (var group : groups.entrySet()) {
-            // 组标题
-            g.drawString(font, Component.literal("§e§l" + group.getKey()), contentX + 6, cy + 2, MenuTheme.ACCENT_CYAN, false);
-            cy += GROUP_HEADER_H;
-            for (TaskDefinition def : group.getValue()) {
-                drawTaskRow(g, def, contentX, cy, contentW, mx, my);
-                cy += ROW_H;
+            // 按 category 分组
+            Map<String, List<TaskDefinition>> groups = new LinkedHashMap<>();
+            for (TaskDefinition def : section.tasks()) {
+                if (!matchesSearch(def)) continue;
+                String label = categoryGroupLabel(def.getCategory());
+                groups.computeIfAbsent(label, k -> new ArrayList<>()).add(def);
             }
+            if (groups.isEmpty()) {
+                g.drawString(font, Component.literal("§7无匹配任务"), contentX + 6, cy + 8, 0xFF888888, false);
+            }
+            for (var group : groups.entrySet()) {
+                // 组标题
+                g.drawString(font, Component.literal("§e§l" + group.getKey()), contentX + 6, cy + 2, MenuTheme.ACCENT_CYAN, false);
+                cy += GROUP_HEADER_H;
+                for (TaskDefinition def : group.getValue()) {
+                    drawTaskRow(g, def, contentX, cy, contentW, mx, my);
+                    cy += ROW_H;
+                }
+            }
+            // 内容滚动条
+            int contentContentH = cy + (int) contentScroll - y;
+            maxContentScroll = Math.max(0, contentContentH - h);
+            contentScroll = Mth.clamp(contentScroll, 0, maxContentScroll);
+            MenuTheme.drawScrollbar(g, contentX + contentW - 4, y, h, contentScroll, maxContentScroll, 3);
+        } finally {
+            g.disableScissor();
         }
-        // 内容滚动条
-        int contentContentH = cy + (int) contentScroll - y;
-        maxContentScroll = Math.max(0, contentContentH - h);
-        contentScroll = Mth.clamp(contentScroll, 0, maxContentScroll);
-        MenuTheme.drawScrollbar(g, contentX + contentW - 4, y, h, contentScroll, maxContentScroll, 3);
-        g.disableScissor();
     }
 
     private void drawTaskRow(GuiGraphics g, TaskDefinition def, int x, int y, int w, int mx, int my) {
@@ -297,41 +311,46 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-        if (searchBox != null && searchBox.mouseClicked(mx, my, btn)) return true;
+        if (inputRouter != null && inputRouter.mouseClicked(mx, my, btn)) return true;
 
-        // 侧边栏点击
-        for (RowHit hit : sidebarHits) {
-            if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
-                selectedGroup = hit.id();
-                contentScroll = 0;
-                MenuSounds.playClick();
-                return true;
+        int sidebarListY = y + HEADER_H;
+        int sidebarListH = Math.max(1, h - HEADER_H);
+        // 侧边栏点击（限制在侧边栏裁剪视口内）
+        if (my >= sidebarListY && my < sidebarListY + sidebarListH) {
+            for (RowHit hit : sidebarHits) {
+                if (MenuTheme.inBounds(mx, my, hit.x(), hit.y(), hit.w(), hit.h())) {
+                    selectedGroup = hit.id();
+                    contentScroll = 0;
+                    MenuSounds.playClick();
+                    return true;
+                }
             }
         }
-        // 任务行点击
-        for (TaskRowHit hit : taskHits) {
-            if (my < hit.y() || my >= hit.y() + hit.h()) continue;
-            if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
-                MenuSounds.playClick();
-                toggleTask(hit.def());
-                return true;
-            }
-            if (mx >= hit.editX() && mx < hit.editX() + hit.editW()) {
-                MenuSounds.playClick();
-                openTaskEditor(hit.def());
-                return true;
+        // 任务行点击（限制在内容区裁剪视口内）
+        if (my >= y && my < y + h) {
+            for (TaskRowHit hit : taskHits) {
+                if (my < hit.y() || my >= hit.y() + hit.h()) continue;
+                if (mx >= hit.toggleX() && mx < hit.toggleX() + hit.toggleW()) {
+                    MenuSounds.playClick();
+                    toggleTask(hit.def());
+                    return true;
+                }
+                if (mx >= hit.editX() && mx < hit.editX() + hit.editW()) {
+                    MenuSounds.playClick();
+                    openTaskEditor(hit.def());
+                    return true;
+                }
             }
         }
         // 侧边栏滚动
-        int sidebarListY = y + HEADER_H;
-        if (mx < x + SIDEBAR_W && my >= sidebarListY) {
+        if (mx < x + SIDEBAR_W && my >= sidebarListY && my < sidebarListY + sidebarListH) {
             draggingSidebar = true;
             dragStartY = my;
             dragStartScroll = sidebarScroll;
             return true;
         }
         // 内容滚动
-        if (mx > x + SIDEBAR_W + 4) {
+        if (mx > x + SIDEBAR_W + 4 && my >= y && my < y + h) {
             draggingContent = true;
             dragStartY = my;
             dragStartScroll = contentScroll;
@@ -343,11 +362,17 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
         if (draggingSidebar) {
-            sidebarScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxSidebarScroll);
+            int sidebarListH = Math.max(1, h - HEADER_H);
+            int thumbH = maxSidebarScroll > 0 ? Math.max(20, (int) (sidebarListH * (double) sidebarListH / (sidebarListH + maxSidebarScroll))) : sidebarListH;
+            double scale = maxSidebarScroll > 0 ? maxSidebarScroll / Math.max(1.0, sidebarListH - thumbH) : 1.0;
+            sidebarScroll = Mth.clamp(dragStartScroll + (my - dragStartY) * scale, 0, maxSidebarScroll);
             return true;
         }
         if (draggingContent) {
-            contentScroll = Mth.clamp(dragStartScroll + (my - dragStartY), 0, maxContentScroll);
+            int viewH = Math.max(1, h);
+            int thumbH = maxContentScroll > 0 ? Math.max(20, (int) (viewH * (double) viewH / (viewH + maxContentScroll))) : viewH;
+            double scale = maxContentScroll > 0 ? maxContentScroll / Math.max(1.0, viewH - thumbH) : 1.0;
+            contentScroll = Mth.clamp(dragStartScroll + (my - dragStartY) * scale, 0, maxContentScroll);
             return true;
         }
         return false;
@@ -375,14 +400,12 @@ public class ModeTasksPage implements com.habitrain.core.client.gui.menu.ConfigP
 
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
-        if (searchBox != null && searchBox.isFocused() && searchBox.keyPressed(key, scan, mod)) return true;
-        return false;
+        return inputRouter != null && inputRouter.keyPressed(key, scan, mod);
     }
 
     @Override
     public boolean charTyped(char ch, int mod) {
-        if (searchBox != null && searchBox.isFocused() && searchBox.charTyped(ch, mod)) return true;
-        return false;
+        return inputRouter != null && inputRouter.charTyped(ch, mod);
     }
 
     @Override

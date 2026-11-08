@@ -92,6 +92,13 @@ public final class SceneStagingClientController {
         return session.action;
     }
 
+    public SceneCompatibilityReport getCompatibilityReport(String mapKey) {
+        if (getAction(mapKey) == Action.BUILD) return null;
+        Session session = sessionsByMap.get(mapKey == null ? "" : mapKey);
+        return session == null ? null
+                : SceneRenderRuntime.getInstance().getCompatibilityReport(session.offer.descriptor().sha256());
+    }
+
     public void handleProgress(String mapKey, String state) {
         Session session = sessionsByMap.get(mapKey == null ? "" : mapKey);
         if (session == null) return;

@@ -11,7 +11,7 @@ import com.habitrain.core.client.gui.VoteLaunchOverlayState;
 import com.habitrain.core.client.menu.MenuAccessGuard;
 import com.habitrain.core.client.network.PayloadSenders;
 import com.habitrain.core.config.ConfigManager;
-import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
+import com.habitrain.core.client.cache.ClientTaskBlockCache;
 import com.habitrain.core.network.ActiveTaskPayload;
 import com.habitrain.core.network.CustomTaskBlockPayload;
 import com.habitrain.core.network.EliminatedRestPromptPayload;
@@ -49,24 +49,38 @@ public class NetworkReceiverRegistrar {
         registerReceivers();
     }
 
+    private static void executeIfConnected(ClientPlayNetworking.Context context, Runnable task) {
+        var expected = context.player().connection;
+        context.client().execute(() -> {
+            var connection = context.client().getConnection();
+            if (!ClientConnectionSession.isCurrent(expected)
+                    || connection != expected || !expected.getConnection().isConnected()) {
+                return;
+            }
+            task.run();
+        });
+    }
+
     private void registerReceivers() {
         // 1) 接收服务端任务配置同步
         ClientPlayNetworking.registerGlobalReceiver(TaskConfigPayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> {
+            executeIfConnected(context, () -> {
                 HabiTrainCore.LOGGER.info("收到服务端任务配置同步 ({} 个任务配置)", payload.getConfigs().size());
 
-                // 使用 applySyncData 应用（抑制 save 回调，防止回环）
-                ConfigManager.getInstance().applySyncData(
-                        payload.getConfigs(),
-                        ConfigManager.getInstance().getDlcProbabilityTarget()
-                );
+                if (!(context.client().screen instanceof com.habitrain.core.client.gui.menu.ConfigMenuScreen)) {
+                    // 使用 applySyncData 应用（抑制 save 回调，防止回环）
+                    ConfigManager.getInstance().applySyncData(
+                            payload.getConfigs(),
+                            ConfigManager.getInstance().getDlcProbabilityTarget()
+                    );
+                }
                 InstinctColorHelper.markDirty();
             });
         });
 
         // 2) 接收服务端活跃自定义任务同步（用于多人模式下透视渲染）
         ClientPlayNetworking.registerGlobalReceiver(ActiveTaskPayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> {
+            executeIfConnected(context, () -> {
                 if (payload.isClear()) {
                     HabiTrainCore.LOGGER.info("收到活跃自定义任务清空信号");
                     ActiveTaskCache.clear();
@@ -80,22 +94,24 @@ public class NetworkReceiverRegistrar {
 
         // 3) 接收服务端自定义任务方块类型同步
         ClientPlayNetworking.registerGlobalReceiver(CustomTaskBlockPayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> {
-                CustomTaskBlockCache.loadFromSnapshot(payload.getBlockTypeIds());
+            executeIfConnected(context, () -> {
+                ClientTaskBlockCache.loadFromSnapshot(payload.getBlockTypeIds());
             });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(EliminatedRestPromptPayload.TYPE, (payload, context) ->
-                context.client().execute(() -> EliminatedRestPromptState.update(
+                executeIfConnected(context, () -> EliminatedRestPromptState.update(
                         payload.visible(), payload.canToggle())));
 
         // 4) 接收服务端光影白名单同步（仅更新内存，不触发 save 回调）
         ClientPlayNetworking.registerGlobalReceiver(ShaderConfigPayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> {
+            executeIfConnected(context, () -> {
                 HabiTrainCore.LOGGER.info("收到服务端光影白名单同步: {}",
                         payload.isEnabled() ? "启用, " + payload.getWhitelist().size() + "个光影" : "禁用");
-                ConfigManager cfg = ConfigManager.getInstance();
-                cfg.applyShaderWhitelistSync(payload.isEnabled(), payload.getWhitelist());
+                if (!(context.client().screen instanceof com.habitrain.core.client.gui.menu.ConfigMenuScreen)) {
+                    ConfigManager cfg = ConfigManager.getInstance();
+                    cfg.applyShaderWhitelistSync(payload.isEnabled(), payload.getWhitelist());
+                }
             });
         });
 
@@ -103,7 +119,7 @@ public class NetworkReceiverRegistrar {
         //    让客户端配置界面显示服务端真实值，避免 OP 联机保存时用本地过期全局项覆盖服务端。
         //    applySyncFromJson 抑制 save 回调，防止回环广播。
         ClientPlayNetworking.registerGlobalReceiver(FullConfigSyncPayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> {
+            executeIfConnected(context, () -> {
                 HabiTrainCore.LOGGER.info("收到服务端完整配置同步 ({} 字节)", payload.getConfigJson().length());
                 ConfigManager.getInstance().applySyncFromJson(payload.getConfigJson());
                 InstinctColorHelper.markDirty();
@@ -112,13 +128,13 @@ public class NetworkReceiverRegistrar {
 
         // 5b) 接收服务端 Mod 菜单访问门控状态（专用服务器联机时锁定未授权玩家页面）
         ClientPlayNetworking.registerGlobalReceiver(MenuGatePayload.TYPE, (payload, context) -> {
-            context.client().execute(() -> MenuAccessGuard.update(payload));
+            executeIfConnected(context, () -> MenuAccessGuard.update(payload));
         });
 
         // =========================================================
         // 14) 通用选项投票（模式/地图等） S2C 接收器
         ClientPlayNetworking.registerGlobalReceiver(OptionVotePayload.TYPE, (payload, ctx) -> {
-            ctx.client().execute(() -> {
+            executeIfConnected(ctx, () -> {
                 OptionVoteState.UpdateResult result = OptionVoteState.update(payload);
                 // 维修员不看投票/开局转场界面：状态照常更新，但绝不自动打开或强制切换画面。
                 if (RepairModeClientState.isLocalRepairer()) {
@@ -149,11 +165,7 @@ public class NetworkReceiverRegistrar {
                         ctx.client().setScreen(null);
                     }
                 } else if (result.shouldAutoOpen()) {
-                    Screen parent = ctx.client().screen;
-                    // Rebuild if already open (mode→map) so title/list refresh; unwrap nested parents.
-                    while (parent instanceof OptionVoteScreen open) {
-                        parent = open.getParentScreen();
-                    }
+                    Screen parent = OptionVoteScreen.sanitizeReturnScreen(ctx.client().screen);
                     ctx.client().setScreen(new OptionVoteScreen(parent));
                 }
             });
@@ -161,14 +173,14 @@ public class NetworkReceiverRegistrar {
 
         // 14b) 地图投票档案 S2C 接收器（一次性推送，仅存状态，解码在渲染线程懒做）
         ClientPlayNetworking.registerGlobalReceiver(MapVoteProfilePayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     OptionVoteState.applyProfiles(payload);
                     com.habitrain.core.client.cache.ClientMapIntroCache.applyProfiles(payload);
                 }));
 
         // 15) 开局加载进度 — 始终写入 Session（hide 后进度不断档），屏打开时同步 UI
         ClientPlayNetworking.registerGlobalReceiver(MapVoteProgressPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员不看加载转场
                     }
@@ -183,7 +195,7 @@ public class NetworkReceiverRegistrar {
         // 15b) 判定点 A：地图重置完成 / trueStartGame 进入 STARTING，约 3 秒后服务端把玩家传送进对局。
         //      重置期间只有顶部进度牌，这里才打开全屏开局转场（车票飘落铺满，赶在传送前盖住画面）。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteStartConfirmedPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return;
                     }
@@ -199,17 +211,14 @@ public class NetworkReceiverRegistrar {
                     // 正常路径：完整播放飘落入场（约 1.3 秒铺满，早于传送）
                     // 容器屏（箱子/背包等）不能作为交还目标：转场几十秒后服务端早已
                     // 关闭该容器，重新打开只会得到点击无响应的幽灵界面（review M10）。
-                    Screen destination = ctx.client().screen;
-                    if (destination instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen) {
-                        destination = null;
-                    }
+                    Screen destination = OptionVoteScreen.sanitizeReturnScreen(ctx.client().screen);
                     ctx.client().setScreen(new VoteLaunchTransitionScreen(
                             destination, VoteLaunchSession.getWinningMapId()));
                 }));
 
         // 16) 判定点 B：开局环境就绪 — 转场原地盖「对局开始」章；若转场屏丢了则保险重开。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchTransitionPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员不看开局转场
                     }
@@ -232,7 +241,7 @@ public class NetworkReceiverRegistrar {
                     }
                     VoteLaunchSession.begin(payload.winningMapId());
                     VoteLaunchSession.onLaunchConfirmed(payload.winningMapId());
-                    Screen destination = ctx.client().screen;
+                    Screen destination = OptionVoteScreen.sanitizeReturnScreen(ctx.client().screen);
                     VoteLaunchTransitionScreen transition = new VoteLaunchTransitionScreen(
                             destination, payload.winningMapId());
                     transition.confirmLaunch(payload.winningMapId());
@@ -243,7 +252,7 @@ public class NetworkReceiverRegistrar {
         //      客户端立即交还画面，避免在加载/扫场画面无限等待。
         //      无论当前是否为转场屏，都清理覆盖层状态（黑场/相机屏蔽），防止动画残留。
         ClientPlayNetworking.registerGlobalReceiver(MapVoteLaunchAbortPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     if (RepairModeClientState.isLocalRepairer()) {
                         return; // 维修员无转场屏可交还
                     }
@@ -256,7 +265,7 @@ public class NetworkReceiverRegistrar {
 
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.SlothSleepRosterPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             if (ctx.client().player == null) return;
                             if (!(ctx.client().screen instanceof io.wifi.starrailexpress.client.gui.screen.ingame.LimitedInventoryScreen)) return;
                             try {
@@ -278,7 +287,7 @@ public class NetworkReceiverRegistrar {
         //     极端情况下开局转场屏残留也会被本屏覆盖）。维修员不接收（服务端也过滤）。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.GameEndTransitionPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             if (RepairModeClientState.isLocalRepairer()) {
                                 return; // 维修员不看对局结束转场
                             }
@@ -294,7 +303,7 @@ public class NetworkReceiverRegistrar {
         // 19) 维修模式状态同步 — 客户端据此屏蔽开局黑场/转场与结尾动画。
         //     进入时若正停留在投票/开局转场界面立即交还并清空覆盖层，避免残留画面。
         ClientPlayNetworking.registerGlobalReceiver(RepairModeSyncPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     RepairModeClientState.setRepairing(payload.isRepairing());
                     if (payload.isRepairing()) {
                         VoteLaunchSession.clear();
@@ -310,7 +319,7 @@ public class NetworkReceiverRegistrar {
 
         // 20) 角色动作结果：push 走独立推送监听，否则按 (actionId, sequence) 解析挂起请求。
         ClientPlayNetworking.registerGlobalReceiver(RoleActionS2CPayload.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
+                executeIfConnected(ctx, () -> {
                     if (payload.push()) {
                         com.habitrain.core.client.role.RoleActionClientSession.INSTANCE
                                 .onPush(payload.actionId(), payload.payload());
@@ -330,7 +339,7 @@ public class NetworkReceiverRegistrar {
         // 20) 角色状态同步（per-slot SyncPolicy）→ 客户端镜像缓存（opaque 保存）
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.RoleStateSyncPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.client.role.RoleStateClientCache.accept(payload)));
 
         // 21) 角色扩展 manifest 握手（§14.2）→ 客户端握手状态（Mod Menu 页读取）。
@@ -338,7 +347,7 @@ public class NetworkReceiverRegistrar {
         // 角色动作（缺少 required provider / API 不兼容 / 定义 hash 不一致时拒绝）。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.RoleManifestPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             com.habitrain.core.client.role.RoleHandshakeState.INSTANCE
                                     .accept(payload.toManifest());
                             try {
@@ -355,7 +364,7 @@ public class NetworkReceiverRegistrar {
         // 22) 角色扩展编译条目快照（§13.2）→ 客户端页面数据源
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.network.RoleSnapshotPayload.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             com.habitrain.core.client.role.RoleSnapshotState.INSTANCE.accept(payload);
                             com.habitrain.core.client.role.RoleRefreshDispatcher.refresh();
                             com.habitrain.core.client.role.RoleHandshakeState.INSTANCE.onSnapshotUpdated();
@@ -380,7 +389,7 @@ public class NetworkReceiverRegistrar {
         // 23) 场景配置器右键打开 GUI
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneEditorOpenS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             Minecraft mc = ctx.client();
                             var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
                             java.util.LinkedHashSet<String> configuredMapKeys = new java.util.LinkedHashSet<>(
@@ -420,7 +429,7 @@ public class NetworkReceiverRegistrar {
         // 24) 场景选区状态同步
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneSelectionStateS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             com.habitrain.core.scene.client.SceneToolHud.getInstance()
                                     .updateState(payload.mapKey(), payload.toBounds(), payload.blockCount());
                             com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance()
@@ -430,7 +439,7 @@ public class NetworkReceiverRegistrar {
         // 24b) 场景工具当前编辑目标同步（页面关闭后 HUD 仍以服务端会话为准）
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneToolTargetStateS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             var settings = ConfigManager.getInstance().getSceneMotionSettings();
                             com.habitrain.core.client.gui.menu.page.SceneMotionPage
                                     .rememberAuthoritativeEditorTarget(
@@ -447,20 +456,20 @@ public class NetworkReceiverRegistrar {
         // 25) 场景运行时状态同步（零Tick移动渲染 / 音效 / 微震）
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneRuntimeStateS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .updateRuntimeState(payload.state())));
 
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAdditionalRuntimeStatesS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .updateAdditionalRuntimeStates(payload.states())));
 
         // API 场景实例增量同步（新增/更新 + 删除 + 全清）。数量没有上限，服务端按单实例发包。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneInstancesS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .applyInstanceOps(payload.upserts(), payload.removals(),
                                                 payload.clear())));
@@ -469,7 +478,7 @@ public class NetworkReceiverRegistrar {
         //     协议版本一并交给渲染运行时：客户端据此判断能不能跟服务端协商增量补丁。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetManifestS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .acceptManifest(payload.mapKey(), payload.descriptor(),
                                                 payload.protocolVersion())));
@@ -477,14 +486,14 @@ public class NetworkReceiverRegistrar {
         // 26b) 增量探测的回答：有补丁就记下来，之后取该资产时优先走增量。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetDeltaOfferS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneAssetCache.getInstance()
                                         .acceptDeltaOffer(payload)));
 
         // 27) 场景资产分片数据接收
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetChunkS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneAssetCache.getInstance()
                                         .acceptChunk(payload)));
 
@@ -492,21 +501,21 @@ public class NetworkReceiverRegistrar {
         // 没有这条回包，被拒的请求会让该资产永远停留在等待状态。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetChunkStatusS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneAssetCache.getInstance()
                                         .acceptStatus(payload)));
 
         // 投票加载页预取：文件校验、解码和 GPU 网格编译完成后再向服务端回执。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetPrefetchS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance()
                                         .prefetchAsset(payload.sessionId(), payload.mapKey(), payload.descriptor())));
 
         // 28) 场景资产生成进度通知
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneAssetBuildProgressS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() -> {
+                        executeIfConnected(ctx, () -> {
                             com.habitrain.core.scene.client.SceneStagingClientController.getInstance()
                                     .handleProgress(payload.mapKey(), payload.state());
                             var player = ctx.client().player;
@@ -521,7 +530,7 @@ public class NetworkReceiverRegistrar {
         // 诊断暂存资产只会由服务端发给发起扫描的管理员。
         ClientPlayNetworking.registerGlobalReceiver(
                 com.habitrain.core.scene.network.SceneStagingOfferS2C.TYPE, (payload, ctx) ->
-                        ctx.client().execute(() ->
+                        executeIfConnected(ctx, () ->
                                 com.habitrain.core.scene.client.SceneStagingClientController.getInstance()
                                         .acceptOffer(payload)));
     }

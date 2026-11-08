@@ -17,6 +17,26 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SceneInstanceServiceTest {
+    @Test void timeScaleChangesAndPauseResumePreservePhaseAndUpdatesStillResetLifetime() {
+        FakeRuntime runtime = new FakeRuntime();
+        SceneInstanceService service = new SceneInstanceService(runtime);
+        assertTrue(service.spawn(spec().headStartSeconds(3).durationTicks(200).build()).isSuccess());
+        assertEquals(0, service.get("test:scene").orElseThrow().spec().headStartSeconds());
+        runtime.times.put(SOURCE, 140L);
+        double elapsed = service.get("test:scene").orElseThrow().elapsedSeconds(140, 0);
+        assertTrue(service.mutate("test:scene", builder -> builder.timeScale(2)));
+        assertEquals(elapsed, service.get("test:scene").orElseThrow().elapsedSeconds(140, 0), 1e-9);
+        assertEquals(340, service.get("test:scene").orElseThrow().expireAtGameTime(), "Mike retained reset-on-update lifetime semantics");
+        assertTrue(service.mutate("test:scene", builder -> builder.timeScale(0)));
+        runtime.times.put(SOURCE, 200L);
+        assertEquals(elapsed, service.get("test:scene").orElseThrow().elapsedSeconds(200, Float.NaN), 1e-9);
+        assertTrue(service.mutate("test:scene", builder -> builder.timeScale(1)));
+        assertEquals(elapsed, service.get("test:scene").orElseThrow().elapsedSeconds(200, 0), 1e-9);
+        assertTrue(service.mutate("test:scene", builder -> builder.tag("retained-policy")));
+        assertEquals(400, service.get("test:scene").orElseThrow().expireAtGameTime());
+        assertTrue(service.mutate("test:scene", builder -> builder.durationSeconds(Double.MAX_VALUE)));
+        assertTrue(service.get("test:scene").orElseThrow().expireAtGameTime() > 200);
+    }
     private static final UUID A = UUID.randomUUID();
     private static final UUID B = UUID.randomUUID();
     private static final UUID C = UUID.randomUUID();

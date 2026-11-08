@@ -50,7 +50,9 @@ public final class SREModeStartAdapter {
     /** True when SRE is proven STARTING/RUNNING after a start attempt. */
     public static boolean isSreGameStarted(ServerLevel level) {
         try {
-            boolean starting = io.wifi.starrailexpress.game.GameUtils.isStartingGame;
+            boolean starting = io.wifi.starrailexpress.game.GameUtils.isStartingGame
+                    && com.habitrain.core.game.sre.match.ServerMatchContext.GATE.owns(
+                    com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
             var gw = io.wifi.starrailexpress.cca.SREGameWorldComponent.KEY.get(level);
             boolean running = gw != null && gw.isRunning();
             return startedFrom(starting, running, false);
@@ -87,13 +89,19 @@ public final class SREModeStartAdapter {
         }
         try {
             if (!isModeAvailable(registryFullId)) return false;
+            if (!com.habitrain.core.game.sre.match.ServerMatchContext.GATE.canStartRequest(
+                    com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level))) return false;
             // murder
             if (registryFullId.contains("sre:murder")) {
                 var mode = io.wifi.starrailexpress.api.SREGameModes.MURDER;
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 forceReadyParticipants(level);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                return isSreGameStarted(level);
+                boolean started = isSreGameStarted(level);
+                if (!started) {
+                    ForcedReadyJoinGate.clear();
+                }
+                return started;
             }
             // repair
             if (registryFullId.contains("sre:repair")) {
@@ -101,7 +109,11 @@ public final class SREModeStartAdapter {
                 int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(mode.defaultStartTime, 0);
                 forceReadyParticipants(level);
                 io.wifi.starrailexpress.game.GameUtils.startGame(level, mode, ticks);
-                return isSreGameStarted(level);
+                boolean started = isSreGameStarted(level);
+                if (!started) {
+                    ForcedReadyJoinGate.clear();
+                }
+                return started;
             }
             // Original SRE modes bridged as thin proxies (wifi:tnt_tag, wifi:lover, …)
             GameMode registered = GameModeRegistry.get(registryFullId);
@@ -147,7 +159,11 @@ public final class SREModeStartAdapter {
         int ticks = io.wifi.starrailexpress.game.GameConstants.getInTicks(sreMode.defaultStartTime, 0);
         forceReadyParticipants(level);
         io.wifi.starrailexpress.game.GameUtils.startGame(level, sreMode, ticks);
-        return isSreGameStarted(level);
+        boolean started = isSreGameStarted(level);
+        if (!started) {
+            ForcedReadyJoinGate.clear();
+        }
+        return started;
     }
 
     /**

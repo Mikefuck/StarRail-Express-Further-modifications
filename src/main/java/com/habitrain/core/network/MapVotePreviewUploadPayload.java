@@ -36,7 +36,7 @@ public record MapVotePreviewUploadPayload(String mapId, String previousPreviewPa
 
     private static byte[] readPng(FriendlyByteBuf buffer) {
         int length = buffer.readVarInt();
-        if (length <= 0 || length > MapVoteProfilePayload.MAX_PREVIEW_BYTES) {
+        if (length <= 0 || length > MapVoteProfilePayload.MAX_PREVIEW_BYTES || length > buffer.readableBytes()) {
             throw new DecoderException("Invalid map preview upload length: " + length);
         }
         byte[] bytes = new byte[length];
@@ -47,6 +47,9 @@ public record MapVotePreviewUploadPayload(String mapId, String previousPreviewPa
     private void write(FriendlyByteBuf buffer) {
         if (mapId.length() > MAX_MAP_ID_LENGTH) {
             throw new EncoderException("Map id too long: " + mapId.length());
+        }
+        if (previousPreviewPath.length() > MAX_PREVIEW_PATH_LENGTH) {
+            throw new EncoderException("Previous preview path too long: " + previousPreviewPath.length());
         }
         if (pngBytes.length <= 0 || pngBytes.length > MapVoteProfilePayload.MAX_PREVIEW_BYTES) {
             throw new EncoderException("Invalid map preview upload length: " + pngBytes.length);

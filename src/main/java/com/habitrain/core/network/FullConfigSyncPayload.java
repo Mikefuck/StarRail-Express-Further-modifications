@@ -42,9 +42,12 @@ public class FullConfigSyncPayload implements CustomPacketPayload {
         @Override
         public FullConfigSyncPayload decode(ByteBuf buf) {
             int len = buf.readInt();
-            if (len <= 0) return new FullConfigSyncPayload("{}");
-            if (len > MAX_JSON_LENGTH) {
-                throw new DecoderException("FullConfigSync payload 过大: " + len + " > " + MAX_JSON_LENGTH);
+            if (len < 0) {
+                throw new DecoderException("FullConfigSync payload 长度不能为负: " + len);
+            }
+            if (len == 0) return new FullConfigSyncPayload("{}");
+            if (len > MAX_JSON_LENGTH || len > buf.readableBytes()) {
+                throw new DecoderException("FullConfigSync payload 过大或越界: " + len + " > " + MAX_JSON_LENGTH);
             }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);

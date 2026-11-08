@@ -130,7 +130,8 @@ public final class RoleHookRegistry {
                 out.addAll(list);
             }
         }
-        return out;
+        out.sort(ManagedHookEntry.ORDER);
+        return List.copyOf(out);
     }
 
     /** Whether any hooks are registered for the role. */

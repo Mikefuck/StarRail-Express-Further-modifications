@@ -67,8 +67,10 @@ float burnField(vec2 q, float aspect) {
 
 void main() {
     vec4 tex = texture(Sampler0, texCoord0);
-    vec2 local = (texCoord0 - TicketRect.xy) / (TicketRect.zw - TicketRect.xy);
-    float aspect = TicketSize.x / TicketSize.y;
+    vec2 rectSpan = TicketRect.zw - TicketRect.xy;
+    vec2 safeSpan = sign(rectSpan) * max(abs(rectSpan), vec2(1e-5));
+    vec2 local = (texCoord0 - TicketRect.xy) / safeSpan;
+    float aspect = max(TicketSize.x, 1.0) / max(TicketSize.y, 1.0);
     vec2 q = vec2(local.x * aspect, local.y);
     float paper = tex.a;
     vec3 col = paper > 0.001 ? tex.rgb / paper : vec3(0.0);
@@ -103,7 +105,9 @@ void main() {
 
     if (Tear.w > 0.0) {
         // 撕掉一角：撕口沿给定方向参差不齐，边上露出浅色毛糙的纸芯
-        float s = dot(q - vec2(aspect * 0.5, 0.5), normalize(Tear.xy)) - Tear.z
+        float tearLen = length(Tear.xy);
+        vec2 tearDir = tearLen > 1e-5 ? Tear.xy / tearLen : vec2(1.0, 0.0);
+        float s = dot(q - vec2(aspect * 0.5, 0.5), tearDir) - Tear.z
                 - (fbm(q * 5.0 + vec2(Seed * 2.7, 3.0)) - 0.5) * 0.12
                 - (noise(q * 48.0 + vec2(Seed, 1.0)) - 0.5) * 0.025;
         float fiber = 1.0 - smoothstep(0.0, 0.012 + 0.010 * noise(q * 90.0 + vec2(Seed, 7.0)), -s);

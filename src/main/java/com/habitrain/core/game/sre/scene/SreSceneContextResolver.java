@@ -24,7 +24,7 @@ public final class SreSceneContextResolver implements SceneContextResolver {
     @Override
     public SceneContext resolve(ServerLevel level) {
         if (level == null) {
-            return new SceneContext("__default__", "minecraft:overworld", false);
+            return new SceneContext(com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY, "minecraft:overworld", false);
         }
 
         String dim = level.dimension().location().toString();
@@ -57,6 +57,6 @@ public final class SreSceneContextResolver implements SceneContextResolver {
     static String resolveMapKey(String votedMapKey, String componentMapKey) {
         if (votedMapKey != null && !votedMapKey.isBlank()) return votedMapKey.trim();
         if (componentMapKey != null && !componentMapKey.isBlank()) return componentMapKey.trim();
-        return "__default__";
+        return com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY;
     }
 }

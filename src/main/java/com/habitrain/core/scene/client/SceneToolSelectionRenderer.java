@@ -53,9 +53,16 @@ public final class SceneToolSelectionRenderer {
         SceneBounds originPreview = placement.getPreviewBounds();
         if ((selection == null || selection.isEmpty()) && originPreview.isEmpty() && !placement.isActive()) return;
 
+        if (context == null || context.camera() == null || context.consumers() == null) return;
         Camera camera = context.camera();
         Vec3 camPos = camera.getPosition();
         PoseStack poseStack = context.matrixStack();
+        if (poseStack == null) {
+            poseStack = new PoseStack();
+            if (context.positionMatrix() != null) {
+                poseStack.mulPose(context.positionMatrix());
+            }
+        }
         VertexConsumer lineConsumer = context.consumers().getBuffer(RenderType.lines());
 
         if (selection != null && !selection.isEmpty()) {

@@ -10,7 +10,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -50,7 +50,7 @@ public final class ScenePerformancePage implements ConfigPage {
     }
 
     private final Font font;
-    private final List<Hit[]> rowHits = new ArrayList<>();
+    private final Hit[][] rowHits = new Hit[ROWS.length][];
     private final Hit[] rowBounds = new Hit[ROWS.length];
     private int focusedRow = -1;
     private boolean saveFailed;
@@ -87,8 +87,8 @@ public final class ScenePerformancePage implements ConfigPage {
                     MenuTheme.TEXT_SECONDARY, false);
         }
 
-        rowHits.clear();
-        java.util.Arrays.fill(rowBounds, null);
+        Arrays.fill(rowHits, null);
+        Arrays.fill(rowBounds, null);
         int listTop = cardY + HEADER_H;
         int listBottom = cardY + cardH - 8;
         int rowW = Math.max(1, cardW - 24);
@@ -97,12 +97,17 @@ public final class ScenePerformancePage implements ConfigPage {
         int maxScroll = Math.max(0, (ROWS.length - visibleRows) * ROW_STRIDE);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
 
-        for (int i = 0; i < ROWS.length; i++) {
-            int rowY = listTop + i * ROW_STRIDE - scroll;
-            if (rowY + ROW_H > listBottom) break;
-            if (rowY < listTop) continue; // 只画完整落在可视区内的行
-            rowBounds[i] = new Hit(rowX, rowY, rowW, ROW_H);
-            renderRow(g, ROWS[i], rowX, rowY, rowW, mx, my, i == focusedRow);
+        g.enableScissor(cardX + 1, listTop, cardX + cardW - 1, listBottom);
+        try {
+            for (int i = 0; i < ROWS.length; i++) {
+                int rowY = listTop + i * ROW_STRIDE - scroll;
+                if (rowY + ROW_H > listBottom) break;
+                if (rowY < listTop) continue; // 只画完整落在可视区内的行
+                rowBounds[i] = new Hit(rowX, rowY, rowW, ROW_H);
+                renderRow(g, i, ROWS[i], rowX, rowY, rowW, mx, my, i == focusedRow);
+            }
+        } finally {
+            g.disableScissor();
         }
 
         if (maxScroll > 0) {
@@ -125,7 +130,7 @@ public final class ScenePerformancePage implements ConfigPage {
         g.fill(x, thumbY, x + 3, thumbY + thumbH, MenuTheme.ACCENT_MINT);
     }
 
-    private void renderRow(GuiGraphics g, Row row, int x, int y, int w, int mx, int my, boolean focused) {
+    private void renderRow(GuiGraphics g, int rowIndex, Row row, int x, int y, int w, int mx, int my, boolean focused) {
         boolean hover = MenuTheme.inBounds(mx, my, x, y, w, ROW_H);
         g.fill(x, y, x + w, y + ROW_H, hover ? MenuTheme.BG_ROW_HOVER : MenuTheme.BG_ROW);
         if (focused) {
@@ -146,7 +151,7 @@ public final class ScenePerformancePage implements ConfigPage {
             PillToggle.render(g, font, toggleX, toggleY, toggleW, 18, on,
                     Component.translatable("screen.habitrain_core.scene_performance.enabled").getString(),
                     Component.translatable("screen.habitrain_core.scene_performance.disabled").getString());
-            rowHits.add(new Hit[] {new Hit(toggleX, toggleY, toggleW, 18)});
+            rowHits[rowIndex] = new Hit[] {new Hit(toggleX, toggleY, toggleW, 18)};
             return;
         }
 
@@ -161,7 +166,7 @@ public final class ScenePerformancePage implements ConfigPage {
         String value = valueText(row);
         g.drawString(font, value, minusX - font.width(value) - 8, y + (ROW_H - 8) / 2,
                 MenuTheme.ACCENT_AMBER, false);
-        rowHits.add(new Hit[] {minus, plus});
+        rowHits[rowIndex] = new Hit[] {minus, plus};
     }
 
     private void drawButton(GuiGraphics g, Hit hit, String glyph, boolean hover) {
@@ -177,10 +182,10 @@ public final class ScenePerformancePage implements ConfigPage {
         if (btn != 0) return false;
         for (int i = 0; i < ROWS.length; i++) {
             Hit bounds = rowBounds[i];
-            if (bounds == null || i >= rowHits.size()) break;
+            Hit[] hits = rowHits[i];
+            if (bounds == null || hits == null) continue;
             if (!bounds.test(mx, my)) continue;
             focusedRow = i;
-            Hit[] hits = rowHits.get(i);
             if (hits.length == 1) {
                 toggleResume();
                 return true;

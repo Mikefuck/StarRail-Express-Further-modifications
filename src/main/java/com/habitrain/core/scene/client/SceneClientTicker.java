@@ -2,6 +2,7 @@ package com.habitrain.core.scene.client;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 
 /**
@@ -20,6 +21,9 @@ public final class SceneClientTicker {
     public static synchronized void init() {
         if (registered) return;
         registered = true;
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            SceneAssetCache.getInstance().shutdown();
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client == null) return;
             // 兜底推进网格构建：主驱动是每帧一次的渲染钩子，但世界长时间不渲染时构建不能就此

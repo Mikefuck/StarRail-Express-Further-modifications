@@ -33,6 +33,7 @@ public final class ClientMapIntroCache {
     private static final Map<String, JsonObject> MAP_JSONS = new HashMap<>();
     private static final Map<String, MapIntroSyncPayload.VoteMap> VOTE_MAPS = new HashMap<>();
     private static final Map<String, com.habitrain.core.network.MapVoteProfilePayload.MapProfile> PROFILES = new HashMap<>();
+    private static final Set<String> LOCAL_PREVIEW_CHECKED = new HashSet<>();
     private static final Set<String> BAG_MAPS = new HashSet<>();
     private static final Set<String> POLICE_MAPS = new HashSet<>();
     private static final Set<String> UNDERWATER_MAPS = new HashSet<>();
@@ -58,6 +59,7 @@ public final class ClientMapIntroCache {
         for (var entry : payload.profiles().entrySet()) {
             if (entry.getKey() != null && entry.getValue() != null) {
                 PROFILES.put(entry.getKey(), entry.getValue());
+                LOCAL_PREVIEW_CHECKED.remove(entry.getKey());
                 com.habitrain.core.client.gui.MapVotePreviewCache.invalidate(entry.getKey());
             }
         }
@@ -70,6 +72,7 @@ public final class ClientMapIntroCache {
     public static synchronized void putProfile(String mapId, com.habitrain.core.network.MapVoteProfilePayload.MapProfile profile) {
         if (mapId != null && !mapId.isBlank() && profile != null) {
             PROFILES.put(mapId, profile);
+            LOCAL_PREVIEW_CHECKED.remove(mapId);
             com.habitrain.core.client.gui.MapVotePreviewCache.invalidate(mapId);
             hasData = true;
         }
@@ -82,7 +85,7 @@ public final class ClientMapIntroCache {
         if (payload == null) {
             return;
         }
-        update(payload, stripMergeMarker(payload.maps()));
+        update(payload, hasMergeMarker(payload.maps()));
     }
 
     /**
@@ -196,30 +199,17 @@ public final class ClientMapIntroCache {
                 MAP_JSONS.size(), VOTE_MAPS.size(), mergeMaps);
     }
 
-    /** @return {@code true} if this payload is a partial hot-reload. */
-    private static boolean stripMergeMarker(List<MapIntroSyncPayload.MapJson> maps) {
+    /** @return {@code true} if this payload is a partial hot-reload (never mutates {@code maps}). */
+    public static boolean hasMergeMarker(List<MapIntroSyncPayload.MapJson> maps) {
         if (maps == null || maps.isEmpty()) {
             return false;
         }
-        boolean merge = false;
-        try {
-            var it = maps.iterator();
-            while (it.hasNext()) {
-                MapIntroSyncPayload.MapJson map = it.next();
-                if (map != null && com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
-                    merge = true;
-                    it.remove();
-                }
-            }
-        } catch (UnsupportedOperationException ignored) {
-            for (MapIntroSyncPayload.MapJson map : maps) {
-                if (map != null && com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
-                    merge = true;
-                    break;
-                }
+        for (MapIntroSyncPayload.MapJson map : maps) {
+            if (map != null && com.habitrain.core.vote.MapFileMonitor.INTRO_MERGE_MARKER.equals(map.id())) {
+                return true;
             }
         }
-        return merge;
+        return false;
     }
 
     private static MapIntroSyncPayload reconstructLatestPayload() {
@@ -325,7 +315,11 @@ public final class ClientMapIntroCache {
         if (p != null && p.previewBytes() != null && p.previewBytes().length > 0) {
             return p;
         }
-        // 本地/单机/配置备用兜底
+        if (LOCAL_PREVIEW_CHECKED.contains(mapId)) {
+            return p;
+        }
+        LOCAL_PREVIEW_CHECKED.add(mapId);
+        // 本地/单机/配置备用兜底（仅首次查询该地图时执行，避免无预览图时每帧同步查盘）
         try {
             com.habitrain.core.config.MapVoteEntry entry =
                     com.habitrain.core.config.ConfigManager.getInstance().getModeMapVoteSettings().maps.get(mapId);
@@ -403,6 +397,7 @@ public final class ClientMapIntroCache {
         MAP_JSONS.clear();
         VOTE_MAPS.clear();
         PROFILES.clear();
+        LOCAL_PREVIEW_CHECKED.clear();
         BAG_MAPS.clear();
         POLICE_MAPS.clear();
         UNDERWATER_MAPS.clear();

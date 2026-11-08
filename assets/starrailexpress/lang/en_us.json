@@ -1,7 +1,16 @@
 {
+    "gui.starrailexpress.shop.discount": "-%s%%",
+    "gui.starrailexpress.shop.increase": "+%s%%",
+    "key.starrailexpress.meeting_report": "Report Body (Call Meeting)",
+    "key.starrailexpress.meeting_speak": "Speak in Meeting",
+    "screen.limited_inventory.button.participate.hover_text": "Click to toggle participation status",
+    "screen.limited_inventory.button.participate.status": "Current status: %s",
     "screen.limited_inventory.menu.backpack": "Backpack",
+    "screen.limited_inventory.menu.mail_manage": "Mailbox",
     "screen.limited_inventory.menu.records": "Match records",
     "screen.limited_inventory.menu.roster": "Role rotation",
     "screen.limited_inventory.menu.skin_manage": "Wardrobe",
-    "screen.limited_inventory.menu.task_instinct_choices": "Instinct choices"
+    "screen.limited_inventory.menu.task_instinct_choices": "Instinct choices",
+    "screen.limited_inventory.menu.task_instinct_choices.tip": "Some task highlights are mandatory and cannot be changed",
+    "sre.map_helper.settings.meetingChairScanBox.tooltip": "!!! Do not set too large, or it will cause severe lag !!!"
 }

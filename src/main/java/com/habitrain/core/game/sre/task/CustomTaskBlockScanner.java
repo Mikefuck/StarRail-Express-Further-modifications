@@ -68,7 +68,7 @@ public final class CustomTaskBlockScanner {
 
         // 优先从磁盘加载缓存，避免因区块未就绪扫出空条目
         if (areas.mapName != null && !areas.mapName.isBlank()) {
-            var diskHit = CustomTaskBlockDiskCache.loadValidated(serverLevel, scanKey);
+            var diskHit = CustomTaskBlockDiskCache.loadValidated(serverLevel, toDiskScanKey(scanKey));
             if (diskHit.isPresent()) {
                 Map<BlockPos, Set<Integer>> diskData = diskHit.get();
                 CustomTaskBlockCache.loadFromSnapshot(diskData);
@@ -163,7 +163,7 @@ public final class CustomTaskBlockScanner {
 
         if (blockToTypeIds.isEmpty()) {
             CustomTaskBlockCache.clear();
-            CustomTaskBlockDiskCache.save(serverLevel, scanKey, Map.of());
+            CustomTaskBlockDiskCache.save(serverLevel, toDiskScanKey(scanKey), Map.of());
             SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis(), true);
             CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
             LOGGER.info("[MapScannerMixin] 没有可扫描的方块，已广播空快照");
@@ -243,7 +243,7 @@ public final class CustomTaskBlockScanner {
             }
         }
         // Complete empty scans overwrite previous nonempty data, too.
-        CustomTaskBlockDiskCache.save(serverLevel, scanKey, scannedBlocks);
+        CustomTaskBlockDiskCache.save(serverLevel, toDiskScanKey(scanKey), scannedBlocks);
         SCAN_TRACKER.markCompleted(scanKey, System.currentTimeMillis(), scannedBlocks.isEmpty());
         CustomTaskBlockPayload.broadcastToAll(serverLevel.getServer());
         LOGGER.info("[MapScannerMixin] updated custom task block cache for map {} with {} entries (multi-typeId)",
@@ -258,14 +258,26 @@ public final class CustomTaskBlockScanner {
                 areaBox.minX(), areaBox.minY(), areaBox.minZ(),
                 areaBox.maxX(), areaBox.maxY(), areaBox.maxZ(),
                 worldIdentity(serverLevel), definitionFingerprint(),
-                SESSION_ID + ":" + LOAD_REVISIONS.getOrDefault(worldIdentity(serverLevel) + "|" + serverLevel.dimension().location(), 0L));
+                String.valueOf(LOAD_REVISIONS.getOrDefault(worldIdentity(serverLevel) + "|" + serverLevel.dimension().location(), 0L)));
+    }
+
+    static CustomTaskBlockScanKey toDiskScanKey(CustomTaskBlockScanKey key) {
+        if (key == null) return null;
+        return new CustomTaskBlockScanKey(
+                key.dimensionId(),
+                key.mapName(),
+                key.minX(), key.minY(), key.minZ(),
+                key.maxX(), key.maxY(), key.maxZ(),
+                key.worldId(),
+                key.definitionFingerprint(),
+                "disk-v1");
     }
 
     static CustomTaskBlockScanKey currentContext(ServerLevel level) {
         if (level == null) return null;
         AreasWorldComponent areas = AreasWorldComponent.KEY.get(level);
         BoundingBox box = areas == null ? null : resolveScanBox(areas);
-        return box == null ? null : createScanKey(level, areas, box);
+        return box == null ? null : toDiskScanKey(createScanKey(level, areas, box));
     }
 
     private static String worldIdentity(ServerLevel level) {

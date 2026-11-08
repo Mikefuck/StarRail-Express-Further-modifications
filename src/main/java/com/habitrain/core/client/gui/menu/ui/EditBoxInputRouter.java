@@ -30,8 +30,14 @@ public final class EditBoxInputRouter {
     }
 
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 258) {
+            List<EditBox> available = fields.stream().filter(field -> field.visible && field.active).toList();
+            int direction = (modifiers & 1) != 0 ? -1 : 1;
+            return FocusCycle.move(available.stream().map(field -> new FocusCycle.Target(
+                    field::isFocused, () -> field.setFocused(true))).toList(), direction, this::clearFocus);
+        }
         for (EditBox field : fields) {
-            if (field.isFocused() && field.keyPressed(keyCode, scanCode, modifiers)) {
+            if (field.visible && field.active && field.isFocused() && field.keyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
         }
@@ -40,7 +46,7 @@ public final class EditBoxInputRouter {
 
     public boolean charTyped(char codePoint, int modifiers) {
         for (EditBox field : fields) {
-            if (field.isFocused() && field.charTyped(codePoint, modifiers)) {
+            if (field.visible && field.active && field.isFocused() && field.charTyped(codePoint, modifiers)) {
                 return true;
             }
         }

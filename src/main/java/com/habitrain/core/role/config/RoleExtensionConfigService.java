@@ -48,7 +48,7 @@ public final class RoleExtensionConfigService {
 
     public static final RoleExtensionConfigService INSTANCE = new RoleExtensionConfigService();
 
-    private RoleExtensionConfigSection section = RoleExtensionConfigSection.createDefault();
+    private volatile RoleExtensionConfigSection section = RoleExtensionConfigSection.createDefault();
     private volatile @Nullable File fileOverride;
     private volatile @Nullable Supplier<File> fileResolverForTests;
     private volatile @Nullable String lastSaveError;
@@ -186,7 +186,7 @@ public final class RoleExtensionConfigService {
     // Persistence
     // ------------------------------------------------------------------
 
-    public void load() {
+    public synchronized void load() {
         // 审核 R-22：load 会（可能）整体替换门控 section，修订号必须推进。
         revision++;
         File target = file();
@@ -258,7 +258,7 @@ public final class RoleExtensionConfigService {
      * can therefore never leave a truncated {@code habitrain_role_v2.json};
      * the previous good file survives until the replacement lands.
      */
-    public void save() {
+    public synchronized void save() {
         // 审核 R-22：即便因缺少 config 目录而只保留内存变更，门控也已经变了，必须自增修订号。
         revision++;
         File target = file();
@@ -334,7 +334,7 @@ public final class RoleExtensionConfigService {
      * {@link RuntimeException} on unparsable JSON.
      */
     public static RoleExtensionConfigSection parseSection(String json) {
-        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        JsonObject root = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(json)).getAsJsonObject();
         JsonObject sectionJson = root.has("roleExtensionsV2")
                 ? root.getAsJsonObject("roleExtensionsV2") : root;
         return parse(sectionJson);
@@ -345,12 +345,12 @@ public final class RoleExtensionConfigService {
      * {@code roleExtensionsV2}). Returns {@code false} (leaving the section
      * untouched) when the JSON is unparsable or has no valid section.
      */
-    public boolean applyFromJson(String json) {
+    public synchronized boolean applyFromJson(String json) {
         if (json == null || json.isBlank()) {
             return false;
         }
         try {
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(com.habitrain.core.config.JsonInputLimits.check(json)).getAsJsonObject();
             JsonObject sectionJson = root.has("roleExtensionsV2")
                     ? root.getAsJsonObject("roleExtensionsV2") : root;
             RoleExtensionConfigSection parsed = parse(sectionJson);
@@ -400,28 +400,38 @@ public final class RoleExtensionConfigService {
     // Mutators (save after each so OP edits persist immediately)
     // ------------------------------------------------------------------
 
-    public void setEnabled(boolean enabled) {
-        section.setEnabled(enabled);
+    public synchronized void setEnabled(boolean enabled) {
+        RoleExtensionConfigSection next = section.copy();
+        next.setEnabled(enabled);
+        section = next;
         save();
     }
 
-    public void setProviderEnabled(String providerId, boolean on) {
-        section.setProviderEnabled(providerId, on);
+    public synchronized void setProviderEnabled(String providerId, boolean on) {
+        RoleExtensionConfigSection next = section.copy();
+        next.setProviderEnabled(providerId, on);
+        section = next;
         save();
     }
 
-    public void setEntryEnabled(String entryId, boolean on) {
-        section.setEntryEnabled(entryId, on);
+    public synchronized void setEntryEnabled(String entryId, boolean on) {
+        RoleExtensionConfigSection next = section.copy();
+        next.setEntryEnabled(entryId, on);
+        section = next;
         save();
     }
 
-    public void setConflictWinner(String targetField, @Nullable String winnerEntryId) {
-        section.setConflictWinner(targetField, winnerEntryId);
+    public synchronized void setConflictWinner(String targetField, @Nullable String winnerEntryId) {
+        RoleExtensionConfigSection next = section.copy();
+        next.setConflictWinner(targetField, winnerEntryId);
+        section = next;
         save();
     }
 
-    public void setAllowGlobalHooks(boolean on) {
-        section.setAllowGlobalHooks(on);
+    public synchronized void setAllowGlobalHooks(boolean on) {
+        RoleExtensionConfigSection next = section.copy();
+        next.setAllowGlobalHooks(on);
+        section = next;
         save();
     }
 

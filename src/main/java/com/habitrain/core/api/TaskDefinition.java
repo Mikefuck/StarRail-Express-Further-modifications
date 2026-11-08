@@ -5,9 +5,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -99,9 +101,9 @@ public class TaskDefinition {
         this.modId = builder.modId;
         this.taskId = builder.taskId;
         this.fullId = builder.modId + ":" + builder.taskId;
-        this.displayName = builder.displayName;
-        this.category = builder.category;
-        this.gameModeId = builder.gameModeId;
+        this.displayName = builder.displayName != null ? builder.displayName : builder.taskId;
+        this.category = builder.category != null ? builder.category : TaskCategory.ALL;
+        this.gameModeId = builder.gameModeId != null ? builder.gameModeId : "sre:base";
         this.customCategory = builder.customCategory;
         this.weight = builder.weight;
         this.blockTypeId = builder.blockTypeId;
@@ -199,7 +201,7 @@ public class TaskDefinition {
      * 避免自动拆箱 NPE 在每个 tick 抛进 {@link TaskInstance#tick}。
      */
     public boolean checkCompletion(Player player, TaskInstance instance) {
-        if (completionChecker == null) return instance.isFulfilled();
+        if (completionChecker == null) return instance != null && instance.isFulfilled();
         Boolean result = completionChecker.apply(player, instance);
         return result != null && result;
     }
@@ -257,15 +259,26 @@ public class TaskDefinition {
         private ProgressUpdateHandler onProgressUpdateHandler;
 
         public Builder(String modId, String taskId) {
+            Objects.requireNonNull(modId, "modId must not be null");
+            Objects.requireNonNull(taskId, "taskId must not be null");
+            if (modId.isBlank() || taskId.isBlank()) {
+                throw new IllegalArgumentException("modId and taskId must not be blank");
+            }
             this.modId = modId;
             this.taskId = taskId;
             this.displayName = taskId;
         }
 
-        public Builder displayName(String name) { this.displayName = name; return this; }
-        public Builder category(TaskCategory cat) { this.category = cat; return this; }
+        public Builder displayName(String name) { this.displayName = name != null ? name : this.taskId; return this; }
+        public Builder category(TaskCategory cat) {
+            this.category = Objects.requireNonNull(cat, "category must not be null (audit API-TV-10)");
+            return this;
+        }
         public Builder customCategory(TaskCategory cat) { this.customCategory = cat; return this; }
-        public Builder gameMode(String gameModeId) { this.gameModeId = gameModeId; return this; }
+        public Builder gameMode(String gameModeId) {
+            this.gameModeId = Objects.requireNonNull(gameModeId, "gameModeId must not be null");
+            return this;
+        }
         public Builder weight(float w) { this.weight = w; return this; }
         public Builder blockTypeId(int id) { this.blockTypeId = id; return this; }
         public Builder instinctColor(int argb) { this.instinctColor = argb; return this; }
@@ -298,7 +311,21 @@ public class TaskDefinition {
          * 但不应被任务池选中派发给玩家（如原版 SRE 任务的空壳镜像）。
          */
         public Builder poolEligible(boolean v) { this.poolEligible = v; return this; }
-        public Builder tags(String... t) { this.tags = List.of(t); return this; }
+        public Builder tags(String... t) {
+            if (t == null) {
+                this.tags = List.of();
+            } else {
+                List<String> list = new ArrayList<>(t.length);
+                for (String item : t) {
+                    if (item == null) {
+                        throw new IllegalArgumentException("tags must not contain null elements");
+                    }
+                    list.add(item);
+                }
+                this.tags = List.copyOf(list);
+            }
+            return this;
+        }
         /**
          * 兼容旧扩展的时间影响元数据。
          *

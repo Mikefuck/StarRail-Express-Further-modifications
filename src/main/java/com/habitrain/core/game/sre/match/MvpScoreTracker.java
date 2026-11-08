@@ -22,8 +22,11 @@
 package com.habitrain.core.game.sre.match;
 
 import io.wifi.starrailexpress.SRE;
+import io.wifi.starrailexpress.api.SRERole;
+import io.wifi.starrailexpress.api.TMMRoles;
 import io.wifi.starrailexpress.api.replay.ReplayEvent;
 import io.wifi.starrailexpress.api.replay.ReplayEventTypes;
+import io.wifi.starrailexpress.cca.SREGameTimeComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.OnGameStarted;
 import io.wifi.starrailexpress.game.GameUtils;
@@ -55,18 +58,60 @@ public final class MvpScoreTracker {
         ServerTickEvents.END_SERVER_TICK.register(MvpScoreTracker::tick);
     }
 
+    private static boolean isExcludedRole(SRERole role) {
+        return role == null
+                || (role.identifier() != null && role.identifier().equals(TMMRoles.DISCOVERY_CIVILIAN.identifier()));
+    }
+
     private static void beginRound(ServerLevel level) {
         if (level == null) {
             return;
         }
         GameEndTransitionCoordinator.onGameStarted(level);
-        RoundState state = new RoundState();
+        long startWorldTick = 0L;
+        try {
+            SREGameTimeComponent time = SREGameTimeComponent.KEY.get(level);
+            if (time != null && time.getStartWorldTick() != 0L) {
+                startWorldTick = time.getStartWorldTick();
+            } else {
+                startWorldTick = level.getGameTime();
+            }
+        } catch (Throwable ignored) {
+            try {
+                startWorldTick = level.getGameTime();
+            } catch (Throwable ignored2) {
+            }
+        }
+        long startMillis = System.currentTimeMillis();
+        try {
+            if (GameUtils.startTime > 0L && Math.abs(startMillis - GameUtils.startTime) < 60_000L) {
+                startMillis = GameUtils.startTime;
+            }
+        } catch (Throwable ignored) {
+        }
+        RoundState state = new RoundState(startWorldTick, startMillis);
         SREGameWorldComponent game = (SREGameWorldComponent)SREGameWorldComponent.KEY.get((Object)level);
         for (ServerPlayer player : level.players()) {
-            if (game == null || game.getRole((Player)player) == null) continue;
+            if (game == null || isExcludedRole(game.getRole((Player)player))) continue;
             state.players.put(player.getUUID(), new MutableScore(player.getGameProfile().getName()));
         }
         ROUNDS.put((ResourceKey<Level>)level.dimension(), state);
+    }
+
+    public static long getRoundStartMillis(ServerLevel level) {
+        if (level == null) {
+            return 0L;
+        }
+        RoundState state = ROUNDS.get(level.dimension());
+        return state != null ? state.startMillis : 0L;
+    }
+
+    public static long getRoundStartWorldTick(ServerLevel level) {
+        if (level == null) {
+            return 0L;
+        }
+        RoundState state = ROUNDS.get(level.dimension());
+        return state != null ? state.startWorldTick : 0L;
     }
 
     private static void tick(MinecraftServer server) {
@@ -78,6 +123,14 @@ public final class MvpScoreTracker {
             ServerLevel level;
             RoundState state = round.getValue();
             if (!state.active || (level = server.getLevel(round.getKey())) == null || (game = (SREGameWorldComponent)SREGameWorldComponent.KEY.get((Object)level)) == null || game.getGameStatus() != SREGameWorldComponent.GameStatus.ACTIVE) continue;
+            for (ServerPlayer levelPlayer : level.players()) {
+                try {
+                    if (levelPlayer == null || isExcludedRole(game.getRole((Player)levelPlayer))) continue;
+                    state.players.computeIfAbsent(levelPlayer.getUUID(),
+                            id -> new MutableScore(levelPlayer.getGameProfile().getName()));
+                } catch (Throwable ignored) {
+                }
+            }
             for (Map.Entry<UUID, MutableScore> entry : state.players.entrySet()) {
                 ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
                 try {
@@ -104,6 +157,19 @@ public final class MvpScoreTracker {
         try {
             SREGameWorldComponent game = (SREGameWorldComponent)SREGameWorldComponent.KEY.get((Object)level);
             if (game != null) {
+                Map<UUID, SRERole> roles = game.getRoles();
+                if (roles != null) {
+                    for (Map.Entry<UUID, SRERole> roleEntry : roles.entrySet()) {
+                        UUID id = roleEntry.getKey();
+                        if (id == null || isExcludedRole(roleEntry.getValue())) continue;
+                        state.players.computeIfAbsent(id, uid -> {
+                            ServerPlayer sp = level.getServer() != null
+                                    ? level.getServer().getPlayerList().getPlayer(uid)
+                                    : null;
+                            return new MutableScore(sp != null ? sp.getGameProfile().getName() : "");
+                        });
+                    }
+                }
                 for (Map.Entry<UUID, MutableScore> entry : state.players.entrySet()) {
                     entry.getValue().kills = Math.max(0, game.getPlayerKills(entry.getKey()));
                 }
@@ -115,6 +181,7 @@ public final class MvpScoreTracker {
         try {
             for (ReplayEvent event : SRE.REPLAY_MANAGER.getEventsByType(ReplayEventTypes.EventType.ITEM_USED)) {
                 MutableScore score;
+                if (event == null || event.timestamp() < 0L) continue;
                 ReplayEventTypes.EventDetails eventDetails = event.details();
                 if (!(eventDetails instanceof ReplayEventTypes.ItemUsedDetails used)
                         || (score = state.players.get(used.playerUuid())) == null) continue;
@@ -152,11 +219,15 @@ public final class MvpScoreTracker {
 
     private static final class RoundState {
         private final Map<UUID, MutableScore> players = new LinkedHashMap<UUID, MutableScore>();
+        private final long startWorldTick;
+        private final long startMillis;
         private boolean active = true;
         private boolean frozenReady;
         private Map<UUID, ScoreSnapshot> frozen = Map.of();
 
-        private RoundState() {
+        private RoundState(long startWorldTick, long startMillis) {
+            this.startWorldTick = startWorldTick;
+            this.startMillis = startMillis;
         }
     }
 
@@ -180,3 +251,4 @@ public final class MvpScoreTracker {
     public record ScoreSnapshot(String playerName, int score, int kills, int survivalSeconds, int itemUses) {
     }
 }
+

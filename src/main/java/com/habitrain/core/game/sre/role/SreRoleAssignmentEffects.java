@@ -15,8 +15,9 @@ public final class SreRoleAssignmentEffects {
         if (level == null || playerId == null || newRole == null) {
             return;
         }
-        ServerPlayer player = level.getServer() == null ? null
+        ServerPlayer rawPlayer = level.getServer() == null ? null
                 : level.getServer().getPlayerList().getPlayer(playerId);
+        ServerPlayer player = (rawPlayer != null && rawPlayer.level() == level) ? rawPlayer : null;
         if (player != null && oldRole != null) {
             try {
                 org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()

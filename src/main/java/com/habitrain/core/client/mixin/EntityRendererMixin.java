@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin<T extends Entity> {
 
-    @Inject(method = "renderNameTag", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "renderNameTag(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/network/chat/Component;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IF)V", at = @At("HEAD"), cancellable = true)
     private void habitrain$maybeHideNameTag(T entity, Component component, PoseStack poseStack,
                                             MultiBufferSource buffer, int packedLight,
                                             float partialTick, CallbackInfo ci) {
@@ -38,7 +38,7 @@ public abstract class EntityRendererMixin<T extends Entity> {
         }
     }
 
-    @ModifyVariable(method = "renderNameTag", at = @At("HEAD"), argsOnly = true, ordinal = 0, require = 0)
+    @ModifyVariable(method = "renderNameTag(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/network/chat/Component;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IF)V", at = @At("HEAD"), argsOnly = true, ordinal = 0)
     private Component habitrain$recolorNameTag(Component component, T entity) {
         if (entity instanceof Player player) {
             RoleNameRenderRule rule = RoleNameRenderHelper.findNameplateRule(player);

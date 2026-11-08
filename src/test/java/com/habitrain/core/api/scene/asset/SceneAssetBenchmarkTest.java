@@ -39,8 +39,12 @@ public class SceneAssetBenchmarkTest {
                 "合成语料上 v3 至少应省 " + SYNTHETIC_MIN_SAVING_PERCENT + "%，实测 "
                         + String.format(java.util.Locale.ROOT, "%.2f%%", report.savingPercent()));
 
-        writeReport("synthetic.md", report);
-        System.out.println(SceneAssetBenchmark.toMarkdown(report));
+        String markdown = SceneAssetBenchmark.toMarkdown(report);
+        assertNotNull(markdown);
+        assertFalse(markdown.isBlank());
+        if (Boolean.getBoolean("habitrain.benchmark.writeReport")) {
+            writeReport("synthetic.md", report);
+        }
     }
 
     @Test

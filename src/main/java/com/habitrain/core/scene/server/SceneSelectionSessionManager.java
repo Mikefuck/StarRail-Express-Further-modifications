@@ -1,10 +1,17 @@
 package com.habitrain.core.scene.server;
 
 import com.habitrain.core.api.scene.model.SceneBounds;
+import com.habitrain.core.scene.network.SceneSelectionStateS2C;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -69,6 +76,7 @@ public final class SceneSelectionSessionManager {
     private final Map<UUID, String> editorMapKeys = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, String>> editorBackgroundIds = new ConcurrentHashMap<>();
     private final Map<UUID, String> editorSessionIds = new ConcurrentHashMap<>();
+    private final Set<UUID> pendingClearSyncPlayers = ConcurrentHashMap.newKeySet();
 
     private SceneSelectionSessionManager() {}
 
@@ -82,6 +90,7 @@ public final class SceneSelectionSessionManager {
         if (playerId == null || pos == null) {
             return new SelectionResult(SelectionStep.CLEARED, null, SceneBounds.EMPTY);
         }
+        pendingClearSyncPlayers.remove(playerId);
         SelectionSession session = sessions.computeIfAbsent(playerId, id -> new SelectionSession(id, dimension, mapKey));
         rotateEditorSession(playerId);
         // 若维度或地图切换，则重置选区
@@ -115,6 +124,7 @@ public final class SceneSelectionSessionManager {
      */
     public SelectionResult clear(UUID playerId) {
         if (playerId == null) return new SelectionResult(SelectionStep.CLEARED, null, SceneBounds.EMPTY);
+        pendingClearSyncPlayers.remove(playerId);
         rotateEditorSession(playerId);
         SelectionSession removed = sessions.remove(playerId);
         return new SelectionResult(SelectionStep.CLEARED, removed, SceneBounds.EMPTY);
@@ -124,10 +134,17 @@ public final class SceneSelectionSessionManager {
         if (playerId == null) return null;
         SelectionSession session = sessions.get(playerId);
         if (session != null && isExpired(session, DEFAULT_EXPIRY_MS)) {
-            sessions.remove(playerId);
+            if (sessions.remove(playerId, session)) {
+                rotateEditorSession(playerId);
+                pendingClearSyncPlayers.add(playerId);
+            }
             return null;
         }
         return session;
+    }
+
+    public boolean consumePendingClearSync(UUID playerId) {
+        return playerId != null && pendingClearSyncPlayers.remove(playerId);
     }
 
     public SceneBounds getBounds(UUID playerId) {
@@ -190,6 +207,7 @@ public final class SceneSelectionSessionManager {
             editorMapKeys.remove(playerId);
             editorBackgroundIds.remove(playerId);
             editorSessionIds.remove(playerId);
+            pendingClearSyncPlayers.remove(playerId);
         }
     }
 
@@ -199,11 +217,34 @@ public final class SceneSelectionSessionManager {
         if (session != null && !Objects.equals(session.dimension, newDimension)) {
             sessions.remove(playerId);
             rotateEditorSession(playerId);
+            pendingClearSyncPlayers.add(playerId);
         }
     }
 
-    public void cleanupExpired(long timeoutMs) {
-        sessions.entrySet().removeIf(e -> isExpired(e.getValue(), timeoutMs));
+    public List<SelectionSession> cleanupExpired(long timeoutMs) {
+        List<SelectionSession> removed = new ArrayList<>();
+        for (Map.Entry<UUID, SelectionSession> entry : new ArrayList<>(sessions.entrySet())) {
+            SelectionSession session = entry.getValue();
+            if (isExpired(session, timeoutMs) && sessions.remove(entry.getKey(), session)) {
+                rotateEditorSession(entry.getKey());
+                pendingClearSyncPlayers.add(entry.getKey());
+                removed.add(session);
+            }
+        }
+        return removed;
+    }
+
+    public void tick(MinecraftServer server) {
+        if (server == null) return;
+        cleanupExpired(DEFAULT_EXPIRY_MS);
+        for (UUID playerId : new ArrayList<>(pendingClearSyncPlayers)) {
+            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if (player != null && !player.hasDisconnected()) {
+                pendingClearSyncPlayers.remove(playerId);
+                ServerPlayNetworking.send(player,
+                        SceneSelectionStateS2C.cleared(player.serverLevel().dimension().location().toString(), getEditorMapKey(playerId)));
+            }
+        }
     }
 
     public void clearAll() {
@@ -211,6 +252,7 @@ public final class SceneSelectionSessionManager {
         editorMapKeys.clear();
         editorBackgroundIds.clear();
         editorSessionIds.clear();
+        pendingClearSyncPlayers.clear();
     }
 
     private static boolean isExpired(SelectionSession s, long timeoutMs) {

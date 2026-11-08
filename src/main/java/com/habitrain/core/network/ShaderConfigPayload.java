@@ -38,7 +38,7 @@ public class ShaderConfigPayload implements CustomPacketPayload {
 
     public ShaderConfigPayload(boolean enabled, List<String> whitelist) {
         this.enabled = enabled;
-        this.whitelist = whitelist != null ? whitelist : List.of();
+        this.whitelist = whitelist != null ? List.copyOf(whitelist) : List.of();
     }
 
     public boolean isEnabled() {
@@ -54,13 +54,13 @@ public class ShaderConfigPayload implements CustomPacketPayload {
         public ShaderConfigPayload decode(ByteBuf buf) {
             boolean enabled = buf.readBoolean();
             int count = buf.readInt();
-            if (count < 0 || count > MAX_SHADERS) {
+            if (count < 0 || count > MAX_SHADERS || count > buf.readableBytes() / 4) {
                 throw new DecoderException("Invalid shader config count: " + count);
             }
-            List<String> whitelist = new ArrayList<>();
+            List<String> whitelist = new ArrayList<>(Math.min(count, 16));
             for (int i = 0; i < count; i++) {
                 int len = buf.readInt();
-                if (len < 0 || len > MAX_STRING_LENGTH) {
+                if (len < 0 || len > MAX_STRING_LENGTH || len > buf.readableBytes()) {
                     throw new DecoderException("Invalid shader name length: " + len);
                 }
                 byte[] bytes = new byte[len];
@@ -73,11 +73,14 @@ public class ShaderConfigPayload implements CustomPacketPayload {
         @Override
         public void encode(ByteBuf buf, ShaderConfigPayload payload) {
             buf.writeBoolean(payload.enabled);
-            buf.writeInt(payload.whitelist.size());
-            for (String name : payload.whitelist) {
+            List<String> list = payload.whitelist;
+            int count = Math.min(list.size(), MAX_SHADERS);
+            buf.writeInt(count);
+            for (int i = 0; i < count; i++) {
+                String name = list.get(i) == null ? "" : list.get(i);
                 byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
                 if (bytes.length > MAX_STRING_LENGTH) {
-                    throw new DecoderException("Invalid shader name length: " + bytes.length);
+                    throw new io.netty.handler.codec.EncoderException("Invalid shader name length: " + bytes.length);
                 }
                 buf.writeInt(bytes.length);
                 buf.writeBytes(bytes);

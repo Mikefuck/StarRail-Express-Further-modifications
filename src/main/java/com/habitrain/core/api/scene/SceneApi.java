@@ -591,8 +591,8 @@ public final class SceneApi {
      * 发布一份已经编码好的 {@code .hscene} 字节（GZIP 压缩的 {@link SceneAssetCodec} 容器）。
      *
      * <p>流程：格式解码校验 → 体积上限校验 → 内容寻址落盘 → 索引原子替换 → 广播 Manifest 并
-     * 热更新所有引用该资产的运行中实例。整个方法在调用线程同步执行（含磁盘写），
-     * <b>请在服务端主线程之外的线程生成字节</b>，或接受一次磁盘写带来的卡顿。</p>
+     * 热更新所有引用该资产的运行中实例。解码与落盘在调用线程同步执行，建议在后台调用；
+     * 广播与实例更新会调度回当前服务器线程。</p>
      *
      * @return 是否发布成功
      */
@@ -607,6 +607,9 @@ public final class SceneApi {
         if (server == null) return false;
         try {
             SceneAssetCodec.AssetData data = SceneAssetCodec.decode(compressedBytes);
+            if (data.sections == null || data.sections.isEmpty()) {
+                return false;
+            }
             long uncompressed = SceneAssetCodec.estimateUncompressedSize(data);
             if (uncompressed <= 0L || uncompressed > SceneAssetCodec.MAX_UNCOMPRESSED_BYTES) {
                 return false;
@@ -615,10 +618,18 @@ public final class SceneApi {
             SceneAssetDescriptor descriptor = new SceneAssetDescriptor(
                     sha256, uncompressed, compressedBytes.length, data.sections.size(),
                     data.dataVersion, data.fingerprint, System.currentTimeMillis());
-            if (!CoreSpi.sceneAssets().saveAsset(assetKey, compressedBytes, descriptor)) {
-                return false;
+            var assets = CoreSpi.sceneAssets();
+            synchronized (assets) {
+                if (service().server() != server || !assets.saveAsset(assetKey, compressedBytes, descriptor)) return false;
             }
-            coordinator().onAssetPublished(server, assetKey, descriptor);
+            if (server.isSameThread()) {
+                coordinator().onAssetPublished(server, assetKey, descriptor);
+            } else {
+                server.execute(() -> {
+                    if (service().server() == server && descriptor.equals(CoreSpi.sceneAssets().getDescriptor(assetKey)))
+                        coordinator().onAssetPublished(server, assetKey, descriptor);
+                });
+            }
             return true;
         } catch (IOException | RuntimeException e) {
             return false;

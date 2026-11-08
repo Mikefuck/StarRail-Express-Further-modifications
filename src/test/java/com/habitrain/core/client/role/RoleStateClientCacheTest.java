@@ -196,4 +196,43 @@ class RoleStateClientCacheTest {
         assertNull(RoleStateClientCache.latest(
                 ResourceLocation.parse("habitrain_core:missing"), ROLE, StateScope.WORLD));
     }
+
+    @Test
+    void deletedSlotCannotBeResurrectedByOlderValue() {
+        RoleStateClientCache.accept(value("a", WORLD_A.toString(), null, 10));
+        RoleStateClientCache.accept(RoleStateSyncPayload.removed(ResourceLocation.parse("habitrain_core:a"),
+                ROLE, StateScope.WORLD, WORLD_A.toString(), 1, null, 12));
+        RoleStateClientCache.accept(value("a", WORLD_A.toString(), null, 11));
+        assertNull(RoleStateClientCache.latest(ResourceLocation.parse("habitrain_core:a"), ROLE, StateScope.WORLD));
+        RoleStateClientCache.accept(value("a", WORLD_A.toString(), null, 13));
+        assertEquals(13, RoleStateClientCache.latest(ResourceLocation.parse("habitrain_core:a"), ROLE, StateScope.WORLD).revision());
+    }
+
+    @Test
+    void staleRemovalDoesNotEraseValueStagedByNewerIncrement() {
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotBegin(20, 10));
+        RoleStateClientCache.accept(value("a", WORLD_A.toString(), null, 15));
+        RoleStateClientCache.accept(RoleStateSyncPayload.removed(ResourceLocation.parse("habitrain_core:a"),
+                ROLE, StateScope.WORLD, WORLD_A.toString(), 1, null, 14));
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotEnd(20, 16));
+        assertEquals(15, RoleStateClientCache.latest(ResourceLocation.parse("habitrain_core:a"), ROLE, StateScope.WORLD).revision());
+    }
+
+    @Test
+    void olderSnapshotCannotInterruptNewerUnfinishedSnapshot() {
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotBegin(30, 10));
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotValue(ResourceLocation.parse("habitrain_core:a"),
+                ROLE, StateScope.WORLD, WORLD_A.toString(), 1, new byte[]{1}, null, 11, 30));
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotBegin(29, 12));
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotEnd(30, 13));
+        assertNotNull(RoleStateClientCache.latest(ResourceLocation.parse("habitrain_core:a"), ROLE, StateScope.WORLD));
+    }
+
+    @Test
+    void emptySnapshotRejectsLateOldValue() {
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotBegin(40, 20));
+        RoleStateClientCache.accept(RoleStateSyncPayload.snapshotEnd(40, 21));
+        RoleStateClientCache.accept(value("a", WORLD_A.toString(), null, 19));
+        assertNull(RoleStateClientCache.latest(ResourceLocation.parse("habitrain_core:a"), ROLE, StateScope.WORLD));
+    }
 }

@@ -1,0 +1,4 @@
+{
+  "gui.sre.role_rotation.selected": "You selected %s",
+  "message.serverutils.motd.constant": "MOTD constants:\n%%player_count%% player count;\n%%max_player%% max player count;\n%%sre_packet_version%% train network protocol version;\n%%sre_version%% train version"
+}

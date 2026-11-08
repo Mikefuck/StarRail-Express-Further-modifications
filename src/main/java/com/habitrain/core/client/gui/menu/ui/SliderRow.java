@@ -5,6 +5,8 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
 
+import java.util.Locale;
+
 /** 细轨式数值滑块；拖动语义保持不变。 */
 public class SliderRow {
     private static final int SLIDER_H = 12;
@@ -34,7 +36,7 @@ public class SliderRow {
             g.fill(px, trackBot + 2, px + 1, trackBot + 2 + (p == 50 ? 6 : 3),
                     p == 50 ? MenuTheme.ACCENT_AMBER : MenuTheme.TEXT_DIM);
         }
-        g.drawString(font, String.format("%d%%", Math.round(value * 100)), x + w + 8, y + 1,
+        g.drawString(font, String.format(Locale.ROOT, "%d%%", Math.round(value * 100)), x + w + 8, y + 1,
                 MenuTheme.ACCENT_AMBER, false);
         return value;
     }

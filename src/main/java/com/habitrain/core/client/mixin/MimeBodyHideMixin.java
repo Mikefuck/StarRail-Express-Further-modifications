@@ -16,10 +16,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * （肉体走 isBodyVisible，骨架不检查 invisible）。整段取消渲染，才是“尸体消失、血迹仍在”。
  * 服务端用 {@code body.setInvisible(true/false)} 同步 5 秒窗口。
  */
-@Mixin(value = PlayerBodyEntityRenderer.class, remap = false)
+@Mixin(PlayerBodyEntityRenderer.class)
 public class MimeBodyHideMixin {
 
-    @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "shouldRender(Lio/wifi/starrailexpress/content/entity/PlayerBodyEntity;Lnet/minecraft/client/renderer/culling/Frustum;DDD)Z",
+            at = @At("HEAD"), cancellable = true)
     private void habitrain$skipHiddenBodyCull(PlayerBodyEntity entity, Frustum frustum,
                                               double camX, double camY, double camZ,
                                               CallbackInfoReturnable<Boolean> cir) {
@@ -28,7 +29,8 @@ public class MimeBodyHideMixin {
         }
     }
 
-    @Inject(method = "render", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "render(Lio/wifi/starrailexpress/content/entity/PlayerBodyEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+            at = @At("HEAD"), cancellable = true)
     private void habitrain$skipHiddenBodyRender(PlayerBodyEntity entity, float yaw, float tickDelta,
                                                 PoseStack poseStack, MultiBufferSource buffer, int light,
                                                 CallbackInfo ci) {

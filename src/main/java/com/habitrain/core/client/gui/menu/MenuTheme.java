@@ -137,9 +137,13 @@ public final class MenuTheme {
         g.fill(x, y, x + trackW, y + h, BG_PANEL);
         if (maxScroll <= 0) return;
         double ratio = scroll / maxScroll;
-        int thumbH = Math.max(20, (int) (h * (h / (h + maxScroll))));
+        int thumbH = scrollbarThumbHeight(h, maxScroll);
         int thumbY = y + (int) ((h - thumbH) * ratio);
         g.fill(x, thumbY, x + trackW, thumbY + thumbH, ACCENT_MINT);
+    }
+
+    public static int scrollbarThumbHeight(int height, double maxScroll) {
+        return Math.min(height, Math.max(20, (int) (height * (height / (height + maxScroll)))));
     }
 
     public static boolean inBounds(double mx, double my, int x, int y, int w, int h) {

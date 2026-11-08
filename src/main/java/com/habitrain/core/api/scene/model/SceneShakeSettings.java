@@ -72,11 +72,15 @@ public final class SceneShakeSettings {
 
     public static SceneShakeSettings fromJson(JsonObject json) {
         if (json == null) return createDefault();
-        boolean enabled = json.has("enabled") && json.get("enabled").getAsBoolean();
-        double trans = json.has("translationAmplitude") ? json.get("translationAmplitude").getAsDouble() : DEFAULT_TRANSLATION_AMP;
-        double rot = json.has("rotationAmplitudeDegrees") ? json.get("rotationAmplitudeDegrees").getAsDouble() : DEFAULT_ROTATION_AMP_DEG;
-        double freq = json.has("frequencyHz") ? json.get("frequencyHz").getAsDouble() : DEFAULT_FREQUENCY_HZ;
+        boolean enabled = isPrimitive(json, "enabled") && json.get("enabled").getAsBoolean();
+        double trans = isPrimitive(json, "translationAmplitude") ? json.get("translationAmplitude").getAsDouble() : DEFAULT_TRANSLATION_AMP;
+        double rot = isPrimitive(json, "rotationAmplitudeDegrees") ? json.get("rotationAmplitudeDegrees").getAsDouble() : DEFAULT_ROTATION_AMP_DEG;
+        double freq = isPrimitive(json, "frequencyHz") ? json.get("frequencyHz").getAsDouble() : DEFAULT_FREQUENCY_HZ;
         return new SceneShakeSettings(enabled, trans, rot, freq);
+    }
+
+    private static boolean isPrimitive(JsonObject json, String key) {
+        return json.has(key) && json.get(key).isJsonPrimitive();
     }
 
     @Override

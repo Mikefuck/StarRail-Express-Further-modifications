@@ -17,18 +17,33 @@ public record RoleVisibilityProfile(
         return new Builder();
     }
 
+    /** Convenience builder pre-configured with killer defaults ({@code canUseInstinct = true}). */
+    public static Builder killerBuilder() {
+        return new Builder().canUseInstinct(true);
+    }
+
     public static final class Builder {
         private boolean canUseInstinct;
         private boolean instinctNightVision;
-        private boolean canSeeTeammateKiller;
+        private boolean canSeeTeammateKiller = true;
 
         public Builder canUseInstinct() {
             this.canUseInstinct = true;
             return this;
         }
 
+        public Builder canUseInstinct(boolean value) {
+            this.canUseInstinct = value;
+            return this;
+        }
+
         public Builder instinctNightVision() {
             this.instinctNightVision = true;
+            return this;
+        }
+
+        public Builder instinctNightVision(boolean value) {
+            this.instinctNightVision = value;
             return this;
         }
 

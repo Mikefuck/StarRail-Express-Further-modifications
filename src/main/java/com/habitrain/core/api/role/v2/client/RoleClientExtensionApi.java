@@ -11,14 +11,7 @@ package com.habitrain.core.api.role.v2.client;
 public interface RoleClientExtensionApi {
 
     static RoleClientExtensionApi instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleClientExtensionApi INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.clientExtension();
+        return com.habitrain.core.api.spi.RoleSpi.clientExtension();
     }
 
     /**

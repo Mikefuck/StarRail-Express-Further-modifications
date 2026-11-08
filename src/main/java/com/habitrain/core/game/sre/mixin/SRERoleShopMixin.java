@@ -22,11 +22,24 @@ public class SRERoleShopMixin {
     @Inject(method = "getShopEntries", at = @At("HEAD"), cancellable = true)
     private void patchedShop(CallbackInfoReturnable<List<ShopEntry>> cir) {
         SRERole self = (SRERole) (Object) this;
+        SRERole effective = com.habitrain.core.game.sre.role.SreRoleResolver.resolve(self);
+        if (effective != null && effective != self) {
+            cir.setReturnValue(effective.getShopEntries());
+            return;
+        }
         CompiledModifyOverlay overlay = RoleOverlayAccessor.currentOverlay(self);
         if (overlay != null && overlay.shopPatch() != null) {
             MinecraftServer server = getServer();
-            cir.setReturnValue(overlay.shopPatch().getShopEntries(self, server));
-            return;
+            try {
+                List<ShopEntry> entries = overlay.shopPatch().getShopEntries(self, server);
+                if (entries != null) {
+                    cir.setReturnValue(List.copyOf(entries));
+                    return;
+                }
+            } catch (Throwable t) {
+                org.slf4j.LoggerFactory.getLogger("SRERoleShopMixin")
+                        .error("v2 ShopPatch failed for {}", self.identifier(), t);
+            }
         }
     }
 

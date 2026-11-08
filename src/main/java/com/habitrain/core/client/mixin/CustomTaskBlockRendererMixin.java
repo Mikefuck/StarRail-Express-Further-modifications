@@ -10,7 +10,7 @@ import com.habitrain.core.client.render.TaskOverlayDrawer;
 import com.habitrain.core.client.render.ViewModeDispatcher;
 import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
-import com.habitrain.core.game.sre.task.CustomTaskBlockCache;
+import com.habitrain.core.client.cache.ClientTaskBlockCache;
 import io.wifi.starrailexpress.client.SREClient;
 import io.wifi.starrailexpress.content.block.api.TaskInstinctShowableInterface;
 import net.fabricmc.api.EnvType;
@@ -46,7 +46,7 @@ public class CustomTaskBlockRendererMixin {
         if (!GameRunningCache.isGameRunning()) return;
 
         if (SREClient.isPlayerSpectatingOrCreative()) {
-            if (!CustomTaskBlockCache.isEmpty()) {
+            if (!ClientTaskBlockCache.isEmpty()) {
                 ViewModeDispatcher.renderAll(renderContext);
             }
             return;
@@ -54,7 +54,7 @@ public class CustomTaskBlockRendererMixin {
 
         // Survival: ActiveTaskCache only (never client TaskManager singleton).
         String taskName = ActiveTaskCache.getActiveTaskFullId();
-        if (taskName == null || CustomTaskBlockCache.isEmpty()) {
+        if (taskName == null || ClientTaskBlockCache.isEmpty()) {
             return;
         }
 
@@ -72,10 +72,10 @@ public class CustomTaskBlockRendererMixin {
         }
 
         var level = renderContext.world();
-        for (BlockPos pos : CustomTaskBlockCache.positionsForType(blockTypeId)) {
+        for (BlockPos pos : ClientTaskBlockCache.positionsForType(blockTypeId)) {
             if (!TaskOverlayDrawer.isInOverlayRange(renderContext, pos)) continue;
 
-            Block cachedBlock = CustomTaskBlockCache.getBlockAt(pos);
+            Block cachedBlock = ClientTaskBlockCache.getBlockAt(pos);
             Block block = cachedBlock;
             if (block == null && level != null) {
                 block = level.getBlockState(pos).getBlock();
@@ -114,11 +114,17 @@ public class CustomTaskBlockRendererMixin {
         }
         TaskDefinition def = TaskRegistry.get(taskFullId);
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
-        Color resolved = def != null
-                ? new Color(com.habitrain.core.config.TaskInstinctColor.resolveArgb(cfg, def), true)
-                : (cfg != null && cfg.hasInstinctColor
-                ? new Color(cfg.getColor(), true)
-                : FALLBACK_COLOR);
+        com.habitrain.core.config.MinigameConfigEntry mgCfg = resolveMinigameConfig(taskFullId);
+        Color resolved;
+        if (mgCfg != null && mgCfg.hasInstinctColor) {
+            resolved = new Color(mgCfg.getColor(), true);
+        } else if (def != null) {
+            resolved = new Color(com.habitrain.core.config.TaskInstinctColor.resolveArgb(cfg, def), true);
+        } else if (cfg != null && cfg.hasInstinctColor) {
+            resolved = new Color(cfg.getColor(), true);
+        } else {
+            resolved = FALLBACK_COLOR;
+        }
         cachedColorTaskId = taskFullId;
         cachedColorVersion = version;
         cachedResolvedColor = resolved;
@@ -126,10 +132,30 @@ public class CustomTaskBlockRendererMixin {
     }
 
     private static float resolveOutlineWidth(String taskFullId) {
+        com.habitrain.core.config.MinigameConfigEntry mgCfg = resolveMinigameConfig(taskFullId);
+        if (mgCfg != null && mgCfg.getOutlineWidth() > 0.0f) {
+            return mgCfg.getOutlineWidth();
+        }
         TaskConfigEntry cfg = ConfigManager.getInstance().getTaskConfig(taskFullId);
-        if (cfg != null) {
+        if (cfg != null && cfg.outlineWidth > 0.0f) {
             return cfg.outlineWidth;
         }
         return 4.0f;
+    }
+
+    private static com.habitrain.core.config.MinigameConfigEntry resolveMinigameConfig(String taskFullId) {
+        if (taskFullId == null || taskFullId.isEmpty()) {
+            return null;
+        }
+        var allMinigames = ConfigManager.getInstance().getAllMinigameConfigs();
+        var direct = allMinigames.get(taskFullId);
+        if (direct != null) {
+            return direct;
+        }
+        int colon = taskFullId.indexOf(':');
+        if (colon >= 0 && colon + 1 < taskFullId.length()) {
+            return allMinigames.get(taskFullId.substring(colon + 1));
+        }
+        return null;
     }
 }

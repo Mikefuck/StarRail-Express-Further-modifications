@@ -68,15 +68,22 @@ public final class RoleExtensionServiceImpl implements RoleExtensionApi {
             return;
         }
         loaded = true;
-        for (EntrypointContainer<RoleExtensionEntrypoint> container : FabricLoader.getInstance()
-                .getEntrypointContainers(ENTRYPOINT_KEY, RoleExtensionEntrypoint.class)) {
+        java.util.List<EntrypointContainer<RoleExtensionEntrypoint>> containers =
+                new java.util.ArrayList<>(FabricLoader.getInstance()
+                        .getEntrypointContainers(ENTRYPOINT_KEY, RoleExtensionEntrypoint.class));
+        containers.sort(java.util.Comparator
+                .comparing((EntrypointContainer<RoleExtensionEntrypoint> c) -> c.getProvider().getMetadata().getId())
+                .thenComparing(c -> String.valueOf(c.getDefinition())));
+        for (EntrypointContainer<RoleExtensionEntrypoint> container : containers) {
             String providerId = container.getProvider().getMetadata().getId();
             ProviderRegistrationTransaction tx = RoleExtensionRegistry.INSTANCE.begin(providerId);
             RoleExtensionRegistrar registrar = new ScopedRoleExtensionRegistrar(tx);
             try {
-                RoleExtensionEntrypoint entrypoint = container.getEntrypoint();
-                entrypoint.register(registrar);
-                tx.setRequiresClient(entrypoint.requiresClient());
+                com.habitrain.core.internal.CoreLifecycleScope.runUnprivileged(() -> {
+                    RoleExtensionEntrypoint entrypoint = container.getEntrypoint();
+                    entrypoint.register(registrar);
+                    tx.setRequiresClient(entrypoint.requiresClient());
+                });
                 tx.commit();
             } catch (Throwable e) {
                 tx.rollback();

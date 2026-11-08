@@ -59,8 +59,8 @@ public class ActiveTaskPayload implements CustomPacketPayload {
                 throw new DecoderException("ActiveTaskPayload: negative length " + len);
             }
             if (len == 0) return new ActiveTaskPayload("");
-            if (len > MAX_STRING_LENGTH) {
-                throw new DecoderException("ActiveTaskPayload: length " + len + " exceeds max " + MAX_STRING_LENGTH);
+            if (len > MAX_STRING_LENGTH || len > buf.readableBytes()) {
+                throw new DecoderException("ActiveTaskPayload: length " + len + " exceeds max/readable " + MAX_STRING_LENGTH);
             }
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
@@ -70,6 +70,9 @@ public class ActiveTaskPayload implements CustomPacketPayload {
         @Override
         public void encode(ByteBuf buf, ActiveTaskPayload payload) {
             byte[] bytes = payload.taskFullId.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_STRING_LENGTH) {
+                throw new io.netty.handler.codec.EncoderException("ActiveTaskPayload: length " + bytes.length + " exceeds max " + MAX_STRING_LENGTH);
+            }
             buf.writeInt(bytes.length);
             if (bytes.length > 0) {
                 buf.writeBytes(bytes);

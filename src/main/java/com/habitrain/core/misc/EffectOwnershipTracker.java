@@ -17,23 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * ===== 设计方案 =====
  * 本追踪器采用「引用计数」机制。每个模组/系统在应用效果时调用 claim() 声明拥有权；
  * 在想要移除时调用 release() 释放拥有权。只有当所有声明者都释放后，系统才会真正移除该效果。
- *
- * 例1: 黑out + 槟榔戒断 都应用了 DARKNESS
- *   claim(blackout) + claim(betel_addiction)
- *   → release(blackout): 仍有 betel_addiction 在引用 → DARKNESS 保留
- *   → release(betel_addiction): 无引用 → DARKNESS 移除
- *
- * 例2: antiComaTick 过去无条件移除所有 DARKNESS（bug）
- *   现在：release("hecheng_tianxia", DARKNESS) → 还有其他来源吗？有→不移除；没有→移除
- *
- * ===== 来源命名规范 =====
- *   "blackout"           - SREWorldBlackoutComponent 关灯效果
- *   "betel_addiction"    - BetelNutAddictionComponent 槟榔戒断
- *   "hecheng_tianxia"    - HechengTianxiaEffects 合成天下槟榔
- *   "betel_quest"        - BetelQuestState 更多任务模组效果
- *   "chef_food"          - ChefFoodItem 厨师食物
- *   "handcuffs"          - HandCuffsItem 手铐
- *   "vegetarian"         - VegetarianFoodMixin 素食主义者
  */
 public class EffectOwnershipTracker {
 
@@ -46,6 +29,9 @@ public class EffectOwnershipTracker {
      * 将效果类型转为注册名作为 Map 键（跨映射兼容）
      */
     private static String effectKey(Holder<MobEffect> effect) {
+        if (effect == null) {
+            return "unknown:null";
+        }
         return effect.unwrapKey()
                 .map(key -> key.location().toString())
                 .orElse("unknown:" + effect);
@@ -54,7 +40,10 @@ public class EffectOwnershipTracker {
     /**
      * 声明一个来源拥有某效果
      */
-    public static void claim(UUID playerUuid, Holder<MobEffect> effect, String source) {
+    public static synchronized void claim(UUID playerUuid, Holder<MobEffect> effect, String source) {
+        if (playerUuid == null || effect == null || source == null) {
+            return;
+        }
         String key = effectKey(effect);
         Set<String> sources = ownership
                 .computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>())
@@ -63,18 +52,28 @@ public class EffectOwnershipTracker {
     }
 
     /**
-     * 释放一个来源对某效果的拥有权
+     * 释放一个来源对某效果的拥有权。
      *
-     * @return true 表示该效果不再被任何来源拥有，调用方应执行 removeEffect
+     * <p>CORE-14：当无任何来源持有该效果（含从未被追踪过）时返回 {@code true}，
+     * 仅当仍有其他来源正在持有该效果时返回 {@code false}。</p>
+     *
+     * @return true 表示该效果不再被任何来源拥有，调用方应执行 removeEffect；
      *         false 表示仍有其他来源在使用，不应移除效果
      */
-    public static boolean release(UUID playerUuid, Holder<MobEffect> effect, String source) {
+    public static synchronized boolean release(UUID playerUuid, Holder<MobEffect> effect, String source) {
+        if (playerUuid == null || effect == null || source == null) {
+            return true;
+        }
         Map<String, Set<String>> playerEffects = ownership.get(playerUuid);
-        if (playerEffects == null) return false;
+        if (playerEffects == null) {
+            return true;
+        }
 
         String key = effectKey(effect);
         Set<String> sources = playerEffects.get(key);
-        if (sources == null) return false;
+        if (sources == null) {
+            return true;
+        }
 
         sources.remove(source);
 
@@ -91,7 +90,10 @@ public class EffectOwnershipTracker {
     /**
      * 检查某来源是否声明了某效果
      */
-    public static boolean isClaimedBy(UUID playerUuid, Holder<MobEffect> effect, String source) {
+    public static synchronized boolean isClaimedBy(UUID playerUuid, Holder<MobEffect> effect, String source) {
+        if (playerUuid == null || effect == null || source == null) {
+            return false;
+        }
         Map<String, Set<String>> playerEffects = ownership.get(playerUuid);
         if (playerEffects == null) return false;
         Set<String> sources = playerEffects.get(effectKey(effect));
@@ -99,20 +101,26 @@ public class EffectOwnershipTracker {
     }
 
     /**
-     * 获取某效果的所有声明来源
+     * 获取某效果的所有声明来源（返回不可变快照）
      */
-    public static Set<String> getSources(UUID playerUuid, Holder<MobEffect> effect) {
+    public static synchronized Set<String> getSources(UUID playerUuid, Holder<MobEffect> effect) {
+        if (playerUuid == null || effect == null) {
+            return Set.of();
+        }
         Map<String, Set<String>> playerEffects = ownership.get(playerUuid);
         if (playerEffects == null) return Set.of();
         Set<String> sources = playerEffects.get(effectKey(effect));
-        return sources == null ? Set.of() : Collections.unmodifiableSet(sources);
+        return sources == null || sources.isEmpty() ? Set.of() : Set.copyOf(sources);
     }
 
     /**
      * 强制清理某来源的所有追踪数据（不检查引用计数）
      * 用于游戏结束/玩家重置时
      */
-    public static void forceClean(UUID playerUuid, String source) {
+    public static synchronized void forceClean(UUID playerUuid, String source) {
+        if (playerUuid == null || source == null) {
+            return;
+        }
         Map<String, Set<String>> playerEffects = ownership.get(playerUuid);
         if (playerEffects == null) return;
 
@@ -126,21 +134,23 @@ public class EffectOwnershipTracker {
     /**
      * 清理某玩家的所有追踪数据
      */
-    public static void clearPlayer(UUID playerUuid) {
-        ownership.remove(playerUuid);
+    public static synchronized void clearPlayer(UUID playerUuid) {
+        if (playerUuid != null) {
+            ownership.remove(playerUuid);
+        }
     }
 
     /**
      * 清空所有追踪数据（服务器停止时调用）
      */
-    public static void clearAll() {
+    public static synchronized void clearAll() {
         ownership.clear();
     }
 
     /**
      * 获取跟踪统计信息（用于调试）
      */
-    public static int getTrackedPlayerCount() {
+    public static synchronized int getTrackedPlayerCount() {
         return ownership.size();
     }
 }

@@ -28,17 +28,24 @@ public final class RuntimeHookGates implements HookGates {
 
     private volatile Set<RoleKey> activeRoles = Set.of();
     private volatile java.util.Map<RoleKey, ServerPlayer> activeHolders = java.util.Map.of();
+    private volatile java.util.Map<RoleKey, java.util.List<ServerPlayer>> activeHoldersAll = java.util.Map.of();
     private volatile int activeRolesTick = Integer.MIN_VALUE;
 
     private RuntimeHookGates() {}
 
+    /** Invalidates the per-tick active-holder cache on mid-tick role changes. */
+    public void invalidate() {
+        this.activeRolesTick = Integer.MIN_VALUE;
+    }
+
     @Override
     public boolean activeHolder(RoleKey role, @Nullable ServerLevel level) {
-        if (level == null || level.getServer() == null) {
+        if (level == null || level.getServer() == null || role == null) {
             return false;
         }
         refreshActiveRoles(level);
-        return activeRoles.contains(role);
+        RoleKey canonical = canonicalize(role);
+        return activeRoles.contains(role) || activeRoles.contains(canonical);
     }
 
     /** Rebuilds the active-role set once per server tick (server thread only). */
@@ -49,6 +56,7 @@ public final class RuntimeHookGates implements HookGates {
         }
         Set<RoleKey> roles = new HashSet<>();
         java.util.Map<RoleKey, ServerPlayer> holders = new java.util.LinkedHashMap<>();
+        java.util.Map<RoleKey, java.util.List<ServerPlayer>> holdersAll = new java.util.LinkedHashMap<>();
         try {
             for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
                 try {
@@ -59,8 +67,15 @@ public final class RuntimeHookGates implements HookGates {
                     SRERole r = game.getRole(p);
                     if (r != null && r.identifier() != null) {
                         RoleKey key = RoleKey.of(r.identifier());
+                        RoleKey canonical = canonicalize(key);
                         roles.add(key);
+                        roles.add(canonical);
                         holders.putIfAbsent(key, p);
+                        holders.putIfAbsent(canonical, p);
+                        holdersAll.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(p);
+                        if (!canonical.equals(key)) {
+                            holdersAll.computeIfAbsent(canonical, k -> new java.util.ArrayList<>()).add(p);
+                        }
                     }
                 } catch (Throwable ignored) {
                     // one player's lookup failure must not hide other holders.
@@ -71,6 +86,7 @@ public final class RuntimeHookGates implements HookGates {
         }
         this.activeRoles = roles;
         this.activeHolders = holders;
+        this.activeHoldersAll = holdersAll;
         this.activeRolesTick = tick;
     }
 
@@ -80,7 +96,8 @@ public final class RuntimeHookGates implements HookGates {
             Optional<RoleSnapshot> snap = RoleCatalogApi.instance().currentSnapshot();
             // Fail-closed（与类 javadoc 一致，review L10）：无快照时放行广播钩子
             // 比漏发一次事件更危险，orElse(true) 会把缺失快照当作"全部在场"。
-            return snap.map(s -> s.isActive(role.location())).orElse(false);
+            RoleKey canonical = canonicalize(role);
+            return snap.map(s -> s.isActive(role.location()) || s.isActive(canonical.location())).orElse(false);
         } catch (Throwable t) {
             return false;
         }
@@ -88,8 +105,28 @@ public final class RuntimeHookGates implements HookGates {
 
     @Override
     public @Nullable ServerPlayer holder(RoleKey role, @Nullable ServerLevel level) {
-        if (level == null || level.getServer() == null) return null;
+        if (level == null || level.getServer() == null || role == null) return null;
         refreshActiveRoles(level);
-        return activeHolders.get(role);
+        ServerPlayer direct = activeHolders.get(role);
+        return direct != null ? direct : activeHolders.get(canonicalize(role));
+    }
+
+    public java.util.List<ServerPlayer> holders(RoleKey role, @Nullable ServerLevel level) {
+        if (level == null || level.getServer() == null || role == null) return java.util.List.of();
+        refreshActiveRoles(level);
+        var list = activeHoldersAll.get(role);
+        if (list == null || list.isEmpty()) {
+            list = activeHoldersAll.get(canonicalize(role));
+        }
+        return list == null ? java.util.List.of() : java.util.List.copyOf(list);
+    }
+
+    private static RoleKey canonicalize(RoleKey role) {
+        if (role == null) return null;
+        try {
+            return RoleCatalogApi.instance().canonicalize(role.location());
+        } catch (Throwable ignored) {
+            return role;
+        }
     }
 }

@@ -41,7 +41,7 @@ public final class SceneMotionMigration {
             for (var entry : profiles.entrySet()) {
                 if (!entry.getValue().isJsonObject()) continue;
                 JsonObject profile = entry.getValue().getAsJsonObject();
-                if (profile.has("enabled") && profile.get("enabled").getAsBoolean()) continue;
+                if (profile.has("enabled") && profile.get("enabled").isJsonPrimitive() && profile.get("enabled").getAsBoolean()) continue;
                 JsonObject backgrounds = migrated.getAsJsonObject("backgrounds");
                 JsonObject mapBackgrounds = backgrounds.has(entry.getKey())
                         && backgrounds.get(entry.getKey()).isJsonObject()
@@ -72,7 +72,7 @@ public final class SceneMotionMigration {
     private static boolean hasEnabledBackground(JsonObject background) {
         JsonObject profile = background.has("profile") && background.get("profile").isJsonObject()
                 ? background.getAsJsonObject("profile") : background;
-        return profile.has("enabled") && profile.get("enabled").getAsBoolean();
+        return profile.has("enabled") && profile.get("enabled").isJsonPrimitive() && profile.get("enabled").getAsBoolean();
     }
 
     private static int readSchemaVersion(JsonObject root) {

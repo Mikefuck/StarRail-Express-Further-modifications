@@ -57,7 +57,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
     /** 用当前注册的解析器解析某维度的地图上下文（公开给 API / 命令使用）。 */
     public SceneContextResolver.SceneContext resolveContext(ServerLevel level) {
-        if (level == null) return new SceneContextResolver.SceneContext("__default__", "", false);
+        if (level == null) return new SceneContextResolver.SceneContext(com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY, "", false);
         return contextResolver.resolve(level);
     }
 
@@ -95,11 +95,11 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
         if (profile.isEnabled() && (descriptor == null || !descriptor.isValid())) {
             ServerPlayer progressRecipient = level.players().stream()
-                    .filter(player -> player.hasPermissions(2))
+                    .filter(player -> player.hasPermissions(2) && !com.habitrain.core.api.menu.MenuGateApi.isBlocked(player, level.getServer()))
                     .findFirst()
-                    .orElse(level.players().stream().findFirst().orElse(null));
+                    .orElse(null);
             if (progressRecipient == null) {
-                LOGGER.warn("地图 {} 已启用移动场景，但没有资产且当前无玩家，无法自动生成", mapKey);
+                LOGGER.warn("地图 {} 已启用移动场景，但没有资产且当前无在线管理员（OP2），跳过自动生成", mapKey);
             } else if (profile.getSourceBounds().isEmpty()) {
                 LOGGER.warn("地图 {} 已启用移动场景，但没有资产且源选区为空", mapKey);
                 progressRecipient.sendSystemMessage(net.minecraft.network.chat.Component.literal(
@@ -204,12 +204,15 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
     public void onAssetPublished(MinecraftServer server, String mapKey, SceneAssetDescriptor descriptor) {
         if (server == null || descriptor == null) return;
-        // API 场景实例引用的资产也要热更新（换哈希并重发）。
+        // API 场景实例引用的资产也要热更新（内部按实例可见性与维度精准授权并下发 Manifest）。
         SceneInstanceService.getInstance().onAssetPublished(mapKey, descriptor);
         SceneAssetManifestS2C payload = new SceneAssetManifestS2C(mapKey, descriptor);
+        // 管理员在编辑器里可能需要直接预览已发布资产
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
-            ServerPlayNetworking.send(player, payload);
+            if (player.hasPermissions(2) && !com.habitrain.core.api.menu.MenuGateApi.isBlocked(player, server)) {
+                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
+                ServerPlayNetworking.send(player, payload);
+            }
         }
 
         for (ServerLevel level : server.getAllLevels()) {
@@ -230,6 +233,8 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
             levelRuntimeStates.put(dimensionKey, refreshed);
             SceneRuntimeStateS2C statePayload = new SceneRuntimeStateS2C(refreshed);
             for (ServerPlayer player : level.players()) {
+                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
+                ServerPlayNetworking.send(player, payload);
                 ServerPlayNetworking.send(player, statePayload);
             }
             LOGGER.info("移动场景资产已热更新到当前对局: mapKey={}, dimension={}, assetHash={}",
@@ -254,6 +259,8 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
             if (changed) {
                 levelAdditionalRuntimeStates.put(dimensionKey, List.copyOf(refreshed));
                 for (ServerPlayer player : level.players()) {
+                    SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
+                    ServerPlayNetworking.send(player, payload);
                     ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(refreshed));
                 }
             }
@@ -317,10 +324,9 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
         return levelRuntimeStates.getOrDefault(dimKey, SceneRuntimeState.INACTIVE);
     }
 
-    /** 换维度时明确清除旧状态，再同步目标维度状态/Manifest。 */
+    /** 换维度时明确清除旧维度运行状态，再同步目标维度状态/Manifest（保留正在进行的资产传输授权与配额游标）。 */
     public void onPlayerChangeDimension(ServerPlayer player) {
         if (player == null) return;
-        SceneTransferService.getInstance().onPlayerDisconnect(player.getUUID());
         ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(SceneRuntimeState.INACTIVE));
         ServerPlayNetworking.send(player, new SceneAdditionalRuntimeStatesS2C(List.of()));
         SceneInstanceService.getInstance().onPlayerChangeDimension(player);

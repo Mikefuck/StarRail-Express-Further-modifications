@@ -11,17 +11,9 @@ import java.util.List;
  */
 public interface RoleDiagnostics {
 
-    /** The process-wide diagnostics service. */
+    /** The process-wide diagnostics service (cached lazily inside {@code RoleSpi}). */
     static RoleDiagnostics instance() {
-        return DefaultHolder.INSTANCE;
-    }
-
-    /** Lazily-bound default instance; avoids touching the registries on class load. */
-    final class DefaultHolder {
-        private DefaultHolder() {}
-
-        static final RoleDiagnostics INSTANCE =
-                com.habitrain.core.api.spi.RoleSpi.diagnostics();
+        return com.habitrain.core.api.spi.RoleSpi.diagnostics();
     }
 
     /** A full diagnostic report. */

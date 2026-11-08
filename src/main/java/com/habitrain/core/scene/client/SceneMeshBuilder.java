@@ -37,11 +37,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.ColorResolver;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
@@ -61,6 +64,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -123,14 +127,41 @@ public final class SceneMeshBuilder {
             empty.freeze();
             return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), empty));
         }
-        if (Minecraft.getInstance().level == null) {
-            throw new IllegalStateException("Cannot build a scene mesh without a client level");
+        Minecraft client = Minecraft.getInstance();
+        if (!client.isSameThread()) {
+            CompletableFuture<MeshBuildResult> outer = new CompletableFuture<>();
+            client.execute(() -> {
+                if (outer.isCancelled()) return;
+                var inner = buildMeshWithReportAsync(assetData, detailedDiagnostics, priority);
+                outer.whenComplete((value, error) -> { if (outer.isCancelled()) inner.cancel(false); });
+                inner.whenComplete((value, error) -> {
+                    if (error != null) outer.completeExceptionally(error);
+                    else if (!outer.complete(value) && value != null && value.meshSet() != null) value.meshSet().close();
+                });
+            });
+            return outer;
+        }
+        if (client.level == null) {
+            LOGGER.warn("客户端关卡尚未就绪，跳过场景网格构建: sections={}", assetData.sections.size());
+            SceneCompatibilityReport empty = new SceneCompatibilityReport(detailedDiagnostics);
+            empty.freeze();
+            return CompletableFuture.completedFuture(new MeshBuildResult(new SceneMeshSet(), empty));
         }
 
         // BuildState 的构造已经很轻（调色板改为惰性解析），因此仍同步建好再交给调度器。
         CompletableFuture<MeshBuildResult> result = new CompletableFuture<>();
-        SceneBuildScheduler.getInstance().submit(
-                new BuildState(assetData, result, detailedDiagnostics), priority);
+        try {
+            BuildState buildState = new BuildState(assetData, result, detailedDiagnostics);
+            result.whenComplete((res, ex) -> {
+                if (result.isCancelled()) {
+                    if (client.isSameThread()) SceneBuildScheduler.getInstance().cancel(buildState);
+                    else client.execute(() -> SceneBuildScheduler.getInstance().cancel(buildState));
+                }
+            });
+            SceneBuildScheduler.getInstance().submit(buildState, priority);
+        } catch (RuntimeException failure) {
+            result.completeExceptionally(failure);
+        }
         return result;
     }
 
@@ -190,7 +221,7 @@ public final class SceneMeshBuilder {
         private SceneMeshSet uploadTarget;
         /** 上传工作项：一个 (层或材质, 批次) 的构建器。一个 list 顺序推进，便于逐项检查预算。 */
         private record Upload(SceneMeshSet.Layer layer, SceneMaterialKey material, int batch,
-                              BufferBuilder builder) {}
+                              BufferBuilder builder, ByteBufferBuilder byteBuilder) {}
         private List<Upload> pendingUploads = List.of();
         private int uploadCursor;
         /** 批次下标 → 该批的网格集合（惰性创建，只有真的产出几何才会有）。 */
@@ -339,7 +370,13 @@ public final class SceneMeshBuilder {
                                   SceneRenderPayload.VisualVertex v1,
                                   SceneRenderPayload.VisualVertex v2,
                                   SceneRenderPayload.VisualVertex v3) {
+                Objects.requireNonNull(v0, "v0");
+                Objects.requireNonNull(v1, "v1");
+                Objects.requireNonNull(v2, "v2");
+                Objects.requireNonNull(v3, "v3");
                 if (material == null) material = SceneMaterialKey.SOLID;
+                if (material.primitiveMode() != SceneMaterialKey.PrimitiveMode.QUADS)
+                    throw new IllegalArgumentException("Quad requires a QUADS material");
                 BufferBuilder builder = getOrCreateCustomBuilder(material);
                 countVertices(4L);
                 emittedCount++;
@@ -354,7 +391,12 @@ public final class SceneMeshBuilder {
                                       SceneRenderPayload.VisualVertex v0,
                                       SceneRenderPayload.VisualVertex v1,
                                       SceneRenderPayload.VisualVertex v2) {
+                Objects.requireNonNull(v0, "v0");
+                Objects.requireNonNull(v1, "v1");
+                Objects.requireNonNull(v2, "v2");
                 if (material == null) material = SceneMaterialKey.direct(null, SceneMaterialKey.BlendMode.SOLID, SceneMaterialKey.PrimitiveMode.TRIANGLES);
+                if (material.primitiveMode() != SceneMaterialKey.PrimitiveMode.TRIANGLES)
+                    throw new IllegalArgumentException("Triangle requires a TRIANGLES material");
                 BufferBuilder builder = getOrCreateCustomBuilder(material);
                 countVertices(3L);
                 emittedCount++;
@@ -388,15 +430,19 @@ public final class SceneMeshBuilder {
             float x = localPos.getX() + v.x();
             float y = localPos.getY() + v.y();
             float z = localPos.getZ() + v.z();
+            float[] n = sanitizeNormal(v.nx(), v.ny(), v.nz());
             int color = v.color() != 0 ? v.color() : 0xFFFFFFFF;
             if ((color >>> 24) == 0) color |= 0xFF000000;
+            if (!emissive) {
+                color = shadeArgb(color, normalShade(n[0], n[1], n[2]));
+            }
             int light = emissive ? 0x00F000F0
                     : v.light() >= 0 ? v.light() : resolveBlockLight(localPos);
             builder.addVertex(x, y, z)
                     .setColor(color)
                     .setUv(v.u(), v.v())
-                    .setLight(light)
-                    .setNormal(v.nx(), v.ny(), v.nz());
+                    .setLight((light & ~15) | (emissive ? 0 : 5))
+                    .setNormal(n[0], n[1], n[2]);
         }
 
         private int resolveBlockLight(BlockPos localPos) {
@@ -504,6 +550,8 @@ public final class SceneMeshBuilder {
                             final boolean supported;
                             try {
                                 supported = adapter.supports(state, payload);
+                            } catch (QuotaExceededException | Error fatal) {
+                                throw fatal;
                             } catch (Throwable t) {
                                 LOGGER.error("适配器 {} 探测方块 {} 异常", adapter.adapterId(), blockId, t);
                                 report.addEntry(new SceneCompatibilityReport.Entry(
@@ -526,6 +574,8 @@ public final class SceneMeshBuilder {
                         } else if (!legacyStaticModelHint) {
                             try {
                                 adapter = adapterRegistry.findAdapter(state, null);
+                            } catch (QuotaExceededException | Error fatal) {
+                                throw fatal;
                             } catch (Throwable t) {
                                 LOGGER.error("客户端适配器探测方块 {} 异常", blockId, t);
                                 report.addEntry(new SceneCompatibilityReport.Entry(
@@ -543,9 +593,11 @@ public final class SceneMeshBuilder {
                             SceneBakeResult bakeResult;
                             try {
                                 bakeResult = adapter.emitStaticMesh(ctx, sink);
+                            } catch (QuotaExceededException | Error fatal) {
+                                throw fatal;
                             } catch (Throwable t) {
                                 LOGGER.error("适配器 {} 烘焙方块 {} 异常", adapter.adapterId(), blockId, t);
-                                bakeResult = SceneBakeResult.UNSUPPORTED;
+                                throw new IllegalStateException("Scene adapter emission failed", t);
                             }
 
                             if (bakeResult == SceneBakeResult.SUCCESS && sink.hasEmitted()) {
@@ -647,8 +699,10 @@ public final class SceneMeshBuilder {
                         FluidState fluidState = state.getFluidState();
                         if (!fluidState.isEmpty()) {
                             BufferBuilder fluidBuilder = builderFor(resolveLayer(fluidState));
-                            dispatcher.renderLiquid(localPos, blockView,
-                                    budgeted(fluidBuilder), state, fluidState);
+                            SceneFluidVertexConsumer fluidVertices = new SceneFluidVertexConsumer(
+                                    fluidBuilder, this::countVertices, localX, localY, localZ);
+                            dispatcher.renderLiquid(localPos, blockView, fluidVertices, state, fluidState);
+                            fluidVertices.finish();
                         }
 
                         reportBlockEntityStaticFallback(
@@ -754,6 +808,8 @@ public final class SceneMeshBuilder {
                     ));
                 }
                 return FabricBakeOutcome.EMITTED;
+            } catch (QuotaExceededException | Error fatal) {
+                throw fatal;
             } catch (Throwable failure) {
                 LOGGER.error("Fabric 增强模型 {} 烘焙方块 {} 异常", modelClassName, blockId, failure);
                 report.addEntry(new SceneCompatibilityReport.Entry(
@@ -763,7 +819,7 @@ public final class SceneMeshBuilder {
                         "Fabric Renderer API 模型发射失败: " + failure.getClass().getSimpleName(),
                         0, null, sky, block
                 ));
-                return FabricBakeOutcome.TERMINAL;
+                throw new IllegalStateException("Fabric scene emission failed", failure);
             }
         }
 
@@ -815,9 +871,10 @@ public final class SceneMeshBuilder {
             Vector3f faceNormal = quad.faceNormal();
             int snapshotLight = resolveBlockLight(localPos);
             for (int vertex = 0; vertex < 4; vertex++) {
-                float nx = quad.hasNormal(vertex) ? quad.normalX(vertex) : faceNormal.x();
-                float ny = quad.hasNormal(vertex) ? quad.normalY(vertex) : faceNormal.y();
-                float nz = quad.hasNormal(vertex) ? quad.normalZ(vertex) : faceNormal.z();
+                float rawNx = quad.hasNormal(vertex) ? quad.normalX(vertex) : faceNormal.x();
+                float rawNy = quad.hasNormal(vertex) ? quad.normalY(vertex) : faceNormal.y();
+                float rawNz = quad.hasNormal(vertex) ? quad.normalZ(vertex) : faceNormal.z();
+                float[] n = sanitizeNormal(rawNx, rawNy, rawNz);
                 int color = fabricVertexColor(quad, vertex, state, localPos);
                 int light = material.emissive()
                         ? 0x00F000F0
@@ -828,8 +885,9 @@ public final class SceneMeshBuilder {
                                 localPos.getZ() + quad.z(vertex))
                         .setColor(color)
                         .setUv(quad.u(vertex), quad.v(vertex))
-                        .setLight(light)
-                        .setNormal(nx, ny, nz);
+                        .setLight((light & ~15) | (material.emissive() || quad.material().disableDiffuse()
+                                ? 0 : shadeCode(quad.lightFace())))
+                        .setNormal(n[0], n[1], n[2]);
             }
             verticesByMaterial.merge(material, 4, Integer::sum);
         }
@@ -859,8 +917,14 @@ public final class SceneMeshBuilder {
         private void countVertices(long count) {
             vertexCount += count;
             if (vertexCount > maxVertices) {
-                throw new IllegalStateException("Scene VBO vertex data exceeds configured mesh quota ("
+                throw new QuotaExceededException("Scene VBO vertex data exceeds configured mesh quota ("
                         + meshQuotaMiB + " MiB)");
+            }
+        }
+
+        private static final class QuotaExceededException extends IllegalStateException {
+            QuotaExceededException(String message) {
+                super(message);
             }
         }
 
@@ -870,6 +934,19 @@ public final class SceneMeshBuilder {
          */
         private final class BudgetedVertexConsumer implements VertexConsumer {
             private final VertexConsumer delegate;
+            private int diffuseCode = 4;
+
+            @Override
+            public void putBulkData(PoseStack.Pose pose, net.minecraft.client.renderer.block.model.BakedQuad quad,
+                                    float[] brightness, float red, float green, float blue, float alpha,
+                                    int[] light, int overlay, boolean useQuadColor) {
+                int previous = diffuseCode;
+                diffuseCode = quad.isShade() ? shadeCode(quad.getDirection()) : 0;
+                try {
+                    VertexConsumer.super.putBulkData(pose, quad, brightness, red, green, blue, alpha,
+                            light, overlay, useQuadColor);
+                } finally { diffuseCode = previous; }
+            }
 
             private BudgetedVertexConsumer(VertexConsumer delegate) {
                 this.delegate = delegate;
@@ -902,13 +979,14 @@ public final class SceneMeshBuilder {
 
             @Override
             public VertexConsumer setUv2(int u, int v) {
-                delegate.setUv2(u, v);
+                delegate.setUv2((u & ~15) | diffuseCode, v);
                 return this;
             }
 
             @Override
             public VertexConsumer setNormal(float x, float y, float z) {
-                delegate.setNormal(x, y, z);
+                float[] n = sanitizeNormal(x, y, z);
+                delegate.setNormal(n[0], n[1], n[2]);
                 return this;
             }
         }
@@ -918,17 +996,21 @@ public final class SceneMeshBuilder {
             List<Upload> uploads = new ArrayList<>();
             for (Map.Entry<SceneMeshSet.Layer, BufferBuilder[]> entry : builders.entrySet()) {
                 BufferBuilder[] array = entry.getValue();
+                ByteBufferBuilder[] byteArray = byteBuilders.get(entry.getKey());
                 for (int batch = 0; batch < array.length; batch++) {
                     if (array[batch] != null) {
-                        uploads.add(new Upload(entry.getKey(), null, batch, array[batch]));
+                        ByteBufferBuilder bb = byteArray != null && batch < byteArray.length ? byteArray[batch] : null;
+                        uploads.add(new Upload(entry.getKey(), null, batch, array[batch], bb));
                     }
                 }
             }
             for (Map.Entry<SceneMaterialKey, BufferBuilder[]> entry : customBuilders.entrySet()) {
                 BufferBuilder[] array = entry.getValue();
+                ByteBufferBuilder[] byteArray = customByteBuilders.get(entry.getKey());
                 for (int batch = 0; batch < array.length; batch++) {
                     if (array[batch] != null) {
-                        uploads.add(new Upload(null, entry.getKey(), batch, array[batch]));
+                        ByteBufferBuilder bb = byteArray != null && batch < byteArray.length ? byteArray[batch] : null;
+                        uploads.add(new Upload(null, entry.getKey(), batch, array[batch], bb));
                     }
                 }
             }
@@ -939,11 +1021,12 @@ public final class SceneMeshBuilder {
         /**
          * 一个构建完成的缓冲该落到哪里：分批时进它自己的批次，半透明与未分批时进外层集合。
          */
-        private void storeUpload(Upload upload, VertexBuffer buffer, long bytes) {
+        private void storeUpload(Upload upload, VertexBuffer buffer, long bytes, SceneTransparencySort sort) {
             boolean translucent = upload.material() != null
                     ? upload.material().isTranslucent()
                     : upload.layer() == SceneMeshSet.Layer.TRANSLUCENT;
             if (!batchPlan.isBatched() || translucent) {
+                uploadTarget.setSortState(upload.layer(), upload.material(), sort);
                 uploadTarget.setEstimatedBytes(uploadTarget.estimatedBytes() + bytes);
                 if (upload.material() != null) {
                     uploadTarget.setCustomBuffer(upload.material(), buffer);
@@ -983,10 +1066,19 @@ public final class SceneMeshBuilder {
                     Upload upload = pendingUploads.get(uploadCursor++);
                     MeshData data = upload.builder().build();
                     if (data != null) {
-                        boolean batched = batchPlan.isBatched() && (upload.material() != null
-                                ? !upload.material().isTranslucent()
-                                : upload.layer() != SceneMeshSet.Layer.TRANSLUCENT);
+                        boolean translucent = upload.material() != null
+                                ? upload.material().isTranslucent()
+                                : upload.layer() == SceneMeshSet.Layer.TRANSLUCENT;
+                        boolean batched = batchPlan.isBatched() && !translucent;
                         try (data) {
+                            SceneTransparencySort sort = null;
+                            if (translucent && upload.byteBuilder() != null) {
+                                float sortX = asset.sourceBounds != null ? asset.sourceBounds.sizeX() * 0.5f : 0.0f;
+                                float sortY = asset.sourceBounds != null ? asset.sourceBounds.sizeY() * 0.5f : 0.0f;
+                                float sortZ = asset.sourceBounds != null ? asset.sourceBounds.sizeZ() * 0.5f : 0.0f;
+                                sort = SceneTransparencySort.capture(data, upload.byteBuilder(),
+                                        com.mojang.blaze3d.vertex.VertexSorting.byDistance(sortX, sortY, sortZ));
+                            }
                             if (batched) {
                                 batchBounds.computeIfAbsent(upload.batch(), ignored -> new SceneVertexBounds())
                                         .include(data.vertexBuffer(), data.drawState().vertexCount(),
@@ -994,7 +1086,9 @@ public final class SceneMeshBuilder {
                             }
                             long bytes = (long) data.drawState().vertexCount()
                                     * DefaultVertexFormat.BLOCK.getVertexSize();
-                            storeUpload(upload, uploadBuffer(data), bytes);
+                            if (sort != null) bytes += sort.indexBytes();
+                            else if (data.indexBuffer() != null) bytes += data.indexBuffer().remaining();
+                            storeUpload(upload, uploadBuffer(data), bytes, sort);
                         }
                     }
                     if (System.nanoTime() >= deadlineNanos) return false;
@@ -1122,6 +1216,34 @@ public final class SceneMeshBuilder {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
+    static float[] sanitizeNormal(float nx, float ny, float nz) {
+        if (!Float.isFinite(nx) || !Float.isFinite(ny) || !Float.isFinite(nz)) {
+            return new float[]{0.0f, 1.0f, 0.0f};
+        }
+        double lenSq = (double) nx * nx + (double) ny * ny + (double) nz * nz;
+        if (lenSq < 1.0e-6f) {
+            return new float[]{0.0f, 1.0f, 0.0f};
+        }
+        float invLen = (float) (1.0 / Math.sqrt(lenSq));
+        return new float[]{nx * invLen, ny * invLen, nz * invLen};
+    }
+
+    static int shadeCode(Direction direction) {
+        if (direction == null) return 4;
+        return switch (direction) {
+            case DOWN -> 1;
+            case EAST, WEST -> 2;
+            case NORTH, SOUTH -> 3;
+            case UP -> 4;
+        };
+    }
+
+    static float normalShade(float nx, float ny, float nz) {
+        float yShade = ny >= 0.0f ? 1.0f : 0.5f;
+        float shade = nx * nx * 0.6f + ny * ny * yShade + nz * nz * 0.8f;
+        return Math.max(0.5f, Math.min(1.0f, shade));
+    }
+
     static int shadeArgb(int color, float shade) {
         float clamped = Math.max(0.0f, Math.min(1.0f, shade));
         int alpha = (color >>> 24) & 0xFF;
@@ -1157,6 +1279,8 @@ public final class SceneMeshBuilder {
         private final SceneBounds bounds;
         private final SceneBounds haloBounds;
         private final ClientLevel level;
+        private final Biome defaultBiome;
+        private final LevelLightEngine snapshotLightEngine;
         private final Map<SectionKey, SceneAssetCodec.SectionData> rawSections = new HashMap<>();
         private final Map<SectionKey, SnapshotSection> sections = new HashMap<>();
 
@@ -1164,6 +1288,39 @@ public final class SceneMeshBuilder {
             this.bounds = asset.sourceBounds;
             this.haloBounds = asset.haloBounds != null && !asset.haloBounds.isEmpty() ? asset.haloBounds : asset.sourceBounds;
             this.level = level;
+            Biome plains = null;
+            try {
+                plains = level.registryAccess().registryOrThrow(Registries.BIOME).get(Biomes.PLAINS);
+            } catch (Exception ignored) {
+            }
+            this.defaultBiome = plains;
+            this.snapshotLightEngine = new LevelLightEngine(new net.minecraft.world.level.chunk.LightChunkGetter() {
+                @Override public net.minecraft.world.level.chunk.LightChunk getChunkForLighting(int x, int z) { return null; }
+                @Override public net.minecraft.world.level.BlockGetter getLevel() { return SnapshotBlockView.this; }
+            }, false, false) {
+                @Override public int getRawBrightness(BlockPos pos, int darkness) {
+                    return SnapshotBlockView.this.getRawBrightness(pos, darkness);
+                }
+                @Override public net.minecraft.world.level.lighting.LayerLightEventListener getLayerListener(LightLayer layer) {
+                    return new net.minecraft.world.level.lighting.LayerLightEventListener() {
+                        @Override public int getLightValue(BlockPos pos) { return getBrightness(layer, pos); }
+                        @Override public net.minecraft.world.level.chunk.DataLayer getDataLayerData(SectionPos section) {
+                            var data = new net.minecraft.world.level.chunk.DataLayer();
+                            for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+                                data.set(x, y, z, getBrightness(layer, new BlockPos(
+                                        section.minBlockX() + x, section.minBlockY() + y, section.minBlockZ() + z)));
+                            }
+                            return data;
+                        }
+                        @Override public void checkBlock(BlockPos pos) {}
+                        @Override public boolean hasLightWork() { return false; }
+                        @Override public int runLightUpdates() { return 0; }
+                        @Override public void updateSectionStatus(SectionPos section, boolean empty) {}
+                        @Override public void setLightEnabled(net.minecraft.world.level.ChunkPos pos, boolean enabled) {}
+                        @Override public void propagateLightSources(net.minecraft.world.level.ChunkPos pos) {}
+                    };
+                }
+            };
             for (SceneAssetCodec.SectionData section : asset.sections) {
                 rawSections.put(new SectionKey(section.relX, section.relY, section.relZ), section);
             }
@@ -1224,12 +1381,18 @@ public final class SceneMeshBuilder {
 
         @Override
         public float getShade(Direction direction, boolean shade) {
-            return level.getShade(direction, shade);
+            if (!shade || direction == null) return 1.0f;
+            return switch (direction) {
+                case DOWN -> 0.5f;
+                case UP -> 1.0f;
+                case NORTH, SOUTH -> 0.8f;
+                case WEST, EAST -> 0.6f;
+            };
         }
 
         @Override
         public LevelLightEngine getLightEngine() {
-            return level.getLightEngine();
+            return snapshotLightEngine;
         }
 
         @Override
@@ -1255,13 +1418,12 @@ public final class SceneMeshBuilder {
 
         @Override
         public int getBlockTint(BlockPos pos, ColorResolver resolver) {
-            BlockPos sourcePos = new BlockPos(
-                    bounds.minX() + pos.getX(),
-                    bounds.minY() + pos.getY(),
-                    bounds.minZ() + pos.getZ());
+            if (resolver == null || defaultBiome == null) return 0xFFFFFF;
+            double sourceX = bounds.minX() + (pos != null ? pos.getX() : 0);
+            double sourceZ = bounds.minZ() + (pos != null ? pos.getZ() : 0);
             try {
-                return level.getBlockTint(sourcePos, resolver);
-            } catch (RuntimeException unloadedSourceChunk) {
+                return resolver.getColor(defaultBiome, sourceX, sourceZ);
+            } catch (RuntimeException e) {
                 return 0xFFFFFF;
             }
         }

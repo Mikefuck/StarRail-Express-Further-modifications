@@ -93,9 +93,9 @@ public final class SceneInstanceSpec {
         builder.ownerId = ownerId;
         builder.dimensionKey = dimensionKey;
         builder.assetKey = assetKey;
-        builder.profile = profile;
+        builder.profile = profile != null ? profile.copy() : SceneProfile.createDefault();
         builder.startGameTime = startGameTime;
-        builder.headStartSeconds = 0.0;
+        builder.headStartSeconds = headStartSeconds;
         builder.durationTicks = durationTicks;
         builder.timeScale = timeScale;
         builder.paused = paused;
@@ -123,8 +123,11 @@ public final class SceneInstanceSpec {
     /** 场景资产键（{@code SceneAssetStore} 里的键，例如地图键或 {@code 地图键::habiscene::背景ID}）。 */
     public String assetKey() { return assetKey; }
 
-    /** 运动参数。 */
-    public SceneProfile profile() { return profile; }
+    /** 运动参数（返回防御性副本）。 */
+    public SceneProfile profile() { return profile.copy(); }
+
+    /** 内部热路径用：直接引用（只读，禁止改写）。 */
+    public SceneProfile profileRaw() { return profile; }
 
     /** 运动时间轴起点（服务端 gameTime）；{@link #AUTO_START_GAME_TIME} 表示"使用当前时间"。 */
     public long startGameTime() { return startGameTime; }
@@ -190,7 +193,15 @@ public final class SceneInstanceSpec {
         if (!visibleToAll && visibleTo.isEmpty()) {
             return Optional.of("visibleToAll=false 时 visibleTo 不能为空（否则谁都看不到）");
         }
+        if (visibleTo.size() > 4096) {
+            return Optional.of("visibleTo 数量上限为 4096");
+        }
         if (tags.size() > 32) return Optional.of("标签数量上限为 32");
+        for (String tag : tags) {
+            if (tag == null || tag.isBlank() || tag.length() > MAX_ID_LENGTH) {
+                return Optional.of("标签不能为空且长度不能超过 " + MAX_ID_LENGTH);
+            }
+        }
         return Optional.empty();
     }
 
@@ -287,7 +298,7 @@ public final class SceneInstanceSpec {
 
         /** 运动参数（必填；可用 {@link SceneProfileBuilder} 构造）。 */
         public Builder profile(SceneProfile profile) {
-            this.profile = profile;
+            this.profile = profile != null ? profile.copy() : null;
             return this;
         }
 
@@ -334,7 +345,14 @@ public final class SceneInstanceSpec {
 
         /** 存活时长（秒）；{@code <= 0} 表示永久。 */
         public Builder durationSeconds(double seconds) {
-            this.durationTicks = seconds > 0 ? (long) Math.round(seconds * 20.0) : 0L;
+            if (!Double.isFinite(seconds) || seconds <= 0.0) {
+                this.durationTicks = 0L;
+            } else {
+                double ticks = seconds * 20.0;
+                this.durationTicks = ticks >= (double) (Long.MAX_VALUE / 2)
+                        ? Long.MAX_VALUE / 2
+                        : Math.round(ticks);
+            }
             return this;
         }
 

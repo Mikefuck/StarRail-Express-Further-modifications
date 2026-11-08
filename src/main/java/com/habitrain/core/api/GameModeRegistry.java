@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>但 {@code start} / {@code stop} / {@code tickAll} 仍<b>只在服务器线程</b>调用，
  *       它们在并发容器上的复合操作（先查后写）不具原子性。</li>
  * </ul>
- * {@code REGISTRY} 在 freeze 之后不再写入，因此读它是安全的活视图。
+ * {@code REGISTRY} 访问均通过内部同步保护，只读方法返回不可变快照。
  *
  * <h2>空值策略（审核 A-07）</h2>
  * <p>2.0.11 及以前同一类里两种风格并存：{@code start} / {@code stop} /
@@ -58,6 +58,8 @@ public class GameModeRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger("GameModeRegistry");
     private static final Map<String, GameMode> REGISTRY = new LinkedHashMap<>();
     private static final Map<ResourceKey<Level>, GameMode> ACTIVE_MODES = new ConcurrentHashMap<>();
+    private static final Map<ResourceKey<Level>, UUID> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
+    private static final Set<ResourceKey<Level>> PENDING_START_EVENTS = ConcurrentHashMap.newKeySet();
     /**
      * Passive fallback cache, including a negative result. It is valid for one level tick so
      * dozens of task instances cannot each rescan every registered mode, while an externally
@@ -72,20 +74,35 @@ public class GameModeRegistry {
     private static final Map<ResourceKey<Level>, Long> LAST_TICKED_GAME_TIME = new ConcurrentHashMap<>();
 
     public static void register(String modId, String modeId, GameMode mode) {
+        Objects.requireNonNull(modId, "modId must not be null");
+        Objects.requireNonNull(modeId, "modeId must not be null");
+        Objects.requireNonNull(mode, "mode must not be null");
         if (frozen) {
             throw new IllegalStateException("GameMode registry is frozen! Register modes during mod initialization only.");
         }
         String fullId = modId + ":" + modeId;
-        if (REGISTRY.containsKey(fullId)) {
-            throw new IllegalArgumentException("GameMode '" + fullId + "' is already registered!");
+        // API-TV-09：在写入 REGISTRY 之前校验并读取 displayName，防止 getter 抛异常残留脏注册项
+        String displayName = mode.getDisplayName();
+        synchronized (REGISTRY) {
+            if (frozen) {
+                throw new IllegalStateException("GameMode registry is frozen! Register modes during mod initialization only.");
+            }
+            if (REGISTRY.containsKey(fullId)) {
+                throw new IllegalArgumentException("GameMode '" + fullId + "' is already registered!");
+            }
+            REGISTRY.put(fullId, mode);
         }
-        REGISTRY.put(fullId, mode);
-        LOGGER.info("Registered GameMode: {} ({})", fullId, mode.getDisplayName());
+        LOGGER.info("Registered GameMode: {} ({})", fullId, displayName);
     }
 
     /** @return 已注册的模式，未注册（或 {@code fullId} 为 {@code null}）时为 {@code null}（审核 C5 / A-07）。 */
     public static @org.jetbrains.annotations.Nullable GameMode get(String fullId) {
-        return fullId == null ? null : REGISTRY.get(fullId);
+        if (fullId == null) {
+            return null;
+        }
+        synchronized (REGISTRY) {
+            return REGISTRY.get(fullId);
+        }
     }
 
     /**
@@ -95,12 +112,16 @@ public class GameModeRegistry {
      * 这个活视图——注册期结束后虽然不再变，但语义上不是快照，调用方遍历期间若发生注册会 CME。</p>
      */
     public static Collection<GameMode> getAll() {
-        return List.copyOf(REGISTRY.values());
+        synchronized (REGISTRY) {
+            return List.copyOf(REGISTRY.values());
+        }
     }
 
     /** 全部已注册模式 ID 的<b>快照</b>（审核 C5）。 */
     public static Set<String> getAllIds() {
-        return Set.copyOf(REGISTRY.keySet());
+        synchronized (REGISTRY) {
+            return Set.copyOf(REGISTRY.keySet());
+        }
     }
 
     /**
@@ -128,7 +149,7 @@ public class GameModeRegistry {
         if (ACTIVE_MODES.containsKey(levelKey)) {
             throw new IllegalStateException("A GameMode is already active in " + levelKey.location());
         }
-        GameMode mode = REGISTRY.get(fullId);
+        GameMode mode = get(fullId);
         if (mode == null) {
             throw new IllegalArgumentException("GameMode '" + fullId + "' is not registered");
         }
@@ -136,19 +157,33 @@ public class GameModeRegistry {
             throw new IllegalStateException(
                     "An SRE game is already running or starting in " + levelKey.location());
         }
-        ACTIVE_MODES.put(levelKey, mode);
+        if (!CoreSpi.reserveMatch(level)) throw new IllegalStateException("Another match already owns this server");
+        GameMode existing = ACTIVE_MODES.putIfAbsent(levelKey, mode);
+        if (existing != null) {
+            throw new IllegalStateException("A GameMode is already active in " + levelKey.location());
+        }
+        UUID session = UUID.randomUUID();
+        ACTIVE_SESSIONS.put(levelKey, session);
         PASSIVE_CACHE.remove(levelKey);
         CoreSpi.invalidateTaskPoolCache(mode.getId());
+        PENDING_START_EVENTS.add(levelKey);
         try {
             mode.onPreStart(level);
+            if (!isCurrentSession(levelKey, mode, session)) return;
             mode.onStart(level);
             LOGGER.info("Started GameMode: {} in {}", fullId, levelKey.location());
         } catch (Throwable t) {
-            ACTIVE_MODES.remove(levelKey);
-            try {
-                mode.onCleanup(level);
-            } catch (Exception cleanupError) {
-                LOGGER.error("GameMode cleanup failed after start error for {}", fullId, cleanupError);
+            if (isCurrentSession(levelKey, mode, session)) {
+                PENDING_START_EVENTS.remove(levelKey);
+                ACTIVE_SESSIONS.remove(levelKey, session);
+                ACTIVE_MODES.remove(levelKey, mode);
+                try {
+                    mode.onCleanup(level);
+                } catch (Throwable cleanupError) {
+                    LOGGER.error("GameMode cleanup failed after start error for {}", fullId, cleanupError);
+                } finally {
+                    CoreSpi.releaseMatch(level);
+                }
             }
             if (t instanceof RuntimeException re) {
                 throw re;
@@ -158,9 +193,12 @@ public class GameModeRegistry {
             }
             throw new RuntimeException(t);
         }
-        // 审核 A7：注册表启动的模式过去完全不触发 MatchEvents，导致按教程实现的第三方
-        // 模式收不到开局重置钩子。现在与上游 SRE 对局一样发 STARTED。
-        fireStarted(level);
+        // 审核 A7 & API-TV-08：若 onStart 内未提前同步调用 stop()，在此派发 STARTED。
+        // 若 onStart 内同步调用了 stop()，stop() 已抢在 ROUND_ENDED 之前先派发了 STARTED，保证事件顺序不反转。
+        if (isCurrentSession(levelKey, mode, session) && PENDING_START_EVENTS.remove(levelKey)) {
+            fireStarted(level);
+            if (isCurrentSession(levelKey, mode, session)) CoreSpi.matchStarted(level);
+        }
     }
 
     /**
@@ -171,30 +209,37 @@ public class GameModeRegistry {
      */
     public static void stop(ServerLevel level, WinResult result) {
         Objects.requireNonNull(level, "level must not be null (audit A-07)");
+        WinResult effectiveResult = result != null ? result : WinResult.forceEnd("unspecified");
         ResourceKey<Level> levelKey = level.dimension();
         GameMode mode = ACTIVE_MODES.remove(levelKey);
+        ACTIVE_SESSIONS.remove(levelKey);
         PASSIVE_CACHE.remove(levelKey);
         if (mode != null) {
-            CoreSpi.invalidateTaskPoolCache(mode.getId());
-            // 用 try/finally 保证 onEnd 抛异常时 onCleanup 仍会执行，
-            // 避免 per-level 状态（角色/计时器/商店等 manager 的 map 条目）因异常泄漏。
-            try {
-                mode.onEnd(level, result);
-            } catch (RuntimeException e) {
-                LOGGER.error("GameMode onEnd failed for {} in {}", mode.getId(), levelKey.location(), e);
-            } finally {
-                try {
-                    mode.onCleanup(level);
-                } catch (RuntimeException cleanupError) {
-                    LOGGER.error("GameMode onCleanup failed for {} in {}", mode.getId(), levelKey.location(), cleanupError);
-                }
+            // API-TV-08：若在 onPreStart / onStart 内同步触发了 stop()，必须先补发 STARTED 再发 ROUND_ENDED
+            if (PENDING_START_EVENTS.remove(levelKey)) {
+                fireStarted(level);
             }
-            LOGGER.info("Stopped GameMode: {} in {} (result: {})",
-                    mode.getId(), levelKey.location(), result.getReason());
-            // 审核 A7：与 STARTED 对称地补发结算事件。注册表模式的胜者/参与者集合不可知，
-            // 因此 settlement 只携带模式 ID 与结果原因（winners/participants 均为空集），
-            // 消费方用它做「跨局状态重置」，不要据此发奖。
-            fireRoundEnded(level, mode, result);
+            CoreSpi.invalidateTaskPoolCache(mode.getId());
+            // API-TV-07：用 try/finally 保证 onEnd 抛异常或 Error 时 onCleanup 与 ROUND_ENDED 仍会执行，
+            // 且对 null WinResult 做兜底避免在日志处 NPE 吞掉结算事件。
+            try {
+                try {
+                    mode.onEnd(level, effectiveResult);
+                } catch (Throwable e) {
+                    LOGGER.error("GameMode onEnd failed for {} in {}", mode.getId(), levelKey.location(), e);
+                } finally {
+                    try {
+                        mode.onCleanup(level);
+                    } catch (Throwable cleanupError) {
+                        LOGGER.error("GameMode onCleanup failed for {} in {}", mode.getId(), levelKey.location(), cleanupError);
+                    }
+                }
+                LOGGER.info("Stopped GameMode: {} in {} (result: {})",
+                        mode.getId(), levelKey.location(), effectiveResult.getReason());
+            } finally {
+                try { fireRoundEnded(level, mode, effectiveResult); }
+                finally { CoreSpi.releaseMatch(level); }
+            }
         }
     }
 
@@ -254,12 +299,13 @@ public class GameModeRegistry {
                 continue;
             }
             GameMode mode = ACTIVE_MODES.get(levelKey);
+            UUID session = ACTIVE_SESSIONS.get(levelKey);
             if (mode != null) {
                 try {
                     mode.onTick(level);
-                    if (ACTIVE_MODES.get(levelKey) == mode) {
+                    if (isCurrentSession(levelKey, mode, session)) {
                         Optional<WinResult> result = mode.checkWinCondition(level);
-                        if (result.isPresent() && ACTIVE_MODES.get(levelKey) == mode) {
+                        if (result != null && result.isPresent() && isCurrentSession(levelKey, mode, session)) {
                             stop(level, result.get());
                         }
                     }
@@ -276,6 +322,8 @@ public class GameModeRegistry {
      * This can see passive {@code isActive()} modes even when {@code ACTIVE_MODES} is
      * empty; it does not by itself mean {@link #start} would succeed (SRE occupancy
      * still blocks). {@link #tickAll} never ticks these passive matches.
+     * Off the server thread, returns only an explicit mode or the last server-thread
+     * passive observation (possibly empty/stale), without invoking world callbacks.
      *
      * <p>审核 A4：当同一维度有<b>多个</b>被动模式的 {@code isActive()} 同时为真时，
      * 结果取决于注册顺序（上游 {@code SREOriginalModeBridge} 按扫描顺序注册），
@@ -288,14 +336,33 @@ public class GameModeRegistry {
         ResourceKey<Level> levelKey = level.dimension();
         GameMode explicit = ACTIVE_MODES.get(levelKey);
         if (explicit != null) return Optional.of(explicit);
-        long gameTime = level.getGameTime();
         PassiveLookup cached = PASSIVE_CACHE.get(levelKey);
+        // Passive callbacks and world clocks belong to the server thread. Other
+        // threads may read the last published observation, never query the world.
+        MinecraftServer server = level.getServer();
+        if (server != null && !server.isSameThread()) {
+            return Optional.ofNullable(cached == null ? null : cached.mode);
+        }
+        long gameTime;
+        try {
+            gameTime = level.getGameTime();
+        } catch (Throwable t) {
+            return Optional.empty();
+        }
         if (cached != null && cached.gameTime == gameTime) {
             return Optional.ofNullable(cached.mode);
         }
-        List<GameMode> matches = REGISTRY.values().stream()
-                .filter(m -> m.isActive(level))
-                .toList();
+        Collection<GameMode> snapshot = getAll();
+        List<GameMode> matches = new ArrayList<>();
+        for (GameMode m : snapshot) {
+            try {
+                if (m.isActive(level)) {
+                    matches.add(m);
+                }
+            } catch (Throwable t) {
+                LOGGER.error("GameMode.isActive failed for {} in {}", m.getId(), levelKey.location(), t);
+            }
+        }
         GameMode passive = matches.isEmpty() ? null : matches.get(0);
         if (matches.size() > 1) {
             LOGGER.warn("Multiple passive GameModes are active in {} ({}); '{}' wins by registration order: {}",
@@ -304,6 +371,10 @@ public class GameModeRegistry {
         }
         PASSIVE_CACHE.put(levelKey, new PassiveLookup(gameTime, passive));
         return Optional.ofNullable(passive);
+    }
+
+    private static boolean isCurrentSession(ResourceKey<Level> level, GameMode mode, UUID session) {
+        return ACTIVE_MODES.get(level) == mode && Objects.equals(ACTIVE_SESSIONS.get(level), session);
     }
 
     /**
@@ -340,10 +411,19 @@ public class GameModeRegistry {
     }
 
     public static boolean isRegistered(String fullId) {
-        return REGISTRY.containsKey(fullId);
+        if (fullId == null) {
+            return false;
+        }
+        synchronized (REGISTRY) {
+            return REGISTRY.containsKey(fullId);
+        }
     }
 
-    public static int size() { return REGISTRY.size(); }
+    public static int size() {
+        synchronized (REGISTRY) {
+            return REGISTRY.size();
+        }
+    }
 
     /**
      * Core-lifecycle only: freeze after all entrypoints have registered.
@@ -366,11 +446,25 @@ public class GameModeRegistry {
      */
     static void unfreezeForTests() {
         frozen = false;
+        clearActiveModesInternal();
     }
 
-    /** Drop per-level active/passive tables (call on server stop). */
+    /**
+     * Drop per-level active/passive tables (call on server stop).
+     * API-TV-08：仅允许在 CoreLifecycle 作用域内调用，防止外部模组清空进行中的对局状态表。
+     */
     public static void clearActiveModes() {
+        if (!CoreLifecycle.isActive()) {
+            LOGGER.warn("GameModeRegistry.clearActiveModes() ignored: only habitrain_core server lifecycle may call it");
+            return;
+        }
+        clearActiveModesInternal();
+    }
+
+    private static void clearActiveModesInternal() {
         ACTIVE_MODES.clear();
+        ACTIVE_SESSIONS.clear();
+        PENDING_START_EVENTS.clear();
         PASSIVE_CACHE.clear();
         resetTickGuards();
     }
@@ -393,7 +487,7 @@ public class GameModeRegistry {
             return;
         }
         frozen = false;
-        clearActiveModes();
+        clearActiveModesInternal();
     }
 
     /** @return true if this server tick has not been processed yet and is now marked. */

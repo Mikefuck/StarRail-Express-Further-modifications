@@ -13,9 +13,9 @@ public record DiagnosticReport(Set<String> providers, List<DiagnosticEntry> entr
                                List<DiagnosticAlias> aliases, DiagnosticSnapshot snapshot) {
 
     public DiagnosticReport {
-        Objects.requireNonNull(providers, "providers");
-        Objects.requireNonNull(entries, "entries");
-        Objects.requireNonNull(aliases, "aliases");
+        providers = Set.copyOf(Objects.requireNonNull(providers, "providers"));
+        entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
+        aliases = List.copyOf(Objects.requireNonNull(aliases, "aliases"));
         Objects.requireNonNull(snapshot, "snapshot");
     }
 }

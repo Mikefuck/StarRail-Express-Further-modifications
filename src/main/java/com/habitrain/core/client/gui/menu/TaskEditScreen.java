@@ -3,6 +3,7 @@ package com.habitrain.core.client.gui.menu;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.api.TaskCategory;
 import com.habitrain.core.api.TaskDefinition;
+import com.habitrain.core.config.ConfigManager;
 import com.habitrain.core.config.TaskConfigEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -11,6 +12,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+
+import java.util.Locale;
 
 public class TaskEditScreen extends Screen {
 
@@ -29,8 +32,7 @@ public class TaskEditScreen extends Screen {
     private final boolean remoteEditable;
 
     private double scrollOffset = 0;
-    private boolean draggingScroll = false;
-    private double dragStartY = 0, dragStartOff = 0;
+    private final com.habitrain.core.client.gui.menu.ui.ScrollbarDrag scrollbar = new com.habitrain.core.client.gui.menu.ui.ScrollbarDrag();
     private int contentHeight = 0;
 
     private Button enableBtn;
@@ -57,7 +59,10 @@ public class TaskEditScreen extends Screen {
 
     @Override
     protected void init() {
+        String[] draft = goldField == null ? null : new String[] {goldField.getValue(), emotionField.getValue(),
+                weightField.getValue(), mapEditor.mapField.getValue()};
         super.init();
+        ConfigManager.getInstance().beginClientEditing();
         Font f = font;
 
         enableBtn = Button.builder(makeEnableText(), b -> {
@@ -82,15 +87,21 @@ public class TaskEditScreen extends Screen {
 
         emotionField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         emotionField.setMaxLength(8);
-        if (cfg.hasEmotionReward) emotionField.setValue(String.format("%.2f", cfg.emotionReward));
+        if (cfg.hasEmotionReward) emotionField.setValue(String.format(Locale.ROOT, "%.2f", cfg.emotionReward));
         emotionField.setHint(Component.literal("默认"));
         emotionField.setEditable(remoteEditable);
 
         weightField = new EditBox(f, -10000, -10000, 60, 14, Component.literal(""));
         weightField.setMaxLength(8);
-        if (cfg.hasRefreshWeight) weightField.setValue(String.format("%.1f", cfg.refreshWeight));
+        if (cfg.hasRefreshWeight) weightField.setValue(String.format(Locale.ROOT, "%.1f", cfg.refreshWeight));
         weightField.setHint(Component.literal("默认"));
         weightField.setEditable(remoteEditable);
+        if (draft != null) {
+            goldField.setValue(draft[0]);
+            emotionField.setValue(draft[1]);
+            weightField.setValue(draft[2]);
+            mapEditor.mapField.setValue(draft[3]);
+        }
 
         int centerX = width / 2;
         int btnY = height - FOOTER_H + 6;
@@ -100,9 +111,7 @@ public class TaskEditScreen extends Screen {
                 MenuPermissions.showDeniedMessage();
                 return;
             }
-            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
-            saveController.saveCurrent();
-            TaskSaveController.showMessage("§a✔ 任务「" + def.getDisplayName() + "」已保存！");
+            saveController.syncAndSave(goldField, emotionField, weightField, mapEditor.mapField);
         }).bounds(centerX - 155, btnY, 90, 20).build();
         addRenderableWidget(saveBtn);
 
@@ -111,7 +120,9 @@ public class TaskEditScreen extends Screen {
                 MenuPermissions.showDeniedMessage();
                 return;
             }
-            goBack();
+            if (saveController.syncAndSave(goldField, emotionField, weightField, mapEditor.mapField)) {
+                Minecraft.getInstance().setScreen(parent);
+            }
         }).bounds(centerX - 58, btnY, 100, 20).build();
         addRenderableWidget(saveReturnBtn);
 
@@ -121,6 +132,7 @@ public class TaskEditScreen extends Screen {
                 return;
             }
             saveController.resetDefault();
+            goldField = null;
             clearWidgets();
             init();
         }).bounds(centerX + 50, btnY, 80, 20).build();
@@ -140,6 +152,12 @@ public class TaskEditScreen extends Screen {
         }
 
         recalcContentHeight();
+    }
+
+    @Override
+    public void removed() {
+        ConfigManager.getInstance().endClientEditing();
+        super.removed();
     }
 
     private void recalcContentHeight() {
@@ -184,23 +202,35 @@ public class TaskEditScreen extends Screen {
         int leftW = leftPanelWidth();
         int rightX = rightPanelX();
         int rightW = rightPanelWidth();
-        renderControlPanel(g, mx, my, delta, leftX, bodyTop, leftW, bodyBot - bodyTop);
+        g.enableScissor(leftX, bodyTop, leftX + leftW, bodyBot);
+        try {
+            renderControlPanel(g, mx, my, delta, leftX, bodyTop, leftW, bodyBot - bodyTop);
+        } finally {
+            g.disableScissor();
+        }
 
         g.enableScissor(rightX, bodyTop, rightX + rightW, bodyBot);
-        int contentStartY = bodyTop - (int) scrollOffset;
-        int curY = contentStartY;
-        curY = renderRewardCard(g, mx, my, delta, rightX, curY, rightW);
-        curY += SECTION_GAP;
-        curY = renderMapCard(g, mx, my, delta, rightX, curY, rightW);
-        curY += SECTION_GAP;
-        curY = renderInfoCard(g, rightX, curY, rightW);
-        contentHeight = curY - contentStartY;
+        try {
+            int contentStartY = bodyTop - (int) scrollOffset;
+            int curY = contentStartY;
+            curY = renderRewardCard(g, mx, my, delta, rightX, curY, rightW);
+            curY += SECTION_GAP;
+            curY = renderMapCard(g, mx, my, delta, rightX, curY, rightW);
+            curY += SECTION_GAP;
+            curY = renderInfoCard(g, rightX, curY, rightW);
+            contentHeight = curY - contentStartY;
+        } finally {
+            g.disableScissor();
+        }
 
-        g.disableScissor();
+        for (EditBox field : java.util.List.of(goldField, emotionField, weightField, mapEditor.mapField)) {
+            field.visible = field.getY() >= bodyTop && field.getY() + field.getHeight() <= bodyBot;
+            if (!field.visible) field.setFocused(false);
+        }
 
         int bodyH = getBodyHeight();
         if (contentHeight > bodyH) {
-            int thumbH = Math.max(20, bodyH * bodyH / contentHeight);
+            int thumbH = MenuTheme.scrollbarThumbHeight(bodyH, contentHeight - bodyH);
             int thumbY = bodyTop + (int) ((float) scrollOffset / (contentHeight - bodyH) * (bodyH - thumbH));
             int sx = rightX + rightW - SCROLLBAR_W;
             g.fill(sx, bodyTop, sx + SCROLLBAR_W, bodyBot, MenuTheme.BG_PANEL);
@@ -208,7 +238,8 @@ public class TaskEditScreen extends Screen {
         }
 
         String tip = "颜色/开关会立即写入；联机需 OP，保存后才会改服务端任务池";
-        g.drawString(font, tip, PAD, bodyBot + 9, MenuTheme.TEXT_SECONDARY, false);
+        g.drawString(font, fit(tip, width - 2 * PAD), PAD, height - 10,
+                MenuTheme.TEXT_SECONDARY, false);
     }
 
     private void renderControlPanel(GuiGraphics g, int mx, int my, float delta,
@@ -244,7 +275,7 @@ public class TaskEditScreen extends Screen {
         rowY += 24;
         float effectiveWeight = cfg.hasRefreshWeight ? cfg.refreshWeight : def.getWeight();
         renderFieldRow(g, mx, my, delta, x, rowY, "刷新权重", weightField,
-                String.format("当前 %.1f", effectiveWeight));
+                String.format(Locale.ROOT, "当前 %.1f", effectiveWeight));
         rowY += 24;
 
         return y + cardH;
@@ -263,7 +294,7 @@ public class TaskEditScreen extends Screen {
         String[][] infos = {
                 {"任务名称", def.getDisplayName()}, {"完整 ID", def.getFullId()},
                 {"模组来源", def.getModId()}, {"任务分类", getCategoryName(def.getCategory())},
-                {"默认权重", String.format("%.1f", def.getWeight())},
+                {"默认权重", String.format(Locale.ROOT, "%.1f", def.getWeight())},
                 {"方块类型 ID", def.getBlockTypeId() >= 0 ? String.valueOf(def.getBlockTypeId()) : "无"},
                 {"可直接获胜", def.canDirectlyWin() ? "是" : "否"},
                 {"扫描方块数", String.valueOf(def.getScanBlocks().size())}
@@ -334,8 +365,9 @@ public class TaskEditScreen extends Screen {
 
     private void goBack() {
         if (remoteEditable && MenuPermissions.canEditRemoteConfigs()) {
-            saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField);
-            saveController.saveCurrent();
+            if (saveController.syncFields(goldField, emotionField, weightField, mapEditor.mapField)) {
+                saveController.saveCurrent();
+            }
         }
         Minecraft.getInstance().setScreen(parent);
     }
@@ -373,12 +405,8 @@ public class TaskEditScreen extends Screen {
         int bodyBot = getBodyBottom();
 
         int sx = rightPanelX() + rightPanelWidth() - SCROLLBAR_W;
-        if (mx >= sx && mx < sx + SCROLLBAR_W && my >= bodyTop && my < bodyBot) {
-            draggingScroll = true;
-            dragStartY = my;
-            dragStartOff = scrollOffset;
-            return true;
-        }
+        if (scrollbar.begin(mx, my, button, sx, bodyTop, SCROLLBAR_W,
+                getBodyHeight(), contentHeight, scrollOffset)) return true;
 
         if (my < bodyTop || my >= bodyBot) return false;
 
@@ -400,31 +428,34 @@ public class TaskEditScreen extends Screen {
         if (colorPicker.handleMouseClick(mx, my, button)) return true;
         if (mapEditor.handleMouseClick(mx, my, button)) return true;
 
-        if (mx >= goldField.getX() && mx < goldField.getX() + goldField.getWidth()
+        if (goldField.visible && goldField.active && mx >= goldField.getX() && mx < goldField.getX() + goldField.getWidth()
                 && my >= goldField.getY() && my < goldField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
                 return true;
             }
             goldField.setFocused(true);
+            goldField.mouseClicked(mx, my, button);
             return true;
         }
-        if (mx >= emotionField.getX() && mx < emotionField.getX() + emotionField.getWidth()
+        if (emotionField.visible && emotionField.active && mx >= emotionField.getX() && mx < emotionField.getX() + emotionField.getWidth()
                 && my >= emotionField.getY() && my < emotionField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
                 return true;
             }
             emotionField.setFocused(true);
+            emotionField.mouseClicked(mx, my, button);
             return true;
         }
-        if (mx >= weightField.getX() && mx < weightField.getX() + weightField.getWidth()
+        if (weightField.visible && weightField.active && mx >= weightField.getX() && mx < weightField.getX() + weightField.getWidth()
                 && my >= weightField.getY() && my < weightField.getY() + 14) {
             if (!remoteEditable) {
                 MenuPermissions.showDeniedMessage();
                 return true;
             }
             weightField.setFocused(true);
+            weightField.mouseClicked(mx, my, button);
             return true;
         }
 
@@ -433,28 +464,28 @@ public class TaskEditScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
-        draggingScroll = false;
+        scrollbar.end();
         return super.mouseReleased(mx, my, button);
     }
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
-        if (draggingScroll) {
-            int bodyH = getBodyHeight();
-            double scale = (double) (contentHeight - bodyH) / Math.max(1, bodyH - 20);
-            scrollOffset = dragStartOff + (my - dragStartY) * scale;
-            clampScroll();
+        if (scrollbar.isDragging()) {
+            scrollOffset = scrollbar.offset(my, getBodyHeight(), contentHeight);
             return true;
         }
+
         return super.mouseDragged(mx, my, button, dx, dy);
     }
 
     @Override
     public boolean keyPressed(int key, int sc, int mod) {
-        if (goldField.isFocused() && goldField.keyPressed(key, sc, mod)) return true;
-        if (emotionField.isFocused() && emotionField.keyPressed(key, sc, mod)) return true;
-        if (weightField.isFocused() && weightField.keyPressed(key, sc, mod)) return true;
-        if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyPressed(key, sc, mod)) return true;
+        if (key == 258 && new com.habitrain.core.client.gui.menu.ui.EditBoxInputRouter(
+                goldField, emotionField, weightField, mapEditor.mapField).keyPressed(key, sc, mod)) return true;
+        if (goldField.visible && goldField.active && goldField.isFocused() && goldField.keyPressed(key, sc, mod)) return true;
+        if (emotionField.visible && emotionField.active && emotionField.isFocused() && emotionField.keyPressed(key, sc, mod)) return true;
+        if (weightField.visible && weightField.active && weightField.isFocused() && weightField.keyPressed(key, sc, mod)) return true;
+        if (mapEditor.mapField.visible && mapEditor.mapField.active && mapEditor.mapField.isFocused() && mapEditor.mapField.keyPressed(key, sc, mod)) return true;
 
         if (key == 256) {
             goBack();
@@ -465,19 +496,19 @@ public class TaskEditScreen extends Screen {
 
     @Override
     public boolean charTyped(char ch, int mod) {
-        if (goldField.isFocused() && goldField.charTyped(ch, mod)) return true;
-        if (emotionField.isFocused() && emotionField.charTyped(ch, mod)) return true;
-        if (weightField.isFocused() && weightField.charTyped(ch, mod)) return true;
-        if (mapEditor.mapField.isFocused() && mapEditor.mapField.charTyped(ch, mod)) return true;
+        if (goldField.visible && goldField.active && goldField.isFocused() && goldField.charTyped(ch, mod)) return true;
+        if (emotionField.visible && emotionField.active && emotionField.isFocused() && emotionField.charTyped(ch, mod)) return true;
+        if (weightField.visible && weightField.active && weightField.isFocused() && weightField.charTyped(ch, mod)) return true;
+        if (mapEditor.mapField.visible && mapEditor.mapField.active && mapEditor.mapField.isFocused() && mapEditor.mapField.charTyped(ch, mod)) return true;
         return super.charTyped(ch, mod);
     }
 
     @Override
     public boolean keyReleased(int key, int sc, int mod) {
-        if (goldField.isFocused() && goldField.keyReleased(key, sc, mod)) return true;
-        if (emotionField.isFocused() && emotionField.keyReleased(key, sc, mod)) return true;
-        if (weightField.isFocused() && weightField.keyReleased(key, sc, mod)) return true;
-        if (mapEditor.mapField.isFocused() && mapEditor.mapField.keyReleased(key, sc, mod)) return true;
+        if (goldField.visible && goldField.active && goldField.isFocused() && goldField.keyReleased(key, sc, mod)) return true;
+        if (emotionField.visible && emotionField.active && emotionField.isFocused() && emotionField.keyReleased(key, sc, mod)) return true;
+        if (weightField.visible && weightField.active && weightField.isFocused() && weightField.keyReleased(key, sc, mod)) return true;
+        if (mapEditor.mapField.visible && mapEditor.mapField.active && mapEditor.mapField.isFocused() && mapEditor.mapField.keyReleased(key, sc, mod)) return true;
         return super.keyReleased(key, sc, mod);
     }
 }

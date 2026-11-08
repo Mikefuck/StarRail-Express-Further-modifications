@@ -69,8 +69,9 @@ public final class SceneAssetBuildProgressS2C implements CustomPacketPayload {
 
     private static String readString(ByteBuf buf) {
         int len = buf.readInt();
-        if (len <= 0) return "";
-        if (len > 32767) throw new DecoderException("String too long: " + len);
+        if (len < 0) throw new DecoderException("Negative string length: " + len);
+        if (len == 0) return "";
+        if (len > 32767 || len > buf.readableBytes()) throw new DecoderException("String too long: " + len);
         byte[] bytes = new byte[len];
         buf.readBytes(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

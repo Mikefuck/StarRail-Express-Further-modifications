@@ -308,6 +308,7 @@ public final class WrathComponent implements RoleComponent, ServerTickingCompone
         berserkActive = false;
         if (player instanceof ServerPlayer self) {
             updateKnockbackImmunity(self, false);
+            sync(self);
         }
     }
 

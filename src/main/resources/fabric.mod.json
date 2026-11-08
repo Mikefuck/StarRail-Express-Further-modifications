@@ -6,7 +6,10 @@
     "name": "哈比列车核心 (HabiTrain Core)",
     "description": "哈比列车游戏框架与任务系统API模组",
     "authors": ["HabiTrain"],
-    "contact": { "homepage": "https://github.com/" },
+    "contact": {
+        "homepage": "https://github.com/Mikefuck/StarRail-Express-Further-modifications",
+        "sources": "https://github.com/Mikefuck/StarRail-Express-Further-modifications.git"
+    },
     "license": "GPL-3.0",
     "icon": "assets/habitrain_core/icon.png",
     "environment": "*",
@@ -19,8 +22,7 @@
             "com.habitrain.core.game.sre.role.sins.SlothVoicePlugin",
             "com.habitrain.core.role.capability.RoleVoiceCapabilityPlugin"
         ],
-        "habitrain:role_extensions": ["com.habitrain.core.role.extension.CoreRoleExtensionProvider"],
-        "habitrain:role_client_extensions": []
+        "habitrain:role_extensions": ["com.habitrain.core.role.extension.CoreRoleExtensionProvider"]
     },
     "custom": {
         "habitrain_core:api_version": "2.3",

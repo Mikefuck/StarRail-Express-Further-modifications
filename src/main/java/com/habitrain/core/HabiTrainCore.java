@@ -90,6 +90,7 @@ public class HabiTrainCore implements ModInitializer {
         // 由 CoreRoleExtensionProvider 经 role_extensions entrypoint 注册，并回填
         // HabiRoles.CRIME_SCAPEGOAT，供 HabiRoleEvents.init() 读取。
         com.habitrain.core.role.extension.RoleExtensionRegistry.init();
+        // Core bootstrap owns the scope; provider construction/callbacks suspend it at their boundary.
         com.habitrain.core.internal.CoreLifecycleScope.run(() ->
                 com.habitrain.core.api.role.v2.RoleExtensionApi.instance().loadProviders());
         // MODIFY relation patches are linked only when a compiled lobby/round
@@ -156,18 +157,15 @@ public class HabiTrainCore implements ModInitializer {
                         return java.util.List.of();
                     }
                     java.util.LinkedHashSet<java.util.UUID> ids = new java.util.LinkedHashSet<>();
-                    // Actual server-side entity trackers (players receiving the
-                    // target entity's tracking packets).
-                    for (net.minecraft.server.level.ServerPlayer observer
-                            : net.fabricmc.fabric.api.networking.v1.PlayerLookup.tracking(target)) {
-                        ids.add(observer.getUUID());
-                    }
+                    // ROLE-RT-13：仅向正以旁观视角附身观察目标玩家的旁观者同步 FOLLOWERS 角色状态，
+                    // 绝不可包含 PlayerLookup.tracking(target)（64m 内所有存活玩家），否则会把目标的
+                    // 私有角色 HUD 状态广播给周围存活玩家造成严重作弊情报泄露。
                     for (net.minecraft.server.level.ServerPlayer p : server.getPlayerList().getPlayers()) {
-                        // Spectator camera followers may not be present in the
-                        // ordinary tracking set, so retain that compatibility path.
-                        net.minecraft.world.entity.Entity camera = p.getCamera();
-                        if (camera != null && playerId.equals(camera.getUUID())) {
-                            ids.add(p.getUUID());
+                        if (p != target && p.isSpectator()) {
+                            net.minecraft.world.entity.Entity camera = p.getCamera();
+                            if (camera != null && playerId.equals(camera.getUUID())) {
+                                ids.add(p.getUUID());
+                            }
                         }
                     }
                     return ids;

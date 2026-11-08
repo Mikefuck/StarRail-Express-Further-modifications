@@ -193,16 +193,39 @@ class RoleChangeTransactionTest {
     // helpers
     // ------------------------------------------------------------------
 
+    @Test
+    void failedSnapshotStopsAssignmentBeforeAnyMutationOrRollback() {
+        backend.captureFailure = new IllegalStateException("snapshot unavailable");
+        var result = tx.assign(fake, ROLE, RoleChangeCause.ASSIGN, false, true, true);
+        assertFalse(result.success());
+        assertEquals(RoleChangeTransaction.Stage.CAPTURE, result.failedStage());
+        assertEquals("snapshot unavailable", result.message());
+        assertTrue(backend.mutatedStages.isEmpty());
+        assertFalse(backend.rolledBack);
+    }
+
+    @Test
+    void failedSnapshotStopsRemovalBeforeAnyMutationOrRollback() {
+        backend.captureFailure = new IllegalStateException("snapshot unavailable");
+        var result = tx.remove(fake, RoleChangeCause.REMOVE);
+        assertFalse(result.success());
+        assertEquals(RoleChangeTransaction.Stage.CAPTURE, result.failedStage());
+        assertTrue(backend.mutatedStages.isEmpty());
+        assertFalse(backend.rolledBack);
+    }
+
     /** Records which mutation stages ran and whether rollback was invoked. */
     static class FakeBackend implements RoleChangeTransaction.Backend<Actor> {
 
         final List<RoleChangeTransaction.Stage> mutatedStages = new ArrayList<>();
         boolean rolledBack;
+        RuntimeException captureFailure;
         RoleChangeTransaction.Captured rollbackCaptured = RoleChangeTransaction.Captured.none();
         RoleChangeTransaction.Captured captured = new RoleChangeTransaction.Captured(OLD_ROLE, "GOOD");
 
         @Override
         public RoleChangeTransaction.Captured capture(Actor actor) {
+            if (captureFailure != null) throw captureFailure;
             return captured;
         }
 

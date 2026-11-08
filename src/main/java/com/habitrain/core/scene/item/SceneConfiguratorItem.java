@@ -135,6 +135,9 @@ public final class SceneConfiguratorItem extends Item {
         }
         SceneProfile profile = sceneSettings.getBackgroundProfile(mapKey, backgroundId);
         var selectionSession = sessions.getSession(player.getUUID());
+        if (sessions.consumePendingClearSync(player.getUUID())) {
+            ServerPlayNetworking.send(player, SceneSelectionStateS2C.cleared(dimKey, mapKey));
+        }
         boolean selectionInDimension = selectionSession != null
                 && dimKey.equals(selectionSession.getDimension());
         String selectionMapKey = selectionInDimension ? selectionSession.getMapKey() : "";

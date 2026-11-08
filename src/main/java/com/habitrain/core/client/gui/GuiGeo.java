@@ -6,7 +6,7 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
-import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexBuffer;
 import net.minecraft.client.gui.GuiGraphics;
@@ -27,7 +27,9 @@ import org.joml.Matrix4f;
  */
 final class GuiGeo {
     private final Matrix4f pose;
-    private final BufferBuilder buffer;
+    private float[] positions = new float[128];
+    private int[] colors = new int[64];
+    private int vertexCount;
     private final boolean additive;
 
     private GuiGeo(GuiGraphics g, boolean additive) {
@@ -37,7 +39,6 @@ final class GuiGeo {
     private GuiGeo(Matrix4f pose, boolean additive) {
         this.pose = new Matrix4f(pose);
         this.additive = additive;
-        this.buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
     }
 
     /** Build local-space geometry once, for upload into a screen-owned cached mesh. */
@@ -56,44 +57,44 @@ final class GuiGeo {
 
         void upload(GuiGeo geometry) {
             close();
-            MeshData data = geometry.buffer.build();
-            if (data == null) return;
-            VertexBuffer next = new VertexBuffer(VertexBuffer.Usage.STATIC);
-            try {
-                next.bind();
-                next.upload(data); // VertexBuffer owns/closes MeshData after upload.
-                vertices = next;
-            } catch (RuntimeException | Error e) {
-                next.close();
-                throw e;
-            } finally {
-                VertexBuffer.unbind();
+            try (ByteBufferBuilder bytes = new ByteBufferBuilder(Math.max(256, geometry.vertexCount * 16))) {
+                MeshData data = geometry.build(bytes);
+                if (data == null) return;
+                VertexBuffer next = new VertexBuffer(VertexBuffer.Usage.STATIC);
+                try (data) {
+                    next.bind();
+                    next.upload(data);
+                    vertices = next;
+                } catch (RuntimeException | Error failure) {
+                    next.close();
+                    throw failure;
+                } finally {
+                    VertexBuffer.unbind();
+                }
             }
         }
 
         void draw(GuiGraphics g, float alpha, boolean additive) {
             if (vertices == null || alpha <= 0.01f) return;
             g.flush();
-            RenderSystem.enableBlend();
-            if (additive) {
-                RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
-            } else {
-                RenderSystem.defaultBlendFunc();
-            }
-            RenderSystem.disableCull();
-            RenderSystem.disableDepthTest();
-            RenderSystem.setShaderColor(1, 1, 1, alpha);
-            RenderSystem.setShader(GameRenderer::getPositionColorShader);
-            try {
-                vertices.bind();
-                modelView.set(RenderSystem.getModelViewMatrix()).mul(g.pose().last().pose());
-                vertices.drawWithShader(modelView, RenderSystem.getProjectionMatrix(), RenderSystem.getShader());
-            } finally {
-                VertexBuffer.unbind();
-                RenderSystem.setShaderColor(1, 1, 1, 1);
-                RenderSystem.enableCull();
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableBlend();
+            try (var stateGuard = com.habitrain.core.client.render.ClientRenderState.capture()) {
+                RenderSystem.enableBlend();
+                if (additive) {
+                    RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+                } else {
+                    RenderSystem.defaultBlendFunc();
+                }
+                RenderSystem.disableCull();
+                RenderSystem.disableDepthTest();
+                RenderSystem.setShaderColor(1, 1, 1, alpha);
+                RenderSystem.setShader(GameRenderer::getPositionColorShader);
+                try {
+                    vertices.bind();
+                    modelView.set(RenderSystem.getModelViewMatrix()).mul(g.pose().last().pose());
+                    vertices.drawWithShader(modelView, RenderSystem.getProjectionMatrix(), RenderSystem.getShader());
+                } finally {
+                    VertexBuffer.unbind();
+                }
             }
         }
 
@@ -119,30 +120,50 @@ final class GuiGeo {
     }
 
     void end() {
-        MeshData mesh = buffer.build();
-        if (mesh == null) {
-            return;
+        try (var stateGuard = com.habitrain.core.client.render.ClientRenderState.capture();
+             ByteBufferBuilder bytes = new ByteBufferBuilder(Math.max(256, vertexCount * 16))) {
+            MeshData mesh = build(bytes);
+            if (mesh == null) return;
+            RenderSystem.enableBlend();
+            if (additive) {
+                RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+            } else {
+                RenderSystem.defaultBlendFunc();
+            }
+            RenderSystem.disableCull();
+            RenderSystem.disableDepthTest();
+            RenderSystem.setShaderColor(1, 1, 1, 1);
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            try {
+                BufferUploader.drawWithShader(mesh);
+                mesh = null;
+            } finally {
+                if (mesh != null) mesh.close();
+            }
         }
-        RenderSystem.enableBlend();
-        if (additive) {
-            RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
-        } else {
-            RenderSystem.defaultBlendFunc();
-        }
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        BufferUploader.drawWithShader(mesh);
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
     }
 
     // ==================== 基本图元 ====================
 
     private void vertex(float x, float y, int color) {
-        buffer.addVertex(pose, x, y, 0.0f).setColor(color);
+        if (!Float.isFinite(x) || !Float.isFinite(y)) throw new IllegalArgumentException("Non-finite GUI vertex");
+        if (vertexCount == colors.length) {
+            colors = java.util.Arrays.copyOf(colors, colors.length * 2);
+            positions = java.util.Arrays.copyOf(positions, positions.length * 2);
+        }
+        positions[vertexCount * 2] = x;
+        positions[vertexCount * 2 + 1] = y;
+        colors[vertexCount++] = color;
+    }
+
+    private MeshData build(ByteBufferBuilder bytes) {
+        if (vertexCount == 0) return null;
+        if (vertexCount % 4 != 0) throw new IllegalStateException("Incomplete GUI quad");
+        BufferBuilder builder = new BufferBuilder(bytes, VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        for (int i = 0; i < vertexCount; i++) {
+            builder.addVertex(pose, positions[i * 2], positions[i * 2 + 1], 0).setColor(colors[i]);
+        }
+        return builder.build();
     }
 
     /** 凸四边形，顶点按周长顺序给出（顺/逆时针均可）。 */

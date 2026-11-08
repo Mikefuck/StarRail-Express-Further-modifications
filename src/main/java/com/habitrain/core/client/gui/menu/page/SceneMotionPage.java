@@ -4,6 +4,7 @@ import com.habitrain.core.client.gui.menu.ConfigMenuScreen;
 import com.habitrain.core.client.gui.menu.ConfigPage;
 import com.habitrain.core.client.gui.menu.MenuTheme;
 import com.habitrain.core.client.gui.menu.ui.PillToggle;
+import com.habitrain.core.client.gui.menu.ui.FocusCycle;
 import com.habitrain.core.client.gui.menu.ui.SceneAngleDial;
 import com.habitrain.core.client.gui.menu.ui.SceneMapDropdown;
 import com.habitrain.core.client.gui.menu.ui.SceneRangePreview;
@@ -55,7 +56,7 @@ public class SceneMotionPage implements ConfigPage {
     private final SceneMapDropdown backgroundDropdown;
     private final SceneMotionEditorState editorState = new SceneMotionEditorState();
 
-    private String selectedMapKey = "__default__";
+    private String selectedMapKey = com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY;
     private String runtimeMapKey = "";
     private String selectionMapKey = "";
     private String selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
@@ -231,6 +232,35 @@ public class SceneMotionPage implements ConfigPage {
         lastSelectedMapKey = normalizedMap;
     }
 
+    public boolean hasSessionContext() {
+        return !runtimeMapKey.isBlank() || !selectionMapKey.isBlank()
+                || !currentSessionBounds.isEmpty() || currentAssetDescriptor().isValid();
+    }
+
+    public String getSelectedMapKey() {
+        return selectedMapKey;
+    }
+
+    public String getSelectedBackgroundId() {
+        return selectedBackgroundId;
+    }
+
+    public String getRuntimeMapKey() {
+        return runtimeMapKey;
+    }
+
+    public String getSelectionMapKey() {
+        return selectionMapKey;
+    }
+
+    public SceneBounds getCurrentSessionBounds() {
+        return currentSessionBounds;
+    }
+
+    public SceneAssetDescriptor getCurrentDescriptor() {
+        return currentAssetDescriptor();
+    }
+
     private SceneProfileDraft getCurrentDraft() {
         if (SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)) {
             return editorState.drafts().computeIfAbsent(selectedMapKey, k -> new SceneProfileDraft());
@@ -260,8 +290,10 @@ public class SceneMotionPage implements ConfigPage {
     private void selectMap(String mapKey) {
         if (mapKey == null || mapKey.isBlank() || mapKey.equals(selectedMapKey)
                 || !availableMapKeys().contains(mapKey)) return;
-        if (widgetsInitialized && !loopDistanceValidation().isValid()) {
-            showClientMessage("screen.habitrain_core.scene_motion.message_fix_loop_distance");
+        if (widgetsInitialized && !isSaveAllowed()) {
+            showClientMessage(motionMode == SceneMotionMode.ORBIT
+                    ? "screen.habitrain_core.scene_motion.message_fix_orbit_fields"
+                    : "screen.habitrain_core.scene_motion.message_fix_loop_distance");
             return;
         }
         flushPending();
@@ -280,9 +312,8 @@ public class SceneMotionPage implements ConfigPage {
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        editorState.drafts().computeIfAbsent(selectedMapKey,
-                key -> new SceneProfileDraft(settings.getProfile(
-                        SceneMotionSettings.DEFAULT_MAP_KEY).copyForNewProfile()));
+        editorState.ensureInheritedDraft(selectedMapKey, settings.getProfile(
+                SceneMotionSettings.DEFAULT_MAP_KEY).copyForNewProfile());
         populateFieldsFromDraft();
     }
 
@@ -335,12 +366,13 @@ public class SceneMotionPage implements ConfigPage {
         int suffix = 1;
         String id;
         do id = "background_" + suffix++; while (mapDrafts.containsKey(id));
+        int assignedNumber = suffix - 1;
         SceneProfile template = getSharedDraft().toProfile().copyForNewProfile();
         template.setEnabled(false);
         template.setSourceBounds(SceneBounds.EMPTY);
         mapDrafts.put(id, new SceneProfileDraft(template));
         editorState.backgroundNames().computeIfAbsent(selectedMapKey, ignored -> new LinkedHashMap<>())
-                .put(id, tr("screen.habitrain_core.scene_motion.background_new", availableBackgroundIds().size() + 1));
+                .put(id, tr("screen.habitrain_core.scene_motion.background_new", assignedNumber));
         selectedBackgroundId = id;
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
@@ -349,7 +381,6 @@ public class SceneMotionPage implements ConfigPage {
 
     private void deleteBackground() {
         if (!editable || SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)) return;
-        String deletedAssetKey = currentAssetKey();
         if (SceneRenderRuntime.getInstance().isPreviewActiveFor(currentAssetKey())) {
             com.habitrain.core.scene.client.SceneClientRuntime.stopPreview();
         }
@@ -357,7 +388,6 @@ public class SceneMotionPage implements ConfigPage {
         LinkedHashMap<String, String> mapNames = editorState.backgroundNames().get(selectedMapKey);
         if (mapDrafts != null) mapDrafts.remove(selectedBackgroundId);
         if (mapNames != null) mapNames.remove(selectedBackgroundId);
-        editorState.pendingDeletedAssetKeys().add(deletedAssetKey);
         selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
@@ -467,7 +497,7 @@ public class SceneMotionPage implements ConfigPage {
         for (EditBox field : inputFields) {
             field.setEditable(editable);
             if (field != soundIdField) {
-                field.setMaxLength(32);
+                field.setMaxLength(384);
                 field.setFilter(SceneMotionFieldParser::isPotentialDecimal);
             }
         }
@@ -493,33 +523,33 @@ public class SceneMotionPage implements ConfigPage {
             backgroundNameField.setEditable(editable && !SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId));
         }
         enabledState = d.isEnabled();
-        speedField.setValue(String.format(Locale.ROOT, "%.2f", d.getSpeedBlocksPerSecond()));
+        speedField.setValue(SceneMotionFieldParser.formatInput(d.getSpeedBlocksPerSecond()));
 
         double[] dir = d.getDirection();
-        dirXField.setValue(String.format(Locale.ROOT, "%.2f", dir[0]));
-        dirYField.setValue(String.format(Locale.ROOT, "%.2f", dir[1]));
-        dirZField.setValue(String.format(Locale.ROOT, "%.2f", dir[2]));
+        dirXField.setValue(SceneMotionFieldParser.formatInput(dir[0]));
+        dirYField.setValue(SceneMotionFieldParser.formatInput(dir[1]));
+        dirZField.setValue(SceneMotionFieldParser.formatInput(dir[2]));
 
         double[] origin = d.getDisplayOrigin();
-        originXField.setValue(String.format(Locale.ROOT, "%.1f", origin[0]));
-        originYField.setValue(String.format(Locale.ROOT, "%.1f", origin[1]));
-        originZField.setValue(String.format(Locale.ROOT, "%.1f", origin[2]));
+        originXField.setValue(SceneMotionFieldParser.formatInput(origin[0]));
+        originYField.setValue(SceneMotionFieldParser.formatInput(origin[1]));
+        originZField.setValue(SceneMotionFieldParser.formatInput(origin[2]));
 
         double[] pivot = d.getPivotLocal();
-        pivotXField.setValue(String.format(Locale.ROOT, "%.1f", pivot[0]));
-        pivotYField.setValue(String.format(Locale.ROOT, "%.1f", pivot[1]));
-        pivotZField.setValue(String.format(Locale.ROOT, "%.1f", pivot[2]));
+        pivotXField.setValue(SceneMotionFieldParser.formatInput(pivot[0]));
+        pivotYField.setValue(SceneMotionFieldParser.formatInput(pivot[1]));
+        pivotZField.setValue(SceneMotionFieldParser.formatInput(pivot[2]));
 
         SceneRotation rot = d.getRotationDegrees();
-        rotYawField.setValue(String.format(Locale.ROOT, "%.1f", rot.yawDegrees()));
-        rotPitchField.setValue(String.format(Locale.ROOT, "%.1f", rot.pitchDegrees()));
-        rotRollField.setValue(String.format(Locale.ROOT, "%.1f", rot.rollDegrees()));
+        rotYawField.setValue(SceneMotionFieldParser.formatInput(rot.yawDegrees()));
+        rotPitchField.setValue(SceneMotionFieldParser.formatInput(rot.pitchDegrees()));
+        rotRollField.setValue(SceneMotionFieldParser.formatInput(rot.rollDegrees()));
 
-        phaseOffsetField.setValue(String.format(Locale.ROOT, "%.1f", d.getPhaseOffsetBlocks()));
+        phaseOffsetField.setValue(SceneMotionFieldParser.formatInput(d.getPhaseOffsetBlocks()));
 
         loopState = d.getLoop().isEnabled();
         loopDistanceMode = d.getLoop().getDistanceMode();
-        loopDistField.setValue(String.format(Locale.ROOT, "%.1f", d.getLoop().getDistanceBlocks()));
+        loopDistField.setValue(SceneMotionFieldParser.formatInput(d.getLoop().getDistanceBlocks()));
 
         motionMode = d.getMotionMode();
         SceneOrbitSettings orbit = d.getOrbit();
@@ -530,31 +560,31 @@ public class SceneMotionPage implements ConfigPage {
 
         if (orbitCenterMode == SceneOrbitCenterMode.MODEL_CENTER) {
             double derivedAngle = SceneOrbitMath.resolveStartAngle(d.toProfile());
-            orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", derivedAngle));
+            orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(derivedAngle));
         } else {
-            orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", orbit.getStartAngleDegrees()));
+            orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(orbit.getStartAngleDegrees()));
         }
-        orbitSweepField.setValue(String.format(Locale.ROOT, "%.1f", orbit.getSweepDegrees()));
-        orbitSpeedField.setValue(String.format(Locale.ROOT, "%.1f", orbit.getAngularSpeedDegreesPerSecond()));
-        orbitVerticalBobField.setValue(String.format(Locale.ROOT, "%.2f", orbit.getVerticalBobAmplitudeBlocks()));
-        orbitRadialBobField.setValue(String.format(Locale.ROOT, "%.2f", orbit.getRadialBobAmplitudeBlocks()));
-        orbitBobCyclesField.setValue(String.format(Locale.ROOT, "%.2f", orbit.getBobCyclesPerSecond()));
+        orbitSweepField.setValue(SceneMotionFieldParser.formatInput(orbit.getSweepDegrees()));
+        orbitSpeedField.setValue(SceneMotionFieldParser.formatInput(orbit.getAngularSpeedDegreesPerSecond()));
+        orbitVerticalBobField.setValue(SceneMotionFieldParser.formatInput(orbit.getVerticalBobAmplitudeBlocks()));
+        orbitRadialBobField.setValue(SceneMotionFieldParser.formatInput(orbit.getRadialBobAmplitudeBlocks()));
+        orbitBobCyclesField.setValue(SceneMotionFieldParser.formatInput(orbit.getBobCyclesPerSecond()));
         orbitInstanceCountField.setValue(Integer.toString(orbit.getInstanceCount()));
-        orbitInstanceSpreadField.setValue(String.format(Locale.ROOT, "%.1f", orbit.getInstanceSpreadDegrees()));
+        orbitInstanceSpreadField.setValue(SceneMotionFieldParser.formatInput(orbit.getInstanceSpreadDegrees()));
 
         translucentState = d.getRender().isRenderTranslucent();
-        renderMaxDistField.setValue(String.valueOf(d.getRender().getMaxDistanceBlocks()));
+        renderMaxDistField.setValue(SceneMotionFieldParser.formatInput(d.getRender().getMaxDistanceBlocks()));
 
         SceneProfileDraft shared = getSharedDraft();
         soundIdField.setValue(shared.getOutsideSound().getSoundId());
         soundState = shared.getOutsideSound().isEnabled();
-        soundVolField.setValue(String.format(Locale.ROOT, "%.2f", shared.getOutsideSound().getVolume()));
-        soundPitchField.setValue(String.format(Locale.ROOT, "%.2f", shared.getOutsideSound().getPitch()));
+        soundVolField.setValue(SceneMotionFieldParser.formatInput(shared.getOutsideSound().getVolume()));
+        soundPitchField.setValue(SceneMotionFieldParser.formatInput(shared.getOutsideSound().getPitch()));
 
         shakeState = shared.getShake().isEnabled();
-        shakeFreqField.setValue(String.format(Locale.ROOT, "%.1f", shared.getShake().getFrequencyHz()));
-        shakeAmpField.setValue(String.format(Locale.ROOT, "%.3f", shared.getShake().getTranslationAmplitudeBlocks()));
-        shakeRotAmpField.setValue(String.format(Locale.ROOT, "%.2f", shared.getShake().getRotationAmplitudeDegrees()));
+        shakeFreqField.setValue(SceneMotionFieldParser.formatInput(shared.getShake().getFrequencyHz()));
+        shakeAmpField.setValue(SceneMotionFieldParser.formatInput(shared.getShake().getTranslationAmplitudeBlocks()));
+        shakeRotAmpField.setValue(SceneMotionFieldParser.formatInput(shared.getShake().getRotationAmplitudeDegrees()));
     }
 
     @Override
@@ -598,7 +628,7 @@ public class SceneMotionPage implements ConfigPage {
         SceneProfileValidator.LoopDistanceValidation loopValidation = loopDistanceValidation();
         if (loopValidation.isValid()) {
             d.setLoop(new SceneLoopSettings(loopState, loopDistanceMode,
-                    loopValidation.value(), SceneLoopSettings.DEFAULT_COPIES));
+                    loopValidation.value(), d.getLoop().getCopies()));
         }
 
         d.setMotionMode(motionMode);
@@ -650,7 +680,7 @@ public class SceneMotionPage implements ConfigPage {
                 soundIdField.getValue().trim(),
                 (float) SceneMotionFieldParser.parseDouble(soundVolField.getValue(), 1.0),
                 (float) SceneMotionFieldParser.parseDouble(soundPitchField.getValue(), 1.0),
-                20
+                shared.getOutsideSound().getFadeTicks()
         ));
 
         shared.setShake(new SceneShakeSettings(
@@ -659,6 +689,46 @@ public class SceneMotionPage implements ConfigPage {
                 SceneMotionFieldParser.parseDouble(shakeRotAmpField.getValue(), 0.15),
                 SceneMotionFieldParser.parseDouble(shakeFreqField.getValue(), 4.0)
         ));
+        if (editable && isSaveAllowed()) {
+            commitDraftsToSettings(false);
+        }
+    }
+
+    private void commitDraftsToSettings(boolean forceMarkDirty) {
+        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
+        boolean changed = forceMarkDirty;
+        for (Map.Entry<String, SceneProfileDraft> e : editorState.drafts().entrySet()) {
+            SceneProfile next = e.getValue().toProfile();
+            if (!settings.profiles.containsKey(e.getKey()) && !editorState.shouldPersist(e.getKey(), next)) continue;
+            SceneProfile prev = settings.profiles.put(e.getKey(), next);
+            if (!Objects.equals(prev, next)) {
+                changed = true;
+            }
+        }
+        Map<String, LinkedHashMap<String, SceneBackgroundConfig>> nextBackgrounds = new LinkedHashMap<>();
+        for (Map.Entry<String, LinkedHashMap<String, SceneProfileDraft>> mapEntry : editorState.backgroundDrafts().entrySet()) {
+            LinkedHashMap<String, SceneBackgroundConfig> mapConfigs = new LinkedHashMap<>();
+            for (Map.Entry<String, SceneProfileDraft> entry : mapEntry.getValue().entrySet()) {
+                String name = editorState.backgroundNames().getOrDefault(mapEntry.getKey(), new LinkedHashMap<>())
+                        .getOrDefault(entry.getKey(), entry.getKey());
+                mapConfigs.put(entry.getKey(), new SceneBackgroundConfig(name, entry.getValue().toProfile()));
+            }
+            if (!mapConfigs.isEmpty()) {
+                nextBackgrounds.put(mapEntry.getKey(), mapConfigs);
+            }
+        }
+        if (!Objects.equals(settings.backgrounds, nextBackgrounds)) {
+            changed = true;
+        }
+        settings.backgrounds.clear();
+        for (Map.Entry<String, LinkedHashMap<String, SceneBackgroundConfig>> mapEntry : nextBackgrounds.entrySet()) {
+            for (Map.Entry<String, SceneBackgroundConfig> entry : mapEntry.getValue().entrySet()) {
+                settings.putBackground(mapEntry.getKey(), entry.getKey(), entry.getValue());
+            }
+        }
+        if (changed) {
+            ConfigManager.getInstance().markSceneMotionDirty();
+        }
     }
 
     public void applyPlacedOrbitCenter(double x, double y, double z) {
@@ -804,6 +874,20 @@ public class SceneMotionPage implements ConfigPage {
         shakeFreqField.setEditable(sharedEditable && shakeState);
         shakeAmpField.setEditable(sharedEditable && shakeState);
         shakeRotAmpField.setEditable(sharedEditable && shakeState);
+
+        if (!isLinear || !loopState) {
+            loopKeyboardFocus = -1;
+            rangeSliderDragging = false;
+        }
+        if (!isOrbit || orbitCenterMode != SceneOrbitCenterMode.WORLD_BLOCK) {
+            orbitDialFocused = false;
+            orbitDialDragging = false;
+        }
+        for (EditBox field : inputFields) {
+            if (field.isFocused() && !isFieldAvailable(field)) {
+                field.setFocused(false);
+            }
+        }
     }
 
     @Override
@@ -817,23 +901,8 @@ public class SceneMotionPage implements ConfigPage {
             return;
         }
         flushPending();
-        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        for (Map.Entry<String, SceneProfileDraft> e : editorState.drafts().entrySet()) {
-            settings.profiles.put(e.getKey(), e.getValue().toProfile());
-        }
-        settings.backgrounds.clear();
-        for (Map.Entry<String, LinkedHashMap<String, SceneProfileDraft>> mapEntry : editorState.backgroundDrafts().entrySet()) {
-            for (Map.Entry<String, SceneProfileDraft> entry : mapEntry.getValue().entrySet()) {
-                String name = editorState.backgroundNames().getOrDefault(mapEntry.getKey(), new LinkedHashMap<>())
-                        .getOrDefault(entry.getKey(), entry.getKey());
-                settings.putBackground(mapEntry.getKey(), entry.getKey(),
-                        new SceneBackgroundConfig(name, entry.getValue().toProfile()));
-            }
-        }
+        commitDraftsToSettings(true);
         SceneRenderRuntime.getInstance().updatePreviewProfile(currentAssetKey(), getCurrentDraft().toProfile());
-        ConfigManager.getInstance().markSceneMotionDirty();
-        // Asset deletion belongs to the server's successful configuration commit.
-        editorState.pendingDeletedAssetKeys().clear();
         int backgroundCount = editorState.backgroundDrafts().values().stream().mapToInt(Map::size).sum();
         LOGGER.info("已更新移动场景草稿: {} 个地图，{} 个附加动态背景", editorState.drafts().size(), backgroundCount);
     }
@@ -987,12 +1056,13 @@ public class SceneMotionPage implements ConfigPage {
         scroll.setBounds(x, contentTop, w, contentViewportHeight);
         scroll.setContentHeight(Math.max(renderedContentHeight, contentViewportHeight));
 
-        g.enableScissor(x + 2, contentTop, x + w - 7, contentTop + contentViewportHeight);
         int innerWidth = Math.max(1, Math.min(620, w - PAGE_PADDING * 2 - 6));
         int innerX = x + (w - innerWidth) / 2 - 2;
         int sy = scroll.getContentY() + 4;
         int contentStartY = sy;
 
+        g.enableScissor(x + 2, contentTop, x + w - 7, contentTop + contentViewportHeight);
+        try {
         sy += drawWrapped(g, Component.translatable(SceneMotionSettings.LOBBY_MAP_KEY.equals(selectedMapKey)
                         ? "screen.habitrain_core.scene_motion.lobby_intro"
                         : "screen.habitrain_core.scene_motion.intro"),
@@ -1046,7 +1116,7 @@ public class SceneMotionPage implements ConfigPage {
                 tr("screen.habitrain_core.scene_motion.section_compatibility"), MenuTheme.ACCENT_MINT);
 
         com.habitrain.core.scene.client.SceneCompatibilityReport compatReport =
-                com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().getLastCompatibilityReport();
+                resolveCompatibilityReport(currentAssetKey(), currentDescriptor);
         com.habitrain.core.api.scene.model.ScenePublishPolicy currentPolicy =
                 com.habitrain.core.scene.client.SceneRenderRuntime.getInstance().getPublishPolicy();
 
@@ -1204,6 +1274,19 @@ public class SceneMotionPage implements ConfigPage {
         sy += 6;
 
         if (motionMode == SceneMotionMode.LINEAR) {
+            orbitAxisYHit = HitBox.EMPTY;
+            orbitAxisXHit = HitBox.EMPTY;
+            orbitAxisZHit = HitBox.EMPTY;
+            orbitCenterWorldHit = HitBox.EMPTY;
+            orbitCenterModelHit = HitBox.EMPTY;
+            orbitCenterPickHit = HitBox.EMPTY;
+            orbitClockwiseHit = HitBox.EMPTY;
+            orbitCounterClockwiseHit = HitBox.EMPTY;
+            orbitRotateModelWithHit = HitBox.EMPTY;
+            orbitRotateModelFixedHit = HitBox.EMPTY;
+            orbitDialHit = HitBox.EMPTY;
+            Arrays.fill(orbitQuickDirHits, HitBox.EMPTY);
+            Arrays.fill(orbitQuickAngleHits, HitBox.EMPTY);
             // ===== 直线移动模式：方向与区间 =====
             sy = SectionHeader.render(g, font, innerX, sy, innerWidth,
                     tr("screen.habitrain_core.scene_motion.section_direction"), MenuTheme.ACCENT_BLUE);
@@ -1351,6 +1434,13 @@ public class SceneMotionPage implements ConfigPage {
             sy += drawWrapped(g, Component.translatable("screen.habitrain_core.scene_motion.loop_help"),
                     innerX + 4, sy, innerWidth - 8, MenuTheme.TEXT_DIM) + 4;
         } else {
+            loopHit = HitBox.EMPTY;
+            loopAutoHit = HitBox.EMPTY;
+            loopCustomHit = HitBox.EMPTY;
+            rangePreviewHit = HitBox.EMPTY;
+            rangeSliderHit = HitBox.EMPTY;
+            applyRecommendedHit = HitBox.EMPTY;
+            Arrays.fill(directionPresetHits, HitBox.EMPTY);
             // ===== 围绕中心旋转模式配置 =====
             sy = SectionHeader.render(g, font, innerX, sy, innerWidth,
                     tr("screen.habitrain_core.scene_motion.section_orbit"), MenuTheme.ACCENT_VIOLET);
@@ -1631,7 +1721,9 @@ public class SceneMotionPage implements ConfigPage {
         sy += 10;
         }
 
-        g.disableScissor();
+        } finally {
+            g.disableScissor();
+        }
         renderedContentHeight = Math.max(contentViewportHeight, sy - contentStartY + 8);
         scroll.setContentHeight(renderedContentHeight);
         scroll.render(g);
@@ -1967,10 +2059,17 @@ public class SceneMotionPage implements ConfigPage {
             return true;
         }
 
+        // Body controls live inside the scroll viewport; clicks outside the viewport
+        // (e.g. on the top header area) must never pierce through to scrolled-under buttons.
+        if (!scroll.isInside(mx, my)) {
+            clearInputFocus();
+            return false;
+        }
+
         // EditBox instances are rendered manually rather than registered as Screen children.
         // Let the native widget handle the click before the scroll bar and clear every other
         // field, matching the event order used by the existing configuration pages.
-        if (btn == 0 && scroll.isInside(mx, my)) {
+        if (btn == 0) {
             for (EditBox field : inputFields) {
                 if (!isFieldAvailable(field)) continue;
                 if (!MenuTheme.inBounds(mx, my, field.getX(), field.getY(),
@@ -1989,9 +2088,10 @@ public class SceneMotionPage implements ConfigPage {
             clearInputFocus();
         }
 
-        if (btn == 0 && scroll.isInside(mx, my) && rangeSliderHit.contains(mx, my)
+        if (btn == 0 && rangeSliderHit.contains(mx, my)
                 && editable && loopState
                 && loopDistanceMode == SceneLoopDistanceMode.CUSTOM) {
+            clearInputFocus();
             rangeSliderDragging = true;
             loopKeyboardFocus = 1;
             updateLoopDistanceFromSlider(mx);
@@ -2102,6 +2202,7 @@ public class SceneMotionPage implements ConfigPage {
                     player.displayClientMessage(Component.translatable(
                             "screen.habitrain_core.scene_motion.message_orbit_pick_started"), true);
                 }
+                ConfigManager.getInstance().endClientEditing();
                 Minecraft.getInstance().setScreen(null);
                 return true;
             }
@@ -2124,23 +2225,23 @@ public class SceneMotionPage implements ConfigPage {
             for (int i = 0; i < orbitQuickDirHits.length; i++) {
                 if (orbitQuickDirHits[i] != null && orbitQuickDirHits[i].contains(mx, my)
                         && editable && orbitCenterMode == SceneOrbitCenterMode.WORLD_BLOCK) {
-                    orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", ORBIT_DIR_PRESETS[i].angle()));
+                    orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(ORBIT_DIR_PRESETS[i].angle()));
                     return true;
                 }
             }
             for (int i = 0; i < orbitQuickAngleHits.length; i++) {
                 if (orbitQuickAngleHits[i] != null && orbitQuickAngleHits[i].contains(mx, my) && editable) {
-                    orbitSweepField.setValue(String.format(Locale.ROOT, "%.1f", ORBIT_SWEEP_PRESETS[i]));
+                    orbitSweepField.setValue(SceneMotionFieldParser.formatInput(ORBIT_SWEEP_PRESETS[i]));
                     return true;
                 }
             }
-            if (orbitDialHit.contains(mx, my) && editable) {
+            if (btn == 0 && orbitDialHit.contains(mx, my) && editable) {
                 if (orbitCenterMode == SceneOrbitCenterMode.WORLD_BLOCK) {
+                    clearInputFocus();
                     orbitDialFocused = true;
                     orbitDialDragging = true;
-                    clearInputFocus();
                     SceneAngleDial.handleClick(mx, my, orbitDialHit.x(), orbitDialHit.y(), orbitDialHit.width(),
-                            true, false, angle -> orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", angle)));
+                            true, false, angle -> orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(angle)));
                     return true;
                 }
             }
@@ -2162,23 +2263,25 @@ public class SceneMotionPage implements ConfigPage {
             return true;
         }
 
-        if (loopAutoHit.contains(mx, my) && editable && loopState) {
+        if (btn == 0 && loopAutoHit.contains(mx, my) && editable && loopState) {
+            clearInputFocus();
             loopDistanceMode = SceneLoopDistanceMode.AUTO;
             loopKeyboardFocus = 0;
-            loopDistField.setFocused(false);
             refreshFieldAvailability();
             return true;
         }
 
-        if (loopCustomHit.contains(mx, my) && editable && loopState) {
+        if (btn == 0 && loopCustomHit.contains(mx, my) && editable && loopState) {
+            clearInputFocus();
             loopDistanceMode = SceneLoopDistanceMode.CUSTOM;
             loopKeyboardFocus = 0;
             refreshFieldAvailability();
             return true;
         }
 
-        if (applyRecommendedHit.contains(mx, my) && editable && loopState
+        if (btn == 0 && applyRecommendedHit.contains(mx, my) && editable && loopState
                 && !getCurrentDraft().getSourceBounds().isEmpty()) {
+            clearInputFocus();
             loopDistField.setValue(SceneMotionFieldParser.format(loopDistancesFromFields().recommendedDistance()));
             loopDistanceMode = SceneLoopDistanceMode.CUSTOM;
             loopKeyboardFocus = 2;
@@ -2208,6 +2311,7 @@ public class SceneMotionPage implements ConfigPage {
 
     private void clearInputFocus() {
         orbitDialFocused = false;
+        loopKeyboardFocus = -1;
         if (backgroundNameField != null) backgroundNameField.setFocused(false);
         for (EditBox field : inputFields) {
             field.setFocused(false);
@@ -2230,6 +2334,7 @@ public class SceneMotionPage implements ConfigPage {
             player.displayClientMessage(Component.translatable(
                     "screen.habitrain_core.scene_motion.message_origin_started"), true);
         }
+        ConfigManager.getInstance().endClientEditing();
         Minecraft.getInstance().setScreen(null);
     }
 
@@ -2238,15 +2343,17 @@ public class SceneMotionPage implements ConfigPage {
         if (origin == null) return;
         getCurrentDraft().setDisplayOrigin(origin.getX(), origin.getY(), origin.getZ());
         if (widgetsInitialized) {
-            originXField.setValue(String.format(Locale.ROOT, "%.1f", (double) origin.getX()));
-            originYField.setValue(String.format(Locale.ROOT, "%.1f", (double) origin.getY()));
-            originZField.setValue(String.format(Locale.ROOT, "%.1f", (double) origin.getZ()));
+            originXField.setValue(SceneMotionFieldParser.formatInput((double) origin.getX()));
+            originYField.setValue(SceneMotionFieldParser.formatInput((double) origin.getY()));
+            originZField.setValue(SceneMotionFieldParser.formatInput((double) origin.getZ()));
         }
     }
 
     private void togglePreview() {
         if (!isSaveAllowed()) {
-            showClientMessage("screen.habitrain_core.scene_motion.message_fix_loop_distance");
+            showClientMessage(motionMode == SceneMotionMode.ORBIT
+                    ? "screen.habitrain_core.scene_motion.message_fix_orbit_fields"
+                    : "screen.habitrain_core.scene_motion.message_fix_loop_distance");
             return;
         }
         flushPending();
@@ -2305,9 +2412,20 @@ public class SceneMotionPage implements ConfigPage {
         return tr("screen.habitrain_core.scene_motion.compat_issue_" + suffix);
     }
 
+    private com.habitrain.core.scene.client.SceneCompatibilityReport resolveCompatibilityReport(
+            String assetKey, SceneAssetDescriptor descriptor) {
+        SceneRenderRuntime runtime = SceneRenderRuntime.getInstance();
+        var staging = SceneStagingClientController.getInstance().getCompatibilityReport(assetKey);
+        if (staging != null) return staging;
+        if (descriptor == null || !descriptor.isValid()) {
+            return new com.habitrain.core.scene.client.SceneCompatibilityReport();
+        }
+        return runtime.getCompatibilityReport(descriptor.sha256());
+    }
+
     private void copyFirstIssueBlockId() {
         com.habitrain.core.scene.client.SceneCompatibilityReport report =
-                SceneRenderRuntime.getInstance().getLastCompatibilityReport();
+                resolveCompatibilityReport(currentAssetKey(), currentAssetDescriptor());
         if (report == null || report.getIssues().isEmpty()) return;
         com.habitrain.core.scene.client.SceneCompatibilityReport.Entry first = report.getIssues().get(0);
         String idStr = first.blockId().toString();
@@ -2321,7 +2439,9 @@ public class SceneMotionPage implements ConfigPage {
 
     private void requestBuildAsset() {
         if (!isSaveAllowed()) {
-            showClientMessage("screen.habitrain_core.scene_motion.message_fix_loop_distance");
+            showClientMessage(motionMode == SceneMotionMode.ORBIT
+                    ? "screen.habitrain_core.scene_motion.message_fix_orbit_fields"
+                    : "screen.habitrain_core.scene_motion.message_fix_loop_distance");
             return;
         }
         flushPending();
@@ -2345,7 +2465,7 @@ public class SceneMotionPage implements ConfigPage {
         }
         if (orbitDialDragging && btn == 0 && orbitDialHit.width() > 0) {
             SceneAngleDial.applyMouseAngle(mx, my, orbitDialHit.x(), orbitDialHit.y(), orbitDialHit.width(),
-                    angle -> orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", angle)));
+                    angle -> orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(angle)));
             return true;
         }
         return scroll.mouseDragged(my);
@@ -2377,17 +2497,20 @@ public class SceneMotionPage implements ConfigPage {
         if (mapDropdown.keyPressed(key, scan, mod)) return true;
         if (backgroundDropdown.keyPressed(key, scan, mod)) return true;
         if (backgroundDropdown.isFocused() && key == 260) {
-            addBackground();
+            if (editable) addBackground();
             return true;
         }
         if (backgroundDropdown.isFocused() && key == 261) {
-            deleteBackground();
+            if (editable) deleteBackground();
             return true;
         }
         if (backgroundNameField.isFocused() && backgroundNameField.keyPressed(key, scan, mod)) return true;
         if (key == 258) {
             focusAdjacentControl(Screen.hasShiftDown() ? -1 : 1);
             return true;
+        }
+        for (EditBox field : inputFields) {
+            if (field.isFocused() && field.keyPressed(key, scan, mod)) return true;
         }
         if (handleLoopKeyboardInput(key)) return true;
         if (orbitDialFocused && motionMode == SceneMotionMode.ORBIT
@@ -2397,7 +2520,7 @@ public class SceneMotionPage implements ConfigPage {
                 double step = Screen.hasShiftDown() ? 15.0 : 1.0;
                 double adjusted = (key == 262 || key == 265) ? cur + step : cur - step;
                 adjusted = SceneOrbitMath.normalizeAngle(adjusted);
-                orbitStartAngleField.setValue(String.format(Locale.ROOT, "%.1f", adjusted));
+                orbitStartAngleField.setValue(SceneMotionFieldParser.formatInput(adjusted));
                 double sweep = SceneMotionFieldParser.parseDouble(orbitSweepField.getValue(), SceneOrbitSettings.DEFAULT_SWEEP);
                 double end = SceneOrbitMath.normalizeAngle(adjusted + (orbitClockwise ? sweep : -sweep));
                 Minecraft.getInstance().getNarrator().sayNow(Component.translatable(
@@ -2414,109 +2537,35 @@ public class SceneMotionPage implements ConfigPage {
                 return true;
             }
         }
-        for (EditBox field : inputFields) {
-            if (field == loopDistField && field.isFocused()
-                    && loopDistanceMode == SceneLoopDistanceMode.CUSTOM
-                    && (key == 262 || key == 263)) {
-                SceneProfileValidator.LoopDistanceValidation validation = loopDistanceValidation();
-                double current = validation.isValid()
-                        ? validation.value() : getCurrentDraft().getLoop().getDistanceBlocks();
-                double step = Screen.hasShiftDown() ? 10.0 : 1.0;
-                double adjusted = current + (key == 262 ? step : -step);
-                adjusted = Math.max(SceneLoopSettings.MIN_DISTANCE,
-                        Math.min(SceneLoopSettings.MAX_DISTANCE, adjusted));
-                field.setValue(SceneMotionFieldParser.format(adjusted));
-                return true;
-            }
-            if (field.isFocused() && field.keyPressed(key, scan, mod)) return true;
-        }
         return false;
     }
 
     private void focusAdjacentControl(int delta) {
-        if (mapDropdown.isFocused()) {
+        List<FocusCycle.Target> order = new ArrayList<>();
+        order.add(new FocusCycle.Target(mapDropdown::isFocused, mapDropdown::focus));
+        order.add(new FocusCycle.Target(backgroundDropdown::isFocused, backgroundDropdown::focus));
+        if (editable && !SceneBackgroundKey.isDefault(selectedBackgroundId)) {
+            order.add(new FocusCycle.Target(backgroundNameField::isFocused,
+                    () -> backgroundNameField.setFocused(true)));
+        }
+        boolean linearLoopActive = editable && motionMode == SceneMotionMode.LINEAR && loopState;
+        for (EditBox field : inputFields) {
+            if (field == renderMaxDistField && linearLoopActive) {
+                order.add(new FocusCycle.Target(() -> loopKeyboardFocus == 1, () -> focusLoopControl(1)));
+                order.add(new FocusCycle.Target(() -> loopKeyboardFocus == 2, () -> focusLoopControl(2)));
+            }
+            if (isFieldAvailable(field)) {
+                order.add(new FocusCycle.Target(field::isFocused, () -> field.setFocused(true)));
+            }
+            if (field == phaseOffsetField && linearLoopActive) {
+                order.add(new FocusCycle.Target(() -> loopKeyboardFocus == 0, () -> focusLoopControl(0)));
+            }
+        }
+        FocusCycle.move(order, delta, () -> {
+            clearInputFocus();
             mapDropdown.blur();
-            clearInputFocus();
-            backgroundDropdown.focus();
-            return;
-        }
-        if (backgroundDropdown.isFocused()) {
             backgroundDropdown.blur();
-            clearInputFocus();
-            if (delta < 0) mapDropdown.focus();
-            else if (!SceneBackgroundKey.DEFAULT_ID.equals(selectedBackgroundId)) backgroundNameField.setFocused(true);
-            else focusField(speedField);
-            return;
-        }
-        if (backgroundNameField.isFocused()) {
-            backgroundNameField.setFocused(false);
-            if (delta < 0) backgroundDropdown.focus();
-            else focusField(speedField);
-            return;
-        }
-        EditBox focusedField = inputFields.stream().filter(EditBox::isFocused)
-                .findFirst().orElse(null);
-        if (loopKeyboardFocus >= 0) {
-            if (loopKeyboardFocus == 0) {
-                if (delta < 0) focusField(phaseOffsetField);
-                else if (loopDistanceMode == SceneLoopDistanceMode.CUSTOM) focusField(loopDistField);
-                else focusLoopControl(1);
-            } else if (loopKeyboardFocus == 1) {
-                if (delta < 0 && loopDistanceMode == SceneLoopDistanceMode.CUSTOM) focusField(loopDistField);
-                else if (delta < 0) focusLoopControl(0);
-                else focusLoopControl(2);
-            } else {
-                if (delta < 0) focusLoopControl(1);
-                else focusField(renderMaxDistField);
-            }
-            return;
-        }
-        if (focusedField == phaseOffsetField && delta > 0) {
-            focusLoopControl(0);
-            return;
-        }
-        if (focusedField == loopDistField) {
-            if (delta < 0) focusLoopControl(0);
-            else focusLoopControl(1);
-            return;
-        }
-        if (focusedField == renderMaxDistField && delta < 0) {
-            focusLoopControl(2);
-            return;
-        }
-        List<EditBox> available = inputFields.stream()
-                .filter(this::isFieldAvailable)
-                .toList();
-        if (available.isEmpty()) {
-            clearInputFocus();
-            mapDropdown.focus();
-            return;
-        }
-        int current = -1;
-        for (int i = 0; i < available.size(); i++) {
-            if (available.get(i).isFocused()) {
-                current = i;
-                break;
-            }
-        }
-        boolean dropdownFocused = mapDropdown.isFocused();
-        clearInputFocus();
-        mapDropdown.blur();
-        if (dropdownFocused) {
-            available.get(delta < 0 ? available.size() - 1 : 0).setFocused(true);
-            return;
-        }
-        if (current < 0) {
-            if (delta < 0) available.get(available.size() - 1).setFocused(true);
-            else mapDropdown.focus();
-            return;
-        }
-        int next = current + delta;
-        if (next < 0 || next >= available.size()) {
-            mapDropdown.focus();
-        } else {
-            available.get(next).setFocused(true);
-        }
+        });
     }
 
     private void focusLoopControl(int target) {
@@ -2593,7 +2642,10 @@ public class SceneMotionPage implements ConfigPage {
         if (field == orbitStartAngleField) {
             return motionMode == SceneMotionMode.ORBIT && orbitCenterMode == SceneOrbitCenterMode.WORLD_BLOCK;
         }
-        if (field == orbitSweepField || field == orbitSpeedField) {
+        if (field == orbitSweepField || field == orbitSpeedField
+                || field == orbitVerticalBobField || field == orbitRadialBobField
+                || field == orbitBobCyclesField || field == orbitInstanceCountField
+                || field == orbitInstanceSpreadField) {
             return motionMode == SceneMotionMode.ORBIT;
         }
         if (field == soundIdField || field == soundVolField || field == soundPitchField) {

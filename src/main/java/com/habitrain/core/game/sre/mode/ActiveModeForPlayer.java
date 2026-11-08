@@ -84,7 +84,7 @@ public final class ActiveModeForPlayer {
 
         try {
             SREGameWorldComponent gw = SREGameWorldComponent.KEY.get(level);
-            return gw != null && gw.getRole(playerId) != null;
+            return gw != null && gw.isRunning() && gw.getRole(playerId) != null;
         } catch (Throwable t) {
             return false;
         }

@@ -18,9 +18,28 @@ public class ConfigSync {
 
     public boolean loadFromJsonString(ConfigRepository repo, String json) {
         try {
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-            ConfigValidation.validate(root);
+            JsonObject root = JsonParser.parseString(JsonInputLimits.check(json)).getAsJsonObject();
+            return loadFromJsonObject(repo, root, false);
+        } catch (Exception e) {
+            LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
+            return false;
+        }
+    }
+
+    public boolean loadFromJsonObject(ConfigRepository repo, JsonObject root) {
+        return loadFromJsonObject(repo, root, true);
+    }
+
+    public boolean loadFromJsonObject(ConfigRepository repo, JsonObject sourceRoot, boolean strict) {
+        try {
+            JsonInputLimits.check(sourceRoot);
+            JsonObject root = sourceRoot.deepCopy();
             RemovedModeConfigMigration.prune(root);
+            if (strict) {
+                ConfigValidation.validate(root);
+            } else {
+                ConfigValidation.validateStructure(root);
+            }
 
             Map<String, TaskConfigEntry> newTasks = new HashMap<>();
             Map<String, GameModeConfigScope> newModes = new HashMap<>();
@@ -40,13 +59,17 @@ public class ConfigSync {
             if (root.has("global")) {
                 JsonObject global = root.getAsJsonObject("global");
                 if (global.has("dlcProbabilityTarget")) {
-                    newDlcTarget = (float) Math.max(0.1, Math.min(0.8,
-                            global.get("dlcProbabilityTarget").getAsDouble()));
+                    double rawTarget = global.get("dlcProbabilityTarget").getAsDouble();
+                    if (rawTarget < 0.1 || rawTarget > 0.8) {
+                        if (strict) throw new IllegalArgumentException("DLC概率必须在 0.1 到 0.8 之间");
+                        LOGGER.warn("dlcProbabilityTarget={} 超出 [0.1, 0.8]，已自动钳制", rawTarget);
+                    }
+                    newDlcTarget = (float) Math.max(0.1, Math.min(0.8, rawTarget));
                 }
                 if (global.has("shaderWhitelistEnabled")) {
                     newShaderEnabled = global.get("shaderWhitelistEnabled").getAsBoolean();
                 }
-                if (global.has("shaderWhitelist")) {
+                if (global.has("shaderWhitelist") && global.get("shaderWhitelist").isJsonArray()) {
                     var arr = global.getAsJsonArray("shaderWhitelist");
                     for (var el : arr) {
                         String name = el.getAsString();
@@ -55,7 +78,13 @@ public class ConfigSync {
                 }
                 if (global.has("sheriffCountDivisor")) {
                     int div = global.get("sheriffCountDivisor").getAsInt();
-                    if (div > 0) newSheriffDivisor = div;
+                    if (div > 0) {
+                        newSheriffDivisor = div;
+                    } else if (strict) {
+                        throw new IllegalArgumentException("警长除数必须大于0");
+                    } else {
+                        LOGGER.warn("sheriffCountDivisor={} 无效，保留默认值 {}", div, newSheriffDivisor);
+                    }
                 }
 
                 if (global.has("knifeDurabilityEnabled")) {
@@ -77,16 +106,28 @@ public class ConfigSync {
             if (root.has("tasks")) {
                 JsonObject tasks = root.getAsJsonObject("tasks");
                 for (var entry : tasks.entrySet()) {
-                    newTasks.put(entry.getKey(),
-                            TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
+                    try {
+                        if (!entry.getValue().isJsonObject()) throw new IllegalArgumentException("任务配置必须是对象");
+                        newTasks.put(entry.getKey(),
+                                TaskConfigEntry.fromJson(entry.getValue().getAsJsonObject()));
+                    } catch (RuntimeException ex) {
+                        if (strict) throw ex;
+                        LOGGER.warn("跳过无效的任务配置项 {}: {}", entry.getKey(), ex.getMessage());
+                    }
                 }
             }
 
             if (root.has("gameModes")) {
                 JsonObject modes = root.getAsJsonObject("gameModes");
                 for (var entry : modes.entrySet()) {
-                    newModes.put(entry.getKey(),
-                            GameModeConfigScope.fromJson(entry.getKey(), entry.getValue().getAsJsonObject()));
+                    try {
+                        if (!entry.getValue().isJsonObject()) throw new IllegalArgumentException("模式配置必须是对象");
+                        newModes.put(entry.getKey(),
+                                GameModeConfigScope.fromJson(entry.getKey(), entry.getValue().getAsJsonObject()));
+                    } catch (RuntimeException ex) {
+                        if (strict) throw ex;
+                        LOGGER.warn("跳过无效的模式配置项 {}: {}", entry.getKey(), ex.getMessage());
+                    }
                 }
             }
 
@@ -98,23 +139,45 @@ public class ConfigSync {
                 if (mg.has("entries")) {
                     JsonObject entries = mg.getAsJsonObject("entries");
                     for (var e : entries.entrySet()) {
-                        newMinigames.put(e.getKey(),
-                                MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
+                        try {
+                            if (!e.getValue().isJsonObject()) throw new IllegalArgumentException("小游戏配置必须是对象");
+                            newMinigames.put(e.getKey(),
+                                    MinigameConfigEntry.fromJson(e.getValue().getAsJsonObject()));
+                        } catch (RuntimeException ex) {
+                            if (strict) throw ex;
+                            LOGGER.warn("跳过无效的小游戏配置项 {}: {}", e.getKey(), ex.getMessage());
+                        }
                     }
                 }
             }
 
             if (root.has("modeMapVote") && root.get("modeMapVote").isJsonObject()) {
-                newModeMapVote = ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote"));
+                try {
+                    newModeMapVote = ModeMapVoteSettings.fromJson(root.getAsJsonObject("modeMapVote"));
+                } catch (RuntimeException ex) {
+                    if (strict) throw ex;
+                    LOGGER.warn("modeMapVote 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                }
             }
 
             if (root.has("environment") && root.get("environment").isJsonObject()) {
-                newEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
+                try {
+                    newEnv = EnvironmentSettings.fromJson(root.getAsJsonObject("environment"));
+                } catch (RuntimeException ex) {
+                    if (strict) throw ex;
+                    LOGGER.warn("environment 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                }
             }
 
             SceneMotionSettings newSceneMotion = SceneMotionSettings.createDefault();
             if (root.has("sceneMotion") && root.get("sceneMotion").isJsonObject()) {
-                newSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
+                try {
+                    if (!strict) com.habitrain.core.network.ConfigUpdateAccessPolicy.validateSceneMotion(root.getAsJsonObject("sceneMotion"));
+                    newSceneMotion = SceneMotionSettings.fromJson(root.getAsJsonObject("sceneMotion"));
+                } catch (RuntimeException ex) {
+                    if (strict) throw ex;
+                    LOGGER.warn("sceneMotion 配置存在无效项，回退默认配置: {}", ex.getMessage());
+                }
             }
 
             repo.getMutableTaskConfigs().clear();
@@ -137,7 +200,7 @@ public class ConfigSync {
             repo.setSceneMotion(newSceneMotion);
             return true;
         } catch (Exception e) {
-            LOGGER.error("从 JSON 字符串加载配置失败，保持原有内存状态不变", e);
+            LOGGER.error("从 JSON 对象加载配置失败，保持原有内存状态不变", e);
             return false;
         }
     }
@@ -155,7 +218,7 @@ public class ConfigSync {
      */
     public boolean mergeFromJsonString(ConfigRepository repo, String json) {
         try {
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(JsonInputLimits.check(json)).getAsJsonObject();
             ConfigValidation.validate(root);
             RemovedModeConfigMigration.prune(root);
 
@@ -352,10 +415,25 @@ public class ConfigSync {
     }
 
     public void applySyncData(ConfigRepository repo, Map<String, TaskConfigEntry> configs, float target) {
+        applySyncData(repo, configs, null, target);
+    }
+
+    public void applySyncData(ConfigRepository repo, Map<String, TaskConfigEntry> configs,
+                              Map<String, MinigameConfigEntry> minigames, float target) {
         repo.setSuppressCallback(true);
         try {
             repo.getMutableTaskConfigs().clear();
-            repo.getMutableTaskConfigs().putAll(configs);
+            if (configs != null) {
+                configs.forEach((k, v) -> {
+                    if (k != null && v != null) repo.getMutableTaskConfigs().put(k, v.copy());
+                });
+            }
+            if (minigames != null) {
+                repo.getMutableMinigameConfigs().clear();
+                minigames.forEach((k, v) -> {
+                    if (k != null && v != null) repo.getMutableMinigameConfigs().put(k, v.copy());
+                });
+            }
             repo.setDlcProbabilityTarget(target);
         } finally {
             repo.setSuppressCallback(false);

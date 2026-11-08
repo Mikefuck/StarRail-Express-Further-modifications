@@ -8,8 +8,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 /** Client-side copy of the server-owned eliminated-player rest-area eligibility. */
 @Environment(EnvType.CLIENT)
 public final class EliminatedRestPromptState {
-    private static boolean visible;
-    private static boolean canToggle;
+    private static volatile boolean visible;
+    private static volatile boolean canToggle;
     private static boolean lifecycleRegistered;
 
     private EliminatedRestPromptState() {
@@ -38,8 +38,14 @@ public final class EliminatedRestPromptState {
         }
         lifecycleRegistered = true;
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> clear());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(EliminatedRestPromptState::clear));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (client.isSameThread()) {
+                clear();
+            } else {
+                client.execute(EliminatedRestPromptState::clear);
+            }
+        });
         OnGameFinishedClient.EVENT.register(EliminatedRestPromptState::clear);
     }
 }

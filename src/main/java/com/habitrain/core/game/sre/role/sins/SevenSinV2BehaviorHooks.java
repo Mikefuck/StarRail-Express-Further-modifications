@@ -119,12 +119,6 @@ public final class SevenSinV2BehaviorHooks {
         public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
             EnvyComponent.KEY.get(player).init();
         }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
-        }
     };
 
     private static final RoleLifecycleHooks WRATH_LIFE = new RoleLifecycleHooks() {
@@ -137,12 +131,6 @@ public final class SevenSinV2BehaviorHooks {
         public void onGameTrueStart(ServerLevel level, RoleHookContext ctx) {
             WrathComponent.onRoundReady(level);
         }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
-        }
     };
 
     private static final RoleLifecycleHooks GREED_LIFE = new RoleLifecycleHooks() {
@@ -150,24 +138,12 @@ public final class SevenSinV2BehaviorHooks {
         public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
             GreedComponent.KEY.get(player).init();
         }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
-        }
     };
 
     private static final RoleLifecycleHooks GLUTTONY_LIFE = new RoleLifecycleHooks() {
         @Override
         public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
             GluttonyComponent.KEY.get(player).init();
-        }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
         }
     };
 
@@ -189,24 +165,12 @@ public final class SevenSinV2BehaviorHooks {
                 }
             }
         }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
-        }
     };
 
     private static final RoleLifecycleHooks SLOTH_LIFE = new RoleLifecycleHooks() {
         @Override
         public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
             SlothComponent.KEY.get(player).init();
-        }
-
-        @Override
-        public void onRolesConfirm(ServerLevel level, Map<Player, io.wifi.starrailexpress.api.SRERole> roles,
-                                   RoleHookContext ctx) {
-            SevenSinsMutex.beforeAssign(level, roles);
         }
     };
 
@@ -290,7 +254,7 @@ public final class SevenSinV2BehaviorHooks {
                     && PrideComponent.isPrideWeaponImmune(victim)) {
                 victim.setHealth(victim.getMaxHealth());
                 victim.displayClientMessage(
-                        Component.literal("§6[傲慢] 人群加持下，常规武器无法伤你。"), true);
+                        Component.translatable("message.habitrain_core.sin_pride.protected"), true);
                 HabiTrainCore.LOGGER.debug("[Pride] cancelled conventional death for {} reason={}",
                         victim.getGameProfile().getName(), deathReason);
                 return Decision.DENY;
@@ -307,7 +271,7 @@ public final class SevenSinV2BehaviorHooks {
             try {
                 PrideComponent.KEY.get(killer).onPrideKill((ServerLevel) killer.level());
                 killer.displayClientMessage(
-                        Component.literal("§c[傲慢] 击杀破防 " + PrideComponent.BREAK_IMMUNE_SECONDS + " 秒！"),
+                        Component.translatable("message.habitrain_core.sin_pride.broken", PrideComponent.BREAK_IMMUNE_SECONDS),
                         true
                 );
             } catch (Throwable t) {

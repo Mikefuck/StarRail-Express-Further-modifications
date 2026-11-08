@@ -124,23 +124,23 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     }
 
     @Override
-    public Collection<RoleVoicePolicy> voices() {
+    public synchronized Collection<RoleVoicePolicy> voices() {
         return voices.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
-    public List<RoleVoicePolicy> voicesFor(RoleKey role) {
+    public synchronized List<RoleVoicePolicy> voicesFor(RoleKey role) {
         return filterByRole(voices.values(), role, d -> d.declaration().role())
                 .stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
-    public Collection<RoleChatPolicy> chats() {
+    public synchronized Collection<RoleChatPolicy> chats() {
         return chats.values().stream().map(ManagedDeclaration::declaration).toList();
     }
 
     @Override
-    public List<RoleChatPolicy> chatsFor(RoleKey role) {
+    public synchronized List<RoleChatPolicy> chatsFor(RoleKey role) {
         return filterByRole(chats.values(), role, d -> d.declaration().role())
                 .stream().map(ManagedDeclaration::declaration).toList();
     }
@@ -149,6 +149,7 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     public void bindAdapter(RoleCapabilityKey key, RoleCapabilityStatus status) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(status, "status");
+        requireCoreCaller("RoleCapabilityApi.bindAdapter()");
         // 审核 R-20：本入口无 provider 归属，过去 freeze 之后仍可写——任意 mod 谎报
         // bindAdapter(VOICE, AVAILABLE) 就能让 supports(VOICE) 撒谎，provider 据此
         // 加载 voicechat 类即崩。现在与其它写入一样受 freeze 门控。
@@ -176,7 +177,7 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     }
 
     /** Voice policies whose provider/entry gate is ENABLED (audit P1-2). */
-    private List<RoleVoicePolicy> enabledVoicePolicies() {
+    synchronized List<RoleVoicePolicy> enabledVoicePolicies() {
         List<RoleVoicePolicy> enabled = new ArrayList<>();
         for (ManagedDeclaration<RoleVoicePolicy> decl : voices.values()) {
             if (gateEnabled(decl.providerId(), decl.entryId())) {
@@ -187,7 +188,7 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     }
 
     /** Chat policies whose provider/entry gate is ENABLED (audit P1-2). */
-    private List<RoleChatPolicy> enabledChatPolicies() {
+    private synchronized List<RoleChatPolicy> enabledChatPolicies() {
         List<RoleChatPolicy> enabled = new ArrayList<>();
         for (ManagedDeclaration<RoleChatPolicy> decl : chats.values()) {
             if (gateEnabled(decl.providerId(), decl.entryId())) {
@@ -198,6 +199,8 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
     }
 
     private static boolean gateEnabled(String providerId, String entryId) {
+        var snapshot = com.habitrain.core.role.snapshot.RoleSnapshotManager.INSTANCE.current();
+        if (snapshot != null) return snapshot.isBehaviorEntryEnabled(providerId, entryId);
         return RoleExtensionConfigService.INSTANCE.gateFor(providerId, entryId)
                 == RoleExtensionConfigService.EntryGate.ENABLED;
     }
@@ -236,7 +239,23 @@ public final class RoleCapabilityServiceImpl implements RoleCapabilityApi {
 
     @Override
     public synchronized void freeze() {
+        requireCoreCaller("RoleCapabilityApi.freeze()");
         this.frozen = true;
+    }
+
+    private static void requireCoreCaller(String method) {
+        if (com.habitrain.core.internal.CoreLifecycleScope.isActive()) {
+            return;
+        }
+        Class<?> caller = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+                .walk(frames -> frames.skip(2)
+                        .map(StackWalker.StackFrame::getDeclaringClass)
+                        .findFirst()
+                        .orElse(null));
+        if (caller != null && caller.getName().startsWith("com.habitrain.core.")) {
+            return;
+        }
+        throw new IllegalStateException(method + " may only be called by habitrain_core lifecycle");
     }
 
     @Override

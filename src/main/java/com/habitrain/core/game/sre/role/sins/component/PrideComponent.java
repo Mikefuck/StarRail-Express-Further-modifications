@@ -83,6 +83,9 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
         breakImmuneUntilGameTime = 0;
         weaponImmune = false;
         auraThrottle.reset();
+        if (player != null && player.level() != null && !player.level().isClientSide()) {
+            KEY.sync(player);
+        }
     }
 
     @Override
@@ -93,9 +96,10 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
 
         SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
         boolean isPride = HabiRoles.isHabiRole(self, SevenSins.PRIDE);
-        if (!isPride || self.isSpectator()) {
+        if (!isPride || !com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(self)) {
             if (weaponImmune) {
                 weaponImmune = false;
+                KEY.sync(self);
             }
             return;
         }
@@ -110,7 +114,11 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
         int others = countOtherAliveNearby(self, level, game);
         boolean aura = others >= AURA_OTHERS_NEEDED;
         boolean broken = now < breakImmuneUntilGameTime;
-        weaponImmune = aura && !broken;
+        boolean nextImmune = aura && !broken;
+        if (nextImmune != weaponImmune) {
+            weaponImmune = nextImmune;
+            KEY.sync(self);
+        }
 
         if (aura) {
             // Refresh short glowing so it does not linger after leaving the crowd.
@@ -133,7 +141,7 @@ public final class PrideComponent implements RoleComponent, ServerTickingCompone
 
     private static boolean isAliveParticipant(ServerLevel level, SREGameWorldComponent game,
                                              ServerPlayer p) {
-        if (p == null || p.isSpectator()) return false;
+        if (!com.habitrain.core.game.sre.role.sins.ServerAimTargeting.isAliveParticipant(p)) return false;
 
         if (game == null || !game.isRunning()) return false;
         return game.getRole(p) != null;

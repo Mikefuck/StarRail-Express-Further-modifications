@@ -23,9 +23,9 @@ import java.awt.Color;
 @Mixin(TaskBlockOverlayRenderer.class)
 public class InstinctColorMixin {
 
-    @Inject(method = "render", at = @At("HEAD"), remap = false, cancellable = true)
+    @Inject(method = "render", at = @At("HEAD"), remap = false)
     private static void habitrain$buildOverrides(CallbackInfo ci) {
-        if (!InstinctColorHelper.isDirty()) {
+        if (!NoellesrolesClient.isTaskInstinctEnabled || !InstinctColorHelper.isDirty()) {
             return;
         }
         InstinctColorHelper.rebuildOverrides();
@@ -37,8 +37,7 @@ public class InstinctColorMixin {
                     value = "INVOKE",
                     target = "Lorg/agmas/noellesroles/client/TaskBlockOverlayRenderer;renderBlockOverlay(Lnet/fabricmc/fabric/api/client/rendering/v1/WorldRenderContext;Lnet/minecraft/core/BlockPos;Ljava/awt/Color;FZF)V"
             ),
-            remap = false,
-            require = 0
+            remap = false
     )
     private static void habitrain$redirectOverlay(
             WorldRenderContext ctx, BlockPos pos, Color color, float alpha,

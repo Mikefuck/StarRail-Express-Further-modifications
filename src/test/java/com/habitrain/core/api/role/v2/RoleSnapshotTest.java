@@ -51,6 +51,7 @@ class RoleSnapshotTest {
 
     @BeforeEach
     void reset() throws Exception {
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.resetForTests();
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "compiledReplacements", new LinkedHashMap<>());
         setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "patches", new ArrayList<>());
@@ -70,6 +71,81 @@ class RoleSnapshotTest {
     // RoleSnapshotCompiler
     // ------------------------------------------------------------------
 
+    @org.junit.jupiter.api.AfterEach
+    void clearConfigAndSnapshot() {
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.resetForTests();
+        RoleSnapshotManager.INSTANCE.clear();
+        RoleRuntimeOverlayApplier.clear();
+    }
+
+    @Test
+    void settlementConfigSupersedesOlderPendingAndSameTickRestartPromotesIt() {
+        var manager = RoleSnapshotManager.INSTANCE;
+        var first = new RoleSnapshot(new RoleSnapshotId(901), Map.of(), Map.of(), Set.of());
+        var oldPending = new RoleSnapshot(new RoleSnapshotId(902), Map.of(), Map.of(), Set.of());
+        var newest = new RoleSnapshot(new RoleSnapshotId(903), Map.of(), Map.of(), Set.of());
+        manager.setLobby(first);
+        manager.beginRound();
+        manager.queuePending(oldPending);
+        manager.endRound();
+        manager.scheduleActivatePendingNextTick();
+        manager.setLobby(newest);
+        assertEquals(first, manager.current(), "settlement remains frozen");
+        assertEquals(newest, manager.pending());
+        manager.beginRound();
+        assertEquals(newest, manager.round());
+        assertFalse(manager.tickActivatePendingIfDue(), "old deferred activation must not run inside the new round");
+    }
+
+    @Test
+    void configuredSpawnInfoRestoresIndependentlyOfDefaultFields() {
+        SRERole live = role(TARGET);
+        live.spawnInfo.maxSpawn = 7;
+        live.spawnInfo.enableChance = 4321;
+        live.spawnInfo.minEnabledPlayer = 4;
+        live.spawnInfo.maxEnabledPlayer = 12;
+        live.spawnInfo.map.add("admin_map");
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core", RolePatch.builder(TARGET)
+                .entryKey("spawn").defaultMax(RolePatch.IntPatch.set(2)).build());
+        var snap = RoleSnapshotCompiler.compile(new RoleSnapshotId(904), Map.of(TARGET, live));
+        RoleRuntimeOverlayApplier.activate(snap);
+        assertEquals(2, live.spawnInfo.maxSpawn);
+        RoleRuntimeOverlayApplier.restoreAll();
+        assertEquals(7, live.spawnInfo.maxSpawn);
+        assertEquals(4321, live.spawnInfo.enableChance);
+        assertEquals(4, live.spawnInfo.minEnabledPlayer);
+        assertEquals(12, live.spawnInfo.maxEnabledPlayer);
+        assertEquals(List.of("admin_map"), live.spawnInfo.map);
+    }
+
+    @Test
+    void bookAndStateGatesStayFrozenThroughConfigChangeAndSettlement() {
+        var states = (com.habitrain.core.role.state.RoleStateServiceImpl)
+                com.habitrain.core.api.role.v2.state.RoleStateApi.instance();
+        states.clear(true);
+        try {
+            var key = states.register(com.habitrain.core.api.role.v2.state.RoleStateSpec.of("habitrain_core", "frozen", Integer.class)
+                    .role(RoleKey.of(TARGET)).defaultValue(() -> 0).build());
+            var player = java.util.UUID.randomUUID();
+            RoleExtensionRegistry.INSTANCE.modify("habitrain_core", RolePatch.builder(TARGET).entryKey("book")
+                    .book(com.habitrain.core.api.role.v2.book.RoleBookPatch.replaceAll(
+                            com.habitrain.core.api.role.v2.book.RoleBookPage.of(net.minecraft.network.chat.Component.literal("original"),
+                                    net.minecraft.network.chat.Component.literal("body"))))
+                    .build());
+            var snapshot = RoleSnapshotCompiler.compile(new RoleSnapshotId(905), Map.of(TARGET, role(TARGET)));
+            RoleSnapshotManager.INSTANCE.setLobby(snapshot);
+            RoleSnapshotManager.INSTANCE.beginRound();
+            states.set(key, player, 8);
+            var manifest = com.habitrain.core.role.config.RoleManifestService.build();
+            com.habitrain.core.role.config.RoleManifestService.freezeRoundManifestIfNeeded();
+            com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.setProviderEnabled("habitrain_core", false);
+            assertEquals(8, states.get(key, player));
+            assertEquals("original", com.habitrain.core.role.book.RoleBookResolver.resolve(TARGET).pages().getFirst().title().getString());
+            RoleSnapshotManager.INSTANCE.endRound();
+            assertEquals(manifest, com.habitrain.core.role.config.RoleManifestService.build());
+        } finally { states.clear(true); }
+    }
+
     @Test
     void compileAppliesModifyPatches() {
         RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
@@ -84,6 +160,27 @@ class RoleSnapshotTest {
         // profile, materialization onto the live SRERole happens at activation.
         assertEquals(2, er.profile().defaultMax());
         assertEquals(EffectiveRole.Source.MODIFIED, er.source());
+    }
+
+    @Test
+    void conflictingDeclarationsAreExcludedFromRemoteBookAndClientRuleGates() {
+        for (int color : List.of(1, 2)) {
+            RoleExtensionRegistry.INSTANCE.modify("habitrain_core", RolePatch.builder(TARGET)
+                    .entryKey("conflicting_" + color).color(color)
+                    .book(com.habitrain.core.api.role.v2.book.RoleBookPatch.append(
+                            com.habitrain.core.api.role.v2.book.RoleBookPage.of(
+                                    net.minecraft.network.chat.Component.literal("page_" + color),
+                                    net.minecraft.network.chat.Component.literal("body"))))
+                    .build());
+        }
+        var snapshot = RoleSnapshotCompiler.compile(new RoleSnapshotId(907), Map.of(TARGET, role(TARGET)));
+        Set<String> enabled = new java.util.HashSet<>();
+        for (var entry : RoleExtensionRegistry.INSTANCE.v2Entries(Set.of(TARGET))) {
+            assertFalse(snapshot.isBehaviorEntryEnabled(entry.providerId(), entry.entryId()),
+                    "conflict must not be advertised as an active client rule");
+            if (snapshot.isBehaviorEntryEnabled(entry.providerId(), entry.entryId())) enabled.add(entry.entryId());
+        }
+        assertTrue(com.habitrain.core.role.book.RoleBookResolver.resolveForEntries(TARGET, enabled).pages().isEmpty());
     }
 
     @Test
@@ -267,14 +364,15 @@ class RoleSnapshotTest {
 
         assertEquals(lobby, RoleSnapshotManager.INSTANCE.current(),
                 "round stays frozen; current() is the live round");
-        assertEquals(nextLobby, RoleSnapshotManager.INSTANCE.lobby());
+        assertEquals(lobby, RoleSnapshotManager.INSTANCE.lobby());
+        assertEquals(nextLobby, RoleSnapshotManager.INSTANCE.pending());
 
         var payload = com.habitrain.core.role.config.RoleSnapshotService.build();
-        assertEquals(nextLobby.id().toString(), payload.lobbySnapshotId(),
+        assertEquals(lobby.id().toString(), payload.lobbySnapshotId(),
                 "lobbySnapshotId must be lobby(), never current()");
         assertEquals(lobby.id().toString(), payload.roundSnapshotId(),
                 "roundSnapshotId still identifies the frozen round");
-        assertEquals(pending.id().toString(), payload.pendingSnapshotId());
+        assertEquals(nextLobby.id().toString(), payload.pendingSnapshotId());
     }
 
     @Test

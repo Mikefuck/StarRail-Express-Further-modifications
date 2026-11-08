@@ -188,7 +188,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
                 continue;
             }
             Component label = button.getMessage();
-            String key = button == modeButton ? TicketPerformanceButton.KEY : keyOf(label);
+            String key = button == modeButton ? TicketPerformanceButton.KEY : keyOf(button);
             Stamp stamp = new Stamp(button, label, key, iconFor(key), inkFor(key, number), ++number);
             for (Stamp old : previous) {
                 if (old.key.equals(key)) {
@@ -212,6 +212,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
 
     /** Pick up entries added/relabelled by other mods after this screen's init callback. */
     public void sync(List<? extends Button> menu, Button participation) {
+        menu = menu.stream().filter(java.util.Objects::nonNull).toList();
         boolean changed = this.participation != participation || menu.size() + 1 != sourceOrder.size();
         for (int i = 0; !changed && i < menu.size(); i++) {
             Button source = menu.get(i);
@@ -453,6 +454,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
             float x = ticketX + direction * 4.0f * k;
             float y = ticketY + direction * (5.0f + 3.0f * enter) * k;
             g.pose().pushPose();
+            try {
             g.pose().translate(x, y, 0);
             g.pose().scale(k, k, 1);
             GuiGeo geo = GuiGeo.begin(g);
@@ -464,7 +466,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
             geo.line(12, edgeY, TICKET_W - 12, edgeY, 0.45f,
                     RailArt.a(RailArt.BRASS_LIGHT, ticketAlpha * 0.3f));
             geo.end();
-            g.pose().popPose();
+            } finally {
+                g.pose().popPose();
+            }
         }
     }
 
@@ -488,6 +492,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         float hw = w / 2.0f / k;
         float hh = h / 2.0f / k;
         g.pose().pushPose();
+        try {
         g.pose().translate(centerX, centerY, 0.0f);
         g.pose().scale(k, k, 1.0f);
         GuiGeo glow = GuiGeo.glow(g);
@@ -508,7 +513,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         drawDipper(glow, -hw * 0.66f, -hh * 0.62f, Math.min(hw, hh) * 0.36f, time, fade);
         drawShootingStar(glow, time, hw, hh);
         glow.end();
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     /** 北斗七星：开场后连线逐段描出。 */
@@ -574,11 +581,11 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         float side = Math.max(0.0f, hw - TICKET_W / 2.0f);
 
         g.pose().pushPose();
+        try {
         g.pose().translate(centerX, centerY, 0.0f);
         g.pose().scale(k, k, 1.0f);
         if (still && stillWires.ready()) {
             stillWires.draw(g, 1, true);
-            g.pose().popPose();
             return;
         }
         GuiGeo geo = still ? GuiGeo.record() : GuiGeo.glow(g);
@@ -664,7 +671,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         } else {
             geo.end();
         }
-        g.pose().popPose();
+        } finally { g.pose().popPose(); }
     }
 
     // ---------- 邮票 ----------
@@ -787,79 +794,119 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
     }
 
     private void drawStamp(GuiGraphics g, Font font, Stamp s, long now) {
+
         if (s.intro <= 0.0f) {
+
             return;
+
         }
+
         if (s.face == null) {
+
             s.face = buildFace(font, s);
+
         }
+
         s.locked = isLocked(s);
+
         if (s.locked != s.face.locked()) s.face = s.face.withLocked(s.locked);
+
         StampArt.Face face = s.face;
+
         float scale = lightweight ? 1 : 1.0f + 0.05f * s.hover;
+
         float tilt = lightweight ? 0 : s.tilt * (1.0f - s.hover);
+
         // The buried part of a stamp is not interactive and must not render either. In particular,
+
         // its shadow, postmark and buffered text must never leak into the ticket's foreground.
+
         g.flush();
+
         int edge = Mth.clamp(s.top ? ticketY : Mth.ceil(ticketY + TICKET_H * k), 0, height);
+
         g.enableScissor(0, s.top ? 0 : edge, width, s.top ? edge : height);
+
         g.pose().pushPose();
+
         try {
+
             g.pose().translate(s.gx + STAMP_W * k / 2.0f, s.gy + STAMP_H * k / 2.0f, 0.0f);
+
             if (Math.abs(tilt) > 0.01f) {
+
                 g.pose().mulPose(Axis.ZP.rotationDegrees(tilt));
+
             }
+
             g.pose().scale(k * scale, k * scale, 1.0f);
+
             g.pose().translate(-STAMP_W / 2.0f, -STAMP_H / 2.0f, 0.0f);
+
             StampArt.draw(g, font, face, STAMP_W, STAMP_H, !s.top, s.yaw, s.hover, ticketAlpha, s.number * 37, k * scale,
+
                     s.art, lightweight);
+
             if (s.clickedAt >= 0L || visited.contains(s.key)) {
+
                 float slam = lightweight || s.clickedAt < 0L ? 1.0f : TransitionFx.clamp01((now - s.clickedAt) / 150.0f);
+
                 float markY = s.top ? STAMP_H * 0.34f : STAMP_H * 0.6f;
+
                 StampArt.postmark(g, font, STAMP_W * 0.36f, markY, 11.5f, clockText.stamp(), -14.0f + s.tilt * 2.0f,
+
                         ticketAlpha * (s.clickedAt >= 0L && now - s.clickedAt < 1200L ? 1.0f : 0.7f), slam, s.number,
+
                         k * scale);
+
                 if (s.clickedAt >= 0L && slam < 1.0f) {
+
                     TicketArt.inkSplash(g, STAMP_W * 0.36f, markY, 16.0f, StampArt.POSTMARK, slam, s.number * 3);
+
                 }
+
             }
+
         } finally {
+
             try {
+
                 // GuiGraphics may defer text until a later batch; submit it before removing the clip.
+
                 g.flush();
+
             } finally {
+
                 g.pose().popPose();
+
                 g.disableScissor();
+
             }
+
         }
+
     }
 
     private StampArt.Face buildFace(Font font, Stamp s) {
-        float avail = STAMP_W - 4.2f * 2.0f - 3.0f;
-        String plain = s.label.getString();
-        Component display = Component.literal(plain);
-        // 先尽量单行（可略缩小），再考虑折成两行，最后截断并在悬停时给出全名
-        float[][] tries = {{1.0f, 1}, {0.75f, 1}, {1.0f, 2}, {0.75f, 2}, {0.5f, 1}, {0.5f, 2}};
-        for (float[] attempt : tries) {
-            float scale = StampArt.crispDu(plain, attempt[0], k);
-            List<FormattedCharSequence> split = font.split(display, Math.max(1, Math.round(avail / scale)));
-            if (split.size() <= attempt[1]) {
-                s.truncated = false;
-                return new StampArt.Face(split, scale, s.icon, s.ink, s.number, false, s.restricted);
-            }
-        }
-        float scale = StampArt.crispDu(plain, 0.5f, k);
-        List<FormattedCharSequence> split = font.split(display, Math.max(1, Math.round(avail / scale)));
-        s.truncated = split.size() > 2;
-        List<FormattedCharSequence> kept = new ArrayList<>(split.subList(0, Math.min(2, split.size())));
-        return new StampArt.Face(kept, scale, s.icon, s.ink, s.number, false, s.restricted);
+        var layout = StampLabelLayout.fit(font, s.label, STAMP_W - 4.2f * 2.0f - 3.0f, k, Float.POSITIVE_INFINITY);
+        s.truncated = layout.truncated();
+        return new StampArt.Face(layout.lines(), layout.scale(), s.icon, s.ink,
+                s.number, false, s.restricted);
     }
 
-    private static boolean isLocked(Stamp s) {
-        return isLockedKey(s.key);
+    private boolean isLocked(Stamp s) {
+        return isLocked(s.key, s.restricted);
     }
 
-    /** 地图轮换、职业轮换与任务点设置只对 OP2 开放；延迟执行动作时也会重新检查。 */
+    /**
+     * 地图轮换、职业轮换、任务点设置及上游标红的管理员项只对 OP2 开放；延迟执行动作时也会重新检查。
+     * 不得读取上游源按钮的 {@code active}：上游等待面板按每页 4 格分页，会把第 5 格起的「皮肤管理」「背包」等
+     * 普通玩家入口设为 {@code active = false}，对局菜单收起动画期间也会把所有源按钮设为 {@code active = false}。
+     */
+    static boolean isLocked(String key, boolean restricted) {
+        return (restricted || isLockedKey(key)) && !MenuPermissions.canAccessTaskSettings();
+    }
+
     static boolean isLockedKey(String key) {
         return (TASK_SETTINGS_KEY.equals(key) || MAP_ROTATION_KEY.equals(key) || ROLE_ROSTER_KEY.equals(key))
                 && !MenuPermissions.canAccessTaskSettings();
@@ -928,6 +975,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         float alpha = ticketAlpha;
         float time = (now - openedAt) / 1000.0f * motionScale;
         g.pose().pushPose();
+        try {
         g.pose().translate(ticketX, ticketY, 0.0f);
         if (ticketRot != 0.0f) {
             g.pose().translate(TICKET_W * k / 2.0f, TICKET_H * k / 2.0f, 0.0f);
@@ -937,9 +985,12 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         g.pose().scale(k, k, 1.0f);
 
         g.pose().pushPose();
+        try {
         g.pose().translate(2.5f, 4.0f, 0.0f);
         if (!lightweight) TicketArt.shadow(g, shape, 5.0f, alpha);
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         if (!paperMesh.ready()) {
             GuiGeo paper = GuiGeo.record();
             TicketArt.paper(paper, shape, PALETTE, TicketArt.Part.WHOLE, 1);
@@ -960,7 +1011,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         drawCarryOnLabel(g, font, alpha);
         drawStub(g, font, now, alpha);
 
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         drawClock(g, font, now);
     }
 
@@ -1276,6 +1329,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         String sub = secondaryLabels() ? texts.subtitle(on ? "inventory.habitrain_core.ticket.checked"
                 : "inventory.habitrain_core.ticket.watching") : "";
         g.pose().pushPose();
+        try {
         g.pose().translate(cx, cy, 0.0f);
         g.pose().mulPose(Axis.ZP.rotationDegrees(on ? -14.0f : 8.0f));
         g.pose().scale(impact, impact, 1.0f);
@@ -1306,7 +1360,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
             float subScale = cs(sub, 0.5f);
             TicketArt.drawCentered(g, font, Component.literal(sub), 0.0f, 3.0f, subScale, c);
         }
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         if (on && slam < 1.0f && participationChangedAt >= 0L) {
             TicketArt.inkSplash(g, cx, cy, r * 1.4f, ink, slam, 5);
         }
@@ -1431,6 +1487,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         }
         long now = Util.getMillis();
         keyboardIndex = -1;
+        if (ticketRot != 0.0f || pending != null) {
+            return isMouseOver(mouseX, mouseY);
+        }
         int index = stampIndexAt(mouseX, mouseY);
         if (index >= 0) {
             clickStamp(stamps.get(index), now);
@@ -1456,7 +1515,7 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
 
     private void selectParticipation(int part, long now) {
         boolean on = participating == null || participating;
-        if (participation != null && (part == 0) != on && participationRequestedAt < 0L) {
+        if (participation != null && participation.active && (part == 0) != on && participationRequestedAt < 0L) {
             participationRequestedAt = now;
             TicketSounds.punch();
             participation.onPress();
@@ -1532,6 +1591,9 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
     @Override
     public void setFocused(boolean focused) {
         this.focused = focused;
+        if (!focused) {
+            this.keyboardIndex = -1;
+        }
     }
 
     @Override
@@ -1634,6 +1696,11 @@ public final class TicketInventoryLayer implements GuiEventListener, NarratableE
         }
         float t = (p - 0.6f) / 0.4f;
         return Mth.sin(t * Mth.PI) * 0.18f;
+    }
+
+    static String keyOf(Button button) {
+        String key = keyOf(button.getMessage());
+        return key.isBlank() ? "icon_" + Integer.toHexString(System.identityHashCode(button)) : key;
     }
 
     static String keyOf(Component label) {

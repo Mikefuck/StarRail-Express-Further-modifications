@@ -61,6 +61,20 @@ public record RoleKey(ResourceLocation location) {
         return location == null ? null : new RoleKey(location);
     }
 
+    /**
+     * Strictly parses the {@code namespace:path} string form, normalizing case
+     * and trimming whitespace.
+     *
+     * @throws IllegalArgumentException if {@code value} is null, blank, or invalid
+     */
+    public static RoleKey parse(String value) {
+        RoleKey key = tryParse(value);
+        if (key == null) {
+            throw new IllegalArgumentException("Invalid RoleKey: " + value);
+        }
+        return key;
+    }
+
     public String namespace() {
         return location.getNamespace();
     }

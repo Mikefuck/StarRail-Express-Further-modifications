@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * 任务管理器 — 取代 HabiTaskManager。
@@ -37,8 +38,8 @@ public class TaskManager {
 
     private record PendingReclaim(TaskInstance task) {}
 
-    /** Offline players whose tasks were dropped at round end; reclaim on JOIN. */
-    private final ConcurrentHashMap<UUID, List<PendingReclaim>> pendingReclaim = new ConcurrentHashMap<>();
+    /** Offline players whose tasks were dropped at round end; reclaim on JOIN (thread-safe queue per player). */
+    private final ConcurrentHashMap<UUID, Queue<PendingReclaim>> pendingReclaim = new ConcurrentHashMap<>();
 
     public static TaskManager getInstance() {
         if (INSTANCE == null) {
@@ -110,8 +111,36 @@ public class TaskManager {
         if (active != null) active.unbindOwner();
     }
 
-    /** 清空所有玩家的活跃任务（游戏结束时调用） */
+    /** 清空所有玩家的活跃任务（直接丢弃，不保留离线回收；若在对局结束时调用请用 {@link #endAllActiveTasks(MinecraftServer)}） */
     public void clearAllActiveTasks() { activeCustomTasks.clear(); dlcTaskCounts.clear(); }
+
+    /**
+     * API-TV-13：对局结束时清理所有活跃任务。
+     * 在线玩家直接执行取消与道具回收；已离线玩家的任务转入 {@link #pendingReclaim}，
+     * 待其下次 JOIN 时通过 {@link #flushPendingReclaim(Player)} 补做道具回收，防止掉线重连偷渡任务道具。
+     */
+    public void endAllActiveTasks(MinecraftServer server) {
+        List<UUID> ids = new ArrayList<>(activeCustomTasks.keySet());
+        for (UUID id : ids) {
+            TaskInstance task = activeCustomTasks.remove(id);
+            if (task == null) {
+                continue;
+            }
+            Player online = server != null && server.getPlayerList() != null
+                    ? server.getPlayerList().getPlayer(id)
+                    : null;
+            if (online != null) {
+                cancelTrackedTask(online, task);
+            } else {
+                task.cancel();
+                task.unbindOwner();
+                pendingReclaim.computeIfAbsent(id, k -> new ConcurrentLinkedQueue<>())
+                        .add(new PendingReclaim(task));
+            }
+        }
+        activeCustomTasks.clear();
+        dlcTaskCounts.clear();
+    }
 
     /** Stop-server / world-swap: clear active tasks and offline reclaim backlog. */
     public void clearAll() {
@@ -120,7 +149,7 @@ public class TaskManager {
     }
 
     /**
-     * 局终/onCleanup 入口：先 per-player {@code onRemove}+回收，再丢掉该维任务，。
+     * 局终/onCleanup 入口：先 per-player {@code onRemove}+回收，再丢掉该维任务。
      */
     public static void clearActiveTasksForLevel(ServerLevel level) {
         if (level == null) return;
@@ -152,9 +181,12 @@ public class TaskManager {
             if (player != null) {
                 cancelTrackedTask(player, task);
             } else {
-                map.remove(id, task);
-                pendingReclaim.computeIfAbsent(id, k -> new ArrayList<>())
-                        .add(new PendingReclaim(task));
+                if (map.remove(id, task)) {
+                    task.cancel();
+                    task.unbindOwner();
+                    pendingReclaim.computeIfAbsent(id, k -> new ConcurrentLinkedQueue<>())
+                            .add(new PendingReclaim(task));
+                }
             }
         }
     }
@@ -162,9 +194,10 @@ public class TaskManager {
     /** JOIN：回收局终时玩家不在线而未能扫描的任务道具。 */
     public void flushPendingReclaim(Player player) {
         if (player == null) return;
-        List<PendingReclaim> pending = pendingReclaim.remove(player.getUUID());
+        Queue<PendingReclaim> pending = pendingReclaim.remove(player.getUUID());
         if (pending == null || pending.isEmpty()) return;
-        for (PendingReclaim entry : pending) {
+        PendingReclaim entry;
+        while ((entry = pending.poll()) != null) {
             cancelTrackedTask(player, entry.task());
         }
     }
@@ -227,7 +260,7 @@ public class TaskManager {
         try {
             SREGameWorldComponent gameWorld = SREGameWorldComponent.KEY.get(player.level());
             if (gameWorld == null || gameWorld.getGameMode() == null) return TaskCategory.ALL;
-            String modeId = gameWorld.getGameMode().identifier.toString();
+            String modeId = gameWorld.getGameMode().identifier.toString().toLowerCase(Locale.ROOT);
             if (modeId.contains("repair_escape") || modeId.contains("repair")) {
                 return TaskCategory.REPAIR;
             }
@@ -241,7 +274,9 @@ public class TaskManager {
     }
 
     public boolean isOriginalTaskDisabled(String taskName, String mapName) {
-        String fullId = "habitrain_core:" + taskName.toLowerCase();
+        if (taskName == null) return false;
+        // X-CUT-13：显式使用 Locale.ROOT，防止 tr_TR 下 "DRINK" / "LINES" 等转换变成点号 ı 导致匹配失效
+        String fullId = "habitrain_core:" + taskName.toLowerCase(Locale.ROOT);
         // 与 TaskPoolBuilder / 配置 UI 同一条 isTaskEnabled 语义
         return !ConfigManager.getInstance().isTaskEnabled(fullId, mapName);
     }

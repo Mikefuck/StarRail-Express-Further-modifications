@@ -33,12 +33,11 @@ public final class SevenSinEvents {
 
         // The selected victim can hold any role, so this adapter is shared like induced sleep.
         io.wifi.starrailexpress.event.OnPlayerDeath.EVENT.register((victim, reason) ->
-                com.habitrain.core.game.sre.role.sins.component.LustComponent.onPlayerDeath(victim));
-        io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(level -> {
-            for (var player : level.players()) {
-                com.habitrain.core.game.sre.role.sins.component.LustComponent.KEY.get(player).clear();
-            }
-        });
+                com.habitrain.core.game.sre.role.sins.component.LustComponent.onPlayerDeath(victim, reason));
+        io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(
+                com.habitrain.core.game.sre.role.sins.component.LustComponent::resetRound);
+        com.habitrain.core.game.sre.match.MatchEventBridge.CLEANUP.register((level, settlement) ->
+                com.habitrain.core.game.sre.role.sins.component.LustComponent.resetRound(level));
         // Runs even after the only Lust disconnects or changes role, clearing stale vision.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_WORLD_TICK.register(level -> {
             if (level.getGameTime() % 5 == 0
@@ -48,7 +47,7 @@ public final class SevenSinEvents {
         });
 
         io.wifi.starrailexpress.event.OnGameStarted.EVENT.register(SlothComponent::resetRound);
-        io.wifi.starrailexpress.event.OnGameEnd.EVENT.register((level, game) -> SlothComponent.resetRound(level));
+        com.habitrain.core.game.sre.match.MatchEventBridge.CLEANUP.register((level, settlement) -> SlothComponent.resetRound(level));
 
         try {
             ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {

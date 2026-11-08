@@ -31,7 +31,14 @@ public class TMMRolesLegacyScanMixin {
                 if (name.startsWith("com.habitrain.core.game.sre.mixin.TMMRolesLegacyScanMixin")) {
                     continue;
                 }
+                if (name.startsWith("com.habitrain.core.role.extension.")) {
+                    return;
+                }
                 if (name.startsWith("io.wifi.starrailexpress.api.TMMRoles")) {
+                    if ("<clinit>".equals(frame.getMethodName())) {
+                        source = name;
+                        break;
+                    }
                     continue;
                 }
                 if (name.startsWith("java.") || name.startsWith("jdk.")) {

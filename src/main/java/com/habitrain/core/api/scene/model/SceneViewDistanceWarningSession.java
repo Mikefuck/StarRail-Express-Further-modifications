@@ -139,8 +139,7 @@ public final class SceneViewDistanceWarningSession {
     }
 
     public static WarningKind warningKind(SceneVisibilityAdvisor.Advice advice) {
-        if (advice == null || !advice.animationBounds().valid()
-                || !advice.sceneDistanceSufficient()) {
+        if (advice == null || !advice.animationBounds().valid()) {
             return WarningKind.NONE;
         }
         return switch (advice.viewStatus()) {
@@ -173,6 +172,6 @@ public final class SceneViewDistanceWarningSession {
     }
 
     private static String normalizedMapKey(String mapKey) {
-        return mapKey == null || mapKey.isBlank() ? "__default__" : mapKey;
+        return mapKey == null || mapKey.isBlank() ? com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY : mapKey;
     }
 }

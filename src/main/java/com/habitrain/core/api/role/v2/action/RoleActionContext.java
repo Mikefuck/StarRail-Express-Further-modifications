@@ -37,6 +37,39 @@ public record RoleActionContext(
 
     public RoleActionContext {
         Objects.requireNonNull(role, "role");
-        payload = payload == null ? new byte[0] : payload;
+        payload = payload == null || payload.length == 0 ? new byte[0] : payload.clone();
+    }
+
+    @Override
+    public byte[] payload() {
+        return payload.length == 0 ? payload : payload.clone();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof RoleActionContext other)) return false;
+        return sequence == other.sequence
+                && Objects.equals(role, other.role)
+                && Objects.equals(playerId, other.playerId)
+                && java.util.Arrays.equals(payload, other.payload)
+                && Objects.equals(targetId, other.targetId)
+                && Objects.equals(target, other.target);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(role, playerId, sequence, targetId, target);
+        return 31 * result + java.util.Arrays.hashCode(payload);
+    }
+
+    @Override
+    public String toString() {
+        return "RoleActionContext[role=" + role
+                + ", playerId=" + playerId
+                + ", payload=" + java.util.Arrays.toString(payload)
+                + ", sequence=" + sequence
+                + ", targetId=" + targetId
+                + ", target=" + target + "]";
     }
 }

@@ -43,7 +43,9 @@ class RoleBookPatchTest {
 
     @BeforeEach
     void resetRegistry() throws Exception {
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.resetForTests();
         setField("managedRoles", new LinkedHashMap<>());
+        setField("addedDefinitions", new LinkedHashMap<>());
         setField("compiledReplacements", new LinkedHashMap<>());
         setField("patches", new ArrayList<>());
         setField("replacements", new ArrayList<>());
@@ -58,6 +60,7 @@ class RoleBookPatchTest {
     @AfterEach
     void clearSnapshot() {
         RoleSnapshotManager.INSTANCE.clear();
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.resetForTests();
     }
 
     @Test
@@ -82,6 +85,57 @@ class RoleBookPatchTest {
     @Test
     void appendRequiresAPage() {
         assertThrows(IllegalArgumentException.class, RoleBookPatch::append);
+    }
+
+    @Test
+    void emptyReplacementClearsUpstreamTabs() {
+        assertTrue(RoleBookPatch.replaceAll().apply(List.of(page("old", "body"))).isEmpty());
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core", RolePatch.builder(ROLE_ID)
+                .entryKey("clear_book").book(RoleBookPatch.replaceAll()).build());
+        RoleBookView view = RoleBookResolver.resolve(ROLE_ID);
+        assertTrue(view.replaceAll());
+        assertTrue(view.pages().isEmpty());
+    }
+
+    @Test
+    void matchingReplacementKeepsTabPositions() {
+        List<RoleBookPage> result = RoleBookPatch.replaceMatchingTitles(page("a", "new"), page("c", "added"))
+                .apply(List.of(page("a", "old"), page("b", "keep")));
+        assertEquals(List.of("a", "b", "c"), result.stream().map(p -> p.title().getString()).toList());
+        assertEquals("new", result.getFirst().paragraphs().getFirst().getString());
+    }
+
+    @Test
+    void translatableTitlesMatchByKey() {
+        RoleBookPage original = RoleBookPage.of(Component.translatable("test.title", "arg"), Component.literal("old"));
+        RoleBookPage replacement = RoleBookPage.of(Component.translatable("test.title", "arg"), Component.literal("new"));
+        assertEquals(1, RoleBookPatch.replaceMatchingTitles(replacement).apply(List.of(original)).size());
+        assertTrue(RoleBookPatch.removeMatchingTitles(replacement).apply(List.of(original)).isEmpty());
+    }
+
+    @Test
+    void pageCopiesMutableComponentsOnBothBoundaries() {
+        var title = Component.literal("title");
+        var paragraph = Component.literal("body");
+        RoleBookPage page = RoleBookPage.of(title, paragraph);
+        title.append(" changed");
+        paragraph.append(" changed");
+        ((net.minecraft.network.chat.MutableComponent) page.title()).append(" output");
+        ((net.minecraft.network.chat.MutableComponent) page.paragraphs().getFirst()).append(" output");
+        assertEquals("title", page.title().getString());
+        assertEquals("body", page.paragraphs().getFirst().getString());
+    }
+
+    @Test
+    void remoteBookUsesServerEntriesDespiteDifferentLocalGates() {
+        RoleExtensionRegistry.INSTANCE.modify("habitrain_core", RolePatch.builder(ROLE_ID)
+                .entryKey("remote_book").book(RoleBookPatch.replaceAll(page("server", "body"))).build());
+        String entryId = RoleExtensionRegistry.INSTANCE.configuredPatchesFor(ROLE_ID).getFirst().entryId();
+        com.habitrain.core.role.config.RoleExtensionConfigService.INSTANCE.setProviderEnabled("habitrain_core", false);
+        assertTrue(RoleBookResolver.resolve(ROLE_ID).pages().isEmpty());
+        var remote = RoleBookResolver.resolveForEntries(ROLE_ID, java.util.Set.of(entryId));
+        assertEquals("server", remote.pages().getFirst().title().getString());
+        assertTrue(RoleBookResolver.resolveForEntries(ROLE_ID, java.util.Set.of()).pages().isEmpty());
     }
 
     @Test
@@ -129,6 +183,27 @@ class RoleBookPatchTest {
         assertTrue(view.replaceAll(), "ADD book still owns the complete set");
         assertEquals(2, view.pages().size());
         assertEquals("note", view.pages().get(1).title().getString());
+    }
+
+    @Test
+    void customFactoryBookIsFrozenFromItsDefinition() throws Exception {
+        RoleDefinition definition = RoleDefinition.builder(ROLE_ID)
+                .presentation(RolePresentation.builder().build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().build())
+                .compatibility(RoleCompatibilityProfile.builder().build())
+                .book(RoleBookContent.of(page("custom", "factory")))
+                .roleFactory(def -> new io.wifi.starrailexpress.api.NormalRole(def.key().location(), 0,
+                        true, false, io.wifi.starrailexpress.api.SRERole.MoodType.FAKE, 20, true))
+                .maxSprintTime(20).build();
+        var role = ManagedSRERole.compile(definition);
+        setField("managedRoles", new LinkedHashMap<>(java.util.Map.of(ROLE_ID, role)));
+        setField("addedDefinitions", new LinkedHashMap<>(java.util.Map.of(ROLE_ID, definition)));
+        var snapshot = com.habitrain.core.role.snapshot.RoleSnapshotCompiler.compile(
+                new RoleSnapshotId(906), java.util.Map.of(ROLE_ID, role));
+        RoleSnapshotManager.INSTANCE.setLobby(snapshot);
+        assertTrue(RoleBookResolver.resolve(ROLE_ID).replaceAll());
+        assertEquals("custom", RoleBookResolver.resolve(ROLE_ID).pages().getFirst().title().getString());
     }
 
     @Test

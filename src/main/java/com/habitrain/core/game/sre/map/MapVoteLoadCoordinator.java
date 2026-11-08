@@ -71,6 +71,8 @@ public final class MapVoteLoadCoordinator {
 
     /** 地图投票选定后、SRE startGame 开始地图重置前调用。 */
     public static void beginLoad(ServerLevel level, String mapId, String modeId) {
+        if (level != null && !com.habitrain.core.game.sre.match.ServerMatchContext.GATE.load(com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level)))
+            throw new IllegalStateException("Another match already owns this server");
         if (level == null) return;
         LoadState st = new LoadState();
         st.mapId = mapId == null ? "" : mapId;
@@ -186,6 +188,9 @@ public final class MapVoteLoadCoordinator {
     /** 维度清理 / 停服时释放。 */
     public static void reset(ServerLevel level) {
         if (level == null) return;
+        com.habitrain.core.game.sre.match.ServerMatchContext.GATE.abortPreparing(
+                com.habitrain.core.game.sre.match.ServerMatchContext.dimension(level));
+        com.habitrain.core.game.sre.mode.ForcedReadyJoinGate.clear();
         LOADS.remove(level.dimension());
         ScenePreloadCoordinator.getInstance().reset(level);
     }
@@ -199,6 +204,25 @@ public final class MapVoteLoadCoordinator {
     /** Late joiners during the loading page join the same prefetch gate and bandwidth phase. */
     public static void onPlayerJoin(ServerPlayer player) {
         ScenePreloadCoordinator.getInstance().onPlayerJoin(player);
+        if (player == null || RepairModeManager.isRepairer(player)) {
+            return;
+        }
+        ServerLevel level = player.serverLevel();
+        if (level == null) {
+            return;
+        }
+        LoadState st = LOADS.get(level.dimension());
+        if (st == null || st.settled || !isSreLoading(level)) {
+            return;
+        }
+        int progress = computeProgress(level, st);
+        int players = GameUtils.getParticipatingPlayerCount(level);
+        int killers = KillerCountResolver.killerCount(players);
+        MapVoteProgressPayload.sendTo(player, progress, players, killers, st.mapId, st.modeId);
+        if (st.startConfirmed) {
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
+                    player, new MapVoteStartConfirmedPayload(st.mapId));
+        }
     }
 
     public static boolean isLoading(ServerLevel level) {

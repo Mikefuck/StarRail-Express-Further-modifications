@@ -39,6 +39,10 @@ public class SRERoleSkinMixin {
     }
 
     private ResourceLocation texture(RoleSkinKind kind, boolean slim) {
+        if (net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType()
+                != net.fabricmc.api.EnvType.CLIENT) {
+            return null;
+        }
         SRERole self = (SRERole) (Object) this;
         if (self.identifier() == null) {
             return null;

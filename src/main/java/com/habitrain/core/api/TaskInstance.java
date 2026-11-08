@@ -16,6 +16,7 @@ public class TaskInstance {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|TaskInstance");
 
     private final TaskDefinition definition;
+    private java.util.UUID instanceId = java.util.UUID.randomUUID();
     public enum State { ACTIVE, SUCCEEDED, FAILED, CANCELLED }
     private State state = State.ACTIVE;
     // Legacy setFulfilled is a completion request; the mode may still veto it this tick.
@@ -41,6 +42,9 @@ public class TaskInstance {
         this.definition = definition;
     }
 
+    /** Stable identity for reclaiming grants from this task assignment only. */
+    public java.util.UUID getInstanceId() { return instanceId; }
+
     public TaskDefinition getDefinition() { return definition; }
     public String getFullId() { return definition.getFullId(); }
     public @org.jetbrains.annotations.Nullable ResourceKey<Level> getDimension() { return dimension; }
@@ -65,9 +69,16 @@ public class TaskInstance {
             state = State.CANCELLED;
             completionRequested = false;
         }
+        // API-TV-14：进入终态后解除实体强引用，防止泄漏旧 ServerPlayer
+        if (!ticking) {
+            unbindOwner();
+        }
     }
 
     void bindOwner(Player player) {
+        if (state != State.ACTIVE) {
+            return;
+        }
         this.ownerPlayer = player;
         this.progressUpdatePlayer = player;
     }
@@ -82,10 +93,14 @@ public class TaskInstance {
      *
      * <p>回调期间的重入仍写入进度，只抑制再次通知（{@code DEBUG} 记录），
      * 避免下游在 {@code onProgressUpdate} 里再调 {@code setProgress} 造成无限递归。
-     * 另外当任务没有 owner（{@link #unbindOwner()} 之后）时，回调会被跳过并记录 DEBUG——
-     * 旧实现是静默丢弃，下游无法感知。</p>
+     * 另外当任务没有 owner（{@link #unbindOwner()} 之后）或已处于终态（API-TV-14）时，
+     * 回调会被跳过。</p>
      */
     public void setProgress(int progress) {
+        // API-TV-14：终态后不再修改进度或触发进度回调
+        if (state != State.ACTIVE) {
+            return;
+        }
         int old = this.progress;
         this.progress = progress;
         if (old != progress) {
@@ -108,7 +123,7 @@ public class TaskInstance {
     }
 
     void notifyProgress(Player player, int oldProgress, java.util.function.Supplier<GameMode> modeLookup) {
-        if (inCallback) return;
+        if (inCallback || state != State.ACTIVE) return;
         inCallback = true;
         try {
             definition.onProgressUpdate(player, this, oldProgress);
@@ -144,7 +159,12 @@ public class TaskInstance {
         if (state != State.ACTIVE) return;
         this.state = State.FAILED;
         this.completionRequested = false;
-        if (!ticking && ownerPlayer != null) notifyTerminal(ownerPlayer);
+        if (!ticking) {
+            if (ownerPlayer != null) {
+                notifyTerminal(ownerPlayer);
+            }
+            unbindOwner();
+        }
     }
 
     /**
@@ -159,6 +179,7 @@ public class TaskInstance {
         if (ticking) return;
         if (state != State.ACTIVE) {
             notifyTerminal(player);
+            unbindOwner();
             return;
         }
 
@@ -202,8 +223,12 @@ public class TaskInstance {
         } finally {
             notifyTerminal(player);
             ticking = false;
-            // 恢复为 owner，tick 外 setProgress 仍可派发回调
-            progressUpdatePlayer = ownerPlayer;
+            // API-TV-14：若已进入终态则释放玩家实体引用；否则恢复为 owner
+            if (state != State.ACTIVE) {
+                unbindOwner();
+            } else {
+                progressUpdatePlayer = ownerPlayer;
+            }
         }
     }
 
@@ -222,6 +247,7 @@ public class TaskInstance {
 
     public CompoundTag toNbt() {
         CompoundTag nbt = new CompoundTag();
+        nbt.putUUID("instanceId", instanceId);
         nbt.putString("customId", definition.getFullId());
         nbt.putString("customName", definition.getDisplayName());
         nbt.putString("state", state.name());
@@ -254,6 +280,7 @@ public class TaskInstance {
             // Old terminal snapshots have already run their definition callback.
             instance.terminalNotified = instance.state != State.ACTIVE;
         }
+        if (nbt.hasUUID("instanceId")) instance.instanceId = nbt.getUUID("instanceId");
         instance.setMaxProgress(nbt.getInt("maxProgress"));
         instance.progress = Math.max(0, Math.min(instance.getMaxProgress(), nbt.getInt("progress")));
         instance.elapsedTicks = Math.max(0, nbt.getInt("elapsedTicks"));

@@ -25,6 +25,13 @@ public abstract class GreedPouchInsertMixin {
     private void habitrain$checkSlot(ItemStack pouch, Slot slot, ClickAction action, Player player,
                                      CallbackInfoReturnable<Boolean> cir) {
         if (action != ClickAction.SECONDARY || !GreedPouchItem.isGreedPouch(pouch)) return;
+        if (!GreedPouchItem.isBoundPouchOf(player, pouch)) {
+            cir.setReturnValue(true);
+            return;
+        }
+        if (slot.getItem().isEmpty() && GreedPouchItem.storedCount(pouch) == 0) {
+            return;
+        }
         cir.setReturnValue(true);
         if (!slot.allowModification(player)) return;
         if (slot.getItem().isEmpty()) {
@@ -35,7 +42,7 @@ public abstract class GreedPouchInsertMixin {
             ItemStack removed = GreedPouchItem.removeFirst(pouch);
             if (!removed.isEmpty()) slot.setByPlayer(removed);
         } else {
-            habitrain$reject(pouch, slot.getItem(), action, player, cir);
+            if (habitrain$reject(pouch, slot.getItem(), action, player, cir)) return;
             GreedPouchItem.insert(pouch, slot.getItem());
             slot.setChanged();
         }
@@ -45,7 +52,7 @@ public abstract class GreedPouchInsertMixin {
     private void habitrain$countTooltip(ItemStack pouch, Item.TooltipContext context,
                                         List<Component> lines, TooltipFlag flag, CallbackInfo ci) {
         if (!GreedPouchItem.isGreedPouch(pouch)) return;
-        lines.add(Component.literal("容量：" + GreedPouchItem.storedCount(pouch) + "/32件（每件占1格）"));
+        lines.add(Component.translatable("item.habitrain_core.greed_pouch.count", GreedPouchItem.storedCount(pouch)));
         ci.cancel();
     }
 
@@ -65,25 +72,33 @@ public abstract class GreedPouchInsertMixin {
     private void habitrain$checkCursor(ItemStack pouch, ItemStack other, Slot slot, ClickAction action,
                                        Player player, SlotAccess cursor, CallbackInfoReturnable<Boolean> cir) {
         if (action != ClickAction.SECONDARY || !GreedPouchItem.isGreedPouch(pouch)) return;
+        if (!GreedPouchItem.isBoundPouchOf(player, pouch)) {
+            cir.setReturnValue(true);
+            return;
+        }
+        if (other.isEmpty() && GreedPouchItem.storedCount(pouch) == 0) {
+            return;
+        }
         cir.setReturnValue(true);
         if (!slot.allowModification(player)) return;
         if (other.isEmpty()) {
             cursor.set(GreedPouchItem.removeFirst(pouch));
         } else {
-            habitrain$reject(pouch, other, action, player, cir);
+            if (habitrain$reject(pouch, other, action, player, cir)) return;
             GreedPouchItem.insert(pouch, other);
         }
         slot.setChanged();
     }
 
     @org.spongepowered.asm.mixin.Unique
-    private static void habitrain$reject(ItemStack pouch, ItemStack other, ClickAction action,
-                                         Player player, CallbackInfoReturnable<Boolean> cir) {
+    private static boolean habitrain$reject(ItemStack pouch, ItemStack other, ClickAction action,
+                                            Player player, CallbackInfoReturnable<Boolean> cir) {
         if (action != ClickAction.SECONDARY || !GreedPouchItem.isGreedPouch(pouch)
-                || other.isEmpty() || GreedPouchItem.canStore(other)) return;
+                || other.isEmpty() || GreedPouchItem.canStore(other)) return false;
         if (!player.level().isClientSide) {
             player.displayClientMessage(Component.translatable("message.habitrain_core.sin_greed.forbidden_item"), true);
         }
         cir.setReturnValue(true);
+        return true;
     }
 }
