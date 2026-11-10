@@ -7,6 +7,17 @@
         "defaultRequire": 1
     },
     "mixins": [
+        "IdiotEggDropMixin",
+        "IdiotEggContainerMixin",
+        "IdiotEggTheftMixin",
+        "DollTailorMovementLockMixin",
+        "DollTailorDamageMixin",
+        "DollTailorSkillLockMixin",
+        "TailorDollKnifeMixin",
+        "TailorDollGunMixin",
+        "TailorDollSniperMixin",
+        "TailorDollBanditGunMixin",
+        "TailorDollZeroOneFiveMixin",
         "WorldModifierPrivacyMixin",
         "CommandSourceStackAccessor",
         "EnvyDeathLootMixin",

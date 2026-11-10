@@ -379,6 +379,7 @@ public final class SevenSinV2BehaviorHooks {
     /** All inventory items are eligible except keys, correspondence, food/drink and shop markers. */
     private static boolean canEnvyTake(@Nullable ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
+        if (stack.getItem() instanceof com.habitrain.core.game.sre.role.idiot.IdiotEggItem) return false;
         // Upstream shops park vanilla command blocks in hidden slots as "already bought" markers
         // (e.g. Firefighter fire axe/extinguisher, Accountant passbook); they are not real loot.
         if (stack.is(Items.COMMAND_BLOCK) || stack.is(Items.CHAIN_COMMAND_BLOCK)

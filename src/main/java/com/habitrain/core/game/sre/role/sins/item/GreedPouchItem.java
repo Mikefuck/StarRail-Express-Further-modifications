@@ -72,6 +72,7 @@ public final class GreedPouchItem {
     /** Shared by hand absorption, vanilla bundle clicks and collection accounting. */
     public static boolean canStore(@Nullable ItemStack stack) {
         if (stack == null || stack.isEmpty() || isGreedPouch(stack)) return false;
+        if (stack.getItem() instanceof com.habitrain.core.game.sre.role.idiot.IdiotEggItem) return false;
         String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         // Explicit exclusions also apply to items carrying the thief provenance marker.
         if (itemId.equals("supplementaries:bubble_blower") || itemId.equals("supplementaries:flute")) return false;

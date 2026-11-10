@@ -199,7 +199,9 @@ public class ManagedSRERole extends NormalRole {
             role.setComponentKey(compatibility.componentKey());
         }
         role.setCanSeeCoin(compatibility.canSeeCoin());
-        role.setCanPickUpRevolver(compatibility.canPickUpRevolver());
+        if (compatibility.canPickUpRevolverExplicit()) {
+            role.setCanPickUpRevolver(compatibility.canPickUpRevolver());
+        }
         role.setCanBeRandomedByOtherRoles(compatibility.canBeRandomed());
         if (compatibility.otherModeRole()) {
             role.setOtherModeRole(true);

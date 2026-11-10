@@ -105,6 +105,7 @@ public class ConfigMenuScreen extends Screen {
     private final SubTabBar[] subBars = new SubTabBar[4];
     private SaveBar saveBar;
     private int subHitThisFrame = -1;
+    private net.minecraft.client.gui.components.Button idiotVisuals;
 
     /**
      * 场景配置器的数据包可能在屏幕交给 Minecraft 初始化之前到达。此时 Screen.font
@@ -148,6 +149,10 @@ public class ConfigMenuScreen extends Screen {
         com.habitrain.core.client.gui.scene.SceneOriginPlacementController.getInstance().reset();
         ConfigManager.getInstance().beginClientEditing();
         rebuildSubBars();
+        idiotVisuals = addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+                Component.translatable("screen.habitrain_core.idiot.visuals"), button ->
+                        Minecraft.getInstance().setScreen(new com.habitrain.core.client.idiot.IdiotVisualScreen(this)))
+                .bounds(Math.max(8, width - 124), 31, Math.min(114, width - 16), 17).build());
     }
 
     @Override
@@ -276,6 +281,7 @@ public class ConfigMenuScreen extends Screen {
         if (!isScreenAllowed()) {
             MenuTheme.drawBackdrop(g, width, height, MenuTheme.DANGER);
             drawLockedOverlay(g);
+            if (idiotVisuals != null) idiotVisuals.render(g, mx, my, delta);
             return;
         }
         int accent = activeAccent();
@@ -326,6 +332,7 @@ public class ConfigMenuScreen extends Screen {
                         MenuTheme.ACCENT_AMBER, true, MenuTheme.inBounds(mx, my, reloadX, reloadY, 122, 22));
             }
         }
+        if (idiotVisuals != null) idiotVisuals.render(g, mx, my, delta);
     }
 
     private void drawSidebar(GuiGraphics g, int mx, int my, int navW) {
@@ -473,6 +480,7 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
+        if (idiotVisuals != null && idiotVisuals.mouseClicked(mx, my, btn)) return true;
         if (!isScreenAllowed()) return false;
         if (currentPage().canSave() && ConfigManager.getInstance().hasClientConfigConflict()
                 && MenuTheme.inBounds(mx, my, contentX() + Math.max(0, contentW() - 226), height - SaveBar.HEIGHT + 10, 122, 22)) {
@@ -562,6 +570,10 @@ public class ConfigMenuScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
+        if (idiotVisuals != null && idiotVisuals.isFocused() && (key == 257 || key == 335 || key == 32)) {
+            idiotVisuals.onPress(); return true;
+        }
+        if (key == 258) return super.keyPressed(key, scan, mod);
         if (!isScreenAllowed()) {
             if (key == 256) {
                 // 未授权时 ESC 只关闭菜单，不能触发 flushPending/saveConfigNow

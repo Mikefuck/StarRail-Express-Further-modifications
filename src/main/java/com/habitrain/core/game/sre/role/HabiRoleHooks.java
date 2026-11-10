@@ -57,6 +57,24 @@ public final class HabiRoleHooks {
         registrar.hooks(RoleKey.of(HabiRoles.SWIFT_WIND_ID), swiftWind());
         registrar.hooks(RoleKey.of(HabiRoles.MIME_KILLER_ID), mimeKiller());
         registrar.hooks(RoleKey.of(HabiRoles.SNAKE_FRUIT_ID), snakeFruit());
+        registrar.hooks(RoleKey.of(HabiRoles.IDIOT_ID), com.habitrain.core.game.sre.role.idiot.IdiotService.hooks());
+        registrar.hooks(RoleKey.of(HabiRoles.DOLL_TAILOR_ID), RoleHooks.builder()
+                .lifecycle(new RoleLifecycleHooks() {
+                    @Override public void onAssigned(ServerPlayer player, RoleHookContext ctx) {
+                        com.habitrain.core.game.sre.role.tailor.DollTailorService.clear(player);
+                    }
+                    @Override public void onLost(ServerPlayer player, RoleHookContext ctx) {
+                        com.habitrain.core.game.sre.role.tailor.DollTailorService.clear(player);
+                    }
+                    @Override public void onGameEnd(ServerLevel level, RoleHookContext ctx) {
+                        for (ServerPlayer player : level.players())
+                            com.habitrain.core.game.sre.role.tailor.DollTailorService.clear(player);
+                    }
+                }).combat(new RoleCombatHooks() {
+                    @Override public void onAnyDeath(ServerPlayer dead, ResourceLocation reason, RoleHookContext ctx) {
+                        com.habitrain.core.game.sre.role.tailor.DollTailorService.releasePlayer(dead);
+                    }
+                }).build());
     }
 
     static RoleHooks snakeFruit() {

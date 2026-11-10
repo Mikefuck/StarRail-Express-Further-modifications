@@ -114,8 +114,10 @@ public final class VoiceGroupService {
     }
 
     /**
-     * 确保已淘汰/休息区玩家处于 {@link Group.Type#ISOLATED} 的 {@code Train Spectators} 语音群组中，
-     * 防止死人与活人近距离语音互通，并在重连后待 SVC UDP 握手完成时自动补入群组。
+     * 确保已淘汰/休息区玩家处于 {@link Group.Type#NORMAL} 的 {@code Train Spectators} 语音群组中：
+     * 组内可以交流，并能听到组外活人的距离语音，但组内发言不向组外广播。
+     * NORMAL 同时适用于冒险模式的休息区玩家；ISOLATED 会阻断收听活人，OPEN 则允许向组外传声。
+     * 重连后待 SVC UDP 握手完成时自动补入群组。
      */
     public static void ensureSpectatorVoiceGroup(UUID playerId) {
         if (playerId == null || !VoiceChatPresence.isLoaded()) {
@@ -130,19 +132,19 @@ public final class VoiceGroupService {
             if (conn == null) {
                 return;
             }
-            if (TrainVoicePlugin.GROUP == null || TrainVoicePlugin.GROUP.getType() != Group.Type.ISOLATED) {
+            if (TrainVoicePlugin.GROUP == null || TrainVoicePlugin.GROUP.getType() != Group.Type.NORMAL) {
                 TrainVoicePlugin.GROUP = api.groupBuilder()
                         .setHidden(true)
                         .setId(TrainVoicePlugin.GROUP_ID)
                         .setName("Train Spectators")
                         .setPersistent(true)
-                        .setType(Group.Type.ISOLATED)
+                        .setType(Group.Type.NORMAL)
                         .build();
             }
             Group current = conn.getGroup();
             if (TrainVoicePlugin.GROUP != null && (current == null
                     || !TrainVoicePlugin.GROUP_ID.equals(current.getId())
-                    || current.getType() != Group.Type.ISOLATED)) {
+                    || current.getType() != Group.Type.NORMAL)) {
                 conn.setGroup(TrainVoicePlugin.GROUP);
             }
         } catch (Throwable t) {

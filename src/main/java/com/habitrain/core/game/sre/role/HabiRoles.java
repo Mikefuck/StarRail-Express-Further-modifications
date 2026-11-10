@@ -26,6 +26,8 @@ public final class HabiRoles {
     public static final ResourceLocation MIME_KILLER_ID = HabiTrainCore.id("mime_killer");
     public static final ResourceLocation MIKE_ID = HabiTrainCore.id("mike");
     public static final ResourceLocation SNAKE_FRUIT_ID = HabiTrainCore.id("snake_fruit");
+    public static final ResourceLocation DOLL_TAILOR_ID = HabiTrainCore.id("doll_tailor");
+    public static final ResourceLocation IDIOT_ID = HabiTrainCore.id("idiot");
 
     public static SRERole CRIME_SCAPEGOAT;
     public static SRERole FLOWER_GIRL;
@@ -33,14 +35,18 @@ public final class HabiRoles {
     public static SRERole MIME_KILLER;
     public static SRERole MIKE;
     public static SRERole SNAKE_FRUIT;
+    public static SRERole DOLL_TAILOR;
+    public static SRERole IDIOT;
 
     public static void init() {
-        // 六个投稿职业已由 CoreRoleExtensionProvider 经 v2 ADD 注册并回填字段
+        // 投稿职业已由 CoreRoleExtensionProvider 经 v2 ADD 注册并回填字段
         // （须先于本 init 执行）。这里只挂七宗罪、商店次要路径和事件。
         com.habitrain.core.game.sre.role.sins.SevenSins.init();
         HabiRoleShops.register();
         HabiRoleEvents.init();
-        HabiTrainCore.LOGGER.info("[HabiRoles] v2 ADD fields ready: crime_scapegoat, flower_girl, swift_wind, mime_killer, mike, snake_fruit");
+        com.habitrain.core.game.sre.role.tailor.DollTailorService.init();
+        com.habitrain.core.game.sre.role.idiot.IdiotService.init();
+        HabiTrainCore.LOGGER.info("[HabiRoles] v2 ADD fields ready: crime_scapegoat, flower_girl, swift_wind, mime_killer, mike, snake_fruit, doll_tailor, idiot");
     }
 
     /**

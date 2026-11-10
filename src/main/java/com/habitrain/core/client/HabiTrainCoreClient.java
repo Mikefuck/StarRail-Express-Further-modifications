@@ -98,6 +98,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
 
         // 投稿职业客户端钩子（替罪羊本能伪装等）
         HabiRoleClientHooks.init();
+        com.habitrain.core.client.tailor.DollTailorClient.init();
+        com.habitrain.core.client.idiot.IdiotClient.init();
         com.habitrain.core.client.role.RoleClientExtensionHooks.init();
 
         // 角色动作客户端结果 API：注册超时 tick

@@ -7,6 +7,17 @@
         "defaultRequire": 1
     },
     "client": [
+        "DollTailorBackpackMixin",
+        "DollTailorInstinctMixin",
+        "DollTailorInstinctCacheMixin",
+        "DollTailorGlowMixin",
+        "DollTailorOutlineColorMixin",
+        "DollTailorInputMixin",
+        "DollTailorCameraMixin",
+        "DollTailorPlayerModelMixin",
+        "TailorDollKnifeTargetMixin",
+        "TailorDollGunTargetMixin",
+        "TailorDollSniperTargetMixin",
         "WheelRenderDisconnectMixin",
         "SREClientTrainStateMixin",
         "WrathDoorAttackMixin",

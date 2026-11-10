@@ -32,6 +32,9 @@ public final class ClientVisualPreferences {
     private static boolean customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
     private static boolean lightweightInventory;
     private static boolean decoratedShopEnabled = true;
+    private static boolean idiotFaceOverlay = true;
+    private static boolean idiotLargeJackpot = true;
+    private static int idiotParticles = 2;
     private static int requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
     private static int maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
     private static int diskCacheQuotaMiB = SceneClientPerformanceRules.DEFAULT_DISK_CACHE_QUOTA_MIB;
@@ -65,6 +68,9 @@ public final class ClientVisualPreferences {
         JsonObject root = result.value();
         lightweightInventory = readBoolean(root, "lightweightInventory", false);
         decoratedShopEnabled = readBoolean(root, "decoratedShopEnabled", true);
+        idiotFaceOverlay = readBoolean(root, "idiotFaceOverlay", true);
+        idiotLargeJackpot = readBoolean(root, "idiotLargeJackpot", true);
+        idiotParticles = readInt(root, "idiotParticles", 2, value -> Math.clamp(value, 0, 2));
         customTitlePanoramaEnabled = !root.has("customTitlePanoramaEnabled")
                 ? DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED
                 : root.get("customTitlePanoramaEnabled").isJsonPrimitive()
@@ -110,6 +116,8 @@ public final class ClientVisualPreferences {
     private static void applyDefaults() {
         lightweightInventory = false;
         decoratedShopEnabled = true;
+        idiotFaceOverlay = idiotLargeJackpot = true;
+        idiotParticles = 2;
         customTitlePanoramaEnabled = DEFAULT_CUSTOM_TITLE_PANORAMA_ENABLED;
         requestTimeoutMs = SceneClientPerformanceRules.DEFAULT_REQUEST_TIMEOUT_MS;
         maxChunkRetries = SceneClientPerformanceRules.DEFAULT_MAX_CHUNK_RETRIES;
@@ -349,6 +357,9 @@ public final class ClientVisualPreferences {
 
     private static boolean save() {
         JsonObject root = new JsonObject();
+        root.addProperty("idiotFaceOverlay", idiotFaceOverlay);
+        root.addProperty("idiotLargeJackpot", idiotLargeJackpot);
+        root.addProperty("idiotParticles", idiotParticles);
         root.addProperty("customTitlePanoramaEnabled", customTitlePanoramaEnabled);
         root.addProperty("lightweightInventory", lightweightInventory);
         root.addProperty("decoratedShopEnabled", decoratedShopEnabled);
@@ -374,5 +385,21 @@ public final class ClientVisualPreferences {
 
     private static Path file() {
         return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+    }
+
+    public static synchronized boolean isIdiotFaceOverlay() { load(); return idiotFaceOverlay; }
+    public static synchronized boolean isIdiotLargeJackpot() { load(); return idiotLargeJackpot; }
+    public static synchronized int getIdiotParticles() { load(); return idiotParticles; }
+    public static synchronized boolean setIdiotFaceOverlay(boolean value) {
+        load(); boolean previous = idiotFaceOverlay; idiotFaceOverlay = value;
+        if (save()) return true; idiotFaceOverlay = previous; return false;
+    }
+    public static synchronized boolean setIdiotLargeJackpot(boolean value) {
+        load(); boolean previous = idiotLargeJackpot; idiotLargeJackpot = value;
+        if (save()) return true; idiotLargeJackpot = previous; return false;
+    }
+    public static synchronized boolean setIdiotParticles(int value) {
+        load(); int previous = idiotParticles; idiotParticles = Math.clamp(value, 0, 2);
+        if (save()) return true; idiotParticles = previous; return false;
     }
 }

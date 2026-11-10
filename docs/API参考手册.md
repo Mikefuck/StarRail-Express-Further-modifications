@@ -252,6 +252,12 @@ default boolean requiresClient(); // 默认 false
 
 `roleFactory(...)` 可在 staging 时构造自定义 `SRERole` 子类；返回角色必须使用定义的 canonical ID。
 
+`RoleCompatibilityProfile` 未设置 `canPickUpRevolver` 时，保留构造后角色原有的拾枪权限：
+普通好人默认允许，普通杀手和中立默认禁止；`roleFactory` 中显式设置的例外也会保留。
+调用 `.canPickUpRevolver()` / `.canPickUpRevolver(true)` 显式允许，
+调用 `.canPickUpRevolver(false)` 显式禁止。`canPickUpRevolverExplicit()` 可区分继承与显式覆盖；
+原八参数构造函数继续可用，其中传入的拾枪值视为显式设置。
+
 ### 6.4 MODIFY：`RolePatch`
 
 排序：`PatchPriority` → provider mod ID → `entryKey`。

@@ -13,6 +13,10 @@ import java.util.Objects;
  * <p>Holds upstream flags and the optional role component key that are not yet
  * covered by a dedicated profile. As the v2 platform grows dedicated profiles,
  * fields here may move into them; the record shape is kept minimal for now.
+ *
+ * <p>Revolver pickup inherits the constructed upstream role unless
+ * {@code canPickUpRevolverExplicit} is true. This preserves innocent defaults
+ * and custom-factory exceptions without granting pickup to every new role.
  */
 public record RoleCompatibilityProfile(
         @Nullable ComponentKey<? extends RoleComponent> componentKey,
@@ -22,7 +26,18 @@ public record RoleCompatibilityProfile(
         boolean otherModeRole,
         SRERole.SpecialMapRoleMap specialMapRole,
         boolean hiddenForRotation,
-        int occupiedRoleCount) {
+        int occupiedRoleCount,
+        boolean canPickUpRevolverExplicit) {
+
+    /** Retains the original constructor; its supplied pickup value is explicit. */
+    public RoleCompatibilityProfile(
+            @Nullable ComponentKey<? extends RoleComponent> componentKey,
+            boolean canSeeCoin, boolean canPickUpRevolver, boolean canBeRandomed,
+            boolean otherModeRole, SRERole.SpecialMapRoleMap specialMapRole,
+            boolean hiddenForRotation, int occupiedRoleCount) {
+        this(componentKey, canSeeCoin, canPickUpRevolver, canBeRandomed,
+                otherModeRole, specialMapRole, hiddenForRotation, occupiedRoleCount, true);
+    }
 
     public RoleCompatibilityProfile {
         specialMapRole = specialMapRole == null ? SRERole.SpecialMapRoleMap.ALL : specialMapRole;
@@ -40,7 +55,8 @@ public record RoleCompatibilityProfile(
     public static final class Builder {
         private @Nullable ComponentKey<? extends RoleComponent> componentKey;
         private boolean canSeeCoin = true;
-        private boolean canPickUpRevolver = true;
+        private boolean canPickUpRevolver;
+        private boolean canPickUpRevolverExplicit;
         private boolean canBeRandomed = true;
         private boolean otherModeRole;
         private SRERole.SpecialMapRoleMap specialMapRole = SRERole.SpecialMapRoleMap.ALL;
@@ -55,8 +71,13 @@ public record RoleCompatibilityProfile(
         public Builder canSeeCoin() { this.canSeeCoin = true; return this; }
         public Builder canSeeCoin(boolean value) { this.canSeeCoin = value; return this; }
 
-        public Builder canPickUpRevolver() { this.canPickUpRevolver = true; return this; }
-        public Builder canPickUpRevolver(boolean value) { this.canPickUpRevolver = value; return this; }
+        /** Explicitly allows pickup; omitting this option inherits the upstream role. */
+        public Builder canPickUpRevolver() { return canPickUpRevolver(true); }
+        public Builder canPickUpRevolver(boolean value) {
+            this.canPickUpRevolver = value;
+            this.canPickUpRevolverExplicit = true;
+            return this;
+        }
 
         public Builder canBeRandomed() { this.canBeRandomed = true; return this; }
         public Builder canBeRandomed(boolean value) { this.canBeRandomed = value; return this; }
@@ -80,7 +101,7 @@ public record RoleCompatibilityProfile(
         public RoleCompatibilityProfile build() {
             return new RoleCompatibilityProfile(componentKey, canSeeCoin,
                     canPickUpRevolver, canBeRandomed, otherModeRole, specialMapRole,
-                    hiddenForRotation, occupiedRoleCount);
+                    hiddenForRotation, occupiedRoleCount, canPickUpRevolverExplicit);
         }
     }
 }

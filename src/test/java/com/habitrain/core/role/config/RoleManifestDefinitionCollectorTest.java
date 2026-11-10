@@ -88,6 +88,28 @@ class RoleManifestDefinitionCollectorTest {
     }
 
     @Test
+    void hashDistinguishesInheritedPickupFromExplicitDenial() throws Exception {
+        var inherited = com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile.builder().build();
+        var denied = com.habitrain.core.api.role.v2.definition.RoleCompatibilityProfile.builder()
+                .canPickUpRevolver(false).build();
+        var definition = com.habitrain.core.api.role.v2.definition.RoleDefinition.builder(ROLE)
+                .presentation(com.habitrain.core.api.role.v2.definition.RolePresentation.builder().build())
+                .faction(com.habitrain.core.api.role.v2.definition.RoleFactionProfile.builder().innocent().build())
+                .spawn(com.habitrain.core.api.role.v2.definition.RoleSpawnProfile.builder().build())
+                .maxSprintTime(20);
+        var managed = new LinkedHashMap<net.minecraft.resources.ResourceLocation, io.wifi.starrailexpress.api.SRERole>();
+        managed.put(ROLE.location(), com.habitrain.core.role.extension.ManagedSRERole.from(
+                definition.compatibility(inherited).build()));
+        setField(RoleExtensionRegistry.class, RoleExtensionRegistry.INSTANCE, "managedRoles", managed);
+        String inheritedHash = RoleManifestHashes.definitionHash();
+
+        managed.put(ROLE.location(), com.habitrain.core.role.extension.ManagedSRERole.from(
+                definition.compatibility(denied).build()));
+        assertNotEquals(inheritedHash, RoleManifestHashes.definitionHash(),
+                "inheriting innocent pickup and explicitly forbidding it are different declarations");
+    }
+
+    @Test
     void hashChangesWhenModifyContentChanges() {
         RoleExtensionRegistry.INSTANCE.modify("habitrain_core",
                 RolePatch.builder(ROLE).entryKey("a").defaultMax(RolePatch.IntPatch.set(2)).build());

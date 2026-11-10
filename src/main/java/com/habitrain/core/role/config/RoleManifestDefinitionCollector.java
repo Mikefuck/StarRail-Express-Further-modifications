@@ -166,7 +166,8 @@ final class RoleManifestDefinitionCollector {
         if (compat != null) {
             parts.add("compat=" + compat.canSeeCoin() + "/" + compat.canPickUpRevolver() + "/"
                     + compat.canBeRandomed() + "/" + compat.occupiedRoleCount() + "/"
-                    + compat.specialMapRole() + "/" + compat.otherModeRole() + "/" + compat.hiddenForRotation());
+                    + compat.specialMapRole() + "/" + compat.otherModeRole() + "/" + compat.hiddenForRotation()
+                    + "/pickupExplicit=" + compat.canPickUpRevolverExplicit());
         }
         if (vis != null) {
             parts.add("vis=" + vis.canUseInstinct() + "/" + vis.instinctNightVision() + "/"

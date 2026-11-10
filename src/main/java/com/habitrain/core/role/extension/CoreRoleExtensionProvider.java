@@ -180,6 +180,24 @@ public final class CoreRoleExtensionProvider implements RoleExtensionEntrypoint 
                 .build());
 
         HabiRoles.SNAKE_FRUIT = registrar.add(snakeFruitDefinition());
+        HabiRoles.IDIOT = registrar.add(RoleDefinition.builder(HabiRoles.IDIOT_ID)
+                .presentation(RolePresentation.builder().color(rgb(255, 218, 92)).build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder().canSeeCoin().build())
+                .inventory(RoleInventoryProfile.builder()
+                        .item(com.habitrain.core.game.sre.role.idiot.IdiotContent.EGG.getDefaultInstance()).build())
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime()).build());
+        HabiRoles.DOLL_TAILOR = registrar.add(RoleDefinition.builder(HabiRoles.DOLL_TAILOR_ID)
+                .presentation(RolePresentation.builder().color(rgb(218, 193, 137)).build())
+                .faction(RoleFactionProfile.builder().innocent().build())
+                .spawn(RoleSpawnProfile.builder().defaultMax(1).build())
+                .compatibility(RoleCompatibilityProfile.builder().canSeeCoin().build())
+                .skill(RoleSkillSpec.of(RoleSkill.skill(HabiTrainCore.id("doll_tailor_sew"),
+                        "skill.habitrain_core.doll_tailor.sew",
+                        com.habitrain.core.game.sre.role.tailor.DollTailorService::sew)
+                        .cooldownSeconds(0).showOnHud(true).announceToSelf(true).build()))
+                .maxSprintTime(TMMRoles.CIVILIAN.getMaxSprintTime()).build());
 
         registerSins(registrar);
 
