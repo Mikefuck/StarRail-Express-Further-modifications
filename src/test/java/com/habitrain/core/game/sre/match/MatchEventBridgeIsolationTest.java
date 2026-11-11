@@ -9,6 +9,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MatchEventBridgeIsolationTest {
+    @SuppressWarnings("removal")
     static Stream<Error> fatalFailures() {
         return Stream.of(new NoClassDefFoundError("synthetic linkage failure"),
                 new OutOfMemoryError("synthetic; no allocation pressure"), new ThreadDeath());

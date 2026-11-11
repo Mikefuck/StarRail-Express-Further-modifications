@@ -35,7 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 场景资产捕获服务（两阶段分预算捕获：主线程时间预算快照 -> 单后台线程压缩哈希落盘）。

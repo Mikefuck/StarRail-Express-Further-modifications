@@ -98,6 +98,7 @@ class ConfigUpdateAccessPolicyTest {
         assertTrue(ConfigUpdateAccessPolicy.mayInspectPayload(true));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void adminSceneToolCanOnlyReplaceCurrentMapProfile() {
         JsonObject authoritative = parse("""
@@ -121,6 +122,7 @@ class ConfigUpdateAccessPolicyTest {
         assertFalse(scene.getAsJsonObject("profiles").getAsJsonObject("map_b").get("enabled").getAsBoolean());
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void adminSceneToolCanReplaceOnlyCurrentMapsNamedBackgroundList() {
         JsonObject authoritative = parse("""
@@ -152,6 +154,7 @@ class ConfigUpdateAccessPolicyTest {
                 ConfigUpdateAccessPolicy.filterConfigJson(ConfigUpdateScope.FULL_MOD_MENU, json));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void adminSceneToolRejectsZeroDirectionAndWrongLoopCopies() {
         JsonObject authoritative = parse("{\"profiles\":{}}");
@@ -189,6 +192,7 @@ class ConfigUpdateAccessPolicyTest {
                 ConfigUpdateScope.FULL_MOD_MENU, invalid));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void sceneBoundsAcceptThirtyTwoChunksButRejectOneExtraBlock() {
         JsonObject authoritative = parse("{\"profiles\":{}}");

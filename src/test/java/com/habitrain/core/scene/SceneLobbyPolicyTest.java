@@ -110,6 +110,7 @@ class SceneLobbyPolicyTest {
                 "arbitrary", "snow", Set.of("snow")));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void lobbyToolSaveCannotOverwriteOtherMapsOrGlobalSettings() {
         var server = SceneMotionSettings.createDefault();

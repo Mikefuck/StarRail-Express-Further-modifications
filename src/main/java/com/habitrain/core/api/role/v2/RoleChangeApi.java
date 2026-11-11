@@ -26,6 +26,7 @@ public interface RoleChangeApi {
     final class DefaultHolder {
         private DefaultHolder() {}
 
+        @Deprecated(forRemoval = false)
         static final RoleChangeApi INSTANCE =
                 com.habitrain.core.api.spi.RoleSpi.change();
     }

@@ -24,6 +24,7 @@ class LifecycleCleanupTest {
         assertDoesNotThrow(() -> cleanup.report(LoggerFactory.getLogger(LifecycleCleanupTest.class)));
     }
 
+    @SuppressWarnings("removal")
     static Stream<Error> fatalFailures() {
         return Stream.of(new NoClassDefFoundError("synthetic linkage failure"),
                 new OutOfMemoryError("synthetic; no allocation pressure"), new ThreadDeath());

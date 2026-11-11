@@ -2585,13 +2585,6 @@ public class SceneMotionPage implements ConfigPage {
         Minecraft.getInstance().getNarrator().sayNow(narration);
     }
 
-    private void focusField(EditBox field) {
-        clearInputFocus();
-        mapDropdown.blur();
-        loopKeyboardFocus = -1;
-        if (field != null && isFieldAvailable(field)) field.setFocused(true);
-    }
-
     private boolean handleLoopKeyboardInput(int key) {
         if (loopKeyboardFocus < 0) return false;
         if (loopKeyboardFocus == 0 && (key == 262 || key == 263 || key == 257 || key == 32)) {

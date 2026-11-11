@@ -31,6 +31,7 @@ public final class MatchEvents {
     public static final Event<Started> STARTED = createStartedEvent();
     public static final Event<RoundEnded> ROUND_ENDED = createRoundEndedEvent();
 
+    @SuppressWarnings("removal")
     static Event<Started> createStartedEvent() {
         return EventFactory.createArrayBacked(
             Started.class,
@@ -47,6 +48,7 @@ public final class MatchEvents {
             });
     }
 
+    @SuppressWarnings("removal")
     static Event<RoundEnded> createRoundEndedEvent() {
         return EventFactory.createArrayBacked(
             RoundEnded.class,

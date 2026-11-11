@@ -6,7 +6,6 @@ import io.wifi.starrailexpress.api.TMMRoles;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import org.agmas.harpymodloader.Harpymodloader;
-import org.agmas.harpymodloader.SREDisableManager;
 
 import java.util.ArrayList;
 import java.util.Comparator;

@@ -1,7 +1,6 @@
 package com.habitrain.core.game.sre.mixin;
 
 import com.habitrain.core.game.sre.role.tailor.DollTailorService;
-import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;

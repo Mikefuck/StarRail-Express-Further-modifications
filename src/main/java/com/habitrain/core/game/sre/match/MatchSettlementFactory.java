@@ -44,7 +44,6 @@ import java.util.function.Predicate;
 /**
  * Builds a public {@link MatchSettlement} from SRE round-end state.
  */
-@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class MatchSettlementFactory {
     private static final Logger LOGGER = LoggerFactory.getLogger("habitrain_core|MatchSettlementFactory");
 

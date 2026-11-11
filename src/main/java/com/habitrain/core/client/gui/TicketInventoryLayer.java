@@ -22,7 +22,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentContents;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.chat.contents.TranslatableContents;
-import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;

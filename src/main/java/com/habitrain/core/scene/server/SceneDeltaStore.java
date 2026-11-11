@@ -395,8 +395,4 @@ public final class SceneDeltaStore {
             LOGGER.warn("删除过期增量补丁失败: {}", file, e);
         }
     }
-
-    private static String shortHash(String hash) {
-        return hash != null && hash.length() >= 12 ? hash.substring(0, 12) : String.valueOf(hash);
-    }
 }

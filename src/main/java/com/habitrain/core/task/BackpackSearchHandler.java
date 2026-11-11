@@ -104,7 +104,7 @@ public class BackpackSearchHandler {
                 // 但不将任务永久标记为 FAILED，允许玩家回到背包旁重新翻找。
                 if (!player.serverLevel().dimension().equals(state.dimension())
                         || player.getEyePosition().distanceToSqr(Vec3.atCenterOf(state.pos())) > MAX_HOLD_DISTANCE_SQR
-                        || !player.serverLevel().hasChunkAt(state.pos())
+                        || !player.serverLevel().isLoaded(state.pos())
                         || !isBackpackBlock(player.serverLevel().getBlockState(state.pos()).getBlock())
                         || !canSeeBackpack(player, state.pos())) {
                     it.remove();
@@ -187,7 +187,7 @@ public class BackpackSearchHandler {
         if (serverPlayer.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > MAX_INTERACT_DISTANCE_SQR) {
             return InteractionResult.PASS;
         }
-        if (!world.hasChunkAt(pos)) return InteractionResult.PASS;
+        if (!world.isLoaded(pos)) return InteractionResult.PASS;
         BlockState state = world.getBlockState(pos);
         Block block = state.getBlock();
 

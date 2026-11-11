@@ -190,7 +190,7 @@ public final class TaskOverlayDrawer {
         if (type != null && (type == 13 || type == 24)) {
             return true;
         }
-        if (world == null || !world.hasChunkAt(blockPos)) {
+        if (world == null || !world.isLoaded(blockPos)) {
             return false;
         }
         BlockState state = world.getBlockState(blockPos);

@@ -7,7 +7,6 @@ import com.habitrain.core.api.scene.model.SceneBounds;
 import net.minecraft.resources.ResourceLocation;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.CRC32;

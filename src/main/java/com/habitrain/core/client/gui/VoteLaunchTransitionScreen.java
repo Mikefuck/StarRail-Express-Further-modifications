@@ -1085,14 +1085,6 @@ public final class VoteLaunchTransitionScreen extends Screen {
                 ? optionId.substring(split + 1) : optionId;
     }
 
-    private static Screen unwrapVoteScreen(Screen screen) {
-        Screen destination = screen;
-        while (destination instanceof OptionVoteScreen voteScreen) {
-            destination = voteScreen.getParentScreen();
-        }
-        return destination;
-    }
-
     /**
      * 一张飞行车票的编排参数。
      *

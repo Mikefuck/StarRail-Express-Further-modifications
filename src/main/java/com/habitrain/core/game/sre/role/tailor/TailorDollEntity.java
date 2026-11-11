@@ -65,7 +65,7 @@ public final class TailorDollEntity extends PathfinderMob {
     @Override public void tick() {
         super.tick();
         setDeltaMovement(0, 0, 0);
-        if (level() instanceof ServerLevel level && !DollTailorService.owns(this)) {
+        if (level() instanceof ServerLevel && !DollTailorService.owns(this)) {
             // Round props must never survive a restart, stale chunk, or owner cleanup.
             discard();
         }

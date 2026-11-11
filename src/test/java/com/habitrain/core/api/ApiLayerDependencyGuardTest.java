@@ -2,7 +2,6 @@ package com.habitrain.core.api;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.ClassRemapper;
@@ -74,7 +73,7 @@ class ApiLayerDependencyGuardTest {
     private static Set<String> implementationReferences(byte[] bytes) {
         Set<String> references = new TreeSet<>();
         String className = new ClassReader(bytes).getClassName();
-        Remapper remapper = new Remapper() {
+        Remapper remapper = new Remapper(Opcodes.ASM9) {
             @Override public String map(String name) {
                 if (name.startsWith(CORE) && !name.startsWith(API)) references.add(name);
                 return name;

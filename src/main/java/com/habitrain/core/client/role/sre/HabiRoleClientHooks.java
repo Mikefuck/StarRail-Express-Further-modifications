@@ -4,7 +4,6 @@ import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.SevenSins;
 import com.habitrain.core.game.sre.role.sins.component.LustComponent;
-import com.habitrain.core.game.sre.role.sins.component.SlothComponent;
 import com.habitrain.core.game.sre.role.sins.component.WrathComponent;
 import io.wifi.starrailexpress.cca.SREGameWorldComponent;
 import io.wifi.starrailexpress.event.client.CommonInstinctEvents;
@@ -110,12 +109,5 @@ public final class HabiRoleClientHooks {
         } catch (Throwable ignored) {
             // Client HUD is best-effort during disconnect and role resync.
         }
-    }
-
-    private static void renderInducedSleepOverlay(GuiGraphics graphics) {
-        Minecraft client = Minecraft.getInstance();
-        LocalPlayer player = client.player;
-        if (player == null || !SlothComponent.isSleepingSloth(player)) return;
-        graphics.fill(0, 0, graphics.guiWidth(), graphics.guiHeight(), 0xFF000000);
     }
 }

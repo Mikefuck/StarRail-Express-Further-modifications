@@ -39,7 +39,6 @@ import java.util.Set;
  * {@link RawRoleLookup} so the directory logic is unit-testable without touching
  * {@code TMMRoles}'s static initializer (which needs a bootstrapped game).
  */
-@SuppressWarnings("deprecation") // Retained for legacy API compatibility.
 public final class RoleCatalogImpl implements RoleCatalogApi {
 
     /** The process-wide instance bound to the live upstream role registry. */

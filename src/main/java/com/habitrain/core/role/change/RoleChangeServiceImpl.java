@@ -55,7 +55,6 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
     /** Per-player timeline cap; without it timelines grow unboundedly with
      *  player count × role changes over a long-running server (review M3). */
     private static final int MAX_TIMELINE_ENTRIES = 64;
-    private volatile BiConsumer<ServerPlayer, SRERole> sreClearer = RoleChangeServiceImpl::clearSreRole;
     private volatile StateResetHook stateResetter = RoleChangeServiceImpl::resetState;
     /** Per-transaction live data needed only after the reversible commit succeeds. */
     private final Map<UUID, PendingEffects> pendingEffects = new ConcurrentHashMap<>();
@@ -105,11 +104,6 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
     /** Overrides how the previous role is read (used by tests; defaults to {@link #current}). */
     public void setCurrentRoleLookup(Function<ServerPlayer, RoleKey> lookup) {
         this.currentRoleLookup = lookup == null ? p -> null : lookup;
-    }
-
-    /** Overrides SRE-role clearing (used by tests; defaults to the live game component). */
-    public void setSreClearer(BiConsumer<ServerPlayer, SRERole> clearer) {
-        this.sreClearer = clearer == null ? (p, r) -> {} : clearer;
     }
 
     /** Overrides ROLE_LOST state reset (used by tests; defaults to {@link RoleStateApi}). */
@@ -420,33 +414,6 @@ public final class RoleChangeServiceImpl implements RoleChangeApi {
         RoleView view = current(player);
         return view == null ? null : view.role();
     }
-
-    private static void clearSreRole(ServerPlayer player, SRERole ignored) {
-        if (player == null || !(player.level() instanceof ServerLevel level)) {
-            return;
-        }
-        try {
-            SREGameWorldComponent game = SREGameWorldComponent.KEY.get(level);
-            if (game == null || game.getRoles() == null) {
-                return;
-            }
-            SRERole old = game.getRoles().get(player.getUUID());
-            game.getRoles().remove(player.getUUID());
-            game.syncRoles();
-                if (old != null) {
-                    try {
-                        org.agmas.harpymodloader.events.ModdedRoleRemoved.EVENT.invoker()
-                                .removeModdedRole(player, old);
-                    } catch (Throwable e) {
-            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
-                        LOGGER.warn("ModdedRoleRemoved listener failed for {}", player.getUUID(), e);
-                    }
-                }
-            } catch (Throwable e) {
-            com.habitrain.core.internal.FailurePolicy.rethrowIfFatal(e);
-                LOGGER.warn("clearSreRole failed for {}", player.getUUID(), e);
-            }
-        }
 
     /** The catalog-based resolver used by core at runtime. */
     public static SRERole resolveViaCatalog(RoleKey key) {

@@ -1,5 +1,4 @@
 package com.habitrain.core.game.sre.task;
-import com.habitrain.core.game.sre.task.TaskBlockIndex;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import java.util.Map;

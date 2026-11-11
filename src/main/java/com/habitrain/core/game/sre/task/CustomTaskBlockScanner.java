@@ -33,7 +33,6 @@ public final class CustomTaskBlockScanner {
     private static final long DEDUP_WINDOW_MS = 5_000L;
     private static final CustomTaskBlockScanTracker SCAN_TRACKER =
             new CustomTaskBlockScanTracker(DEDUP_WINDOW_MS);
-    private static final String SESSION_ID = java.util.UUID.randomUUID().toString();
     private static final Map<String, Long> LOAD_REVISIONS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicLong NEXT_REVISION = new java.util.concurrent.atomic.AtomicLong();
     public enum ScanStatus { COMPLETE, INCOMPLETE, FAILED }

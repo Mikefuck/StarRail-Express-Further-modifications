@@ -134,10 +134,6 @@ public class ClientLifecycleHandler {
         if (cleanup != null) cleanup.run();
     }
 
-    private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig) {
-        resetState(clearEspCaches, reloadLocalConfig, false, false);
-    }
-
     private static void resetState(boolean clearEspCaches, boolean reloadLocalConfig, boolean matchFinished) {
         resetState(clearEspCaches, reloadLocalConfig, matchFinished, false);
     }

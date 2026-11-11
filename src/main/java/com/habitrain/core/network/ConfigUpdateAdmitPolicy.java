@@ -16,11 +16,15 @@ public final class ConfigUpdateAdmitPolicy {
 
     private ConfigUpdateAdmitPolicy() {}
 
+    @Deprecated(forRemoval = false)
     public enum Result {
+        @Deprecated(forRemoval = false)
         APPLY,
+        @Deprecated(forRemoval = false)
         SKIP_DUPLICATE
     }
 
+    @Deprecated(forRemoval = false)
     public static Result admit(
             @Nullable String requestId,
             @Nullable String lastRequestId,
@@ -34,6 +38,7 @@ public final class ConfigUpdateAdmitPolicy {
         return Result.APPLY;
     }
 
+    @Deprecated(forRemoval = false)
     public static Result admit(
             String filteredJson,
             @Nullable String lastAppliedJson,

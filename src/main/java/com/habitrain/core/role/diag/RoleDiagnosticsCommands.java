@@ -8,7 +8,6 @@ import com.habitrain.core.api.role.v2.DiagnosticStatus;
 import com.habitrain.core.api.role.v2.RoleDiagnostics;
 import com.habitrain.core.api.role.v2.RoleKey;
 import com.habitrain.core.api.role.v2.RoleSnapshot;
-import com.habitrain.core.api.role.v2.behavior.RoleHooks;
 import com.habitrain.core.role.behavior.RoleHookRegistry;
 import com.habitrain.core.role.snapshot.RoleSnapshotManager;
 import com.habitrain.core.role.action.RoleActionServiceImpl;

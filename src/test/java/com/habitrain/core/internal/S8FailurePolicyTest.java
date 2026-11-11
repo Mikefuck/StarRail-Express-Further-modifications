@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class S8FailurePolicyTest {
+    @SuppressWarnings("removal")
     @Test void fatalErrorsEscapeWithTheirOriginalIdentity() {
         var linkage=new NoClassDefFoundError("missing binary");
         assertSame(linkage,assertThrows(LinkageError.class,()->FailurePolicy.rethrowIfFatal(linkage)));

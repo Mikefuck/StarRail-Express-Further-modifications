@@ -42,7 +42,7 @@ public final class ViewModeDispatcher {
         for (BlockPos pos : ClientTaskBlockCache.keySet()) {
             Set<Integer> typeIds = ClientTaskBlockCache.get(pos);
             Block block = ClientTaskBlockCache.getBlockAt(pos);
-            if (block == null && level != null && level.hasChunkAt(pos)) {
+            if (block == null && level != null && level.isLoaded(pos)) {
                 block = level.getBlockState(pos).getBlock();
             }
             if (block == null
