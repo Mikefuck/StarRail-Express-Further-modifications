@@ -44,7 +44,7 @@ public class SceneMotionPage implements ConfigPage {
     private static final int ROW_HEIGHT = 22;
     private static final int BUTTON_HEIGHT = 18;
     private static final int PAGE_PADDING = 8;
-    private static final int NARROW_WIDTH = 430;
+    private static final int NARROW_WIDTH = 510;
 
     private static final Map<String, String> LAST_SELECTED_BACKGROUND_PER_MAP = new java.util.concurrent.ConcurrentHashMap<>();
     private static volatile String lastSelectedMapKey = null;
@@ -53,6 +53,7 @@ public class SceneMotionPage implements ConfigPage {
     private final Font font;
     private final boolean editable;
     private final SceneMapDropdown mapDropdown;
+    private final SceneMapDropdown addMapDropdown;
     private final SceneMapDropdown backgroundDropdown;
     private final SceneMotionEditorState editorState = new SceneMotionEditorState();
 
@@ -109,8 +110,13 @@ public class SceneMotionPage implements ConfigPage {
     private final List<TooltipTarget> tooltipTargets = new ArrayList<>();
 
     private HitBox jumpRuntimeMapHit = HitBox.EMPTY;
+    private HitBox addMapHit = HitBox.EMPTY;
+    private HitBox deleteMapHit = HitBox.EMPTY;
     private HitBox addBackgroundHit = HitBox.EMPTY;
     private HitBox deleteBackgroundHit = HitBox.EMPTY;
+    private int addMapAnchorX;
+    private int addMapAnchorY;
+    private int addMapPopupWidth = 220;
     private HitBox previewHit = HitBox.EMPTY;
     private HitBox buildAssetHit = HitBox.EMPTY;
     private HitBox discardStagingHit = HitBox.EMPTY;
@@ -161,8 +167,9 @@ public class SceneMotionPage implements ConfigPage {
         this.font = font;
         this.editable = editable;
         this.mapDropdown = new SceneMapDropdown(font, this::selectMap);
+        this.addMapDropdown = new SceneMapDropdown(font, this::addMapOverride, "map_add");
         this.backgroundDropdown = new SceneMapDropdown(font, this::selectBackground, "background");
-        editorState.loadFromConfig();
+        editorState.loadFromConfig(ConfigManager.getInstance().getSceneMotionSettings());
         if (lastSelectedMapKey != null && editorState.drafts().containsKey(lastSelectedMapKey)) {
             this.selectedMapKey = lastSelectedMapKey;
         }
@@ -179,14 +186,18 @@ public class SceneMotionPage implements ConfigPage {
 
     public void setSessionData(String editorMapKey, String editorBackgroundId, String runtimeMapKey, String selectionMapKey,
                                SceneProfile profile, SceneBounds selection, SceneAssetDescriptor descriptor) {
-        if (editorMapKey != null && !editorMapKey.isBlank()) {
-            this.selectedMapKey = editorMapKey;
-            lastSelectedMapKey = editorMapKey;
-        }
+        String candidateMapKey = editorMapKey == null ? "" : editorMapKey.trim();
+        boolean hasOverride = !candidateMapKey.isBlank()
+                && (SceneMotionSettings.isBuiltInMapKey(candidateMapKey)
+                        || editorState.drafts().containsKey(candidateMapKey)
+                        || editorState.hasAdditionalBackgrounds(candidateMapKey));
+        String resolvedEditorMapKey = hasOverride ? candidateMapKey : SceneMotionSettings.DEFAULT_MAP_KEY;
+        this.selectedMapKey = resolvedEditorMapKey;
+        lastSelectedMapKey = resolvedEditorMapKey;
         String sessionBackgroundId = SceneBackgroundKey.normalizeBackgroundId(editorBackgroundId);
         this.runtimeMapKey = runtimeMapKey == null ? "" : runtimeMapKey.trim();
         this.selectionMapKey = selectionMapKey == null ? "" : selectionMapKey.trim();
-        if (profile != null) {
+        if (profile != null && hasOverride) {
             if (SceneBackgroundKey.isDefault(sessionBackgroundId)) {
                 editorState.drafts().put(selectedMapKey, new SceneProfileDraft(profile));
             } else {
@@ -281,10 +292,105 @@ public class SceneMotionPage implements ConfigPage {
         LinkedHashSet<String> keys = new LinkedHashSet<>();
         keys.add(SceneMotionSettings.DEFAULT_MAP_KEY);
         keys.add(SceneMotionSettings.LOBBY_MAP_KEY);
-        keys.addAll(ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
         keys.addAll(editorState.drafts().keySet());
         keys.removeIf(key -> key == null || key.isBlank());
         return new ArrayList<>(keys);
+    }
+
+    private List<String> collectCandidateMapKeys() {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        var vote = ConfigManager.getInstance().getModeMapVoteSettings();
+        if (vote != null && vote.maps != null) {
+            candidates.addAll(vote.maps.keySet());
+        }
+        try {
+            var server = Minecraft.getInstance().getSingleplayerServer();
+            if (server != null && server.overworld() != null) {
+                candidates.addAll(com.habitrain.core.game.sre.mode.SREModeStartAdapter.getAvailableMaps(server.overworld()));
+            }
+        } catch (Throwable ignored) {}
+        if (!runtimeMapKey.isBlank()) candidates.add(runtimeMapKey);
+        if (!selectionMapKey.isBlank()) candidates.add(selectionMapKey);
+        Set<String> existing = new java.util.HashSet<>(availableMapKeys());
+        candidates.removeIf(key -> key == null || key.isBlank()
+                || SceneMotionSettings.isBuiltInMapKey(key)
+                || com.habitrain.core.game.sre.config.SREIntegration.isReservedMapId(key)
+                || existing.contains(key));
+        return new ArrayList<>(candidates);
+    }
+
+    private void openAddMapPopup() {
+        if (!editable) return;
+        List<String> candidates = collectCandidateMapKeys();
+        if (candidates.isEmpty()) {
+            showClientMessage("screen.habitrain_core.scene_motion.message_no_addable_maps");
+            return;
+        }
+        List<SceneMapDropdownModel.Entry> entries = new ArrayList<>(candidates.size());
+        for (String key : candidates) {
+            entries.add(new SceneMapDropdownModel.Entry(
+                    key, mapLabel(key), false, key.equals(runtimeMapKey), false));
+        }
+        mapDropdown.dismiss();
+        backgroundDropdown.dismiss();
+        addMapDropdown.setEntries(entries, "");
+        addMapDropdown.setPopupAnchor(addMapAnchorX, addMapAnchorY, addMapPopupWidth, BUTTON_HEIGHT);
+        addMapDropdown.togglePopup();
+    }
+
+    private void addMapOverride(String mapKey) {
+        if (!editable || mapKey == null || mapKey.isBlank()
+                || SceneMotionSettings.isBuiltInMapKey(mapKey)
+                || availableMapKeys().contains(mapKey)) {
+            return;
+        }
+        if (widgetsInitialized && !isSaveAllowed()) {
+            showClientMessage(motionMode == SceneMotionMode.ORBIT
+                    ? "screen.habitrain_core.scene_motion.message_fix_orbit_fields"
+                    : "screen.habitrain_core.scene_motion.message_fix_loop_distance");
+            return;
+        }
+        flushPending();
+        if (SceneRenderRuntime.getInstance().isPreviewActive()) {
+            previewActive = false;
+            com.habitrain.core.scene.client.SceneClientRuntime.stopPreview();
+        }
+        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
+        SceneProfileDraft defaultDraft = editorState.drafts().get(SceneMotionSettings.DEFAULT_MAP_KEY);
+        SceneProfile template = defaultDraft != null
+                ? defaultDraft.toProfile()
+                : settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
+        editorState.addMap(mapKey, SceneMotionSettings.createAddedMapProfile(template));
+        selectedMapKey = mapKey;
+        lastSelectedMapKey = mapKey;
+        selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
+        LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
+        syncToolSelection(selectedMapKey, selectedBackgroundId);
+        populateFieldsFromDraft();
+        commitDraftsToSettings(false);
+    }
+
+    private void deleteSelectedMap() {
+        if (!editable) return;
+        if (SceneMotionSettings.isBuiltInMapKey(selectedMapKey)) {
+            showClientMessage("screen.habitrain_core.scene_motion.message_builtin_map_cannot_delete");
+            return;
+        }
+        if (SceneRenderRuntime.getInstance().isPreviewActive()) {
+            previewActive = false;
+            com.habitrain.core.scene.client.SceneClientRuntime.stopPreview();
+        }
+        String removed = selectedMapKey;
+        editorState.removeMap(removed);
+        LAST_SELECTED_BACKGROUND_PER_MAP.remove(removed);
+        selectedMapKey = SceneMotionSettings.DEFAULT_MAP_KEY;
+        lastSelectedMapKey = selectedMapKey;
+        selectedBackgroundId = SceneBackgroundKey.DEFAULT_ID;
+        LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
+        addMapDropdown.dismiss();
+        syncToolSelection(selectedMapKey, selectedBackgroundId);
+        populateFieldsFromDraft();
+        commitDraftsToSettings(true);
     }
 
     private void selectMap(String mapKey) {
@@ -311,9 +417,6 @@ public class SceneMotionPage implements ConfigPage {
         }
         LAST_SELECTED_BACKGROUND_PER_MAP.put(selectedMapKey, selectedBackgroundId);
         syncToolSelection(selectedMapKey, selectedBackgroundId);
-        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
-        editorState.ensureInheritedDraft(selectedMapKey, settings.getProfile(
-                SceneMotionSettings.DEFAULT_MAP_KEY).copyForNewProfile());
         populateFieldsFromDraft();
     }
 
@@ -697,6 +800,10 @@ public class SceneMotionPage implements ConfigPage {
     private void commitDraftsToSettings(boolean forceMarkDirty) {
         SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
         boolean changed = forceMarkDirty;
+        if (settings.profiles.keySet().removeIf(
+                key -> !SceneMotionSettings.DEFAULT_MAP_KEY.equals(key) && !editorState.drafts().containsKey(key))) {
+            changed = true;
+        }
         for (Map.Entry<String, SceneProfileDraft> e : editorState.drafts().entrySet()) {
             SceneProfile next = e.getValue().toProfile();
             if (!settings.profiles.containsKey(e.getKey()) && !editorState.shouldPersist(e.getKey(), next)) continue;
@@ -936,6 +1043,9 @@ public class SceneMotionPage implements ConfigPage {
         boolean narrow = w < NARROW_WIDTH;
         int topY = y + 4;
         int actionY = narrow ? topY + BUTTON_HEIGHT + 4 : topY;
+        int rowWidth = Math.max(1, w - 12);
+        int addWidth = 22;
+        int deleteWidth = Math.min(54, Math.max(42, rowWidth / 7));
         int previewW;
         int buildW;
         int actionX;
@@ -943,26 +1053,39 @@ public class SceneMotionPage implements ConfigPage {
         int dropdownWidth;
         int jumpWidth;
         if (narrow) {
-            int actionAvailable = Math.max(1, w - 12);
-            jumpWidth = Math.max(76, actionAvailable * 36 / 100);
-            int remaining = Math.max(2, actionAvailable - jumpWidth - 8);
+            dropdownWidth = Math.max(48, rowWidth - addWidth - deleteWidth - 8);
+            addMapHit = new HitBox(dropdownX + dropdownWidth + 4, topY, addWidth, BUTTON_HEIGHT);
+            deleteMapHit = new HitBox(addMapHit.x() + addWidth + 4, topY, deleteWidth, BUTTON_HEIGHT);
+            jumpWidth = Math.max(76, rowWidth * 36 / 100);
+            int remaining = Math.max(2, rowWidth - jumpWidth - 8);
             previewW = Math.max(1, remaining / 2);
             buildW = Math.max(1, remaining - previewW);
             actionX = dropdownX + jumpWidth + 4;
-            dropdownWidth = actionAvailable;
             jumpRuntimeMapHit = new HitBox(dropdownX, actionY, jumpWidth, BUTTON_HEIGHT);
         } else {
             previewW = 82;
             buildW = 94;
             actionX = x + w - previewW - buildW - 12;
-            jumpWidth = Math.min(126, Math.max(92, w / 5));
-            dropdownWidth = Math.max(96, Math.min(360,
-                    actionX - dropdownX - jumpWidth - 8));
-            jumpRuntimeMapHit = new HitBox(dropdownX + dropdownWidth + 4, topY,
+            jumpWidth = Math.min(126, Math.max(88, w / 6));
+            dropdownWidth = Math.max(72, Math.min(300,
+                    actionX - dropdownX - addWidth - deleteWidth - jumpWidth - 16));
+            addMapHit = new HitBox(dropdownX + dropdownWidth + 4, topY, addWidth, BUTTON_HEIGHT);
+            deleteMapHit = new HitBox(addMapHit.x() + addWidth + 4, topY, deleteWidth, BUTTON_HEIGHT);
+            jumpRuntimeMapHit = new HitBox(deleteMapHit.x() + deleteWidth + 4, topY,
                     jumpWidth, BUTTON_HEIGHT);
         }
+        addMapAnchorX = dropdownX;
+        addMapAnchorY = topY;
+        addMapPopupWidth = Math.min(rowWidth, Math.max(220, dropdownWidth + addWidth + deleteWidth + 8));
         mapDropdown.setEntries(mapDropdownEntries(), selectedMapKey);
         mapDropdown.renderButton(g, mx, my, dropdownX, topY, dropdownWidth, BUTTON_HEIGHT);
+        renderButton(g, addMapHit, "+", MenuTheme.ACCENT_MINT,
+                editable, addMapDropdown.isOpen(), mx, my);
+        renderButton(g, deleteMapHit,
+                tr("screen.habitrain_core.scene_motion.map_delete"), MenuTheme.DANGER,
+                editable && !SceneMotionSettings.isBuiltInMapKey(selectedMapKey), false, mx, my);
+        addTooltip(addMapHit, Component.translatable("screen.habitrain_core.scene_motion.map_add_tooltip"));
+        addTooltip(deleteMapHit, Component.translatable("screen.habitrain_core.scene_motion.map_delete_tooltip"));
 
         previewHit = new HitBox(actionX, actionY, previewW, BUTTON_HEIGHT);
         int buildX = actionX + previewW + 4;
@@ -1017,9 +1140,6 @@ public class SceneMotionPage implements ConfigPage {
         }
 
         int backgroundY = actionY + BUTTON_HEIGHT + 4;
-        int rowWidth = Math.max(1, w - 12);
-        int addWidth = 22;
-        int deleteWidth = Math.min(54, Math.max(42, rowWidth / 7));
         int nameWidth = narrow ? rowWidth : Math.min(150, Math.max(72, rowWidth / 4));
         int backgroundDropdownWidth = narrow
                 ? Math.max(48, rowWidth - addWidth - deleteWidth - 8)
@@ -1728,8 +1848,9 @@ public class SceneMotionPage implements ConfigPage {
         scroll.setContentHeight(renderedContentHeight);
         scroll.render(g);
         mapDropdown.renderOverlay(g, mx, my, delta, y + h);
+        addMapDropdown.renderOverlay(g, mx, my, delta, y + h);
         backgroundDropdown.renderOverlay(g, mx, my, delta, y + h);
-        if (!mapDropdown.isOpen() && !backgroundDropdown.isOpen()) renderPageTooltip(g, mx, my);
+        if (!mapDropdown.isOpen() && !addMapDropdown.isOpen() && !backgroundDropdown.isOpen()) renderPageTooltip(g, mx, my);
         mapDropdown.renderTooltip(g, mx, my);
         backgroundDropdown.renderTooltip(g, mx, my);
     }
@@ -2001,18 +2122,41 @@ public class SceneMotionPage implements ConfigPage {
     public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
         if (!widgetsInitialized) return false;
 
+        if (addMapDropdown.isOpen() && addMapDropdown.mouseClicked(mx, my, btn)) {
+            if (addMapDropdown.isOpen()) {
+                mapDropdown.dismiss();
+                backgroundDropdown.dismiss();
+            }
+            loopKeyboardFocus = -1;
+            return true;
+        }
         if (mapDropdown.mouseClicked(mx, my, btn)) {
-            if (mapDropdown.isOpen()) backgroundDropdown.dismiss();
+            if (mapDropdown.isOpen()) {
+                addMapDropdown.dismiss();
+                backgroundDropdown.dismiss();
+            }
             loopKeyboardFocus = -1;
             return true;
         }
         mapDropdown.blur();
         if (backgroundDropdown.mouseClicked(mx, my, btn)) {
-            if (backgroundDropdown.isOpen()) mapDropdown.dismiss();
+            if (backgroundDropdown.isOpen()) {
+                mapDropdown.dismiss();
+                addMapDropdown.dismiss();
+            }
             loopKeyboardFocus = -1;
             return true;
         }
         backgroundDropdown.blur();
+        if (addMapHit.contains(mx, my)) {
+            openAddMapPopup();
+            return true;
+        }
+        if (deleteMapHit.contains(mx, my)) {
+            deleteSelectedMap();
+            return true;
+        }
+        addMapDropdown.blur();
         if (addBackgroundHit.contains(mx, my)) {
             addBackground();
             return true;
@@ -2458,7 +2602,7 @@ public class SceneMotionPage implements ConfigPage {
 
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy, int x, int y, int w, int h) {
-        if (mapDropdown.isOpen() || backgroundDropdown.isOpen()) return true;
+        if (mapDropdown.isOpen() || addMapDropdown.isOpen() || backgroundDropdown.isOpen()) return true;
         if (rangeSliderDragging && btn == 0) {
             updateLoopDistanceFromSlider(mx);
             return true;
@@ -2473,7 +2617,7 @@ public class SceneMotionPage implements ConfigPage {
 
     @Override
     public boolean mouseReleased(double mx, double my, int btn) {
-        if (mapDropdown.isOpen() || backgroundDropdown.isOpen()) return true;
+        if (mapDropdown.isOpen() || addMapDropdown.isOpen() || backgroundDropdown.isOpen()) return true;
         if (rangeSliderDragging) {
             rangeSliderDragging = false;
             return true;
@@ -2488,6 +2632,7 @@ public class SceneMotionPage implements ConfigPage {
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy, int x, int y, int w, int h) {
         if (mapDropdown.mouseScrolled(sy)) return true;
+        if (addMapDropdown.mouseScrolled(sy)) return true;
         if (backgroundDropdown.mouseScrolled(sy)) return true;
         return scroll.mouseScrolled(sy);
     }
@@ -2495,7 +2640,16 @@ public class SceneMotionPage implements ConfigPage {
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
         if (mapDropdown.keyPressed(key, scan, mod)) return true;
+        if (addMapDropdown.keyPressed(key, scan, mod)) return true;
         if (backgroundDropdown.keyPressed(key, scan, mod)) return true;
+        if (mapDropdown.isFocused() && key == 260) {
+            if (editable) openAddMapPopup();
+            return true;
+        }
+        if (mapDropdown.isFocused() && key == 261) {
+            if (editable) deleteSelectedMap();
+            return true;
+        }
         if (backgroundDropdown.isFocused() && key == 260) {
             if (editable) addBackground();
             return true;
@@ -2564,6 +2718,7 @@ public class SceneMotionPage implements ConfigPage {
         FocusCycle.move(order, delta, () -> {
             clearInputFocus();
             mapDropdown.blur();
+            addMapDropdown.blur();
             backgroundDropdown.blur();
         });
     }
@@ -2653,6 +2808,7 @@ public class SceneMotionPage implements ConfigPage {
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (mapDropdown.charTyped(codePoint, modifiers)) return true;
+        if (addMapDropdown.charTyped(codePoint, modifiers)) return true;
         if (backgroundDropdown.charTyped(codePoint, modifiers)) return true;
         if (backgroundNameField.isFocused() && backgroundNameField.charTyped(codePoint, modifiers)) return true;
         for (EditBox field : inputFields) {

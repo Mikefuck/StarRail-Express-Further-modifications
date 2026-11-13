@@ -229,6 +229,10 @@ public final class SceneCaptureService implements com.habitrain.core.api.spi.Sce
         }
         currentMapKey = requestedMapKey;
         var settings = ConfigManager.getInstance().getSceneMotionSettings();
+        if (!settings.isConfiguredEditorMap(currentMapKey)) {
+            requester.sendSystemMessage(net.minecraft.network.chat.Component.literal("§c该地图未创建独立场景配置，请先在设置页点击“+”添加该地图"));
+            return false;
+        }
         boolean configuredBackground = settings.getResolvedBackgrounds(currentMapKey).stream()
                 .anyMatch(background -> background.id().equals(requestedBackgroundId));
         if (!configuredBackground) {

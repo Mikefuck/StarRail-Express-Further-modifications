@@ -92,6 +92,19 @@ public final class SceneMapDropdown {
         blur();
     }
 
+    public void setPopupAnchor(int x, int y, int width, int height) {
+        buttonBounds = new Rect(x, y, Math.max(1, width), Math.max(1, height));
+    }
+
+    public void togglePopup() {
+        if (open) {
+            close();
+        } else {
+            focused = true;
+            open();
+        }
+    }
+
     public void renderButton(GuiGraphics graphics, int mouseX, int mouseY,
                              int x, int y, int width, int height) {
         buttonBounds = new Rect(x, y, Math.max(1, width), Math.max(1, height));
@@ -357,9 +370,13 @@ public final class SceneMapDropdown {
     private String detailLine(SceneMapDropdownModel.Entry entry) {
         StringBuilder detail = new StringBuilder();
         if (!entry.key().equals(com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY)) detail.append(entry.key()).append("  ·  ");
-        detail.append(Component.translatable(entry.enabled()
-                ? "screen.habitrain_core.scene_motion.map_scene_enabled"
-                : "screen.habitrain_core.scene_motion.map_scene_disabled").getString());
+        if ("map_add".equals(kind)) {
+            detail.append(Component.translatable("screen.habitrain_core.scene_motion.map_add_detail").getString());
+        } else {
+            detail.append(Component.translatable(entry.enabled()
+                    ? "screen.habitrain_core.scene_motion.map_scene_enabled"
+                    : "screen.habitrain_core.scene_motion.map_scene_disabled").getString());
+        }
         if (entry.runtime()) detail.append("  ·  ").append(Component.translatable(
                 "screen.habitrain_core.scene_motion.map_runtime").getString());
         if (entry.editing()) detail.append("  ·  ").append(Component.translatable(

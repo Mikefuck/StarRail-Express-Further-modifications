@@ -272,6 +272,41 @@ class ConfigUpdateAccessPolicyTest {
                 ConfigUpdateScope.FULL_MOD_MENU, badCoord));
     }
 
+    @Test
+    void adminSceneToolCanAddAndDeleteMapOverridesAndCannotDeleteDefault() {
+        JsonObject before = parse("""
+                {"sceneMotion":{"schemaVersion":4,"profiles":{"__default__":{"enabled":true}},"backgrounds":{}}}
+                """);
+        JsonObject added = parse("""
+                {"sceneMotion":{"schemaVersion":4,"profiles":{"__default__":{"enabled":true},"alpine":{"enabled":false}},"backgrounds":{}}}
+                """);
+
+        JsonObject addPatch = com.habitrain.core.config.ConfigPatch.diff(before, added);
+        JsonObject appliedAdd = com.habitrain.core.config.ConfigPatch.apply(
+                before, addPatch, ConfigUpdateScope.ADMIN_SCENE_TOOL, "__default__");
+        assertTrue(appliedAdd.getAsJsonObject("sceneMotion").getAsJsonObject("profiles").has("alpine"));
+        assertDoesNotThrow(() -> ConfigUpdateAccessPolicy.validateAdminSceneMapKeys(
+                before, appliedAdd, ConfigUpdateScope.ADMIN_SCENE_TOOL, java.util.Set.of("alpine")));
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.validateAdminSceneMapKeys(
+                before, appliedAdd, ConfigUpdateScope.ADMIN_SCENE_TOOL, java.util.Set.of("other_map")));
+
+        JsonObject removePatch = com.habitrain.core.config.ConfigPatch.diff(appliedAdd, before);
+        JsonObject appliedRemove = com.habitrain.core.config.ConfigPatch.apply(
+                appliedAdd, removePatch, ConfigUpdateScope.ADMIN_SCENE_TOOL, "__default__");
+        assertFalse(appliedRemove.getAsJsonObject("sceneMotion").getAsJsonObject("profiles").has("alpine"));
+
+        assertEquals(java.util.Set.of("alpine"),
+                ConfigUpdateAccessPolicy.collectRemovedSceneAssets(appliedAdd, appliedRemove));
+        assertThrows(IllegalArgumentException.class, () -> ConfigUpdateAccessPolicy.validateMenuGateScopedMutation(
+                appliedAdd, appliedRemove, ConfigUpdateScope.ADMIN_SCENE_TOOL, true));
+
+        JsonObject removeDefaultPatch = parse("""
+                {"set":{},"remove":["/sceneMotion/profiles/__default__"]}
+                """);
+        assertThrows(IllegalArgumentException.class, () -> com.habitrain.core.config.ConfigPatch.apply(
+                before, removeDefaultPatch, ConfigUpdateScope.ADMIN_SCENE_TOOL, "__default__"));
+    }
+
     private static JsonObject parse(String json) {
         return JsonParser.parseString(json).getAsJsonObject();
     }

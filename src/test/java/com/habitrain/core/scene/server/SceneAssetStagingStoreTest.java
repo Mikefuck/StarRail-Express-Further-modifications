@@ -28,6 +28,29 @@ class SceneAssetStagingStoreTest {
     }
 
     @Test
+    void removingSceneConfigKeepsRunningAssetDownloadableUntilTheLastReferenceEnds() throws Exception {
+        SceneAssetStore store = SceneAssetStore.getInstance();
+        store.bindWorld(tempDir.toFile());
+        Asset running = asset("minecraft:stone", 100L);
+        Asset replacement = asset("minecraft:glass", 200L);
+        assertTrue(store.saveAsset("map1", running.bytes, running.descriptor));
+        String hash = running.descriptor.sha256();
+
+        store.deleteConfiguredAsset("map1");
+        assertNull(store.getDescriptor("map1"), "new scenes must not resolve the removed map asset");
+        assertTrue(store.saveAsset("map1", replacement.bytes, replacement.descriptor));
+
+        store.collectRetiredAssets(java.util.Set.of(hash));
+        assertEquals(running.descriptor, store.getRuntimeDescriptor("map1", hash));
+        assertNotNull(store.getAssetFile(hash), "late joiners must still be able to download the old scene");
+
+        store.collectRetiredAssets(java.util.Set.of());
+        assertNull(store.getRuntimeDescriptor("map1", hash));
+        assertNull(store.getAssetFile(hash));
+        assertEquals(replacement.descriptor, store.getDescriptor("map1"));
+    }
+
+    @Test
     void stagingDoesNotChangeLiveDescriptorUntilAtomicPromotion() throws Exception {
         SceneAssetStore store = SceneAssetStore.getInstance();
         store.bindWorld(tempDir.toFile());

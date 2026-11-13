@@ -737,9 +737,9 @@ public final class SceneInstanceService implements SceneInstanceBridge {
 
     private void sendManifest(ServerPlayer player, SceneInstance instance) {
         if (!instance.hasAsset()) return;
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(instance.assetKey());
+        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance()
+                .getRuntimeDescriptor(instance.assetKey(), instance.assetHash());
         if (descriptor == null || !descriptor.isValid()) return;
-        if (!Objects.equals(descriptor.sha256(), instance.assetHash())) return;
         SceneTransferService.getInstance().authorizeInstanceAsset(player, instance, descriptor);
         ServerPlayNetworking.send(player, new SceneAssetManifestS2C(instance.assetKey(), descriptor));
     }

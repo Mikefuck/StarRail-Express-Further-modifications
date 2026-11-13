@@ -137,6 +137,8 @@ public final class SceneToolHud implements HudRenderCallback {
         lines.add(tr("hud.habitrain_core.scene_tool.title", ChatFormatting.GOLD));
         Component mapDisplay = currentMapKey.isBlank()
                 ? tr("hud.habitrain_core.scene_tool.unnamed_map", ChatFormatting.GRAY)
+                : com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY.equals(currentMapKey)
+                ? tr("screen.habitrain_core.scene_motion.map_default", ChatFormatting.AQUA)
                 : com.habitrain.core.api.scene.SceneMotionSettings.LOBBY_MAP_KEY.equals(currentMapKey)
                 ? tr("screen.habitrain_core.scene_motion.map_lobby", ChatFormatting.AQUA)
                 : Component.literal(currentMapKey).withStyle(ChatFormatting.AQUA);

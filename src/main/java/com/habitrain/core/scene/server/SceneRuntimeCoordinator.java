@@ -27,7 +27,9 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -45,6 +47,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
     private SceneContextResolver contextResolver = SreSceneContextResolver.INSTANCE;
     private final Map<String, SceneRuntimeState> levelRuntimeStates = new ConcurrentHashMap<>();
+    private final Map<String, String> levelEffectiveMapKeys = new ConcurrentHashMap<>();
     private final Map<String, List<SceneRuntimeState>> levelAdditionalRuntimeStates = new ConcurrentHashMap<>();
     private final Map<String, List<SceneMotionSettings.ResolvedBackground>> lobbyConfigurations = new ConcurrentHashMap<>();
     private final AtomicInteger profileRevision = new AtomicInteger(1);
@@ -65,7 +68,21 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
         MatchEvents.STARTED.register(this::onMatchStarted);
         MatchEvents.ROUND_ENDED.register((level, settlement) -> onMatchEnded(level));
         ServerTickEvents.END_WORLD_TICK.register(level -> updateLobby(level, false));
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (server.getTickCount() % 20 == 0) collectRetiredAssets();
+        });
         LOGGER.info("移动场景运行协调器已初始化并监听 MatchEvents");
+    }
+
+    private void collectRetiredAssets() {
+        SceneAssetStore store = SceneAssetStore.getInstance();
+        if (!store.hasRetiredAssets()) return;
+        Set<String> activeHashes = new HashSet<>();
+        levelRuntimeStates.values().forEach(state -> activeHashes.add(state.getAssetHash()));
+        levelAdditionalRuntimeStates.values().forEach(states ->
+                states.forEach(state -> activeHashes.add(state.getAssetHash())));
+        SceneInstanceService.getInstance().snapshot().forEach(instance -> activeHashes.add(instance.assetHash()));
+        store.collectRetiredAssets(activeHashes);
     }
 
     public void onMatchStarted(ServerLevel level) {
@@ -80,6 +97,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
         SceneContextResolver.SceneContext ctx = contextResolver.resolve(level);
         String mapKey = ctx.mapKey();
+        String effectiveMapKey = settings.effectiveMapKey(mapKey);
         SceneProfile profile = settings.getProfile(mapKey);
 
         boolean anyBackgroundEnabled = settings.getResolvedBackgrounds(mapKey).stream()
@@ -90,7 +108,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
         }
 
         SceneAssetDescriptor descriptor = profile.isEnabled()
-                ? SceneAssetStore.getInstance().getDescriptor(mapKey) : null;
+                ? SceneAssetStore.getInstance().getDescriptor(effectiveMapKey) : null;
         String assetHash = descriptor != null ? descriptor.sha256() : "";
 
         if (profile.isEnabled() && (descriptor == null || !descriptor.isValid())) {
@@ -106,11 +124,11 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
                         "§c[移动场景] 当前地图没有场景资产，且源选区为空；请用配置器重新选区"));
             } else {
                 boolean captureStarted = SceneCaptureService.getInstance()
-                        .requestCapture(level, mapKey, profile.getSourceBounds(), progressRecipient);
+                        .requestCapture(level, effectiveMapKey, profile.getSourceBounds(), progressRecipient);
                 if (captureStarted) {
-                    LOGGER.warn("地图 {} 缺少移动场景资产，已从保存的源选区自动开始生成；完成后将热更新当前对局", mapKey);
+                    LOGGER.warn("地图 {} (资产 {}) 缺少移动场景资产，已从保存的源选区自动开始生成；完成后将热更新当前对局", mapKey, effectiveMapKey);
                 } else {
-                    LOGGER.warn("地图 {} 缺少移动场景资产，自动生成未能启动", mapKey);
+                    LOGGER.warn("地图 {} (资产 {}) 缺少移动场景资产，自动生成未能启动", mapKey, effectiveMapKey);
                 }
             }
         }
@@ -121,18 +139,19 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
         String dimKey = level.dimension().location().toString();
         levelRuntimeStates.put(dimKey, state);
+        levelEffectiveMapKeys.put(dimKey, effectiveMapKey);
         List<SceneRuntimeState> additionalStates = createAdditionalStates(
-                settings, mapKey, startTime, level);
+                settings, effectiveMapKey, startTime, level);
         levelAdditionalRuntimeStates.put(dimKey, additionalStates);
 
-        LOGGER.info("移动场景启动: mapKey={}, startTime={}, assetHash={}", mapKey, startTime, descriptor != null ? descriptor.shortHash() : "NONE");
+        LOGGER.info("移动场景启动: mapKey={}, effectiveMapKey={}, startTime={}, assetHash={}", mapKey, effectiveMapKey, startTime, descriptor != null ? descriptor.shortHash() : "NONE");
         SceneInstanceService.getInstance().fireMapSceneStarted(level, mapKey);
 
         // 广播 Manifest 与运行状态包
         if (descriptor != null && descriptor.isValid()) {
-            SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(mapKey, descriptor);
+            SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(effectiveMapKey, descriptor);
             for (ServerPlayer player : level.players()) {
-                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
+                SceneTransferService.getInstance().authorizeAsset(player, effectiveMapKey, descriptor);
                 ServerPlayNetworking.send(player, manifestPayload);
             }
         }
@@ -159,6 +178,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
     private void stopRuntime(ServerLevel level) {
         String dimKey = level.dimension().location().toString();
         SceneRuntimeState oldState = levelRuntimeStates.remove(dimKey);
+        levelEffectiveMapKeys.remove(dimKey);
         levelAdditionalRuntimeStates.remove(dimKey);
         if (oldState != null && oldState.isActive()) {
             LOGGER.info("移动场景停止: dimension={}", dimKey);
@@ -181,16 +201,19 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
         SceneRuntimeState state = levelRuntimeStates.get(dimKey);
 
         if (state != null && state.isActive()) {
-            SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(state.getMapKey());
+            String effectiveMapKey = levelEffectiveMapKeys.getOrDefault(dimKey,
+                    ConfigManager.getInstance().getSceneMotionSettings().effectiveMapKey(state.getMapKey()));
+            SceneAssetDescriptor descriptor = SceneAssetStore.getInstance()
+                    .getRuntimeDescriptor(effectiveMapKey, state.getAssetHash());
             if (descriptor != null && descriptor.isValid()) {
-                SceneTransferService.getInstance().authorizeAsset(player, state.getMapKey(), descriptor);
-                ServerPlayNetworking.send(player, new SceneAssetManifestS2C(state.getMapKey(), descriptor));
+                SceneTransferService.getInstance().authorizeAsset(player, effectiveMapKey, descriptor);
+                ServerPlayNetworking.send(player, new SceneAssetManifestS2C(effectiveMapKey, descriptor));
             }
             ServerPlayNetworking.send(player, new SceneRuntimeStateS2C(state));
             List<SceneRuntimeState> additional = levelAdditionalRuntimeStates.getOrDefault(dimKey, List.of());
             for (SceneRuntimeState additionalState : additional) {
                 SceneAssetDescriptor additionalDescriptor = SceneAssetStore.getInstance()
-                        .getDescriptor(additionalState.getMapKey());
+                        .getRuntimeDescriptor(additionalState.getMapKey(), additionalState.getAssetHash());
                 if (additionalDescriptor != null && additionalDescriptor.isValid()) {
                     SceneTransferService.getInstance().authorizeAsset(player,
                             additionalState.getMapKey(), additionalDescriptor);
@@ -218,7 +241,12 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
         for (ServerLevel level : server.getAllLevels()) {
             String dimensionKey = level.dimension().location().toString();
             SceneRuntimeState current = levelRuntimeStates.get(dimensionKey);
-            if (current == null || !current.isActive() || !Objects.equals(current.getMapKey(), mapKey)) {
+            if (current == null || !current.isActive()) {
+                continue;
+            }
+            String activeAssetKey = levelEffectiveMapKeys.getOrDefault(dimensionKey,
+                    ConfigManager.getInstance().getSceneMotionSettings().effectiveMapKey(current.getMapKey()));
+            if (!Objects.equals(activeAssetKey, mapKey)) {
                 continue;
             }
 
@@ -278,8 +306,9 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
             mapKey = ctx.mapKey();
         }
 
+        String effectiveMapKey = settings.effectiveMapKey(mapKey);
         SceneProfile profile = settings.getProfile(mapKey);
-        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(mapKey);
+        SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(effectiveMapKey);
         String assetHash = descriptor != null ? descriptor.sha256() : "";
 
         long startTime = level.getGameTime();
@@ -288,13 +317,14 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
         String dimKey = level.dimension().location().toString();
         levelRuntimeStates.put(dimKey, state);
-        List<SceneRuntimeState> additionalStates = createAdditionalStates(settings, mapKey, startTime, level);
+        levelEffectiveMapKeys.put(dimKey, effectiveMapKey);
+        List<SceneRuntimeState> additionalStates = createAdditionalStates(settings, effectiveMapKey, startTime, level);
         levelAdditionalRuntimeStates.put(dimKey, additionalStates);
 
         if (descriptor != null && descriptor.isValid()) {
-            SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(mapKey, descriptor);
+            SceneAssetManifestS2C manifestPayload = new SceneAssetManifestS2C(effectiveMapKey, descriptor);
             for (ServerPlayer player : level.players()) {
-                SceneTransferService.getInstance().authorizeAsset(player, mapKey, descriptor);
+                SceneTransferService.getInstance().authorizeAsset(player, effectiveMapKey, descriptor);
                 ServerPlayNetworking.send(player, manifestPayload);
             }
         }
@@ -335,6 +365,7 @@ public final class SceneRuntimeCoordinator implements SceneRuntimeBridge {
 
     public void resetAll() {
         levelRuntimeStates.clear();
+        levelEffectiveMapKeys.clear();
         levelAdditionalRuntimeStates.clear();
         lobbyConfigurations.clear();
     }

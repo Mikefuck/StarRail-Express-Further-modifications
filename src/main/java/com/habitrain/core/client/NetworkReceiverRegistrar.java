@@ -409,13 +409,8 @@ public class NetworkReceiverRegistrar {
                         executeIfConnected(ctx, () -> {
                             Minecraft mc = ctx.client();
                             var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
-                            java.util.LinkedHashSet<String> configuredMapKeys = new java.util.LinkedHashSet<>(
-                                    ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
-                            configuredMapKeys.addAll(sceneSettings.profiles.keySet());
+                            java.util.Set<String> configuredMapKeys = sceneSettings.configuredEditorMapKeys();
                             var sceneRuntime = com.habitrain.core.scene.client.SceneRenderRuntime.getInstance();
-                            if (payload.editorMapKey() != null && !payload.editorMapKey().isBlank()) {
-                                configuredMapKeys.add(payload.editorMapKey());
-                            }
                             String initialMapKey = com.habitrain.core.api.scene.model.SceneEditorMapPolicy.resolve(
                                     payload.editorMapKey(), payload.runtimeMapKey(), "",
                                     configuredMapKeys);

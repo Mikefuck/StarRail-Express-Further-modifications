@@ -186,11 +186,7 @@ public final class SceneConfiguratorItem extends Item {
                 ? runtimeState.getMapKey() : "";
         String contextMapKey = SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
         var sceneSettings = ConfigManager.getInstance().getSceneMotionSettings();
-        java.util.LinkedHashSet<String> configuredMapKeys = new java.util.LinkedHashSet<>(
-                ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
-        configuredMapKeys.addAll(sceneSettings.profiles.keySet());
-        if (runtimeMapKey != null && !runtimeMapKey.isBlank()) configuredMapKeys.add(runtimeMapKey);
-        if (contextMapKey != null && !contextMapKey.isBlank()) configuredMapKeys.add(contextMapKey);
+        java.util.Set<String> configuredMapKeys = sceneSettings.configuredEditorMapKeys();
 
         SceneSelectionSessionManager sessions = SceneSelectionSessionManager.getInstance();
         String editorMapKey = SceneEditorMapPolicy.resolve(

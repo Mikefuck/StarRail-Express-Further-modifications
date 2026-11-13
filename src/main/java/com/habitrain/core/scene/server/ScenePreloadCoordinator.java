@@ -95,11 +95,12 @@ public final class ScenePreloadCoordinator {
 
         String normalizedMapKey = mapKey == null || mapKey.isBlank() ? com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY : mapKey.trim();
         var settings = ConfigManager.getInstance().getSceneMotionSettings();
+        String effectiveMapKey = settings.effectiveMapKey(normalizedMapKey);
         Map<String, SceneAssetDescriptor> descriptors = new LinkedHashMap<>();
         if (settings.enabled) {
             for (var background : settings.getResolvedBackgrounds(normalizedMapKey)) {
                 if (!background.profile().isEnabled()) continue;
-                String assetKey = background.assetKey(normalizedMapKey);
+                String assetKey = background.assetKey(effectiveMapKey);
                 SceneAssetDescriptor descriptor = SceneAssetStore.getInstance().getDescriptor(assetKey);
                 if (descriptor != null && descriptor.isValid()) descriptors.put(assetKey, descriptor);
             }

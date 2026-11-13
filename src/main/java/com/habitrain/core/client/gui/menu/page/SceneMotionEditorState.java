@@ -4,7 +4,6 @@ import com.habitrain.core.api.scene.SceneMotionSettings;
 import com.habitrain.core.api.scene.model.SceneBackgroundConfig;
 import com.habitrain.core.api.scene.model.SceneProfile;
 import com.habitrain.core.api.scene.model.SceneProfileDraft;
-import com.habitrain.core.config.ConfigManager;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,8 +19,7 @@ final class SceneMotionEditorState {
     private final Map<String, LinkedHashMap<String, String>> backgroundNames = new LinkedHashMap<>();
     private final Map<String, SceneProfile> inheritedBaselines = new LinkedHashMap<>();
 
-    void loadFromConfig() {
-        SceneMotionSettings settings = ConfigManager.getInstance().getSceneMotionSettings();
+    void loadFromConfig(SceneMotionSettings settings) {
         drafts.clear();
         inheritedBaselines.clear();
         backgroundDrafts.clear();
@@ -40,36 +38,40 @@ final class SceneMotionEditorState {
             backgroundDrafts.put(mapEntry.getKey(), mapDrafts);
             backgroundNames.put(mapEntry.getKey(), mapNames);
         }
-        if (!drafts.containsKey(SceneMotionSettings.DEFAULT_MAP_KEY)) {
-            drafts.put(SceneMotionSettings.DEFAULT_MAP_KEY,
-                    new SceneProfileDraft(settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY)));
+        for (String key : settings.configuredEditorMapKeys()) {
+            ensureInheritedDraft(key, settings.getProfile(key));
         }
-        drafts.putIfAbsent(SceneMotionSettings.LOBBY_MAP_KEY,
-                new SceneProfileDraft(settings.getProfile(SceneMotionSettings.LOBBY_MAP_KEY)));
-
-        SceneProfile defaultProfile = settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
-        for (String mapId : ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet()) {
-            if (mapId != null && !mapId.isBlank()) {
-                drafts.computeIfAbsent(mapId,
-                        key -> new SceneProfileDraft(defaultProfile.copyForNewProfile()));
-            }
-        }
-        drafts.forEach((key, draft) -> {
-            if (!settings.profiles.containsKey(key) && !SceneMotionSettings.DEFAULT_MAP_KEY.equals(key)) {
-                inheritedBaselines.put(key, draft.toProfile());
-            }
-        });
     }
 
     boolean shouldPersist(String key, SceneProfile profile) {
         return !java.util.Objects.equals(inheritedBaselines.get(key), profile);
     }
 
+    void addMap(String mapKey, SceneProfile initialProfile) {
+        if (mapKey == null || mapKey.isBlank() || initialProfile == null) return;
+        inheritedBaselines.remove(mapKey);
+        drafts.put(mapKey, new SceneProfileDraft(initialProfile));
+    }
+
+    boolean removeMap(String mapKey) {
+        if (mapKey == null || SceneMotionSettings.isBuiltInMapKey(mapKey)) return false;
+        boolean removed = drafts.remove(mapKey) != null;
+        removed |= backgroundDrafts.remove(mapKey) != null;
+        backgroundNames.remove(mapKey);
+        inheritedBaselines.remove(mapKey);
+        return removed;
+    }
+
+    boolean hasAdditionalBackgrounds(String mapKey) {
+        LinkedHashMap<String, SceneProfileDraft> mapDrafts = backgroundDrafts.get(mapKey);
+        return mapDrafts != null && !mapDrafts.isEmpty();
+    }
+
     void ensureInheritedDraft(String key, SceneProfile profile) {
         if (!drafts.containsKey(key)) {
             SceneProfileDraft draft = new SceneProfileDraft(profile);
             drafts.put(key, draft);
-            inheritedBaselines.put(key, draft.toProfile());
+            inheritedBaselines.put(key, draft.toProfile().copy());
         }
     }
 

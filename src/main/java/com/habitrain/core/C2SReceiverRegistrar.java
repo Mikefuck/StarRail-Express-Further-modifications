@@ -312,9 +312,8 @@ public final class C2SReceiverRegistrar {
 
                             String currentMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE
                                     .resolve(player.serverLevel()).mapKey();
-                            java.util.LinkedHashSet<String> allowedMapKeys = new java.util.LinkedHashSet<>(
-                                    ConfigManager.getInstance().getModeMapVoteSettings().maps.keySet());
-                            allowedMapKeys.addAll(ConfigManager.getInstance().getSceneMotionSettings().profiles.keySet());
+                            java.util.Set<String> allowedMapKeys = ConfigManager.getInstance()
+                                    .allowedSceneMapKeys(player.serverLevel());
                             try {
                                 String selectedMapKey = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
                                         payload.mapKey(), currentMapKey, allowedMapKeys);

@@ -46,6 +46,8 @@ public final class SceneAssetStore implements SceneAssetBridge {
     private volatile File storageDir;
     private volatile File stagingDir;
     private final Map<String, SceneAssetDescriptor> mapIndex = new ConcurrentHashMap<>();
+    // Deleted from the published index, but still downloadable by scenes that already use this hash.
+    private final Map<String, SceneAssetDescriptor> retiredAssets = new ConcurrentHashMap<>();
 
     private SceneAssetStore() {}
 
@@ -53,6 +55,7 @@ public final class SceneAssetStore implements SceneAssetBridge {
      * 绑定世界存档目录。
      */
     public synchronized void bindWorld(File worldDirectory) {
+        collectRetiredAssets(Set.of());
         indexRevision++;
         if (worldDirectory == null) {
             this.location = null;
@@ -415,6 +418,7 @@ public final class SceneAssetStore implements SceneAssetBridge {
     private void deleteUnreferencedAssetFile(String sha256) {
         File storage = this.storageDir;
         if (storage == null || !SceneAssetDescriptor.isValidSha256(sha256)) return;
+        if (retiredAssets.containsKey(sha256)) return;
         for (SceneAssetDescriptor desc : mapIndex.values()) {
             if (desc != null && desc.sha256().equalsIgnoreCase(sha256)) {
                 return;
@@ -432,19 +436,54 @@ public final class SceneAssetStore implements SceneAssetBridge {
         return mapIndex.get(normalizeMapKey(mapKey));
     }
 
+    /** Resolve the exact asset already named in a running scene, even after configuration removal. */
+    SceneAssetDescriptor getRuntimeDescriptor(String mapKey, String sha256) {
+        if (!SceneAssetDescriptor.isValidSha256(sha256)) return null;
+        SceneAssetDescriptor published = getDescriptor(mapKey);
+        return published != null && sha256.equals(published.sha256()) ? published : retiredAssets.get(sha256);
+    }
+
+    boolean hasRetiredAssets() {
+        return !retiredAssets.isEmpty();
+    }
+
+    synchronized void collectRetiredAssets(Set<String> activeHashes) {
+        for (String hash : retiredAssets.keySet()) {
+            if (activeHashes.contains(hash)) continue;
+            retiredAssets.remove(hash);
+            deleteUnreferencedAssetFile(hash);
+        }
+    }
+
     public Map<String, SceneAssetDescriptor> getAllDescriptors() {
         return Collections.unmodifiableMap(mapIndex);
     }
 
     public synchronized void deleteAsset(String mapKey) {
+        removeAsset(mapKey, false);
+    }
+
+    public synchronized void deleteConfiguredAsset(String mapKey) {
+        removeAsset(mapKey, true);
+    }
+
+    private void removeAsset(String mapKey, boolean retainForRuntime) {
         if (mapKey == null) return;
         String normalizedMapKey = normalizeMapKey(mapKey);
         SceneAssetDescriptor removed = mapIndex.remove(normalizedMapKey);
-        indexRevision++;
         if (removed != null) {
-            saveIndex();
-            deleteUnreferencedAssetFile(removed.sha256());
+            if (!saveIndex()) {
+                mapIndex.put(normalizedMapKey, removed);
+                LOGGER.warn("无法保存场景资产删除，保留原资产: {}", normalizedMapKey);
+                return;
+            }
+            if (retainForRuntime) {
+                retiredAssets.put(removed.sha256(), removed);
+            } else {
+                deleteUnreferencedAssetFile(removed.sha256());
+            }
         }
+        indexRevision++;
         // 地图都不在了，相对它的增量补丁也就没有意义了。
         SceneDeltaStore.getInstance().discard(normalizedMapKey);
     }

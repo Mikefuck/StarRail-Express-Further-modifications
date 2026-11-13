@@ -496,14 +496,22 @@ public final class CommandRegistrar {
         String map = (mapArg != null && !mapArg.isBlank())
                 ? mapArg
                 : com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
-        var profile = ConfigManager.getInstance().getSceneMotionSettings().getProfile(map);
+        var settings = ConfigManager.getInstance().getSceneMotionSettings();
+        if (!settings.isConfiguredEditorMap(map)) {
+            source.sendFailure(Component.literal("§c请先添加该地图的独立场景配置；如要生成默认回退资产，请显式指定 __default__"));
+            return 0;
+        }
+        String assetKey = settings.effectiveMapKey(map);
+        var profile = settings.getProfile(assetKey);
         if (profile.getSourceBounds().isEmpty()) {
             source.sendFailure(Component.literal("§c该地图未配置源选区 sourceBounds: " + map));
             return 0;
         }
-        com.habitrain.core.scene.server.SceneCaptureService.getInstance()
-                .requestCapture(level, map, profile.getSourceBounds(), player);
-        source.sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + map), false);
+        if (!com.habitrain.core.scene.server.SceneCaptureService.getInstance()
+                .requestCapture(level, assetKey, profile.getSourceBounds(), player)) {
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("§e已发起场景资产生成任务: " + assetKey), false);
         return 1;
     }
 

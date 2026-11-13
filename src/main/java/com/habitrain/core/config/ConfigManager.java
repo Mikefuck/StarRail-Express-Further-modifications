@@ -244,6 +244,26 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
         return submitPatch(patch, baseRevision, scope, sceneMap, false);
     }
 
+    public java.util.Set<String> allowedSceneMapKeys(@Nullable net.minecraft.server.level.ServerLevel level) {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(repository.getModeMapVote().maps.keySet());
+        keys.addAll(repository.getSceneMotion().configuredEditorMapKeys());
+        MinecraftServer server = currentServer != null ? currentServer : (level != null ? level.getServer() : null);
+        if (server != null && server.overworld() != null) {
+            for (String mapId : com.habitrain.core.game.sre.mode.SREModeStartAdapter.getAvailableMaps(server.overworld())) {
+                if (mapId != null && !mapId.isBlank() && !SREIntegration.isReservedMapId(mapId)) {
+                    keys.add(mapId.trim());
+                }
+            }
+        }
+        if (level != null) {
+            String contextMapKey = com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(level).mapKey();
+            if (contextMapKey != null && !contextMapKey.isBlank()) {
+                keys.add(contextMapKey.trim());
+            }
+        }
+        return keys;
+    }
+
     public ConfigSaveResult submitPatch(com.google.gson.JsonObject patch, long baseRevision,
                                         com.habitrain.core.network.ConfigUpdateScope scope, String sceneMap,
                                         boolean menuGateBlocked) {
@@ -253,6 +273,11 @@ public class ConfigManager implements ConfigQueryService, SceneConfigBridge {
             var before = store.buildJsonRoot(repository, false);
             var next = ConfigPatch.apply(before, patch, scope, sceneMap);
             com.habitrain.core.network.ConfigUpdateAccessPolicy.validateMenuGateScopedMutation(before, next, scope, menuGateBlocked);
+            if (scope == com.habitrain.core.network.ConfigUpdateScope.ADMIN_SCENE_TOOL) {
+                var allowed = allowedSceneMapKeys(null);
+                if (sceneMap != null && !sceneMap.isBlank()) allowed.add(sceneMap.trim());
+                com.habitrain.core.network.ConfigUpdateAccessPolicy.validateAdminSceneMapKeys(before, next, scope, allowed);
+            }
             if (next.equals(before)) return ConfigSaveResult.unchanged();
             ConfigRepository candidate = new ConfigRepository();
             if (!sync.loadFromJsonObject(candidate, next, true)) return ConfigSaveResult.failed("配置字段无效");

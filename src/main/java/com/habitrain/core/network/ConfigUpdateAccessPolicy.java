@@ -176,6 +176,59 @@ public final class ConfigUpdateAccessPolicy {
         return removed;
     }
 
+    /**
+     * Collects scene asset keys (both removed non-built-in primary maps and additional background assets)
+     * present in {@code before} that were removed in {@code next}.
+     */
+    public static java.util.Set<String> collectRemovedSceneAssets(JsonObject before, JsonObject next) {
+        java.util.Set<String> removed = collectSceneAssets(before);
+        removed.removeAll(collectSceneAssets(next));
+        return removed;
+    }
+
+    private static java.util.Set<String> collectSceneAssets(JsonObject root) {
+        java.util.Set<String> keys = collectBackgroundAssets(root);
+        if (root == null || !root.has("sceneMotion") || !root.get("sceneMotion").isJsonObject()) return keys;
+        JsonObject sm = root.getAsJsonObject("sceneMotion");
+        if (sm.has("profiles") && sm.get("profiles").isJsonObject()) {
+            for (String mapKey : sm.getAsJsonObject("profiles").keySet()) {
+                if (mapKey != null && !mapKey.isBlank() && !SceneMotionSettings.isBuiltInMapKey(mapKey)) {
+                    keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeMapKey(mapKey));
+                }
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Rejects ADMIN_SCENE_TOOL patches that introduce unknown non-built-in map keys not in {@code knownMapKeys}.
+     */
+    public static void validateAdminSceneMapKeys(
+            JsonObject before, JsonObject next, ConfigUpdateScope scope, Collection<String> knownMapKeys) {
+        if (scope != ConfigUpdateScope.ADMIN_SCENE_TOOL) return;
+        JsonObject beforeSm = before != null && before.has("sceneMotion") && before.get("sceneMotion").isJsonObject()
+                ? before.getAsJsonObject("sceneMotion") : null;
+        JsonObject nextSm = next != null && next.has("sceneMotion") && next.get("sceneMotion").isJsonObject()
+                ? next.getAsJsonObject("sceneMotion") : null;
+        if (nextSm == null) return;
+        for (String section : java.util.List.of("profiles", "backgrounds")) {
+            JsonObject beforeSection = beforeSm != null && beforeSm.has(section) && beforeSm.get(section).isJsonObject()
+                    ? beforeSm.getAsJsonObject(section) : new JsonObject();
+            JsonObject nextSection = nextSm.has(section) && nextSm.get(section).isJsonObject()
+                    ? nextSm.getAsJsonObject(section) : null;
+            if (nextSection == null) continue;
+            for (String key : nextSection.keySet()) {
+                if (key == null || key.isBlank()) {
+                    throw new IllegalArgumentException("场景地图键不能为空");
+                }
+                if (SceneMotionSettings.isBuiltInMapKey(key) || beforeSection.has(key)) continue;
+                if (knownMapKeys == null || !knownMapKeys.contains(key)) {
+                    throw new IllegalArgumentException("未知的移动场景地图键: " + key);
+                }
+            }
+        }
+    }
+
     private static java.util.Set<String> collectBackgroundAssets(JsonObject root) {
         java.util.Set<String> keys = new java.util.LinkedHashSet<>();
         if (root == null || !root.has("sceneMotion") || !root.get("sceneMotion").isJsonObject()) return keys;
@@ -212,7 +265,7 @@ public final class ConfigUpdateAccessPolicy {
                 throw new IllegalArgumentException("未获完整菜单门控授权时，不能新增或删除地图键");
             }
         } else if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
-            if (!collectRemovedBackgroundAssets(before, next).isEmpty()) {
+            if (!collectRemovedSceneAssets(before, next).isEmpty()) {
                 throw new IllegalArgumentException("未获完整菜单门控授权时，不能删除场景背景资产");
             }
         }

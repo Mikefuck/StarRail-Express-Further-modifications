@@ -64,7 +64,7 @@ public final class ConfigPatch {
             case BACKPACK_TASKS -> parts.getFirst().equals("tasks");
             case BACKPACK_MAP_VOTE -> parts.getFirst().equals("modeMapVote");
             case ADMIN_SCENE_TOOL -> parts.size() >= 3 && parts.getFirst().equals("sceneMotion")
-                    && Set.of("profiles", "backgrounds").contains(parts.get(1)) && Objects.equals(parts.get(2), map);
+                    && Set.of("profiles", "backgrounds").contains(parts.get(1)) && !parts.get(2).isBlank();
         };
         if (!allowed) throw new IllegalArgumentException("修改超出页面权限范围");
         return parts;
@@ -78,7 +78,14 @@ public final class ConfigPatch {
             parent = parent.getAsJsonObject(key);
         }
         String key = path.getLast();
-        if (remove) parent.remove(key); else { if (value == null || value.isJsonNull()) throw new IllegalArgumentException("清空使用 remove，不能用 null"); parent.add(key, value.deepCopy()); }
+        if (remove) {
+            if (path.size() == 3 && "sceneMotion".equals(path.getFirst())
+                    && "profiles".equals(path.get(1))
+                    && com.habitrain.core.api.scene.SceneMotionSettings.DEFAULT_MAP_KEY.equals(key)) {
+                throw new IllegalArgumentException("不能删除默认回退配置");
+            }
+            parent.remove(key);
+        } else { if (value == null || value.isJsonNull()) throw new IllegalArgumentException("清空使用 remove，不能用 null"); parent.add(key, value.deepCopy()); }
     }
     private static String escape(String key) { return key.replace("~", "~0").replace("/", "~1"); }
 }

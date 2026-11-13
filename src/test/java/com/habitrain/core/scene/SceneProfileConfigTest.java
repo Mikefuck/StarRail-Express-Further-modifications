@@ -233,4 +233,61 @@ public class SceneProfileConfigTest {
         assertEquals("habitrain:night_train",
                 SceneBackgroundKey.assetKey("habitrain:night_train", SceneBackgroundKey.DEFAULT_ID));
     }
+
+    @Test
+    public void defaultEditorMapsContainOnlyDefaultAndLobbyAndFallbackAppliesToUnaddedMaps() {
+        SceneMotionSettings settings = new SceneMotionSettings();
+        assertEquals(
+                java.util.List.of(SceneMotionSettings.DEFAULT_MAP_KEY, SceneMotionSettings.LOBBY_MAP_KEY),
+                new java.util.ArrayList<>(settings.configuredEditorMapKeys()));
+
+        SceneProfile fallback = settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
+        fallback.setEnabled(true);
+        fallback.setSpeedBlocksPerSecond(18.0);
+        SceneProfile aurora = new SceneProfile();
+        aurora.setEnabled(true);
+        aurora.setSpeedBlocksPerSecond(9.5);
+        assertTrue(settings.putBackground(SceneMotionSettings.DEFAULT_MAP_KEY, "aurora",
+                new SceneBackgroundConfig("极光", aurora)));
+
+        assertFalse(settings.hasMapOverride("alpine"));
+        assertFalse(settings.isConfiguredEditorMap("alpine"));
+        assertEquals(SceneMotionSettings.DEFAULT_MAP_KEY, settings.effectiveMapKey("alpine"));
+        assertTrue(settings.getProfile("alpine").isEnabled());
+        var resolved = settings.getResolvedBackgrounds("alpine");
+        assertEquals(2, resolved.size());
+        assertEquals(SceneMotionSettings.DEFAULT_MAP_KEY,
+                resolved.get(0).assetKey(settings.effectiveMapKey("alpine")));
+        assertEquals("__default__::habiscene::aurora",
+                resolved.get(1).assetKey(settings.effectiveMapKey("alpine")));
+    }
+
+    @Test
+    public void addedDisabledMapSuppressesFallbackAndRemovalRestoresFallback() {
+        SceneMotionSettings settings = new SceneMotionSettings();
+        SceneProfile fallback = settings.getProfile(SceneMotionSettings.DEFAULT_MAP_KEY);
+        fallback.setEnabled(true);
+        fallback.setSpeedBlocksPerSecond(22.0);
+        SceneProfile fallbackBg = new SceneProfile();
+        fallbackBg.setEnabled(true);
+        assertTrue(settings.putBackground(SceneMotionSettings.DEFAULT_MAP_KEY, "clouds",
+                new SceneBackgroundConfig("云层", fallbackBg)));
+
+        settings.profiles.put("alpine", SceneMotionSettings.createAddedMapProfile(fallback));
+        SceneMotionSettings reloaded = SceneMotionSettings.fromJson(settings.toJson());
+        assertTrue(reloaded.hasMapOverride("alpine"));
+        assertTrue(reloaded.isConfiguredEditorMap("alpine"));
+        assertEquals("alpine", reloaded.effectiveMapKey("alpine"));
+        assertFalse(reloaded.getProfile("alpine").isEnabled());
+        assertEquals(1, reloaded.getResolvedBackgrounds("alpine").size());
+        assertTrue(reloaded.configuredEditorMapKeys().contains("alpine"));
+
+        assertFalse(reloaded.removeMapOverride(SceneMotionSettings.DEFAULT_MAP_KEY));
+        assertFalse(reloaded.removeMapOverride(SceneMotionSettings.LOBBY_MAP_KEY));
+        assertTrue(reloaded.removeMapOverride("alpine"));
+        assertFalse(reloaded.hasMapOverride("alpine"));
+        assertEquals(SceneMotionSettings.DEFAULT_MAP_KEY, reloaded.effectiveMapKey("alpine"));
+        assertTrue(reloaded.getProfile("alpine").isEnabled());
+        assertEquals(2, reloaded.getResolvedBackgrounds("alpine").size());
+    }
 }

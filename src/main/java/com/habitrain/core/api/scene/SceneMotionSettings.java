@@ -48,6 +48,9 @@ public final class SceneMotionSettings {
         if (profile == null && LOBBY_MAP_KEY.equals(key)) {
             return createLobbyProfile();
         }
+        if (profile == null && !DEFAULT_MAP_KEY.equals(key) && hasMapOverride(key)) {
+            return createAddedMapProfile(profiles.get(DEFAULT_MAP_KEY));
+        }
         if (profile == null) {
             profile = profiles.get(DEFAULT_MAP_KEY);
         }
@@ -63,8 +66,64 @@ public final class SceneMotionSettings {
         });
     }
 
+    public static boolean isBuiltInMapKey(String mapKey) {
+        if (mapKey == null || mapKey.isBlank()) return false;
+        String normalized = mapKey.trim();
+        return DEFAULT_MAP_KEY.equals(normalized) || LOBBY_MAP_KEY.equals(normalized);
+    }
+
+    public boolean hasMapOverride(String mapKey) {
+        String key = resolvedMapKey(mapKey);
+        if (isBuiltInMapKey(key)) return true;
+        if (profiles.containsKey(key) || backgrounds.containsKey(key)) return true;
+        if (mapKey != null && !key.equals(mapKey)) {
+            return profiles.containsKey(mapKey) || backgrounds.containsKey(mapKey);
+        }
+        return false;
+    }
+
+    public boolean isConfiguredEditorMap(String mapKey) {
+        return mapKey != null && !mapKey.isBlank() && hasMapOverride(mapKey);
+    }
+
     private String resolvedMapKey(String mapKey) {
         return SceneBackgroundKey.normalizeMapKey(mapKey == null || mapKey.isBlank() ? defaultMapKey : mapKey);
+    }
+
+    public String effectiveMapKey(String mapKey) {
+        String key = resolvedMapKey(mapKey);
+        return hasMapOverride(key) ? key : DEFAULT_MAP_KEY;
+    }
+
+    public java.util.Set<String> configuredEditorMapKeys() {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+        keys.add(DEFAULT_MAP_KEY);
+        keys.add(LOBBY_MAP_KEY);
+        for (String key : profiles.keySet()) {
+            if (key != null && !key.isBlank()) keys.add(key.trim());
+        }
+        for (String key : backgrounds.keySet()) {
+            if (key != null && !key.isBlank()) keys.add(key.trim());
+        }
+        return Collections.unmodifiableSet(keys);
+    }
+
+    public boolean removeMapOverride(String mapKey) {
+        if (mapKey == null || mapKey.isBlank() || isBuiltInMapKey(mapKey)) return false;
+        String key = SceneBackgroundKey.normalizeMapKey(mapKey);
+        boolean removed = profiles.remove(key) != null;
+        removed |= backgrounds.remove(key) != null;
+        if (!key.equals(mapKey)) {
+            removed |= profiles.remove(mapKey) != null;
+            removed |= backgrounds.remove(mapKey) != null;
+        }
+        return removed;
+    }
+
+    public static SceneProfile createAddedMapProfile(SceneProfile template) {
+        SceneProfile profile = template != null ? template.copyForNewProfile() : SceneProfile.createDefault();
+        profile.setEnabled(false);
+        return profile;
     }
 
     public Map<String, SceneProfile> getAllProfiles() {
@@ -79,7 +138,7 @@ public final class SceneMotionSettings {
     }
 
     public SceneProfile getBackgroundProfile(String mapKey, String backgroundId) {
-        String map = resolvedMapKey(mapKey);
+        String map = effectiveMapKey(mapKey);
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id)) return getProfile(map);
         SceneBackgroundConfig background = backgrounds.getOrDefault(map, new LinkedHashMap<>()).get(id);
@@ -90,12 +149,12 @@ public final class SceneMotionSettings {
         String id = SceneBackgroundKey.normalizeBackgroundId(backgroundId);
         if (SceneBackgroundKey.DEFAULT_ID.equals(id)) return "默认设置";
         SceneBackgroundConfig background = backgrounds
-                .getOrDefault(resolvedMapKey(mapKey), new LinkedHashMap<>()).get(id);
+                .getOrDefault(effectiveMapKey(mapKey), new LinkedHashMap<>()).get(id);
         return background != null ? background.getName() : id;
     }
 
     public List<ResolvedBackground> getResolvedBackgrounds(String mapKey) {
-        String map = resolvedMapKey(mapKey);
+        String map = effectiveMapKey(mapKey);
         List<ResolvedBackground> result = new ArrayList<>();
         result.add(new ResolvedBackground(SceneBackgroundKey.DEFAULT_ID, "默认设置", getProfile(map), true));
         LinkedHashMap<String, SceneBackgroundConfig> additional = backgrounds.get(map);

@@ -61,24 +61,24 @@ public final class ConfigSubmissionService {
             }
             String target = "";
             if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) {
-                var allowed = new LinkedHashSet<>(manager.getModeMapVoteSettings().maps.keySet());
-                allowed.addAll(manager.getSceneMotionSettings().profiles.keySet());
                 target = ConfigUpdateAccessPolicy.resolveAdminSceneTargetMap(
                         ConfigUpdateScope.sceneMapKeyFromConfigJson(request),
                         com.habitrain.core.game.sre.scene.SreSceneContextResolver.INSTANCE.resolve(player.serverLevel()).mapKey(),
-                        allowed);
+                        manager.allowedSceneMapKeys(player.serverLevel()));
             }
             boolean menuGateBlocked = MenuGateService.isBlocked(player);
-            Set<String> oldAssets = additionalAssets(manager.getSceneMotionSettings());
+            Set<String> oldAssets = sceneAssets(manager.getSceneMotionSettings());
             JsonObject beforeModeMapVote = manager.getModeMapVoteSettings().toJson();
             result = manager.submitPatch(patchObj, baseRevision, scope, target, menuGateBlocked);
             if (result.successful()) {
                 if (scope == ConfigUpdateScope.ADMIN_SCENE_TOOL) com.habitrain.core.C2SReceiverRegistrar.syncSceneToolTarget(player, target);
                 if (result.status() == ConfigSaveResult.Status.SAVED) {
                     try {
-                        oldAssets.removeAll(additionalAssets(manager.getSceneMotionSettings()));
+                        oldAssets.removeAll(sceneAssets(manager.getSceneMotionSettings()));
                         if (!menuGateBlocked) {
-                            for (String key : oldAssets) com.habitrain.core.scene.server.SceneAssetStore.getInstance().deleteAsset(key);
+                            for (String key : oldAssets) {
+                                com.habitrain.core.scene.server.SceneAssetStore.getInstance().deleteConfiguredAsset(key);
+                            }
                         }
                         if (!Objects.equals(beforeModeMapVote, manager.getModeMapVoteSettings().toJson())) broadcastMapProfiles(server, manager);
                         FullConfigSyncPayload.broadcastToAll(server);
@@ -117,8 +117,13 @@ public final class ConfigSubmissionService {
                 .matcher(json.substring(0, Math.min(json.length(), 1024)));
         return match.find() ? match.group(1) : "";
     }
-    private static Set<String> additionalAssets(com.habitrain.core.api.scene.SceneMotionSettings settings) {
+    private static Set<String> sceneAssets(com.habitrain.core.api.scene.SceneMotionSettings settings) {
         Set<String> keys = new LinkedHashSet<>();
+        settings.profiles.keySet().forEach(map -> {
+            if (map != null && !map.isBlank() && !com.habitrain.core.api.scene.SceneMotionSettings.isBuiltInMapKey(map)) {
+                keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.normalizeMapKey(map));
+            }
+        });
         settings.backgrounds.forEach((map, backgrounds) -> backgrounds.keySet().forEach(id -> keys.add(com.habitrain.core.api.scene.model.SceneBackgroundKey.assetKey(map, id))));
         return keys;
     }
