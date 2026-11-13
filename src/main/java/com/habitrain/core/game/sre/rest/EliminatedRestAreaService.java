@@ -30,6 +30,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import pro.fazeclan.river.stupid_express.modifier.refugee.cca.RefugeeComponent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -396,11 +397,13 @@ public final class EliminatedRestAreaService {
                     Component.translatable("commands.habitrain_core.rest.not_running"));
             case NOT_ELIMINATED -> ctx.getSource().sendFailure(
                     Component.translatable("commands.habitrain_core.rest.not_eliminated"));
+            case REFUGEE_ACTIVE -> ctx.getSource().sendFailure(
+                    Component.translatable("commands.habitrain_core.rest.refugee_active"));
         }
         return result == ToggleResult.ENTERED || result == ToggleResult.RETURNED ? 1 : 0;
     }
 
-    private enum ToggleResult { ENTERED, RETURNED, COOLDOWN, NOT_RUNNING, NOT_ELIMINATED }
+    private enum ToggleResult { ENTERED, RETURNED, COOLDOWN, NOT_RUNNING, NOT_ELIMINATED, REFUGEE_ACTIVE }
 
     private static ToggleResult toggle(ServerPlayer player) {
         long now = player.serverLevel().getGameTime();
@@ -434,6 +437,12 @@ public final class EliminatedRestAreaService {
             syncPrompt(player, true);
             return ToggleResult.NOT_ELIMINATED;
         }
+        // Refugee deaths are temporary: keep the physical spectator and upstream
+        // camera restriction intact until the authoritative snapshot is restored.
+        if (isRefugeeMoment(matchLevel)) {
+            syncPrompt(player, true);
+            return ToggleResult.REFUGEE_ACTIVE;
+        }
         moveToRestArea(player, matchLevel);
         return ToggleResult.ENTERED;
     }
@@ -446,6 +455,7 @@ public final class EliminatedRestAreaService {
         // map owns spawnPos, while the post-game/rest area is in the overworld.
         AreasWorldComponent.PosWithOrientation spawn = getPostGameSpawn(matchLevel);
         ServerLevel postGameLevel = player.getServer().overworld();
+        player.setCamera(player);
         player.teleportTo(postGameLevel, spawn.pos.x, spawn.pos.y, spawn.pos.z, spawn.yaw, spawn.pitch);
 
         ENTERING_REST_PLAYERS.add(player.getUUID());
@@ -479,6 +489,7 @@ public final class EliminatedRestAreaService {
         // 清空在休息区期间可能拾取的任何物品，保持旁观态净空
         clearPlayerInventoryAndEffects(player);
         player.setGameMode(GameType.SPECTATOR);
+        player.setCamera(player);
 
         AreasWorldComponent.PosWithOrientation spawn = AreasWorldComponent.KEY.get(matchLevel).getSpectatorSpawnPos();
         if (spawn != null) {
@@ -545,7 +556,13 @@ public final class EliminatedRestAreaService {
         }
         ServerLevel level = resolveMatchLevel(player);
         SREGameWorldComponent gameWorld = level == null ? null : SREGameWorldComponent.KEY.get(level);
-        return gameWorld != null && gameWorld.isRunning() && GameUtils.isPlayerEliminated(player);
+        return gameWorld != null && gameWorld.isRunning() && !isRefugeeMoment(level)
+                && GameUtils.isPlayerEliminated(player);
+    }
+
+    private static boolean isRefugeeMoment(ServerLevel matchLevel) {
+        RefugeeComponent refugee = RefugeeComponent.KEY.get(matchLevel);
+        return refugee != null && refugee.isAnyRevivals;
     }
 
     private static void syncPromptStates(MinecraftServer server) {

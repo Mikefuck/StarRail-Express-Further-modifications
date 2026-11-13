@@ -1,5 +1,7 @@
 package com.habitrain.core.scene.client;
 
+import com.habitrain.core.api.match.replay.ReplayMapManifest;
+import com.habitrain.core.scene.replay.ReplaySectionGeometry;
 import com.habitrain.core.client.config.ClientVisualPreferences;
 import com.habitrain.core.client.config.SceneClientPerformanceRules;
 import com.habitrain.core.api.scene.asset.SceneAssetCodec;
@@ -57,6 +59,8 @@ public final class SceneAssetCache {
     private static final String CACHED_SUFFIX = ".hscene";
     /** 增量补丁的落盘后缀。与资产同目录、同配额、同 LRU，但认不出它就等于没人清理。 */
     private static final String PATCH_SUFFIX = ".hpatch";
+    private static final String REPLAY_SUFFIX = ".hreplay";
+    private static final long MAX_REPLAY_CACHE_BYTES = 32L * 1024 * 1024;
     public static final long MAX_SINGLE_ASSET_BYTES = 64L * 1024L * 1024L;
 
     /** 整文件校验/解码：会被移动、读取大文件，因此与写盘分开，避免互相堵住。 */
@@ -339,7 +343,7 @@ public final class SceneAssetCache {
 
     /** 缓存目录里的资产**与补丁**：补丁不参与枚举就等于永远不清理、也不计配额。 */
     private File[] listCacheFiles() {
-        return cacheDir.listFiles((dir, name) -> name.endsWith(CACHED_SUFFIX) || name.endsWith(PATCH_SUFFIX));
+        return cacheDir.listFiles((dir, name) -> name.endsWith(CACHED_SUFFIX) || name.endsWith(PATCH_SUFFIX) || name.endsWith(REPLAY_SUFFIX));
     }
 
     private File assetFile(String sha256) {
@@ -360,6 +364,76 @@ public final class SceneAssetCache {
             throw new IllegalArgumentException("Scene cache file path escapes cache directory");
         }
         return resolved.toFile();
+    }
+
+    java.util.concurrent.CompletableFuture<SceneAssetCodec.AssetData> readReplayMap(ReplayMapManifest manifest) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            Path path = resolveCacheFile(manifest.hash(), REPLAY_SUFFIX).toPath();
+            try {
+                if (!Files.isRegularFile(path) || Files.size(path) > MAX_REPLAY_CACHE_BYTES) return null;
+                var decoded = SceneAssetCodec.decodeGeometry(Files.readAllBytes(path), manifest.sections().size());
+                if (!matchesReplayHeader(manifest, decoded) || decoded.sections.size() != manifest.sections().size()) return null;
+                for (int i = 0; i < decoded.sections.size(); i++) {
+                    if (!matchesReplaySection(manifest.sections().get(i), decoded.sections.get(i))) return null;
+                }
+                cacheIndex.loadIfNeeded();
+                cacheIndex.touch(manifest.hash(), System.currentTimeMillis());
+                cacheIndex.flushThrottled();
+                return decoded;
+            } catch (IOException | RuntimeException invalid) {
+                LOGGER.debug("Replay disk cache miss: {}", manifest.hash(), invalid);
+                return null;
+            }
+        }, IO_EXECUTOR);
+    }
+
+    java.util.concurrent.CompletableFuture<SceneAssetCodec.SectionData> decodeReplaySection(ReplayMapManifest manifest,
+            ReplayMapManifest.Entry entry, byte[] patch) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                var decoded = SceneAssetCodec.decodeGeometry(patch, 1);
+                if (!matchesReplayHeader(manifest, decoded) || decoded.sections.size() != 1) return null;
+                var section = decoded.sections.getFirst();
+                return matchesReplaySection(entry, section) ? section : null;
+            } catch (IOException | RuntimeException invalid) {
+                LOGGER.debug("Rejected replay section {}", entry.section(), invalid);
+                return null;
+            }
+        }, IO_EXECUTOR);
+    }
+
+    void writeReplayMap(ReplayMapManifest manifest, SceneAssetCodec.AssetData data) {
+        IO_EXECUTOR.execute(() -> {
+            Path temp = null;
+            try {
+                byte[] bytes = SceneAssetCodec.encode(data);
+                if (bytes.length > MAX_REPLAY_CACHE_BYTES || bytes.length > diskCacheQuotaBytes) return;
+                Path path = resolveCacheFile(manifest.hash(), REPLAY_SUFFIX).toPath();
+                temp = Files.createTempFile(path.getParent(), manifest.hash(), ".tmp");
+                Files.write(temp, bytes);
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+                cacheDirHasFiles = true;
+                cacheIndex.loadIfNeeded();
+                cacheIndex.touch(manifest.hash(), System.currentTimeMillis());
+                enforceCacheLimit(manifest.hash());
+            } catch (IOException | RuntimeException failure) {
+                LOGGER.debug("Could not save replay map {}", manifest.hash(), failure);
+            } finally {
+                if (temp != null) try { Files.deleteIfExists(temp); }
+                catch (IOException failure) { LOGGER.debug("Could not remove temporary replay map", failure); }
+            }
+        });
+    }
+
+    private static boolean matchesReplayHeader(ReplayMapManifest m, SceneAssetCodec.AssetData data) {
+        return data.formatVersion == SceneAssetCodec.FORMAT_VERSION_V3 && data.fingerprint.equals(m.hash())
+                && data.dimensionId.equals(m.dimension()) && data.sourceBounds.equals(m.sourceBounds())
+                && data.haloBounds.equals(m.sourceBounds()) && data.blockPayloads.isEmpty();
+    }
+
+    private static boolean matchesReplaySection(ReplayMapManifest.Entry entry, SceneAssetCodec.SectionData s) {
+        var p = entry.section();
+        return s.relX == p.x() && s.relY == p.y() && s.relZ == p.z() && ReplaySectionGeometry.crc(s) == entry.crc32();
     }
 
     /** 登记补丁链路并固定底稿；底稿存在性在 IO 线程进一步复核。 */
@@ -1187,6 +1261,7 @@ public final class SceneAssetCache {
         String name = cachedFile.getName();
         if (name.endsWith(CACHED_SUFFIX)) return name.substring(0, name.length() - CACHED_SUFFIX.length());
         if (name.endsWith(PATCH_SUFFIX)) return name.substring(0, name.length() - PATCH_SUFFIX.length());
+        if (name.endsWith(REPLAY_SUFFIX)) return name.substring(0, name.length() - REPLAY_SUFFIX.length());
         return name;
     }
 

@@ -87,6 +87,8 @@ public class HabiTrainCoreClient implements ClientModInitializer {
         });
         net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_TRANSLUCENT.register(
                 context -> com.habitrain.core.scene.client.SceneToolSelectionRenderer.getInstance().render(context));
+        // 上局结算看板：方块上一层的木质沙盘、同步回放与荣誉屏（自带视锥/距离裁剪与网格生命周期）
+        com.habitrain.core.scene.client.replay.ReplayBoardRenderer.init();
         com.habitrain.core.scene.client.SceneToolHud.init();
         com.habitrain.core.client.gui.scene.SceneOriginPlacementController.init();
         com.habitrain.core.scene.client.SceneViewDistanceWarningController.getInstance().init();

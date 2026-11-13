@@ -27,6 +27,7 @@ public final class HabiAdminItems {
     private HabiAdminItems() {}
 
     public static void init() {
+        com.habitrain.core.scene.block.SettlementSummaryBoard.register();
         Registry.register(BuiltInRegistries.ITEM, SCENE_CONFIGURATOR_ID, SCENE_CONFIGURATOR);
         Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, ITEMS_TAB_ID,
                 FabricItemGroup.builder()
@@ -34,6 +35,7 @@ public final class HabiAdminItems {
                         .icon(() -> SCENE_CONFIGURATOR.getDefaultInstance())
                         .displayItems((parameters, entries) -> {
                             entries.accept(SCENE_CONFIGURATOR);
+                            entries.accept(com.habitrain.core.scene.block.SettlementSummaryBoard.ITEM);
                             // The lottery mod is optional for core. Resolve its item only when
                             // the creative tab is populated, after mod item registration.
                             if (BuiltInRegistries.ITEM.containsKey(DAILY_TASK_BOARD_ID)) {

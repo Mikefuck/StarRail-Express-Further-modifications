@@ -7,6 +7,17 @@
         "defaultRequire": 1
     },
     "mixins": [
+        "RefugeeRestorationMixin",
+        "ReplayMapWriteMixin",
+        "ReplayGunTracerMixin",
+        "ReplayGunDropMixin",
+        "ReplayPoisonMixin",
+        "ReplayRoleSkillMixin",
+        "ReplayC4Mixin",
+        "ReplayC4CarrierMixin",
+        "ReplayGrenadeImpactMixin",
+        "ReplayFusedGrenadeMixin",
+
         "IdiotEggDropMixin",
         "IdiotEggContainerMixin",
         "IdiotEggTheftMixin",

@@ -1,5 +1,7 @@
 package com.habitrain.core.game.sre.role.tailor;
 
+import com.habitrain.core.api.match.replay.LastMatchReplay.Kind;
+import com.habitrain.core.game.sre.replay.MatchReplayRecorder;
 import com.habitrain.core.HabiTrainCore;
 import com.habitrain.core.game.sre.role.HabiRoles;
 import com.habitrain.core.game.sre.role.sins.ServerAimTargeting;
@@ -238,7 +240,11 @@ public final class DollTailorService {
         if (state != null && state.doll == doll) { state.doll = null; state.anchor = null; }
         if (doll.level() instanceof ServerLevel level) {
             level.getChunkSource().removeRegionTicket(DOLL_TICKET, new ChunkPos(doll.blockPosition()), 2, doll.getUUID());
-            if (broken) doll.burst();
+            if (broken) {
+                MatchReplayRecorder.spatial(level, Kind.SHIELD_BROKEN, null,
+                        doll.targetId(), null, doll.position(), "habitrain_core:tailor_doll", 0);
+                doll.burst();
+            }
             doll.discard();
             for (ServerPlayer viewer : level.players()) {
                 boolean snapped = broken && (viewer.getUUID().equals(doll.ownerId()) || viewer.getUUID().equals(doll.targetId()));

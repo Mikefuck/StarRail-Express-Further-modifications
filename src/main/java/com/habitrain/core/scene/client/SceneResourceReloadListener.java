@@ -43,5 +43,6 @@ public final class SceneResourceReloadListener implements SimpleSynchronousResou
         LOGGER.info("检测到客户端资源包重载，重置移动场景材质缓存并重新烘焙活动网格");
         SceneMaterialKey.clearRenderTypeCache();
         SceneRenderRuntime.getInstance().onResourceReload();
+        com.habitrain.core.scene.client.replay.ReplayBoardRenderer.onResourceReload();
     }
 }

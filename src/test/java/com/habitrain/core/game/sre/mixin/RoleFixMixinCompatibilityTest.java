@@ -53,7 +53,8 @@ class RoleFixMixinCompatibilityTest {
             "RoleShopHookMixin, io/wifi/starrailexpress/cca/SREPlayerShopComponent",
             "LustDeathEventsMixin, org/agmas/noellesroles/init/events/NRDeathEvents",
             "LustDeathPenaltyMixin, org/agmas/noellesroles/component/DeathPenaltyComponent",
-            "LustRevivalMixin, io/wifi/starrailexpress/game/GameUtils"
+            "LustRevivalMixin, io/wifi/starrailexpress/game/GameUtils",
+            "RefugeeRestorationMixin, pro/fazeclan/river/stupid_express/modifier/refugee/cca/PlayerStatsBeforeRefugee"
     })
     void injectionSignaturesMatchActualMinecraftAndSre(String mixinName, String targetName) throws Exception {
         ClassNode mixin = read("com/habitrain/core/game/sre/mixin/" + mixinName);
@@ -186,8 +187,18 @@ class RoleFixMixinCompatibilityTest {
             if (handler.visibleAnnotations == null) continue;
             for (AnnotationNode ann : handler.visibleAnnotations) {
                 if (!INJECTOR_DESCS.contains(ann.desc)) continue;
-                List<String> selectors = (List<String>) value(ann, "method");
-                assertNotNull(selectors, label + "#" + handler.name + " missing method selector");
+                List<String> selectors = new ArrayList<>();
+                List<String> literalSelectors = (List<String>) value(ann, "method");
+                if (literalSelectors != null) selectors.addAll(literalSelectors);
+                List<AnnotationNode> descriptors = (List<AnnotationNode>) value(ann, "target");
+                if (descriptors != null) for (AnnotationNode desc : descriptors) {
+                    String name = (String) value(desc, "value");
+                    Type result = (Type) value(desc, "ret");
+                    List<Type> args = (List<Type>) value(desc, "args");
+                    selectors.add(name + Type.getMethodDescriptor(result == null ? Type.VOID_TYPE : result,
+                            args == null ? new Type[0] : args.toArray(Type[]::new)));
+                }
+                assertFalse(selectors.isEmpty(), label + "#" + handler.name + " missing method selector");
                 for (String rawSelector : selectors) {
                     if (Integer.valueOf(0).equals(value(ann, "require")) && targets.size() > 1) {
                         boolean matched = false;

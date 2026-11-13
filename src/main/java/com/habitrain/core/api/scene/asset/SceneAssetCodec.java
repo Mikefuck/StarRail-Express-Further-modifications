@@ -384,13 +384,28 @@ public final class SceneAssetCodec {
     }
 
     static AssetData decode(byte[] compressedBytes, SceneReadBudget budget) throws IOException {
+        return decode(compressedBytes, budget, SceneLimits.MAX_DECODE_SECTIONS, MAX_UNCOMPRESSED_BYTES, false);
+    }
+
+    /** V3 geometry-only transport with tighter allocation limits than general scene files. */
+    public static AssetData decodeGeometry(byte[] compressedBytes, int maxSections) throws IOException {
+        if (maxSections < 1 || maxSections > SceneLimits.MAX_DECODE_SECTIONS) {
+            throw new IOException("Invalid geometry section limit");
+        }
+        long inflated = maxSections == 1 ? 8L * 1024 * 1024 : MAX_UNCOMPRESSED_BYTES;
+        SceneReadBudget budget = maxSections == 1 ? new SceneReadBudget(16L * 1024 * 1024, 24_000) : new SceneReadBudget();
+        return decode(compressedBytes, budget, maxSections, inflated, true);
+    }
+
+    private static AssetData decode(byte[] compressedBytes, SceneReadBudget budget, int maxSections,
+                                    long inflatedBytes, boolean geometryOnly) throws IOException {
         if (compressedBytes == null || compressedBytes.length == 0
                 || compressedBytes.length > MAX_COMPRESSED_BYTES) {
             throw new IOException("Invalid compressed scene asset size");
         }
         try (ByteArrayInputStream bais = new ByteArrayInputStream(compressedBytes);
              GZIPInputStream gzip = new GZIPInputStream(bais);
-             InputStream gzis = new BoundedInputStream(gzip, MAX_UNCOMPRESSED_BYTES);
+             InputStream gzis = new BoundedInputStream(gzip, inflatedBytes);
              DataInputStream dis = new DataInputStream(gzis)) {
 
             int magic = dis.readInt();
@@ -401,6 +416,7 @@ public final class SceneAssetCodec {
             if (version != FORMAT_VERSION_V1 && version != FORMAT_VERSION_V2 && version != FORMAT_VERSION_V3) {
                 throw new IOException("Unsupported scene format version: " + version);
             }
+            if (geometryOnly && version != FORMAT_VERSION_V3) throw new IOException("Replay geometry requires v3");
             int dataVersion = dis.readInt();
             String dimensionId = dis.readUTF();
             requireStringLength("dimension id", dimensionId, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
@@ -434,7 +450,7 @@ public final class SceneAssetCodec {
             String fingerprint = dis.readUTF();
             requireStringLength("registry fingerprint", fingerprint, SceneLimits.MAX_PAYLOAD_STRING_LENGTH);
             int sectionCount = dis.readInt();
-            if (sectionCount < 0 || sectionCount > SceneLimits.MAX_DECODE_SECTIONS) {
+            if (sectionCount < 0 || sectionCount > maxSections) {
                 throw new IOException("Invalid section count: " + sectionCount);
             }
 
@@ -447,6 +463,7 @@ public final class SceneAssetCodec {
             List<SceneBlockPayloadEntry> blockPayloads = new ArrayList<>();
             if (version >= FORMAT_VERSION_V2) {
                 int payloadCount = dis.readInt();
+                if (geometryOnly && payloadCount != 0) throw new IOException("Replay geometry may not contain block payloads");
                 if (payloadCount < 0 || payloadCount > SceneLimits.MAX_BLOCK_PAYLOAD_ENTRIES) {
                     throw new IOException("Invalid payload count: " + payloadCount);
                 }

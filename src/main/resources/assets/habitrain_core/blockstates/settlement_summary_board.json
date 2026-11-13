@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "habitrain_core:block/settlement_summary_board" },
+    "facing=east":  { "model": "habitrain_core:block/settlement_summary_board", "y": 90 },
+    "facing=south": { "model": "habitrain_core:block/settlement_summary_board", "y": 180 },
+    "facing=west":  { "model": "habitrain_core:block/settlement_summary_board", "y": 270 }
+  }
+}

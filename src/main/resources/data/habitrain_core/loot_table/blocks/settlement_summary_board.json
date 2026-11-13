@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:block",
+  "pools": [{
+    "rolls": 1,
+    "entries": [{ "type": "minecraft:item", "name": "habitrain_core:settlement_summary_board" }],
+    "conditions": [{ "condition": "minecraft:survives_explosion" }]
+  }]
+}

@@ -116,6 +116,19 @@ public final class SceneMeshBuilder {
     public static CompletableFuture<MeshBuildResult> buildMeshWithReportAsync(SceneAssetCodec.AssetData assetData,
                                                                              boolean detailedDiagnostics,
                                                                              SceneBuildScheduler.Priority priority) {
+        return buildMeshWithReportAsync(assetData, detailedDiagnostics, priority, false);
+    }
+
+    /** Replay-only mesh: retain solid neighbour faces so moving voxel cuts expose closed surfaces. */
+    public static CompletableFuture<MeshBuildResult> buildCutawayMeshAsync(SceneAssetCodec.AssetData assetData,
+                                                                          SceneBuildScheduler.Priority priority) {
+        return buildMeshWithReportAsync(assetData, false, priority, true);
+    }
+
+    private static CompletableFuture<MeshBuildResult> buildMeshWithReportAsync(SceneAssetCodec.AssetData assetData,
+                                                                              boolean detailedDiagnostics,
+                                                                              SceneBuildScheduler.Priority priority,
+                                                                              boolean retainHiddenFaces) {
         if (assetData == null || assetData.sections.isEmpty()) {
             SceneCompatibilityReport empty = new SceneCompatibilityReport(detailedDiagnostics);
             empty.freeze();
@@ -132,7 +145,7 @@ public final class SceneMeshBuilder {
             CompletableFuture<MeshBuildResult> outer = new CompletableFuture<>();
             client.execute(() -> {
                 if (outer.isCancelled()) return;
-                var inner = buildMeshWithReportAsync(assetData, detailedDiagnostics, priority);
+                var inner = buildMeshWithReportAsync(assetData, detailedDiagnostics, priority, retainHiddenFaces);
                 outer.whenComplete((value, error) -> { if (outer.isCancelled()) inner.cancel(false); });
                 inner.whenComplete((value, error) -> {
                     if (error != null) outer.completeExceptionally(error);
@@ -151,7 +164,7 @@ public final class SceneMeshBuilder {
         // BuildState 的构造已经很轻（调色板改为惰性解析），因此仍同步建好再交给调度器。
         CompletableFuture<MeshBuildResult> result = new CompletableFuture<>();
         try {
-            BuildState buildState = new BuildState(assetData, result, detailedDiagnostics);
+            BuildState buildState = new BuildState(assetData, result, detailedDiagnostics, retainHiddenFaces);
             result.whenComplete((res, ex) -> {
                 if (result.isCancelled()) {
                     if (client.isSameThread()) SceneBuildScheduler.getInstance().cancel(buildState);
@@ -179,6 +192,7 @@ public final class SceneMeshBuilder {
         private final SceneAssetCodec.AssetData asset;
         private final CompletableFuture<MeshBuildResult> result;
         private final SceneCompatibilityReport report;
+        private final boolean retainHiddenFaces;
         private final SceneMeshBatchPolicy.Plan batchPlan;
         /** 单份场景与客户端“网格缓存配额”共享同一容量边界，避免另设冲突的 256 MiB 硬上限。 */
         private final int meshQuotaMiB;
@@ -229,10 +243,11 @@ public final class SceneMeshBuilder {
         private final Map<Integer, SceneVertexBounds> batchBounds = new LinkedHashMap<>();
 
         private BuildState(SceneAssetCodec.AssetData asset, CompletableFuture<MeshBuildResult> result,
-                           boolean detailedDiagnostics) {
+                           boolean detailedDiagnostics, boolean retainHiddenFaces) {
             this.asset = asset;
             this.result = result;
             this.report = new SceneCompatibilityReport(detailedDiagnostics);
+            this.retainHiddenFaces = retainHiddenFaces;
             ClientLevel level = Minecraft.getInstance().level;
             if (level == null) {
                 throw new IllegalStateException("Cannot build a scene mesh without a client level");
@@ -692,7 +707,7 @@ public final class SceneMeshBuilder {
                         poses.pushPose();
                         poses.translate(localX, localY, localZ);
                         dispatcher.renderBatched(state, localPos, blockView, poses,
-                                budgeted(builder), true, random);
+                                budgeted(builder), !(retainHiddenFaces && state.canOcclude()), random);
                         poses.popPose();
                         long modelVertexCount = vertexCount - verticesBeforeModel;
 
@@ -748,7 +763,7 @@ public final class SceneMeshBuilder {
                         state,
                         localPos,
                         () -> RandomSource.create(seed),
-                        face -> !Block.shouldRenderFace(
+                        face -> !(retainHiddenFaces && state.canOcclude()) && !Block.shouldRenderFace(
                                 state, blockView, localPos, face, localPos.relative(face)),
                         quad -> emitFabricQuad(quad, state, localPos, verticesByMaterial, materialFailures)
                 );
